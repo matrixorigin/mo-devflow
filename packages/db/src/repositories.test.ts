@@ -3,6 +3,7 @@ import type { DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   cacheStaleHoursFromEnv,
+  extractLinkedIssueNumbers,
   isPersonalNeedsTriageIssue,
   visibleClassesForDashboard
 } from "./repositories";
@@ -109,6 +110,24 @@ describe("personal issue buckets", () => {
         baseProfile.labels.critical
       )
     ).toBe(false);
+  });
+});
+
+describe("linked PR issue references", () => {
+  test("extracts strong GitHub issue links and closing keywords", () => {
+    expect(
+      extractLinkedIssueNumbers(
+        "Fixes #123 and resolves https://github.com/matrixorigin/matrixone/issues/456\nSee also #789"
+      )
+    ).toEqual([123, 456]);
+  });
+
+  test("does not treat ordinary hash mentions as linked issues", () => {
+    expect(extractLinkedIssueNumbers("Related discussion in #123 but not a closing reference")).toEqual([]);
+  });
+
+  test("deduplicates repeated issue references", () => {
+    expect(extractLinkedIssueNumbers("Closes #42. Fixes #42")).toEqual([42]);
   });
 });
 

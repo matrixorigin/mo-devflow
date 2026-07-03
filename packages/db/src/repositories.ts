@@ -4,6 +4,7 @@ import type {
   AiDriftSignalView,
   AnalyticsSummary,
   CriticalIssueView,
+  CriticalIssueLinkedPullRequestView,
   DailyMetricPoint,
   DashboardVisibility,
   DashboardSummary,
@@ -716,7 +717,83 @@ function issueAgeHours(row: RowData): number {
   );
 }
 
-function toCriticalIssueView(row: RowData): CriticalIssueView {
+export function extractLinkedIssueNumbers(text: string): number[] {
+  const linked = new Set<number>();
+  const issueUrlPattern = /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)/gi;
+  for (const match of text.matchAll(issueUrlPattern)) {
+    linked.add(Number(match[1]));
+  }
+
+  const keywordPattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+([^\n.]+)/gi;
+  for (const match of text.matchAll(keywordPattern)) {
+    const clause = match[1] ?? "";
+    for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
+      linked.add(Number(issueMatch[1]));
+    }
+    for (const issueMatch of clause.matchAll(/\/issues\/(\d+)/gi)) {
+      linked.add(Number(issueMatch[1]));
+    }
+  }
+
+  return Array.from(linked)
+    .filter((number) => Number.isInteger(number) && number > 0)
+    .sort((left, right) => left - right);
+}
+
+function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
+  const rawPayload = parseJsonRecord<Record<string, unknown>>(asString(row.raw_payload), {});
+  const body = typeof rawPayload.body === "string" ? rawPayload.body : "";
+  return extractLinkedIssueNumbers(`${asString(row.title)}\n${body}`);
+}
+
+function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinkedPullRequestView {
+  return {
+    number: asNumber(row.number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    state: asString(row.state) === "closed" ? "closed" : "open",
+    ownerLogin: asString(row.owner_login),
+    ageHours: asNumber(row.age_hours),
+    lastHumanActionAt: fromSqlDate(row.last_human_action_at) ?? new Date().toISOString(),
+    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
+    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null,
+    ciState: row.ci_state ? asString(row.ci_state) : null,
+    testingState: row.testing_state
+      ? (asString(row.testing_state) as CriticalIssueLinkedPullRequestView["testingState"])
+      : "not_ready",
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingQueueAgeHours:
+      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
+        ? null
+        : asNumber(row.testing_queue_age_hours),
+    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    isComplete: asNumber(row.is_complete) === 1
+  };
+}
+
+function linkedPullRequestsByIssueNumber(
+  rows: RowData[],
+  issueNumbers: Set<number>
+): Map<number, CriticalIssueLinkedPullRequestView[]> {
+  const linked = new Map<number, CriticalIssueLinkedPullRequestView[]>();
+  for (const row of rows) {
+    const matchedNumbers = linkedIssueNumbersForPullRequestRow(row).filter((number) => issueNumbers.has(number));
+    if (matchedNumbers.length === 0) {
+      continue;
+    }
+    const view = toCriticalIssueLinkedPullRequestView(row);
+    for (const issueNumber of matchedNumbers) {
+      const existing = linked.get(issueNumber) ?? [];
+      if (!existing.some((pr) => pr.number === view.number)) {
+        existing.push(view);
+      }
+      linked.set(issueNumber, existing.slice(0, 8));
+    }
+  }
+  return linked;
+}
+
+function toCriticalIssueView(row: RowData, linkedPullRequests: CriticalIssueLinkedPullRequestView[] = []): CriticalIssueView {
   return {
     number: asNumber(row.number),
     title: asString(row.title),
@@ -731,7 +808,8 @@ function toCriticalIssueView(row: RowData): CriticalIssueView {
     lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
     syncError: row.sync_error ? asString(row.sync_error) : null,
     isComplete: asNumber(row.is_complete) === 1,
-    labels: parseJsonArray(asString(row.labels_json))
+    labels: parseJsonArray(asString(row.labels_json)),
+    linkedPullRequests
   };
 }
 
@@ -1083,6 +1161,7 @@ export async function getDashboardSummary(
   const driftPrVisibility = visibilityClause("p", visibleClasses);
   const personalIssueVisibility = visibilityClause("i", visibleClasses);
   const personalPrVisibility = visibilityClause("p", visibleClasses);
+  const linkedPrVisibility = visibilityClause("p", visibleClasses);
   const { start, end } = yesterdayRange(profile.reporting.timezone);
   const startSql = sqlDate(start) ?? "1970-01-01 00:00:00";
   const endSql = sqlDate(end) ?? "1970-01-01 00:00:00";
@@ -1259,8 +1338,28 @@ export async function getDashboardSummary(
             ...personalPrVisibility.params
           ]
         );
-
-  const criticalIssues: CriticalIssueView[] = criticalRows.map(toCriticalIssueView);
+  const criticalIssueNumbers = new Set([
+    ...criticalRows.map((row) => asNumber(row.number)),
+    ...personalIssueRows
+      .filter((row) => profile.labels.critical.includes(asString(row.severity)))
+      .map((row) => asNumber(row.number))
+  ]);
+  const [linkedPrCandidateRows] =
+    criticalIssueNumbers.size === 0
+      ? [[] as RowData[]]
+      : await pool.execute<RowData[]>(
+          `SELECT *
+           FROM pull_requests p
+           WHERE p.repo_id = ?
+             AND ${linkedPrVisibility.sql}
+           ORDER BY CASE WHEN p.state = 'open' THEN 0 ELSE 1 END, p.updated_at DESC
+           LIMIT 500`,
+          [repoId, ...linkedPrVisibility.params]
+        );
+  const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(linkedPrCandidateRows, criticalIssueNumbers);
+  const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
+    toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [])
+  );
   const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
@@ -1374,7 +1473,7 @@ export async function getDashboardSummary(
         },
       activeCriticalIssues: ownedIssues
         .filter((row) => profile.labels.critical.includes(asString(row.severity)))
-        .map(toCriticalIssueView),
+        .map((row) => toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [])),
       needsTriageIssues: ownedIssues
         .filter((row) =>
           isPersonalNeedsTriageIssue(

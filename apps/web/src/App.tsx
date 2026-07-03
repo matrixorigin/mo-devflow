@@ -33,6 +33,33 @@ const { Header, Content } = Layout;
 const { Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
+type TestingFlowState =
+  | "not_ready"
+  | "dev_done"
+  | "test_requested"
+  | "testing"
+  | "test_changes_requested"
+  | "test_passed"
+  | "closed_or_merged";
+
+interface CriticalIssueLinkedPullRequestView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  state: "open" | "closed";
+  ownerLogin: string;
+  ageHours: number;
+  lastHumanActionAt: string;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  testingState: TestingFlowState;
+  testingTesters: string[];
+  testingQueueAgeHours: number | null;
+  attentionFlags: string[];
+  isComplete: boolean;
+}
+
 interface CriticalIssueView {
   number: number;
   title: string;
@@ -48,6 +75,7 @@ interface CriticalIssueView {
   syncError: string | null;
   isComplete: boolean;
   labels: string[];
+  linkedPullRequests: CriticalIssueLinkedPullRequestView[];
 }
 
 interface PersonSummary {
@@ -89,14 +117,7 @@ interface PendingPrView {
   latestCommitAt: string | null;
   detailSyncedAt: string | null;
   detailError: string | null;
-  testingState:
-    | "not_ready"
-    | "dev_done"
-    | "test_requested"
-    | "testing"
-    | "test_changes_requested"
-    | "test_passed"
-    | "closed_or_merged";
+  testingState: TestingFlowState;
   testingTesters: string[];
   testingSignals: string[];
   testingQueueAgeHours: number | null;
@@ -459,7 +480,7 @@ function flagColor(flag: string): string {
   return "blue";
 }
 
-function testingStateColor(state: PendingPrView["testingState"]): string {
+function testingStateColor(state: TestingFlowState): string {
   if (state === "test_changes_requested") {
     return "red";
   }
@@ -617,6 +638,12 @@ function personalMetricPoints(person: PersonalActionView, period: MetricPeriod):
     return person.analyticsMonthly ?? [];
   }
   return person.analytics;
+}
+
+function linkedPrTooltip(pr: CriticalIssueLinkedPullRequestView): string {
+  const flags = pr.attentionFlags.length > 0 ? ` | ${pr.attentionFlags.map(labelText).join(", ")}` : "";
+  const testers = pr.testingTesters.length > 0 ? ` | testers: ${pr.testingTesters.join(", ")}` : "";
+  return `${pr.title} | owner: ${pr.ownerLogin} | age: ${hours(pr.ageHours)} | last human action: ${formatDate(pr.lastHumanActionAt)}${testers}${flags}`;
 }
 
 function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: WorkflowFixStateSnapshot }) {
@@ -940,6 +967,28 @@ export default function App() {
             ) : null}
           </Space>
         )
+      },
+      {
+        title: "Linked PRs",
+        width: 340,
+        render: (_, issue) =>
+          issue.linkedPullRequests.length === 0 ? (
+            <Tag>none</Tag>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {issue.linkedPullRequests.slice(0, 4).map((pr) => (
+                <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
+                  <Tag color={pr.attentionFlags.length > 0 ? "orange" : pr.state === "open" ? "blue" : "default"}>
+                    <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                      #{pr.number}
+                    </a>{" "}
+                    {labelText(pr.testingState)}
+                  </Tag>
+                </Tooltip>
+              ))}
+              {issue.linkedPullRequests.length > 4 ? <Tag>+{issue.linkedPullRequests.length - 4}</Tag> : null}
+            </Space>
+          )
       },
       {
         title: "Owner",
@@ -1889,7 +1938,7 @@ export default function App() {
                         size="small"
                         columns={criticalColumns}
                         dataSource={selectedPersonalView.activeCriticalIssues}
-                        scroll={{ x: 1040 }}
+                        scroll={{ x: 1380 }}
                         pagination={{ pageSize: 5 }}
                         locale={{ emptyText: <Empty description="No active critical issues for this user" /> }}
                       />
@@ -2060,7 +2109,7 @@ export default function App() {
                 size="middle"
                 columns={criticalColumns}
                 dataSource={data.criticalIssues}
-                scroll={{ x: 1040 }}
+                scroll={{ x: 1380 }}
                 pagination={{ pageSize: 8 }}
                 locale={{ emptyText: <Empty description="No active critical issues in cache" /> }}
               />

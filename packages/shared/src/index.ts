@@ -159,6 +159,24 @@ export interface PullRequestInsight {
   detailError: string | null;
 }
 
+export interface CriticalIssueLinkedPullRequestView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  state: "open" | "closed";
+  ownerLogin: string;
+  ageHours: number;
+  lastHumanActionAt: string;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  testingState: TestingFlowState;
+  testingTesters: string[];
+  testingQueueAgeHours: number | null;
+  attentionFlags: string[];
+  isComplete: boolean;
+}
+
 export interface CriticalIssueView {
   number: number;
   title: string;
@@ -174,6 +192,7 @@ export interface CriticalIssueView {
   syncError: string | null;
   isComplete: boolean;
   labels: string[];
+  linkedPullRequests: CriticalIssueLinkedPullRequestView[];
 }
 
 export interface PersonSummary {
