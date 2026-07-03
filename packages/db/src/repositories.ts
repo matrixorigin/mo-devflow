@@ -289,7 +289,7 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
   }));
 }
 
-export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<void> {
+export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<NormalizedPullRequest> {
   const now = nowSql();
   let next = pr;
   if (pr.state === "open" && !pr.detailSyncedAt && !pr.detailError) {
@@ -373,6 +373,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       now
     ]
   );
+  return next;
 }
 
 export async function upsertAttentionItem(input: {
@@ -435,6 +436,76 @@ export async function upsertAttentionItem(input: {
       ]
     );
   }
+}
+
+export const issueAttentionRuleKeys = ["critical_no_human_action"] as const;
+export const pullRequestAttentionRuleKeys = [
+  "no_human_action_24h",
+  "requested_changes",
+  "ci_failed",
+  "merge_conflict",
+  "testing_stalled"
+] as const;
+export const snapshotManagedAttentionRuleKeys = [
+  ...issueAttentionRuleKeys,
+  ...pullRequestAttentionRuleKeys
+] as const;
+
+export interface AttentionResolutionRow {
+  objectType: string;
+  objectNumber: number | null;
+  ruleKey: string;
+  dedupeKey: string;
+}
+
+export function attentionItemsToResolve(input: {
+  rows: AttentionResolutionRow[];
+  activeDedupeKeys: ReadonlySet<string>;
+  managedRuleKeys: readonly string[];
+  objectType?: string;
+  objectNumber?: number;
+}): string[] {
+  const managedRuleKeys = new Set(input.managedRuleKeys);
+  return input.rows
+    .filter((row) => managedRuleKeys.has(row.ruleKey))
+    .filter((row) => !input.activeDedupeKeys.has(row.dedupeKey))
+    .filter((row) => !input.objectType || row.objectType === input.objectType)
+    .filter((row) => input.objectNumber === undefined || row.objectNumber === input.objectNumber)
+    .map((row) => row.dedupeKey);
+}
+
+export async function resolveStaleAttentionItems(input: {
+  repoId: number;
+  activeDedupeKeys: Iterable<string>;
+  managedRuleKeys: readonly string[];
+  objectType?: string;
+  objectNumber?: number;
+}): Promise<number> {
+  const managedRuleKeys = Array.from(new Set(input.managedRuleKeys));
+  if (managedRuleKeys.length === 0) {
+    return 0;
+  }
+  const activeDedupeKeys = Array.from(new Set(input.activeDedupeKeys));
+  const params: Array<string | number> = [nowSql(), input.repoId, ...managedRuleKeys];
+  let sql = `UPDATE attention_items
+             SET resolved_at = ?
+             WHERE repo_id = ?
+               AND resolved_at IS NULL
+               AND rule_key IN (${managedRuleKeys.map(() => "?").join(", ")})`;
+  if (input.objectType) {
+    sql += " AND object_type = ?";
+    params.push(input.objectType);
+  }
+  if (input.objectNumber !== undefined) {
+    sql += " AND object_number = ?";
+    params.push(input.objectNumber);
+  }
+  if (activeDedupeKeys.length > 0) {
+    sql += ` AND dedupe_key NOT IN (${activeDedupeKeys.map(() => "?").join(", ")})`;
+    params.push(...activeDedupeKeys);
+  }
+  const [result] = await getPool().execute(sql, params);
+  return Number((result as ResultSetHeader).affectedRows ?? 0);
 }
 
 function workflowViolationDedupeKey(repoId: number, violation: WorkflowViolation): string {

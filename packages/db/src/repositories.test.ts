@@ -3,6 +3,7 @@ import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, RepoProfile 
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
+  attentionItemsToResolve,
   cacheStaleHoursFromEnv,
   calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
@@ -316,5 +317,56 @@ describe("repo timezone calendar ranges", () => {
   test("maps UTC instants to repo-local date keys", () => {
     expect(dateKeyInTimezone("2026-07-02T15:59:59.000Z", "Asia/Shanghai")).toBe("2026-07-02");
     expect(dateKeyInTimezone("2026-07-02T16:00:00.000Z", "Asia/Shanghai")).toBe("2026-07-03");
+  });
+});
+
+describe("attention item resolution planning", () => {
+  const rows = [
+    {
+      objectType: "pull_request",
+      objectNumber: 10,
+      ruleKey: "ci_failed",
+      dedupeKey: "repo:pr:10:ci_failed"
+    },
+    {
+      objectType: "pull_request",
+      objectNumber: 11,
+      ruleKey: "ci_failed",
+      dedupeKey: "repo:pr:11:ci_failed"
+    },
+    {
+      objectType: "issue",
+      objectNumber: 12,
+      ruleKey: "critical_no_human_action",
+      dedupeKey: "repo:issue:12:critical_no_human_action"
+    },
+    {
+      objectType: "pull_request",
+      objectNumber: 13,
+      ruleKey: "manual_operator_note",
+      dedupeKey: "repo:pr:13:manual_operator_note"
+    }
+  ];
+
+  test("resolves only managed attention items missing from active snapshot keys", () => {
+    expect(
+      attentionItemsToResolve({
+        rows,
+        activeDedupeKeys: new Set(["repo:pr:11:ci_failed"]),
+        managedRuleKeys: ["ci_failed", "critical_no_human_action"]
+      })
+    ).toEqual(["repo:pr:10:ci_failed", "repo:issue:12:critical_no_human_action"]);
+  });
+
+  test("webhook object scope does not resolve attention for other objects", () => {
+    expect(
+      attentionItemsToResolve({
+        rows,
+        activeDedupeKeys: new Set<string>(),
+        managedRuleKeys: ["ci_failed"],
+        objectType: "pull_request",
+        objectNumber: 10
+      })
+    ).toEqual(["repo:pr:10:ci_failed"]);
   });
 });

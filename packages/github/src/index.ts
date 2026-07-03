@@ -17,6 +17,8 @@ export interface GitHubSnapshot {
   pullRequestInsights: Map<number, PullRequestInsight>;
   sourceAuthType: SourceAuthType;
   rateLimitRemaining: number | null;
+  issuesComplete: boolean;
+  openPullRequestsComplete: boolean;
 }
 
 export interface GitHubTokenValidation {
@@ -504,19 +506,26 @@ export function classifyGitHubError(error: unknown): GitHubErrorClassification {
 async function collectPages<T>(
   iterator: AsyncIterable<{ data: T[]; headers: Record<string, string | number | undefined> }>,
   maxPages: number
-): Promise<{ data: T[]; rateLimitRemaining: number | null }> {
+): Promise<{ data: T[]; rateLimitRemaining: number | null; complete: boolean }> {
   const data: T[] = [];
   let page = 0;
   let rateLimitRemaining: number | null = null;
+  let complete = true;
   for await (const response of iterator) {
     page += 1;
     data.push(...response.data);
     rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
     if (page >= maxPages) {
+      complete = !githubLinkHeaderHasNextPage(response.headers);
       break;
     }
   }
-  return { data, rateLimitRemaining };
+  return { data, rateLimitRemaining, complete };
+}
+
+export function githubLinkHeaderHasNextPage(headers: Record<string, string | number | undefined>): boolean {
+  const link = headers.link;
+  return typeof link === "string" && link.split(",").some((part) => part.includes('rel="next"'));
 }
 
 function normalizeCiState(
@@ -766,6 +775,8 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
     pullRequestInsights: prInsightsResult.insights,
     sourceAuthType,
     rateLimitRemaining:
-      prInsightsResult.rateLimitRemaining ?? issuesResult.rateLimitRemaining ?? openPrsResult.rateLimitRemaining ?? null
+      prInsightsResult.rateLimitRemaining ?? issuesResult.rateLimitRemaining ?? openPrsResult.rateLimitRemaining ?? null,
+    issuesComplete: issuesResult.complete,
+    openPullRequestsComplete: openPrsResult.complete
   };
 }

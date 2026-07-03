@@ -1,8 +1,10 @@
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
+  issueAttentionRuleKeys,
   listCachedIssuesForRules,
   listNotificationCandidates,
   isNotificationInCooldown,
+  pullRequestAttentionRuleKeys,
   claimNextGitHubWebhookDelivery,
   completeGitHubWebhookDelivery,
   failGitHubWebhookDelivery,
@@ -11,7 +13,9 @@ import {
   recomputeDailyMetricsFromCache,
   replaceAiDriftSignals,
   replaceWorkflowViolations,
+  resolveStaleAttentionItems,
   runWithJobLease,
+  snapshotManagedAttentionRuleKeys,
   upsertAttentionItem,
   upsertIssue,
   upsertPullRequest,
@@ -82,6 +86,14 @@ export function dateAfterSeconds(seconds: number): string {
 
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
   return !issue.isPullRequest;
+}
+
+function issueAttentionDedupeKey(profileKey: string, issueNumber: number, flag: string): string {
+  return `${profileKey}:issue:${issueNumber}:${flag}`;
+}
+
+function pullRequestAttentionDedupeKey(profileKey: string, prNumber: number, flag: string): string {
+  return `${profileKey}:pr:${prNumber}:${flag}`;
 }
 
 function prEvidence(flag: string, prNumber: number): string {
@@ -364,7 +376,10 @@ async function processWebhookPayload(input: {
       return { processed: true, skipped: true, message: `issue #${issue.number} is a pull request shadow issue` };
     }
     await upsertIssue(input.repoId, issue);
+    const activeAttentionDedupeKeys = new Set<string>();
     for (const flag of criticalAttentionForIssue(input.profile, issue)) {
+      const dedupeKey = issueAttentionDedupeKey(input.profile.key, issue.number, flag);
+      activeAttentionDedupeKeys.add(dedupeKey);
       await upsertAttentionItem({
         repoId: input.repoId,
         objectType: "issue",
@@ -373,10 +388,17 @@ async function processWebhookPayload(input: {
         severity: "critical",
         relatedLogin: issue.ownerLogin,
         targetRecipient: issue.ownerLogin,
-        dedupeKey: `${input.profile.key}:issue:${issue.number}:${flag}`,
+        dedupeKey,
         evidenceSummary: `Critical issue #${issue.number} has no recent human action.`
       });
     }
+    await resolveStaleAttentionItems({
+      repoId: input.repoId,
+      activeDedupeKeys: activeAttentionDedupeKeys,
+      managedRuleKeys: issueAttentionRuleKeys,
+      objectType: "issue",
+      objectNumber: issue.number
+    });
     await recomputeWorkflowViolationsFromCache();
     await recomputeAiDriftFromCache();
     return { processed: true, skipped: false, message: `updated issue #${issue.number}` };
@@ -392,21 +414,31 @@ async function processWebhookPayload(input: {
       ensureGitHubObjectWithNumber(rawPullRequest, "pull_request"),
       sourceAuthTypeForWebhook()
     );
-    await upsertPullRequest(input.repoId, pr);
-    for (const flag of pr.attentionFlags) {
+    const cachedPr = await upsertPullRequest(input.repoId, pr);
+    const activeAttentionDedupeKeys = new Set<string>();
+    for (const flag of cachedPr.attentionFlags) {
+      const dedupeKey = pullRequestAttentionDedupeKey(input.profile.key, cachedPr.number, flag);
+      activeAttentionDedupeKeys.add(dedupeKey);
       await upsertAttentionItem({
         repoId: input.repoId,
         objectType: "pull_request",
-        objectNumber: pr.number,
+        objectNumber: cachedPr.number,
         ruleKey: flag,
         severity: "warning",
-        relatedLogin: pr.ownerLogin,
-        targetRecipient: pr.ownerLogin,
-        dedupeKey: `${input.profile.key}:pr:${pr.number}:${flag}`,
-        evidenceSummary: prEvidence(flag, pr.number)
+        relatedLogin: cachedPr.ownerLogin,
+        targetRecipient: cachedPr.ownerLogin,
+        dedupeKey,
+        evidenceSummary: prEvidence(flag, cachedPr.number)
       });
     }
-    return { processed: true, skipped: false, message: `updated PR #${pr.number}` };
+    await resolveStaleAttentionItems({
+      repoId: input.repoId,
+      activeDedupeKeys: activeAttentionDedupeKeys,
+      managedRuleKeys: pullRequestAttentionRuleKeys,
+      objectType: "pull_request",
+      objectNumber: cachedPr.number
+    });
+    return { processed: true, skipped: false, message: `updated PR #${cachedPr.number}` };
   }
 
   return { processed: true, skipped: true, message: `unsupported event ${input.eventName}` };
@@ -493,6 +525,8 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
     let prCount = 0;
     const workflowViolations: WorkflowViolation[] = [];
     const aiDriftSignals: AiDriftSignal[] = [];
+    const activeAttentionDedupeKeys = new Set<string>();
+    let resolvedAttentionItems = 0;
 
     for (const rawIssue of snapshot.issues) {
       const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType, { linkedPrAuthorByIssueNumber });
@@ -504,7 +538,11 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       workflowViolations.push(...workflowViolationsForIssue(profile, issue));
       aiDriftSignals.push(...aiDriftSignalsForIssue(profile, issue));
 
+      const issueActiveAttentionDedupeKeys = new Set<string>();
       for (const flag of criticalAttentionForIssue(profile, issue)) {
+        const dedupeKey = issueAttentionDedupeKey(profile.key, issue.number, flag);
+        activeAttentionDedupeKeys.add(dedupeKey);
+        issueActiveAttentionDedupeKeys.add(dedupeKey);
         await upsertAttentionItem({
           repoId,
           objectType: "issue",
@@ -513,10 +551,17 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           severity: "critical",
           relatedLogin: issue.ownerLogin,
           targetRecipient: issue.ownerLogin,
-          dedupeKey: `${profile.key}:issue:${issue.number}:${flag}`,
+          dedupeKey,
           evidenceSummary: `Critical issue #${issue.number} has no recent human action.`
         });
       }
+      resolvedAttentionItems += await resolveStaleAttentionItems({
+        repoId,
+        activeDedupeKeys: issueActiveAttentionDedupeKeys,
+        managedRuleKeys: issueAttentionRuleKeys,
+        objectType: "issue",
+        objectNumber: issue.number
+      });
     }
     await replaceWorkflowViolations(repoId, workflowViolations);
     await replaceAiDriftSignals(repoId, aiDriftSignals);
@@ -528,21 +573,40 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         snapshot.sourceAuthType,
         snapshot.pullRequestInsights.get(rawPr.number)
       );
-      await upsertPullRequest(repoId, pr);
+      const cachedPr = await upsertPullRequest(repoId, pr);
       prCount += 1;
-      for (const flag of pr.attentionFlags) {
+      const prActiveAttentionDedupeKeys = new Set<string>();
+      for (const flag of cachedPr.attentionFlags) {
+        const dedupeKey = pullRequestAttentionDedupeKey(profile.key, cachedPr.number, flag);
+        activeAttentionDedupeKeys.add(dedupeKey);
+        prActiveAttentionDedupeKeys.add(dedupeKey);
         await upsertAttentionItem({
           repoId,
           objectType: "pull_request",
-          objectNumber: pr.number,
+          objectNumber: cachedPr.number,
           ruleKey: flag,
           severity: "warning",
-          relatedLogin: pr.ownerLogin,
-          targetRecipient: pr.ownerLogin,
-          dedupeKey: `${profile.key}:pr:${pr.number}:${flag}`,
-          evidenceSummary: prEvidence(flag, pr.number)
+          relatedLogin: cachedPr.ownerLogin,
+          targetRecipient: cachedPr.ownerLogin,
+          dedupeKey,
+          evidenceSummary: prEvidence(flag, cachedPr.number)
         });
       }
+      resolvedAttentionItems += await resolveStaleAttentionItems({
+        repoId,
+        activeDedupeKeys: prActiveAttentionDedupeKeys,
+        managedRuleKeys: pullRequestAttentionRuleKeys,
+        objectType: "pull_request",
+        objectNumber: cachedPr.number
+      });
+    }
+    const snapshotComplete = snapshot.issuesComplete && snapshot.openPullRequestsComplete;
+    if (snapshotComplete) {
+      resolvedAttentionItems += await resolveStaleAttentionItems({
+        repoId,
+        activeDedupeKeys: activeAttentionDedupeKeys,
+        managedRuleKeys: snapshotManagedAttentionRuleKeys
+      });
     }
 
     await recordSyncRun({
@@ -558,7 +622,11 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         pullRequests: prCount,
         pullRequestInsights: snapshot.pullRequestInsights.size,
         workflowViolations: workflowViolations.length,
-        aiDriftSignals: aiDriftSignals.length
+        aiDriftSignals: aiDriftSignals.length,
+        resolvedAttentionItems,
+        attentionResolutionScope: snapshotComplete ? "repo" : "observed_objects",
+        issuesComplete: snapshot.issuesComplete,
+        openPullRequestsComplete: snapshot.openPullRequestsComplete
       }
     });
 

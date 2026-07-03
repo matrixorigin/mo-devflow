@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile, WorkflowFixPreview, WorkflowFixStateSnapshot } from "@mo-devflow/shared";
-import { applyWorkflowFixPreview, classifyGitHubError, configuredGitHubSourceAuthType } from "./index";
+import {
+  applyWorkflowFixPreview,
+  classifyGitHubError,
+  configuredGitHubSourceAuthType,
+  githubLinkHeaderHasNextPage
+} from "./index";
 
 const octokitMocks = vi.hoisted(() => ({
   issuesGet: vi.fn(),
@@ -305,5 +310,22 @@ describe("GitHub error classification", () => {
   test("detects configured service-token auth source without creating a client", () => {
     expect(configuredGitHubSourceAuthType({})).toBe("anonymous");
     expect(configuredGitHubSourceAuthType({ MO_DEVFLOW_GITHUB_TOKEN: "token" })).toBe("service_read_token");
+  });
+});
+
+describe("GitHub pagination metadata", () => {
+  test("detects whether a Link header still has a next page", () => {
+    expect(
+      githubLinkHeaderHasNextPage({
+        link: '<https://api.github.com/repositories/1/issues?page=2>; rel="next", <https://api.github.com/repositories/1/issues?page=4>; rel="last"'
+      })
+    ).toBe(true);
+
+    expect(
+      githubLinkHeaderHasNextPage({
+        link: '<https://api.github.com/repositories/1/issues?page=1>; rel="prev"'
+      })
+    ).toBe(false);
+    expect(githubLinkHeaderHasNextPage({})).toBe(false);
   });
 });
