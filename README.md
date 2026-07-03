@@ -44,4 +44,7 @@ deliveries are ignored and counted for operational visibility. The worker
 processes stored issue and pull request deliveries asynchronously into the
 MatrixOne cache.
 
-The first implementation slice is MVP0: read-only cached observability for repo-wide critical issues, watched-user summaries, pending PRs, workflow violations, AI drift signals, cached analytics, owner attribution, and data freshness indicators.
+The current implementation covers read-only cached observability for repo-wide
+critical issues, watched-user summaries, pending PRs, workflow violations, AI
+drift signals, testing queue state, cached analytics, owner attribution, and
+data freshness indicators.

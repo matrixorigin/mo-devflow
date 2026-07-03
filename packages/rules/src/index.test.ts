@@ -163,6 +163,115 @@ describe("rules", () => {
     expect(pr.attentionFlags).toContain("merge_conflict");
   });
 
+  test("testing flow detects configured tester reviewer handoff", () => {
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        people: { ...profile.people, testers: ["tester-a"] }
+      },
+      {
+        id: 12,
+        number: 18,
+        title: "handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/18",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        head: { ref: "fix" },
+        base: { ref: "main" },
+        requested_reviewers: [{ login: "tester-a" }]
+      },
+      "anonymous"
+    );
+
+    expect(pr.testingState).toBe("test_requested");
+    expect(pr.testingTesters).toEqual(["tester-a"]);
+    expect(pr.testingSignals).toContain("reviewer:tester-a");
+    expect(pr.testingQueueAgeHours).not.toBeNull();
+  });
+
+  test("testing flow supports label and assignee handoff signals", () => {
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        testing: {
+          handoffSignals: {
+            labels: ["testing/requested"],
+            reviewerUsers: [],
+            assigneeUsers: ["qa-owner"],
+            comments: []
+          }
+        }
+      },
+      {
+        id: 13,
+        number: 19,
+        title: "label handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/19",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        labels: [{ name: "testing/requested" }],
+        assignees: [{ login: "qa-owner" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      "anonymous"
+    );
+
+    expect(pr.testingState).toBe("test_requested");
+    expect(pr.testingTesters).toEqual(["qa-owner"]);
+    expect(pr.testingSignals).toEqual(expect.arrayContaining(["label:testing/requested", "assignee:qa-owner"]));
+  });
+
+  test("testing flow reflects requested changes, approval, and close states", () => {
+    const testProfile = { ...profile, people: { ...profile.people, testers: ["tester-a"] } };
+    const basePr = {
+      id: 14,
+      number: 20,
+      title: "review handoff",
+      state: "open",
+      user: { login: "alice" },
+      html_url: "https://example.test/20",
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-02T00:00:00Z",
+      requested_reviewers: [{ login: "tester-a" }],
+      head: { ref: "fix" },
+      base: { ref: "main" }
+    };
+    const now = new Date().toISOString();
+
+    const changesRequested = normalizePullRequest(testProfile, basePr, "anonymous", {
+      number: 20,
+      reviewDecision: "changes_requested",
+      mergeStateStatus: null,
+      ciState: null,
+      latestReviewState: "CHANGES_REQUESTED",
+      latestReviewSubmittedAt: now,
+      latestCommitAt: now,
+      detailSyncedAt: now,
+      detailError: null
+    });
+    const approved = normalizePullRequest(testProfile, basePr, "anonymous", {
+      number: 20,
+      reviewDecision: "approved",
+      mergeStateStatus: null,
+      ciState: null,
+      latestReviewState: "APPROVED",
+      latestReviewSubmittedAt: now,
+      latestCommitAt: now,
+      detailSyncedAt: now,
+      detailError: null
+    });
+    const closed = normalizePullRequest(testProfile, { ...basePr, state: "closed", closed_at: now }, "anonymous");
+
+    expect(changesRequested.testingState).toBe("test_changes_requested");
+    expect(approved.testingState).toBe("test_passed");
+    expect(closed.testingState).toBe("closed_or_merged");
+  });
+
   test("workflow violations detect bug issues missing intake triage", () => {
     const issue = normalizeIssue(
       profile,

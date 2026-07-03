@@ -74,6 +74,17 @@ interface PendingPrView {
   latestCommitAt: string | null;
   detailSyncedAt: string | null;
   detailError: string | null;
+  testingState:
+    | "not_ready"
+    | "dev_done"
+    | "test_requested"
+    | "testing"
+    | "test_changes_requested"
+    | "test_passed"
+    | "closed_or_merged";
+  testingTesters: string[];
+  testingSignals: string[];
+  testingQueueAgeHours: number | null;
   attentionFlags: string[];
   isComplete: boolean;
 }
@@ -248,6 +259,16 @@ interface DashboardSummary {
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
+  testing: {
+    queuePrs: number;
+    staleQueuePrs: number;
+    averageQueueAgeHours: number | null;
+    testers: Array<{
+      login: string;
+      queuePrs: number;
+      averageQueueAgeHours: number | null;
+    }>;
+  };
   notifications: NotificationHealth;
   webhooks: {
     pendingDeliveries: number;
@@ -316,6 +337,19 @@ function flagColor(flag: string): string {
     return "orange";
   }
   return "blue";
+}
+
+function testingStateColor(state: PendingPrView["testingState"]): string {
+  if (state === "test_changes_requested") {
+    return "red";
+  }
+  if (state === "test_passed" || state === "closed_or_merged") {
+    return "green";
+  }
+  if (state === "test_requested" || state === "testing") {
+    return "blue";
+  }
+  return "default";
 }
 
 function ciColor(value: string): string {
@@ -681,7 +715,7 @@ export default function App() {
       { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
       {
         title: "State",
-        width: 280,
+        width: 320,
         render: (_, pr) => (
           <Space size={[4, 4]} wrap>
             {pr.draft ? <Tag color="gold">draft</Tag> : null}
@@ -709,6 +743,19 @@ export default function App() {
             ) : !pr.detailSyncedAt ? (
               <Tag>partial</Tag>
             ) : null}
+          </Space>
+        )
+      },
+      {
+        title: "Testing",
+        width: 260,
+        render: (_, pr) => (
+          <Space size={[4, 4]} wrap>
+            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+            {pr.testingTesters.map((tester) => (
+              <Tag key={tester}>{tester}</Tag>
+            ))}
+            {pr.testingQueueAgeHours !== null ? <Tag>{hours(pr.testingQueueAgeHours)}</Tag> : null}
           </Space>
         )
       },
@@ -947,6 +994,19 @@ export default function App() {
     []
   );
 
+  const testerColumns: ColumnsType<DashboardSummary["testing"]["testers"][number]> = useMemo(
+    () => [
+      { title: "Tester", dataIndex: "login", render: (login) => <Tag>{login}</Tag> },
+      { title: "Queue PRs", dataIndex: "queuePrs", render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>) },
+      {
+        title: "Average Queue Age",
+        dataIndex: "averageQueueAgeHours",
+        render: (value) => (value === null ? "-" : hours(value))
+      }
+    ],
+    []
+  );
+
   return (
     <Layout className="app-shell">
       <Header className="topbar">
@@ -1031,6 +1091,14 @@ export default function App() {
                 <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
               </div>
               <div className="metric">
+                <Statistic title="Testing Queue" value={data.testing.queuePrs} />
+                <Progress
+                  percent={Math.min(100, data.testing.queuePrs * 20 + data.testing.staleQueuePrs * 25)}
+                  showInfo={false}
+                  strokeColor={data.testing.staleQueuePrs > 0 ? "#dc2626" : "#2563eb"}
+                />
+              </div>
+              <div className="metric">
                 <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
                 <Progress
                   percent={Math.min(100, data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations)}
@@ -1085,6 +1153,16 @@ export default function App() {
               />
             ) : null}
 
+            {data.testing.staleQueuePrs > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message={`${data.testing.staleQueuePrs} PRs are stale in testing`}
+                description="Testing queue age currently uses cached PR update time until timeline handoff events are backfilled."
+                showIcon
+              />
+            ) : null}
+
             {data.webhooks.failedDeliveries > 0 ? (
               <Alert
                 className="band"
@@ -1118,6 +1196,8 @@ export default function App() {
                   <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
                   <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
+                  <Statistic title="Testing Queue" value={data.testing.queuePrs} />
+                  <Statistic title="Avg Testing Age" value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)} />
                 </div>
                 <Space size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (
@@ -1180,6 +1260,26 @@ export default function App() {
                   scroll={{ x: 1040 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
+                />
+              </section>
+            ) : null}
+
+            {view === "PRs" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Testing Flow</Title>
+                  <Space size={[6, 6]} wrap>
+                    <Tag color={data.testing.queuePrs > 0 ? "blue" : "default"}>{data.testing.queuePrs} queued</Tag>
+                    <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>{data.testing.staleQueuePrs} stale</Tag>
+                  </Space>
+                </div>
+                <Table
+                  rowKey="login"
+                  size="middle"
+                  columns={testerColumns}
+                  dataSource={data.testing.testers}
+                  pagination={false}
+                  locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />
               </section>
             ) : null}

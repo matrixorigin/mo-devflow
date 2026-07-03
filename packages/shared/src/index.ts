@@ -122,6 +122,7 @@ export interface NormalizedPullRequest {
   draft: boolean;
   headRef: string;
   baseRef: string;
+  labels: string[];
   assignees: string[];
   requestedReviewers: string[];
   ageHours: number;
@@ -135,6 +136,10 @@ export interface NormalizedPullRequest {
   latestCommitAt: string | null;
   detailSyncedAt: string | null;
   detailError: string | null;
+  testingState: TestingFlowState;
+  testingTesters: string[];
+  testingSignals: string[];
+  testingQueueAgeHours: number | null;
   attentionFlags: string[];
   sourceAuthType: SourceAuthType;
   visibilityClass: VisibilityClass;
@@ -195,8 +200,32 @@ export interface PendingPrView {
   latestCommitAt: string | null;
   detailSyncedAt: string | null;
   detailError: string | null;
+  testingState: TestingFlowState;
+  testingTesters: string[];
+  testingSignals: string[];
+  testingQueueAgeHours: number | null;
   attentionFlags: string[];
   isComplete: boolean;
+}
+
+export type TestingFlowState =
+  | "not_ready"
+  | "dev_done"
+  | "test_requested"
+  | "testing"
+  | "test_changes_requested"
+  | "test_passed"
+  | "closed_or_merged";
+
+export interface TestingSummary {
+  queuePrs: number;
+  staleQueuePrs: number;
+  averageQueueAgeHours: number | null;
+  testers: Array<{
+    login: string;
+    queuePrs: number;
+    averageQueueAgeHours: number | null;
+  }>;
 }
 
 export type WorkflowViolationObjectType = "issue" | "pull_request";
@@ -435,6 +464,7 @@ export interface DashboardSummary {
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
+  testing: TestingSummary;
   notifications: NotificationHealth;
   webhooks: WebhookIngestionHealth;
 }

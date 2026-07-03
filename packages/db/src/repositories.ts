@@ -11,6 +11,7 @@ import type {
   PersonSummary,
   RepoProfile,
   SyncHealth,
+  TestingSummary,
   WorkflowViolation,
   WorkflowViolationView
 } from "@mo-devflow/shared";
@@ -266,12 +267,13 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
     `INSERT INTO pull_requests(
       repo_id, github_id, number, title, state, author_login, owner_login, html_url,
       created_at, updated_at, closed_at, merged_at, draft, head_ref, base_ref,
-      assignees_json, requested_reviewers_json, age_hours, last_human_action_at,
+      labels_json, assignees_json, requested_reviewers_json, age_hours, last_human_action_at,
       last_system_action_at, review_decision, merge_state_status, ci_state,
       latest_review_state, latest_review_submitted_at, latest_commit_at,
-      detail_synced_at, detail_error, attention_flags_json, source_auth_type,
+      detail_synced_at, detail_error, testing_state, testing_testers_json,
+      testing_signals_json, testing_queue_age_hours, attention_flags_json, source_auth_type,
       visibility_class, is_complete, sync_error, raw_payload, last_synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repoId,
       String(next.githubId),
@@ -288,6 +290,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       next.draft ? 1 : 0,
       next.headRef,
       next.baseRef,
+      stringify(next.labels),
       stringify(next.assignees),
       stringify(next.requestedReviewers),
       next.ageHours,
@@ -301,6 +304,10 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       sqlDate(next.latestCommitAt),
       sqlDate(next.detailSyncedAt),
       next.detailError,
+      next.testingState,
+      stringify(next.testingTesters),
+      stringify(next.testingSignals),
+      next.testingQueueAgeHours,
       stringify(next.attentionFlags),
       next.sourceAuthType,
       next.visibilityClass,
@@ -849,7 +856,9 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     [repoId]
   );
   const [allPrRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, merged_at, state, attention_flags_json FROM pull_requests WHERE repo_id = ?`,
+    `SELECT owner_login, created_at, merged_at, state, attention_flags_json,
+            testing_state, testing_testers_json, testing_queue_age_hours
+     FROM pull_requests WHERE repo_id = ?`,
     [repoId]
   );
   const [syncRows] = await pool.execute<RowData[]>(
@@ -935,6 +944,13 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     latestCommitAt: fromSqlDate(row.latest_commit_at),
     detailSyncedAt: fromSqlDate(row.detail_synced_at),
     detailError: row.detail_error ? asString(row.detail_error) : null,
+    testingState: row.testing_state ? asString(row.testing_state) as PendingPrView["testingState"] : "not_ready",
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
+    testingQueueAgeHours:
+      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
+        ? null
+        : asNumber(row.testing_queue_age_hours),
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
     isComplete: asNumber(row.is_complete) === 1
   }));
@@ -1021,6 +1037,38 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     teamDaily: dailyMetrics.filter((point) => point.scopeType === "team"),
     peopleDaily: dailyMetrics.filter((point) => point.scopeType === "person")
   };
+  const testingQueueRows = allPrRows.filter((row) =>
+    ["test_requested", "testing", "test_changes_requested"].includes(asString(row.testing_state))
+  );
+  const queueAges = testingQueueRows
+    .map((row) => asNumber(row.testing_queue_age_hours))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const testerKeys = new Set([
+    ...profile.people.testers,
+    ...testingQueueRows.flatMap((row) => parseJsonArray(asString(row.testing_testers_json)))
+  ]);
+  const testing: TestingSummary = {
+    queuePrs: testingQueueRows.length,
+    staleQueuePrs: testingQueueRows.filter(
+      (row) => asNumber(row.testing_queue_age_hours) >= profile.thresholds.prNoActionAttentionHours
+    ).length,
+    averageQueueAgeHours:
+      queueAges.length === 0
+        ? null
+        : Math.round((queueAges.reduce((sum, value) => sum + value, 0) / queueAges.length) * 10) / 10,
+    testers: Array.from(testerKeys).map((login) => {
+      const rows = testingQueueRows.filter((row) => parseJsonArray(asString(row.testing_testers_json)).includes(login));
+      const ages = rows
+        .map((row) => asNumber(row.testing_queue_age_hours))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      return {
+        login,
+        queuePrs: rows.length,
+        averageQueueAgeHours:
+          ages.length === 0 ? null : Math.round((ages.reduce((sum, value) => sum + value, 0) / ages.length) * 10) / 10
+      };
+    })
+  };
   const jobQueue = await getJobQueueHealth();
   const notifications = await getNotificationHealth(repoId, profile);
   const webhooks = await getWebhookIngestionHealth(repoId);
@@ -1055,6 +1103,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     workflowViolations,
     aiDriftSignals,
     analytics,
+    testing,
     notifications,
     webhooks
   };

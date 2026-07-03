@@ -6,6 +6,7 @@ import type {
   PullRequestInsight,
   RepoProfile,
   SourceAuthType,
+  TestingFlowState,
   VisibilityClass,
   WorkflowViolation
 } from "@mo-devflow/shared";
@@ -50,8 +51,16 @@ interface GitHubPullRequestLike {
   draft?: boolean | null;
   head?: { ref?: string | null; sha?: string | null } | null;
   base?: { ref?: string | null } | null;
+  labels?: Array<string | GitHubLabel>;
   assignees?: GitHubUser[] | null;
   requested_reviewers?: GitHubUser[] | null;
+}
+
+interface TestingFlowDerivation {
+  state: TestingFlowState;
+  testers: string[];
+  signals: string[];
+  queueAgeHours: number | null;
 }
 
 export function labelNames(labels: Array<string | GitHubLabel> | undefined): string[] {
@@ -112,6 +121,79 @@ function normalizeState(value: string | null | undefined): string | null {
   return value.toLowerCase().replaceAll("-", "_");
 }
 
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function deriveTestingFlow(
+  profile: RepoProfile,
+  pr: GitHubPullRequestLike,
+  labels: string[],
+  assignees: string[],
+  requestedReviewers: string[],
+  insight?: PullRequestInsight
+): TestingFlowDerivation {
+  if (pr.state === "closed") {
+    return {
+      state: "closed_or_merged",
+      testers: [],
+      signals: ["closed_or_merged"],
+      queueAgeHours: null
+    };
+  }
+
+  const configuredTesters = new Set([
+    ...profile.people.testers,
+    ...profile.testing.handoffSignals.reviewerUsers,
+    ...profile.testing.handoffSignals.assigneeUsers
+  ]);
+  const signals: string[] = [];
+  const testers: string[] = [];
+
+  for (const label of profile.testing.handoffSignals.labels) {
+    if (labels.includes(label)) {
+      signals.push(`label:${label}`);
+    }
+  }
+  for (const reviewer of requestedReviewers) {
+    if (configuredTesters.has(reviewer)) {
+      signals.push(`reviewer:${reviewer}`);
+      testers.push(reviewer);
+    }
+  }
+  for (const assignee of assignees) {
+    if (configuredTesters.has(assignee)) {
+      signals.push(`assignee:${assignee}`);
+      testers.push(assignee);
+    }
+  }
+
+  if (signals.length === 0) {
+    return {
+      state: "not_ready",
+      testers: [],
+      signals: [],
+      queueAgeHours: null
+    };
+  }
+
+  let state: TestingFlowState = "test_requested";
+  const reviewDecision = normalizeState(insight?.reviewDecision);
+  const latestReviewState = normalizeState(insight?.latestReviewState);
+  if (reviewDecision === "changes_requested" || latestReviewState === "changes_requested") {
+    state = "test_changes_requested";
+  } else if (reviewDecision === "approved" || latestReviewState === "approved") {
+    state = "test_passed";
+  }
+
+  return {
+    state,
+    testers: unique(testers),
+    signals: unique(signals),
+    queueAgeHours: state === "test_passed" ? null : hoursBetween(pr.updated_at ?? pr.created_at ?? new Date().toISOString())
+  };
+}
+
 function maxIso(values: Array<string | null | undefined>): string | null {
   let latest: string | null = null;
   let latestTime = Number.NEGATIVE_INFINITY;
@@ -168,6 +250,9 @@ export function normalizePullRequest(
   sourceAuthType: SourceAuthType,
   insight?: PullRequestInsight
 ): NormalizedPullRequest {
+  const labels = labelNames(pr.labels);
+  const assignees = userLogins(pr.assignees);
+  const requestedReviewers = userLogins(pr.requested_reviewers);
   const owner = profile.ownership.prOwner === "assignee" ? userLogins(pr.assignees)[0] ?? pr.user?.login : pr.user?.login;
   const createdAt = pr.created_at ?? new Date().toISOString();
   const updatedAt = pr.updated_at ?? createdAt;
@@ -192,6 +277,7 @@ export function normalizePullRequest(
   if (pr.state !== "closed" && mergeStateStatus === "dirty") {
     attentionFlags.push("merge_conflict");
   }
+  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight);
 
   return {
     githubId: pr.id,
@@ -208,8 +294,9 @@ export function normalizePullRequest(
     draft: Boolean(pr.draft),
     headRef: pr.head?.ref ?? "",
     baseRef: pr.base?.ref ?? "",
-    assignees: userLogins(pr.assignees),
-    requestedReviewers: userLogins(pr.requested_reviewers),
+    labels,
+    assignees,
+    requestedReviewers,
     ageHours,
     lastHumanActionAt,
     lastSystemActionAt: null,
@@ -221,6 +308,10 @@ export function normalizePullRequest(
     latestCommitAt: insight?.latestCommitAt ?? null,
     detailSyncedAt: insight?.detailSyncedAt ?? null,
     detailError: insight?.detailError ?? null,
+    testingState: testingFlow.state,
+    testingTesters: testingFlow.testers,
+    testingSignals: testingFlow.signals,
+    testingQueueAgeHours: testingFlow.queueAgeHours,
     attentionFlags,
     sourceAuthType,
     visibilityClass: visibility(profile, sourceAuthType),
