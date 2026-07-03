@@ -35,7 +35,9 @@ results are audited.
 
 The worker is driven by the MatrixOne-backed `jobs` table. Recurring GitHub
 sync, rule, metric, AI drift, and notification jobs use leases, retry backoff,
-and queue health surfaced on the dashboard.
+and queue health surfaced on the dashboard. Worker processes also write
+heartbeats so the dashboard and `/health` can distinguish an empty queue from a
+stopped or stale background process.
 
 GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
 `X-Hub-Signature-256` when `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET` is configured,

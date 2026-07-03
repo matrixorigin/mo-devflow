@@ -83,6 +83,21 @@ const schemaStatements = [
     status VARCHAR(32) NOT NULL,
     created_at DATETIME NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS worker_heartbeats (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    worker_id VARCHAR(255) NOT NULL,
+    process_id INT NOT NULL,
+    host VARCHAR(255) NOT NULL,
+    phase VARCHAR(32) NOT NULL,
+    heartbeat_at DATETIME NOT NULL,
+    last_tick_started_at DATETIME,
+    last_tick_finished_at DATETIME,
+    last_error TEXT,
+    details_json LONGTEXT,
+    started_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_worker_heartbeats_worker_id (worker_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS app_users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     github_id VARCHAR(64) NOT NULL,
@@ -331,6 +346,7 @@ const indexStatements = [
   "CREATE INDEX idx_github_webhook_received ON github_webhook_deliveries(received_at)",
   "CREATE INDEX idx_manual_refresh_repo_created ON manual_refresh_requests(repo_id, created_at)",
   "CREATE INDEX idx_manual_refresh_user_created ON manual_refresh_requests(user_id, created_at)",
+  "CREATE INDEX idx_worker_heartbeats_heartbeat ON worker_heartbeats(heartbeat_at)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
   "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",

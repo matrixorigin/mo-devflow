@@ -254,6 +254,20 @@ interface DashboardSummary {
       nextRunAt: string | null;
       latestFailure: string | null;
     };
+    worker: {
+      status: "offline" | "active" | "stale" | "failed";
+      phase: "starting" | "running" | "idle" | "failed" | "stopped" | null;
+      workerId: string | null;
+      processId: number | null;
+      host: string | null;
+      heartbeatAt: string | null;
+      lastTickStartedAt: string | null;
+      lastTickFinishedAt: string | null;
+      secondsSinceHeartbeat: number | null;
+      staleAfterSeconds: number;
+      lastError: string | null;
+      details: Record<string, unknown> | null;
+    };
   };
   counts: {
     criticalIssues: number;
@@ -421,6 +435,32 @@ function notificationStatusColor(value: NotificationStatus): string {
     return "orange";
   }
   return "default";
+}
+
+function workerStatusColor(value: DashboardSummary["sync"]["worker"]["status"]): string {
+  if (value === "active") {
+    return "#16a34a";
+  }
+  if (value === "failed") {
+    return "#dc2626";
+  }
+  if (value === "stale") {
+    return "#d97706";
+  }
+  return "#6b7280";
+}
+
+function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): string {
+  if (worker.status === "offline") {
+    return "No worker heartbeat has been recorded.";
+  }
+  if (worker.status === "stale") {
+    return `Last heartbeat was ${worker.secondsSinceHeartbeat ?? "unknown"}s ago; stale threshold is ${worker.staleAfterSeconds}s.`;
+  }
+  if (worker.status === "failed") {
+    return worker.lastError ?? "The latest worker tick failed.";
+  }
+  return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.`;
 }
 
 function TrendChart({ points }: { points: DailyMetricPoint[] }) {
@@ -1219,6 +1259,16 @@ export default function App() {
               />
             ) : null}
 
+            {data.sync.worker.status !== "active" ? (
+              <Alert
+                className="band"
+                type={data.sync.worker.status === "failed" ? "error" : "warning"}
+                message="Worker heartbeat needs attention"
+                description={workerStatusDescription(data.sync.worker)}
+                showIcon
+              />
+            ) : null}
+
             {data.testing.staleQueuePrs > 0 ? (
               <Alert
                 className="band"
@@ -1246,6 +1296,14 @@ export default function App() {
                   <Text type="secondary">Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}</Text>
                 </div>
                 <div className="health-grid">
+                  <Statistic
+                    title="Worker"
+                    value={labelText(data.sync.worker.status)}
+                    valueStyle={{ color: workerStatusColor(data.sync.worker.status) }}
+                  />
+                  <Statistic title="Worker Phase" value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"} />
+                  <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
+                  <Statistic title="Last Tick" value={formatDate(data.sync.worker.lastTickFinishedAt)} />
                   <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
                   <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
                   <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />

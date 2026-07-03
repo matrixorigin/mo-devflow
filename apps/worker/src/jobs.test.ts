@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { intervalSecondsFromEnv, retryDelaySeconds } from "./jobs";
+import { intervalSecondsFromEnv, retryDelaySeconds, workerIdFromEnv } from "./jobs";
 
 const originalEnv = { ...process.env };
 
@@ -29,5 +29,11 @@ describe("worker job scheduling config", () => {
     expect(retryDelaySeconds(2)).toBe(20);
     expect(retryDelaySeconds(5)).toBe(90);
     expect(retryDelaySeconds(99)).toBe(90);
+  });
+
+  test("supports a stable configured worker id for heartbeat correlation", () => {
+    process.env.MO_DEVFLOW_WORKER_ID = "local-worker";
+
+    expect(workerIdFromEnv()).toBe("local-worker");
   });
 });

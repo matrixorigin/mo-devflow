@@ -425,6 +425,24 @@ export interface JobQueueHealth {
   latestFailure: string | null;
 }
 
+export type WorkerHealthStatus = "offline" | "active" | "stale" | "failed";
+export type WorkerHeartbeatPhase = "starting" | "running" | "idle" | "failed" | "stopped";
+
+export interface WorkerHealth {
+  status: WorkerHealthStatus;
+  phase: WorkerHeartbeatPhase | null;
+  workerId: string | null;
+  processId: number | null;
+  host: string | null;
+  heartbeatAt: string | null;
+  lastTickStartedAt: string | null;
+  lastTickFinishedAt: string | null;
+  secondsSinceHeartbeat: number | null;
+  staleAfterSeconds: number;
+  lastError: string | null;
+  details: Record<string, unknown> | null;
+}
+
 export interface WebhookIngestionHealth {
   pendingDeliveries: number;
   processedDeliveries: number;
@@ -467,6 +485,7 @@ export interface DashboardSummary {
     staleObjects: number;
     partialObjects: number;
     jobQueue: JobQueueHealth;
+    worker: WorkerHealth;
   };
   counts: {
     criticalIssues: number;

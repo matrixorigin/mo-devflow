@@ -6,3 +6,4 @@ export * from "./auth";
 export * from "./writeActions";
 export * from "./jobs";
 export * from "./webhooks";
+export * from "./workerHealth";

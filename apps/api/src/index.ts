@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
-import { getDashboardSummary, getRepoId, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
+import { getDashboardSummary, getRepoId, getWorkerHealth, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
 import { registerActionRoutes } from "./actionRoutes";
 import { registerAuthRoutes } from "./authRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
@@ -51,9 +51,11 @@ await registerWebhookRoutes(app);
 app.get("/health", async () => {
   try {
     await pingDatabase();
+    const worker = await getWorkerHealth();
     return {
-      status: "healthy",
+      status: worker.status === "active" ? "healthy" : "degraded",
       database: "connected",
+      worker,
       generatedAt: new Date().toISOString()
     };
   } catch (error) {

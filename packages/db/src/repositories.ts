@@ -12,6 +12,7 @@ import type {
   RepoProfile,
   SyncHealth,
   TestingSummary,
+  WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView
 } from "@mo-devflow/shared";
@@ -21,6 +22,7 @@ import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth } from "./notifications";
 import { getWebhookIngestionHealth } from "./webhooks";
+import { getWorkerHealth } from "./workerHealth";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -1070,6 +1072,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     })
   };
   const jobQueue = await getJobQueueHealth();
+  const worker: WorkerHealth = await getWorkerHealth();
   const notifications = await getNotificationHealth(repoId, profile);
   const webhooks = await getWebhookIngestionHealth(repoId);
 
@@ -1085,7 +1088,8 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
       health: syncHealth,
       staleObjects: 0,
       partialObjects: asNumber(partialRows[0]?.partial_count),
-      jobQueue
+      jobQueue,
+      worker
     },
     counts: {
       criticalIssues: criticalIssues.length,

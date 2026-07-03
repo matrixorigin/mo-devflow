@@ -68,7 +68,7 @@ function leaseSecondsFromEnv(): number {
   return intervalSecondsFromEnv("MO_DEVFLOW_JOB_LEASE_SECONDS", 600, 60);
 }
 
-function workerIdFromEnv(): string {
+export function workerIdFromEnv(): string {
   return process.env.MO_DEVFLOW_WORKER_ID ?? `${hostname()}-${process.pid}`;
 }
 
