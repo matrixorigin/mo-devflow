@@ -222,6 +222,15 @@ interface DashboardSummary {
     }>;
     staleObjects: number;
     partialObjects: number;
+    jobQueue: {
+      queueDepth: number;
+      runningJobs: number;
+      failedJobs: number;
+      staleLeases: number;
+      oldestPendingAgeHours: number | null;
+      nextRunAt: string | null;
+      latestFailure: string | null;
+    };
   };
   counts: {
     criticalIssues: number;
@@ -1037,7 +1046,61 @@ export default function App() {
                   strokeColor={data.notifications.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
                 />
               </div>
+              <div className="metric">
+                <Statistic title="Job Queue" value={data.sync.jobQueue.queueDepth} />
+                <Progress
+                  percent={Math.min(100, data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25)}
+                  showInfo={false}
+                  strokeColor={data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? "#dc2626" : "#16a34a"}
+                />
+              </div>
             </section>
+
+            {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message="Worker job queue needs attention"
+                description={
+                  data.sync.jobQueue.latestFailure ??
+                  `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
+                }
+                showIcon
+              />
+            ) : null}
+
+            {view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Operational Health</Title>
+                  <Text type="secondary">Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}</Text>
+                </div>
+                <div className="health-grid">
+                  <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
+                  <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
+                  <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />
+                  <Statistic title="Stale Leases" value={data.sync.jobQueue.staleLeases} />
+                  <Statistic
+                    title="Oldest Due"
+                    value={
+                      data.sync.jobQueue.oldestPendingAgeHours === null
+                        ? "-"
+                        : hours(data.sync.jobQueue.oldestPendingAgeHours)
+                    }
+                  />
+                  <Statistic title="Next Run" value={formatDate(data.sync.jobQueue.nextRunAt)} />
+                </div>
+                <Space size={[6, 6]} wrap>
+                  {data.sync.health.map((item) => (
+                    <Tooltip key={`${item.layer}-${item.lastAttemptedAt ?? "none"}`} title={item.errorMessage ?? undefined}>
+                      <Tag color={item.status === "success" ? "green" : item.status === "partial" ? "orange" : "red"}>
+                        {item.layer}: {item.status}
+                      </Tag>
+                    </Tooltip>
+                  ))}
+                </Space>
+              </section>
+            ) : null}
 
             {view === "Notifications" || view === "Overview" ? (
               <section className="section">

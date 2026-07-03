@@ -386,6 +386,16 @@ export interface SyncHealth {
   errorMessage: string | null;
 }
 
+export interface JobQueueHealth {
+  queueDepth: number;
+  runningJobs: number;
+  failedJobs: number;
+  staleLeases: number;
+  oldestPendingAgeHours: number | null;
+  nextRunAt: string | null;
+  latestFailure: string | null;
+}
+
 export interface DashboardSummary {
   repo: {
     key: string;
@@ -398,6 +408,7 @@ export interface DashboardSummary {
     health: SyncHealth[];
     staleObjects: number;
     partialObjects: number;
+    jobQueue: JobQueueHealth;
   };
   counts: {
     criticalIssues: number;

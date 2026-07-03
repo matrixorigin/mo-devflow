@@ -17,6 +17,7 @@ import type {
 import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
+import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth } from "./notifications";
 
 interface RowData extends RowDataPacket {
@@ -553,11 +554,17 @@ export async function replaceAiDriftSignals(repoId: number, signals: AiDriftSign
 export async function runWithJobLease<T>(
   jobKey: string,
   jobType: string,
-  handler: () => Promise<T>
+  handler: () => Promise<T>,
+  options: {
+    leaseSeconds?: number;
+    nextRunAt?: string;
+  } = {}
 ): Promise<T | null> {
   const pool = getPool();
   const now = nowSql();
   const leaseOwner = `${process.pid}-${Math.random().toString(16).slice(2)}`;
+  const leaseExpiresAt =
+    sqlDate(new Date(Date.now() + (options.leaseSeconds ?? 600) * 1000)) ?? now;
   try {
     await pool.execute(
       `INSERT INTO jobs(
@@ -575,12 +582,12 @@ export async function runWithJobLease<T>(
     `UPDATE jobs
      SET status = 'running',
          lease_owner = ?,
-         lease_expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE),
+         lease_expires_at = ?,
          attempts = attempts + 1,
-         updated_at = UTC_TIMESTAMP()
+         updated_at = ?
      WHERE job_key = ?
-       AND (lease_expires_at IS NULL OR lease_expires_at < UTC_TIMESTAMP() OR status IN ('pending', 'failed', 'complete'))`,
-    [leaseOwner, jobKey]
+       AND (lease_expires_at IS NULL OR lease_expires_at < ? OR status IN ('pending', 'failed', 'complete'))`,
+    [leaseOwner, leaseExpiresAt, now, jobKey, now]
   );
   const changedRows = Number((result as ResultSetHeader).affectedRows ?? 0);
   if (changedRows === 0) {
@@ -594,9 +601,10 @@ export async function runWithJobLease<T>(
            lease_owner = NULL,
            lease_expires_at = NULL,
            last_error = NULL,
-           updated_at = UTC_TIMESTAMP()
+           next_run_at = ?,
+           updated_at = ?
        WHERE job_key = ? AND lease_owner = ?`,
-      [jobKey, leaseOwner]
+      [sqlDate(options.nextRunAt ?? new Date().toISOString()), nowSql(), jobKey, leaseOwner]
     );
     return value;
   } catch (error) {
@@ -1012,6 +1020,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     teamDaily: dailyMetrics.filter((point) => point.scopeType === "team"),
     peopleDaily: dailyMetrics.filter((point) => point.scopeType === "person")
   };
+  const jobQueue = await getJobQueueHealth();
   const notifications = await getNotificationHealth(repoId, profile);
 
   return {
@@ -1025,7 +1034,8 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
       generatedAt: new Date().toISOString(),
       health: syncHealth,
       staleObjects: 0,
-      partialObjects: asNumber(partialRows[0]?.partial_count)
+      partialObjects: asNumber(partialRows[0]?.partial_count),
+      jobQueue
     },
     counts: {
       criticalIssues: criticalIssues.length,

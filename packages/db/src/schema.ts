@@ -286,6 +286,8 @@ const indexStatements = [
   "CREATE INDEX idx_issues_repo_lifecycle ON issues(repo_id, lifecycle_state)",
   "CREATE INDEX idx_pull_requests_repo_state ON pull_requests(repo_id, state)",
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
+  "CREATE INDEX idx_jobs_status_next_run ON jobs(status, next_run_at)",
+  "CREATE INDEX idx_jobs_lease_expires ON jobs(lease_expires_at)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
   "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",

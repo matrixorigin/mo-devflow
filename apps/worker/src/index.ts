@@ -1,23 +1,23 @@
 import { loadEnv } from "@mo-devflow/config";
 import { migrate } from "@mo-devflow/db";
-import { syncOnce } from "./sync";
+import { intervalSecondsFromEnv, runDueJobsOnce } from "./jobs";
 
 loadEnv();
 
-const intervalSeconds = Math.max(60, Number(process.env.MO_DEVFLOW_SYNC_INTERVAL_SECONDS ?? "300"));
+const intervalSeconds = intervalSecondsFromEnv("MO_DEVFLOW_WORKER_TICK_SECONDS", 30, 10);
 
 async function tick(): Promise<void> {
   try {
-    const result = await syncOnce();
-    if (result) {
-      console.log(
-        `[worker] synced issues=${result.issues} prs=${result.pullRequests} rate=${result.rateLimitRemaining ?? "unknown"}`
-      );
+    const result = await runDueJobsOnce();
+    if (result.claimedJobs > 0) {
+      for (const run of result.runs) {
+        console.log(`[worker] ${run.status} ${run.jobKey}: ${run.message}`);
+      }
     } else {
-      console.log("[worker] sync skipped; lease held elsewhere");
+      console.log("[worker] no due jobs");
     }
   } catch (error) {
-    console.error("[worker] sync failed", error);
+    console.error("[worker] job tick failed", error);
   }
 }
 

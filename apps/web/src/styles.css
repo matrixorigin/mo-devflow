@@ -92,6 +92,13 @@ body {
   margin: 0 !important;
 }
 
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
 .ant-table-wrapper .ant-table {
   border-radius: 8px;
 }
