@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { cacheStaleHoursFromEnv, visibleClassesForDashboard } from "./repositories";
+import { cacheStaleHoursFromEnv, isPersonalNeedsTriageIssue, visibleClassesForDashboard } from "./repositories";
 
 const baseProfile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -81,5 +81,28 @@ describe("cache freshness", () => {
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "0.5" })).toBe(0.5);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "not-a-number" })).toBe(6);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "-1" })).toBe(6);
+  });
+});
+
+describe("personal issue buckets", () => {
+  test("keeps critical issues out of the personal needs-triage action bucket", () => {
+    expect(
+      isPersonalNeedsTriageIssue(
+        { lifecycleState: "needs-triage", severity: "severity/s0" },
+        baseProfile.labels.critical
+      )
+    ).toBe(false);
+    expect(
+      isPersonalNeedsTriageIssue(
+        { lifecycleState: "needs-triage", severity: null },
+        baseProfile.labels.critical
+      )
+    ).toBe(true);
+    expect(
+      isPersonalNeedsTriageIssue(
+        { lifecycleState: "deferred", severity: null },
+        baseProfile.labels.critical
+      )
+    ).toBe(false);
   });
 });

@@ -184,6 +184,18 @@ export interface PersonSummary {
   attentionPrs: number;
 }
 
+export interface PersonalIssueView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  severity: string | null;
+  lifecycleState: LifecycleState;
+  ageHours: number;
+  lastSyncedAt: string;
+  isComplete: boolean;
+  labels: string[];
+}
+
 export interface PendingPrView {
   number: number;
   title: string;
@@ -206,6 +218,26 @@ export interface PendingPrView {
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
   isComplete: boolean;
+}
+
+export interface PersonalPullRequestView extends PendingPrView {
+  state: "open" | "closed";
+  createdAt: string;
+  mergedAt: string | null;
+}
+
+export interface PersonalActionView {
+  login: string;
+  summary: PersonSummary;
+  activeCriticalIssues: CriticalIssueView[];
+  needsTriageIssues: PersonalIssueView[];
+  deferredIssues: PersonalIssueView[];
+  pendingPrs: PersonalPullRequestView[];
+  attentionPrs: PersonalPullRequestView[];
+  testingPrs: PersonalPullRequestView[];
+  prsCreatedYesterday: PersonalPullRequestView[];
+  prsMergedYesterday: PersonalPullRequestView[];
+  analytics: DailyMetricPoint[];
 }
 
 export type TestingFlowState =
@@ -551,6 +583,7 @@ export interface DashboardSummary {
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
+  personalViews: PersonalActionView[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];

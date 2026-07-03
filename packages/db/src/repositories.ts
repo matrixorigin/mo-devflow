@@ -9,6 +9,9 @@ import type {
   NormalizedIssue,
   NormalizedPullRequest,
   PendingPrView,
+  PersonalActionView,
+  PersonalIssueView,
+  PersonalPullRequestView,
   PersonSummary,
   RepoProfile,
   SyncHealth,
@@ -81,6 +84,13 @@ export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> =
     return 6;
   }
   return Math.max(0.25, parsed);
+}
+
+export function isPersonalNeedsTriageIssue(input: {
+  lifecycleState: string;
+  severity: string | null;
+}, criticalLabels: string[]): boolean {
+  return input.lifecycleState === "needs-triage" && !criticalLabels.includes(input.severity ?? "");
 }
 
 function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: string; params: string[] } {
@@ -698,6 +708,81 @@ function inRange(value: unknown, start: Date, end: Date): boolean {
   return time >= start.getTime() && time < end.getTime();
 }
 
+function issueAgeHours(row: RowData): number {
+  return Math.max(
+    0,
+    Math.round(((Date.now() - new Date(fromSqlDate(row.created_at) ?? new Date()).getTime()) / 3_600_000) * 10) / 10
+  );
+}
+
+function toCriticalIssueView(row: RowData): CriticalIssueView {
+  return {
+    number: asNumber(row.number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    severity: row.severity ? asString(row.severity) : null,
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
+    lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
+    ageHours: issueAgeHours(row),
+    lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
+    isComplete: asNumber(row.is_complete) === 1,
+    labels: parseJsonArray(asString(row.labels_json))
+  };
+}
+
+function toPersonalIssueView(row: RowData): PersonalIssueView {
+  return {
+    number: asNumber(row.number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    severity: row.severity ? asString(row.severity) : null,
+    lifecycleState: asString(row.lifecycle_state) as PersonalIssueView["lifecycleState"],
+    ageHours: issueAgeHours(row),
+    lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
+    isComplete: asNumber(row.is_complete) === 1,
+    labels: parseJsonArray(asString(row.labels_json))
+  };
+}
+
+function toPendingPrView(row: RowData): PendingPrView {
+  return {
+    number: asNumber(row.number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ownerLogin: asString(row.owner_login),
+    draft: asNumber(row.draft) === 1,
+    ageHours: asNumber(row.age_hours),
+    lastHumanActionAt: fromSqlDate(row.last_human_action_at) ?? new Date().toISOString(),
+    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
+    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null,
+    ciState: row.ci_state ? asString(row.ci_state) : null,
+    latestReviewState: row.latest_review_state ? asString(row.latest_review_state) : null,
+    latestReviewSubmittedAt: fromSqlDate(row.latest_review_submitted_at),
+    latestCommitAt: fromSqlDate(row.latest_commit_at),
+    detailSyncedAt: fromSqlDate(row.detail_synced_at),
+    detailError: row.detail_error ? asString(row.detail_error) : null,
+    testingState: row.testing_state ? asString(row.testing_state) as PendingPrView["testingState"] : "not_ready",
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
+    testingQueueAgeHours:
+      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
+        ? null
+        : asNumber(row.testing_queue_age_hours),
+    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    isComplete: asNumber(row.is_complete) === 1
+  };
+}
+
+function toPersonalPullRequestView(row: RowData): PersonalPullRequestView {
+  return {
+    ...toPendingPrView(row),
+    state: asString(row.state) === "closed" ? "closed" : "open",
+    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString(),
+    mergedAt: fromSqlDate(row.merged_at)
+  };
+}
+
 function dateKeyInTimezone(value: unknown, timezone: string): string | null {
   const iso = fromSqlDate(value);
   if (!iso) {
@@ -893,6 +978,12 @@ export async function getDashboardSummary(
   const violationPrVisibility = visibilityClause("p", visibleClasses);
   const driftIssueVisibility = visibilityClause("i", visibleClasses);
   const driftPrVisibility = visibilityClause("p", visibleClasses);
+  const personalIssueVisibility = visibilityClause("i", visibleClasses);
+  const personalPrVisibility = visibilityClause("p", visibleClasses);
+  const { start, end } = yesterdayRange(profile.reporting.timezone);
+  const startSql = sqlDate(start) ?? "1970-01-01 00:00:00";
+  const endSql = sqlDate(end) ?? "1970-01-01 00:00:00";
+  const watchedUserPlaceholders = profile.people.watchedUsers.map(() => "?").join(", ");
   const hiddenIssueExpression =
     visibleClasses.length === 0
       ? "COUNT(*)"
@@ -1021,53 +1112,53 @@ export async function getDashboardSummary(
      LIMIT 100`,
     [repoId, ...driftIssueVisibility.params, ...driftPrVisibility.params]
   );
+  const [personalIssueRows] =
+    profile.people.watchedUsers.length === 0
+      ? [[] as RowData[]]
+      : await pool.execute<RowData[]>(
+          `SELECT *
+           FROM issues i
+           WHERE i.repo_id = ?
+             AND i.state = 'open'
+             AND i.owner_login IN (${watchedUserPlaceholders})
+             AND (
+               i.severity IN (${profile.labels.critical.map(() => "?").join(", ")})
+               OR i.lifecycle_state IN ('needs-triage', 'deferred')
+             )
+             AND ${personalIssueVisibility.sql}
+           ORDER BY i.updated_at ASC
+           LIMIT 500`,
+          [repoId, ...profile.people.watchedUsers, ...profile.labels.critical, ...personalIssueVisibility.params]
+        );
+  const [personalPrRows] =
+    profile.people.watchedUsers.length === 0
+      ? [[] as RowData[]]
+      : await pool.execute<RowData[]>(
+          `SELECT *
+           FROM pull_requests p
+           WHERE p.repo_id = ?
+             AND p.owner_login IN (${watchedUserPlaceholders})
+             AND (
+               p.state = 'open'
+               OR (p.created_at >= ? AND p.created_at < ?)
+               OR (p.merged_at >= ? AND p.merged_at < ?)
+             )
+             AND ${personalPrVisibility.sql}
+           ORDER BY p.updated_at DESC
+           LIMIT 500`,
+          [
+            repoId,
+            ...profile.people.watchedUsers,
+            startSql,
+            endSql,
+            startSql,
+            endSql,
+            ...personalPrVisibility.params
+          ]
+        );
 
-  const criticalIssues: CriticalIssueView[] = criticalRows.map((row) => ({
-    number: asNumber(row.number),
-    title: asString(row.title),
-    htmlUrl: asString(row.html_url),
-    severity: row.severity ? asString(row.severity) : null,
-    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
-    ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
-    lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
-    ageHours:
-      Math.max(
-        0,
-        Math.round(
-          ((Date.now() - new Date(fromSqlDate(row.created_at) ?? new Date()).getTime()) / 3_600_000) * 10
-        ) / 10
-      ),
-    lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
-    isComplete: asNumber(row.is_complete) === 1,
-    labels: parseJsonArray(asString(row.labels_json))
-  }));
-
-  const pendingPrs: PendingPrView[] = prRows.map((row) => ({
-    number: asNumber(row.number),
-    title: asString(row.title),
-    htmlUrl: asString(row.html_url),
-    ownerLogin: asString(row.owner_login),
-    draft: asNumber(row.draft) === 1,
-    ageHours: asNumber(row.age_hours),
-    lastHumanActionAt: fromSqlDate(row.last_human_action_at) ?? new Date().toISOString(),
-    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
-    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null,
-    ciState: row.ci_state ? asString(row.ci_state) : null,
-    latestReviewState: row.latest_review_state ? asString(row.latest_review_state) : null,
-    latestReviewSubmittedAt: fromSqlDate(row.latest_review_submitted_at),
-    latestCommitAt: fromSqlDate(row.latest_commit_at),
-    detailSyncedAt: fromSqlDate(row.detail_synced_at),
-    detailError: row.detail_error ? asString(row.detail_error) : null,
-    testingState: row.testing_state ? asString(row.testing_state) as PendingPrView["testingState"] : "not_ready",
-    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
-    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
-    testingQueueAgeHours:
-      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
-        ? null
-        : asNumber(row.testing_queue_age_hours),
-    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
-    isComplete: asNumber(row.is_complete) === 1
-  }));
+  const criticalIssues: CriticalIssueView[] = criticalRows.map(toCriticalIssueView);
+  const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
@@ -1102,7 +1193,6 @@ export async function getDashboardSummary(
     lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
   }));
 
-  const { start, end } = yesterdayRange(profile.reporting.timezone);
   const people: PersonSummary[] = profile.people.watchedUsers.map((login) => {
     const ownedIssues = issueRows.filter((row) => row.owner_login === login && row.state === "open");
     const ownedPrs = allPrRows.filter((row) => row.owner_login === login);
@@ -1112,7 +1202,14 @@ export async function getDashboardSummary(
         profile.labels.critical.includes(asString(row.severity))
       ).length,
       needsTriageIssues: ownedIssues.filter(
-        (row) => row.lifecycle_state === "needs-triage" && !profile.labels.critical.includes(asString(row.severity))
+        (row) =>
+          isPersonalNeedsTriageIssue(
+            {
+              lifecycleState: asString(row.lifecycle_state),
+              severity: row.severity ? asString(row.severity) : null
+            },
+            profile.labels.critical
+          )
       ).length,
       deferredIssues: ownedIssues.filter((row) => row.lifecycle_state === "deferred").length,
       prsCreatedYesterday: ownedPrs.filter((row) => inRange(row.created_at, start, end)).length,
@@ -1143,6 +1240,52 @@ export async function getDashboardSummary(
     sourceCompleteness: asString(row.source_completeness) as DailyMetricPoint["sourceCompleteness"],
     generatedAt: fromSqlDate(row.generated_at) ?? new Date().toISOString()
   }));
+  const peopleByLogin = new Map(people.map((person) => [person.login, person]));
+  const personalPrs = personalPrRows.map(toPersonalPullRequestView);
+  const personalViews: PersonalActionView[] = profile.people.watchedUsers.map((login) => {
+    const ownedIssues = personalIssueRows.filter((row) => asString(row.owner_login) === login);
+    const ownedPrs = personalPrs.filter((pr) => pr.ownerLogin === login);
+    const pendingOwnedPrs = ownedPrs.filter((pr) => pr.state === "open");
+    return {
+      login,
+      summary:
+        peopleByLogin.get(login) ?? {
+          login,
+          activeCriticalIssues: 0,
+          needsTriageIssues: 0,
+          deferredIssues: 0,
+          prsCreatedYesterday: 0,
+          prsMergedYesterday: 0,
+          pendingPrs: 0,
+          attentionPrs: 0
+        },
+      activeCriticalIssues: ownedIssues
+        .filter((row) => profile.labels.critical.includes(asString(row.severity)))
+        .map(toCriticalIssueView),
+      needsTriageIssues: ownedIssues
+        .filter((row) =>
+          isPersonalNeedsTriageIssue(
+            {
+              lifecycleState: asString(row.lifecycle_state),
+              severity: row.severity ? asString(row.severity) : null
+            },
+            profile.labels.critical
+          )
+        )
+        .map(toPersonalIssueView),
+      deferredIssues: ownedIssues
+        .filter((row) => asString(row.lifecycle_state) === "deferred")
+        .map(toPersonalIssueView),
+      pendingPrs: pendingOwnedPrs,
+      attentionPrs: pendingOwnedPrs.filter((pr) => pr.attentionFlags.length > 0),
+      testingPrs: pendingOwnedPrs.filter((pr) =>
+        ["test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
+      ),
+      prsCreatedYesterday: ownedPrs.filter((pr) => inRange(pr.createdAt, start, end)),
+      prsMergedYesterday: ownedPrs.filter((pr) => inRange(pr.mergedAt, start, end)),
+      analytics: dailyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login)
+    };
+  });
 
   const hiddenIssues = asNumber(hiddenIssueRows[0]?.hidden_issues);
   const hiddenPullRequests = asNumber(hiddenPrRows[0]?.hidden_pull_requests);
@@ -1238,6 +1381,7 @@ export async function getDashboardSummary(
     },
     criticalIssues,
     people,
+    personalViews,
     pendingPrs,
     workflowViolations,
     aiDriftSignals,

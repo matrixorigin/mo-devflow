@@ -58,6 +58,18 @@ interface PersonSummary {
   attentionPrs: number;
 }
 
+interface PersonalIssueView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  severity: string | null;
+  lifecycleState: string;
+  ageHours: number;
+  lastSyncedAt: string;
+  isComplete: boolean;
+  labels: string[];
+}
+
 interface PendingPrView {
   number: number;
   title: string;
@@ -87,6 +99,26 @@ interface PendingPrView {
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
   isComplete: boolean;
+}
+
+interface PersonalPullRequestView extends PendingPrView {
+  state: "open" | "closed";
+  createdAt: string;
+  mergedAt: string | null;
+}
+
+interface PersonalActionView {
+  login: string;
+  summary: PersonSummary;
+  activeCriticalIssues: CriticalIssueView[];
+  needsTriageIssues: PersonalIssueView[];
+  deferredIssues: PersonalIssueView[];
+  pendingPrs: PersonalPullRequestView[];
+  attentionPrs: PersonalPullRequestView[];
+  testingPrs: PersonalPullRequestView[];
+  prsCreatedYesterday: PersonalPullRequestView[];
+  prsMergedYesterday: PersonalPullRequestView[];
+  analytics: DailyMetricPoint[];
 }
 
 interface WorkflowViolationView {
@@ -321,6 +353,7 @@ interface DashboardSummary {
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
+  personalViews: PersonalActionView[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
@@ -598,6 +631,7 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
@@ -774,6 +808,15 @@ export default function App() {
     void loadSession();
   }, []);
 
+  useEffect(() => {
+    if (!data?.personalViews.length) {
+      return;
+    }
+    if (!selectedPerson || !data.personalViews.some((person) => person.login === selectedPerson)) {
+      setSelectedPerson(data.personalViews[0].login);
+    }
+  }, [data, selectedPerson]);
+
   const criticalColumns: ColumnsType<CriticalIssueView> = useMemo(
     () => [
       {
@@ -840,6 +883,57 @@ export default function App() {
         dataIndex: "attentionPrs",
         width: 112,
         render: (value) => (value > 0 ? <Tag color="orange">{value}</Tag> : <Tag>0</Tag>)
+      }
+    ],
+    []
+  );
+
+  const personalIssueColumns: ColumnsType<PersonalIssueView> = useMemo(
+    () => [
+      {
+        title: "Issue",
+        dataIndex: "number",
+        width: 92,
+        render: (_, issue) => (
+          <a href={issue.htmlUrl} target="_blank" rel="noreferrer">
+            #{issue.number}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title, issue) => (
+          <Space size={8} className="table-title-cell">
+            {!issue.isComplete ? <Badge color="#d97706" /> : null}
+            <Text ellipsis={{ tooltip: title }}>{title}</Text>
+          </Space>
+        )
+      },
+      {
+        title: "State",
+        width: 220,
+        render: (_, issue) => (
+          <Space size={[4, 4]} wrap>
+            <Tag>{labelText(issue.lifecycleState)}</Tag>
+            {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
+          </Space>
+        )
+      },
+      { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
+      {
+        title: "Labels",
+        dataIndex: "labels",
+        width: 300,
+        render: (labels: string[]) => (
+          <Space size={[4, 4]} wrap>
+            {labels.slice(0, 6).map((label) => (
+              <Tag key={label}>{label}</Tag>
+            ))}
+            {labels.length > 6 ? <Tag>+{labels.length - 6}</Tag> : null}
+          </Space>
+        )
       }
     ],
     []
@@ -917,6 +1011,70 @@ export default function App() {
           </Space>
         )
       },
+      {
+        title: "Last human action",
+        dataIndex: "lastHumanActionAt",
+        width: 168,
+        render: (value) => formatDate(value)
+      },
+      {
+        title: "Flags",
+        dataIndex: "attentionFlags",
+        width: 260,
+        render: (flags: string[]) =>
+          flags.length === 0 ? (
+            <Tag>clear</Tag>
+          ) : (
+            flags.map((flag) => (
+              <Tag color={flagColor(flag)} key={flag}>
+                {labelText(flag)}
+              </Tag>
+            ))
+          )
+      }
+    ],
+    []
+  );
+
+  const personalPrColumns: ColumnsType<PersonalPullRequestView> = useMemo(
+    () => [
+      {
+        title: "PR",
+        dataIndex: "number",
+        width: 88,
+        render: (_, pr) => (
+          <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+            #{pr.number}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title, pr) => (
+          <Space size={8} className="table-title-cell">
+            {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
+            {!pr.isComplete ? <Badge color="#d97706" /> : null}
+            <Text ellipsis={{ tooltip: title }}>{title}</Text>
+          </Space>
+        )
+      },
+      {
+        title: "State",
+        width: 360,
+        render: (_, pr) => (
+          <Space size={[4, 4]} wrap>
+            <Tag color={pr.state === "open" ? "green" : "default"}>{pr.state}</Tag>
+            {pr.draft ? <Tag color="gold">draft</Tag> : null}
+            {pr.reviewDecision ? <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag> : null}
+            {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+            {pr.mergeStateStatus ? <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag> : null}
+            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+          </Space>
+        )
+      },
+      { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
       {
         title: "Last human action",
         dataIndex: "lastHumanActionAt",
@@ -1175,6 +1333,8 @@ export default function App() {
     ],
     []
   );
+  const selectedPersonalView =
+    data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
 
   return (
     <Layout className="app-shell">
@@ -1189,7 +1349,7 @@ export default function App() {
           <Segmented
             value={view}
             onChange={(value) => setView(String(value))}
-            options={["Overview", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
+            options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
           />
           {session?.authenticated && session.user ? (
             <Space size={8}>
@@ -1555,6 +1715,136 @@ export default function App() {
                   pagination={false}
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />
+              </section>
+            ) : null}
+
+            {view === "Personal" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Personal Action List</Title>
+                  {data.personalViews.length > 0 ? (
+                    <Segmented
+                      value={selectedPersonalView?.login}
+                      onChange={(value) => setSelectedPerson(String(value))}
+                      options={data.personalViews.map((person) => person.login)}
+                    />
+                  ) : null}
+                </div>
+                {selectedPersonalView ? (
+                  <Space direction="vertical" size={16} className="token-modal-body">
+                    <Space size={[6, 6]} wrap>
+                      <Tag color={selectedPersonalView.summary.activeCriticalIssues > 0 ? "red" : "default"}>
+                        {selectedPersonalView.summary.activeCriticalIssues} critical
+                      </Tag>
+                      <Tag color={selectedPersonalView.summary.needsTriageIssues > 0 ? "orange" : "default"}>
+                        {selectedPersonalView.summary.needsTriageIssues} needs triage
+                      </Tag>
+                      <Tag>{selectedPersonalView.summary.deferredIssues} deferred</Tag>
+                      <Tag color={selectedPersonalView.summary.pendingPrs > 0 ? "blue" : "default"}>
+                        {selectedPersonalView.summary.pendingPrs} pending PRs
+                      </Tag>
+                      <Tag color={selectedPersonalView.summary.attentionPrs > 0 ? "orange" : "default"}>
+                        {selectedPersonalView.summary.attentionPrs} PR attention
+                      </Tag>
+                      <Tag>{selectedPersonalView.summary.prsCreatedYesterday} PRs created yesterday</Tag>
+                      <Tag>{selectedPersonalView.summary.prsMergedYesterday} PRs merged yesterday</Tag>
+                    </Space>
+
+                    <div>
+                      <Title level={5}>Active Critical Issues</Title>
+                      <Table
+                        rowKey="number"
+                        size="small"
+                        columns={criticalColumns}
+                        dataSource={selectedPersonalView.activeCriticalIssues}
+                        scroll={{ x: 760 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No active critical issues for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Needs Triage Issues</Title>
+                      <Table
+                        rowKey="number"
+                        size="small"
+                        columns={personalIssueColumns}
+                        dataSource={selectedPersonalView.needsTriageIssues}
+                        scroll={{ x: 860 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No needs-triage issues for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Deferred Issues</Title>
+                      <Table
+                        rowKey="number"
+                        size="small"
+                        columns={personalIssueColumns}
+                        dataSource={selectedPersonalView.deferredIssues}
+                        scroll={{ x: 860 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No deferred issues for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Pending PRs</Title>
+                      <Table
+                        rowKey="number"
+                        size="small"
+                        columns={personalPrColumns}
+                        dataSource={selectedPersonalView.pendingPrs}
+                        scroll={{ x: 1220 }}
+                        pagination={{ pageSize: 6 }}
+                        locale={{ emptyText: <Empty description="No pending PRs for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Testing Handoff PRs</Title>
+                      <Table
+                        rowKey="number"
+                        size="small"
+                        columns={personalPrColumns}
+                        dataSource={selectedPersonalView.testingPrs}
+                        scroll={{ x: 1220 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No PRs currently in testing handoff for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Yesterday PR Flow</Title>
+                      <Table
+                        rowKey={(pr) => `created-${pr.number}`}
+                        size="small"
+                        columns={personalPrColumns}
+                        dataSource={selectedPersonalView.prsCreatedYesterday}
+                        scroll={{ x: 1220 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No PRs created yesterday for this user" /> }}
+                      />
+                      <Table
+                        rowKey={(pr) => `merged-${pr.number}`}
+                        size="small"
+                        columns={personalPrColumns}
+                        dataSource={selectedPersonalView.prsMergedYesterday}
+                        scroll={{ x: 1220 }}
+                        pagination={{ pageSize: 5 }}
+                        locale={{ emptyText: <Empty description="No PRs merged yesterday for this user" /> }}
+                      />
+                    </div>
+
+                    <div>
+                      <Title level={5}>Personal Trend</Title>
+                      <TrendChart points={selectedPersonalView.analytics} />
+                    </div>
+                  </Space>
+                ) : (
+                  <Empty description="No watched users configured" />
+                )}
               </section>
             ) : null}
 
