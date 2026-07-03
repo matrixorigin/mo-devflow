@@ -220,6 +220,38 @@ export interface WorkflowViolationView extends WorkflowViolation {
   lastDetectedAt: string;
 }
 
+export type WorkflowFixActionKey = "add_needs_triage";
+
+export type WorkflowFixOperation =
+  | {
+      type: "add_label";
+      label: string;
+    }
+  | {
+      type: "add_comment";
+      body: string;
+    }
+  | {
+      type: "remove_label";
+      label: string;
+    };
+
+export interface WorkflowFixPreview {
+  previewId: string;
+  actionKey: WorkflowFixActionKey;
+  repoKey: string;
+  objectType: WorkflowViolationObjectType;
+  objectNumber: number;
+  ruleKey: string;
+  title: string;
+  htmlUrl: string;
+  operations: WorkflowFixOperation[];
+  warnings: string[];
+  blockedReason: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export type AiDriftObjectType = "issue" | "pull_request";
 export type AiDriftSeverity = "info" | "warning" | "critical";
 

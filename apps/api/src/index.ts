@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
+import { registerActionRoutes } from "./actionRoutes";
 import { registerAuthRoutes } from "./authRoutes";
 
 loadEnv();
@@ -20,6 +21,7 @@ await app.register(cors, {
 });
 
 await registerAuthRoutes(app);
+await registerActionRoutes(app);
 
 app.get("/health", async () => {
   try {

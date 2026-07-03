@@ -5,7 +5,8 @@ import {
   getActiveSession,
   revokeSession,
   toAuthenticatedUserView,
-  upsertGitHubTokenBinding
+  upsertGitHubTokenBinding,
+  type SessionRecord
 } from "@mo-devflow/db";
 import { validateGitHubToken } from "@mo-devflow/github";
 import type { SessionView } from "@mo-devflow/shared";
@@ -52,15 +53,8 @@ function isTokenEncryptionConfigured(): boolean {
 }
 
 async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply): Promise<SessionView> {
-  const sessionToken = readCookieValue(request.headers.cookie, sessionCookieName);
-  if (!sessionToken) {
-    return anonymousSession();
-  }
-  const session = await getActiveSession(hashSessionToken(sessionToken));
+  const session = await getSessionRecordFromRequest(request, reply);
   if (!session) {
-    if (reply) {
-      reply.header("set-cookie", buildClearSessionCookie(cookieSecureFromEnv()));
-    }
     return anonymousSession();
   }
   return {
@@ -68,6 +62,24 @@ async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply)
     user: toAuthenticatedUserView(session),
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
+}
+
+export async function getSessionRecordFromRequest(
+  request: FastifyRequest,
+  reply?: FastifyReply
+): Promise<SessionRecord | null> {
+  const sessionToken = readCookieValue(request.headers.cookie, sessionCookieName);
+  if (!sessionToken) {
+    return null;
+  }
+  const session = await getActiveSession(hashSessionToken(sessionToken));
+  if (!session) {
+    if (reply) {
+      reply.header("set-cookie", buildClearSessionCookie(cookieSecureFromEnv()));
+    }
+    return null;
+  }
+  return session;
 }
 
 function githubTokenErrorStatus(error: unknown): number | null {

@@ -1,0 +1,132 @@
+import type { NormalizedIssue, WorkflowFixPreview, WorkflowViolationView } from "@mo-devflow/shared";
+import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
+import type { RowDataPacket } from "mysql2";
+import { fromSqlDate, getPool, sqlDate } from "./client";
+
+interface RowData extends RowDataPacket {
+  [key: string]: unknown;
+}
+
+function stringify(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "string") {
+    return Number(value);
+  }
+  return 0;
+}
+
+export async function getCachedIssueByNumber(repoId: number, issueNumber: number): Promise<NormalizedIssue | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM issues
+     WHERE repo_id = ? AND number = ? AND is_pull_request = 0
+     LIMIT 1`,
+    [repoId, issueNumber]
+  );
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    githubId: asNumber(row.github_id),
+    number: asNumber(row.number),
+    title: asString(row.title),
+    body: asString(row.body),
+    state: asString(row.state) === "closed" ? "closed" : "open",
+    authorLogin: asString(row.author_login),
+    htmlUrl: asString(row.html_url),
+    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString(),
+    updatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
+    closedAt: fromSqlDate(row.closed_at),
+    labels: parseJsonArray(asString(row.labels_json)),
+    assignees: parseJsonArray(asString(row.assignees_json)),
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
+    lifecycleState: asString(row.lifecycle_state) as NormalizedIssue["lifecycleState"],
+    severity: row.severity ? asString(row.severity) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    isPullRequest: false,
+    sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
+    visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
+    isComplete: asNumber(row.is_complete) === 1,
+    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+  };
+}
+
+export async function getActiveWorkflowViolation(input: {
+  repoId: number;
+  objectType: string;
+  objectNumber: number;
+  ruleKey: string;
+}): Promise<WorkflowViolationView | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM workflow_violations
+     WHERE repo_id = ?
+       AND object_type = ?
+       AND object_number = ?
+       AND rule_key = ?
+       AND resolved_at IS NULL
+     LIMIT 1`,
+    [input.repoId, input.objectType, input.objectNumber, input.ruleKey]
+  );
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
+    objectNumber: asNumber(row.object_number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ruleKey: asString(row.rule_key),
+    severity: asString(row.severity) as WorkflowViolationView["severity"],
+    relatedLogin: row.related_login ? asString(row.related_login) : null,
+    evidenceSummary: asString(row.evidence_summary),
+    suggestedAction: asString(row.suggested_action),
+    fixable: asNumber(row.fixable) === 1,
+    firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+  };
+}
+
+export async function recordWorkflowFixPreview(input: {
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  preview: WorkflowFixPreview;
+}): Promise<void> {
+  await getPool().execute(
+    `INSERT INTO write_action_previews(
+      preview_id, repo_id, user_id, github_login, action_key,
+      object_type, object_number, rule_key, status, preview_json,
+      created_at, expires_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'previewed', ?, ?, ?)`,
+    [
+      input.preview.previewId,
+      input.repoId,
+      input.userId,
+      input.githubLogin,
+      input.preview.actionKey,
+      input.preview.objectType,
+      input.preview.objectNumber,
+      input.preview.ruleKey,
+      stringify(input.preview),
+      sqlDate(input.preview.createdAt),
+      sqlDate(input.preview.expiresAt)
+    ]
+  );
+}

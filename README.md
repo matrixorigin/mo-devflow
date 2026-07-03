@@ -29,4 +29,7 @@ Default local services:
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.
 
+Logged-in users can preview selected workflow fixes from cached violations. The
+preview is audited and expires before any future confirmed GitHub write.
+
 The first implementation slice is MVP0: read-only cached observability for repo-wide critical issues, watched-user summaries, pending PRs, workflow violations, AI drift signals, cached analytics, owner attribution, and data freshness indicators.

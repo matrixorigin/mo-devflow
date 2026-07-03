@@ -27,7 +27,7 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { BellRing, KeyRound, LogOut, RefreshCw, ShieldAlert } from "lucide-react";
+import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -172,6 +172,27 @@ interface SessionView {
     sessionExpiresAt: string;
   } | null;
   tokenEncryptionConfigured: boolean;
+}
+
+type WorkflowFixOperation =
+  | { type: "add_label"; label: string }
+  | { type: "remove_label"; label: string }
+  | { type: "add_comment"; body: string };
+
+interface WorkflowFixPreview {
+  previewId: string;
+  actionKey: "add_needs_triage";
+  repoKey: string;
+  objectType: "issue" | "pull_request";
+  objectNumber: number;
+  ruleKey: string;
+  title: string;
+  htmlUrl: string;
+  operations: WorkflowFixOperation[];
+  warnings: string[];
+  blockedReason: string | null;
+  createdAt: string;
+  expiresAt: string;
 }
 
 interface DashboardSummary {
@@ -397,6 +418,10 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -466,6 +491,35 @@ export default function App() {
       setSession((await response.json()) as SessionView);
     } catch (err) {
       setTokenError(displayError(err));
+    }
+  }
+
+  async function previewWorkflowFix(violation: WorkflowViolationView) {
+    const loadingKey = `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`;
+    setPreviewLoadingKey(loadingKey);
+    setPreviewError(null);
+    setWorkflowPreview(null);
+    setPreviewModalOpen(true);
+    try {
+      const response = await fetch("/api/actions/workflow-fix/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          actionKey: "add_needs_triage",
+          objectType: violation.objectType,
+          objectNumber: violation.objectNumber,
+          ruleKey: violation.ruleKey
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setWorkflowPreview((await response.json()) as WorkflowFixPreview);
+    } catch (err) {
+      setPreviewError(displayError(err));
+    } finally {
+      setPreviewLoadingKey(null);
     }
   }
 
@@ -686,9 +740,31 @@ export default function App() {
             <Text ellipsis={{ tooltip: value }}>{value}</Text>
           </Space>
         )
+      },
+      {
+        title: "Preview",
+        width: 132,
+        render: (_, violation) => {
+          const canPreview = violation.fixable && violation.objectType === "issue" && violation.ruleKey === "bug_missing_needs_triage";
+          const tooltip = !session?.authenticated
+            ? "Connect GitHub token to preview fixes"
+            : canPreview
+              ? "Preview workflow fix"
+              : "No safe preview action for this rule yet";
+          return (
+            <Tooltip title={tooltip}>
+              <Button
+                icon={<ClipboardCheck size={15} />}
+                disabled={!session?.authenticated || !canPreview}
+                loading={previewLoadingKey === `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
+                onClick={() => void previewWorkflowFix(violation)}
+              />
+            </Tooltip>
+          );
+        }
       }
     ],
-    []
+    [previewLoadingKey, session?.authenticated]
   );
 
   const driftColumns: ColumnsType<AiDriftSignalView> = useMemo(
@@ -1110,6 +1186,46 @@ export default function App() {
           />
           {tokenError ? <Alert type="error" message={tokenError} showIcon /> : null}
         </Space>
+      </Modal>
+      <Modal
+        title="Workflow Fix Preview"
+        open={previewModalOpen}
+        okText="Close"
+        cancelButtonProps={{ style: { display: "none" } }}
+        onOk={() => setPreviewModalOpen(false)}
+        onCancel={() => setPreviewModalOpen(false)}
+      >
+        {previewError ? <Alert type="error" message={previewError} showIcon /> : null}
+        {!previewError && !workflowPreview ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
+        {workflowPreview ? (
+          <Space direction="vertical" size={12} className="token-modal-body">
+            <Space size={[6, 6]} wrap>
+              <Tag color={workflowPreview.blockedReason ? "red" : "green"}>
+                {workflowPreview.blockedReason ? "blocked" : "ready"}
+              </Tag>
+              <Tag>{labelText(workflowPreview.actionKey)}</Tag>
+              <Tag>
+                {workflowPreview.objectType} #{workflowPreview.objectNumber}
+              </Tag>
+            </Space>
+            <Text strong>{workflowPreview.title}</Text>
+            {workflowPreview.blockedReason ? <Alert type="warning" message={workflowPreview.blockedReason} showIcon /> : null}
+            {workflowPreview.operations.length > 0 ? (
+              <div className="preview-operations">
+                {workflowPreview.operations.map((operation, index) => (
+                  <div className="preview-operation" key={`${operation.type}-${index}`}>
+                    <Tag color="blue">{labelText(operation.type)}</Tag>
+                    {"label" in operation ? <Text>{operation.label}</Text> : <Text>{operation.body}</Text>}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {workflowPreview.warnings.map((warning) => (
+              <Alert key={warning} type="info" message={warning} showIcon />
+            ))}
+            <Text type="secondary">Preview expires {formatDate(workflowPreview.expiresAt)}.</Text>
+          </Space>
+        ) : null}
       </Modal>
     </Layout>
   );

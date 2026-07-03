@@ -10,6 +10,7 @@ import type {
   WorkflowViolation
 } from "@mo-devflow/shared";
 import { hoursBetween } from "@mo-devflow/shared";
+export * from "./actions";
 
 interface GitHubLabel {
   name?: string | null;
