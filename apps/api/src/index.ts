@@ -4,6 +4,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
 import { registerActionRoutes } from "./actionRoutes";
 import { registerAuthRoutes } from "./authRoutes";
+import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 
 declare module "fastify" {
@@ -44,6 +45,7 @@ await app.register(cors, {
 
 await registerAuthRoutes(app);
 await registerActionRoutes(app);
+await registerRefreshRoutes(app);
 await registerWebhookRoutes(app);
 
 app.get("/health", async () => {

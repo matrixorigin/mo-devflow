@@ -73,6 +73,16 @@ const schemaStatements = [
     error_message TEXT,
     UNIQUE KEY uniq_github_webhook_delivery (delivery_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS manual_refresh_requests (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    github_login VARCHAR(255) NOT NULL,
+    requested_layers_json LONGTEXT NOT NULL,
+    queued_jobs_json LONGTEXT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    created_at DATETIME NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS app_users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     github_id VARCHAR(64) NOT NULL,
@@ -319,6 +329,8 @@ const indexStatements = [
   "CREATE INDEX idx_github_webhook_repo_status ON github_webhook_deliveries(repo_id, status)",
   "CREATE INDEX idx_github_webhook_processing_expires ON github_webhook_deliveries(processing_expires_at)",
   "CREATE INDEX idx_github_webhook_received ON github_webhook_deliveries(received_at)",
+  "CREATE INDEX idx_manual_refresh_repo_created ON manual_refresh_requests(repo_id, created_at)",
+  "CREATE INDEX idx_manual_refresh_user_created ON manual_refresh_requests(user_id, created_at)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
   "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",

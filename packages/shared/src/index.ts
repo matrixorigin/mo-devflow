@@ -434,6 +434,26 @@ export interface WebhookIngestionHealth {
   latestFailure: string | null;
 }
 
+export type ManualRefreshLayer =
+  | "github_sync"
+  | "webhooks"
+  | "rules"
+  | "metrics"
+  | "ai_drift"
+  | "notifications";
+
+export interface ManualRefreshResult {
+  requestId: number;
+  requestedLayers: ManualRefreshLayer[];
+  queuedJobs: Array<{
+    jobKey: string;
+    jobType: ManualRefreshLayer;
+    status: string;
+    nextRunAt: string | null;
+  }>;
+  requestedAt: string;
+}
+
 export interface DashboardSummary {
   repo: {
     key: string;

@@ -1,4 +1,4 @@
-import { parseJsonRecord, type JobQueueHealth } from "@mo-devflow/shared";
+import { parseJsonRecord, type JobQueueHealth, type ManualRefreshLayer, type ManualRefreshResult } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 
@@ -21,6 +21,13 @@ export interface LeasedJob {
   payload: Record<string, unknown>;
   leaseOwner: string;
   leaseExpiresAt: string;
+}
+
+export interface QueuedJobNow {
+  jobKey: string;
+  jobType: ManualRefreshLayer;
+  status: string;
+  nextRunAt: string | null;
 }
 
 function stringify(value: unknown): string {
@@ -87,6 +94,67 @@ export async function ensureRecurringJobs(jobs: RecurringJobSeed[]): Promise<voi
       );
     }
   }
+}
+
+export async function enqueueJobsNow(jobs: Array<RecurringJobSeed & { jobType: ManualRefreshLayer }>): Promise<QueuedJobNow[]> {
+  const now = nowSql();
+  await ensureRecurringJobs(jobs);
+  const queued: QueuedJobNow[] = [];
+
+  for (const job of jobs) {
+    await getPool().execute(
+      `UPDATE jobs
+       SET next_run_at = ?,
+           status = CASE WHEN status = 'running' THEN status ELSE 'pending' END,
+           updated_at = ?
+       WHERE job_key = ?`,
+      [now, now, job.jobKey]
+    );
+    const [rows] = await getPool().execute<RowData[]>(
+      "SELECT job_key, job_type, status, next_run_at FROM jobs WHERE job_key = ? LIMIT 1",
+      [job.jobKey]
+    );
+    const row = rows[0];
+    if (row) {
+      queued.push({
+        jobKey: asString(row.job_key),
+        jobType: asString(row.job_type) as ManualRefreshLayer,
+        status: asString(row.status),
+        nextRunAt: fromSqlDate(row.next_run_at)
+      });
+    }
+  }
+
+  return queued;
+}
+
+export async function recordManualRefreshRequest(input: {
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  requestedLayers: ManualRefreshLayer[];
+  queuedJobs: QueuedJobNow[];
+}): Promise<ManualRefreshResult> {
+  const createdAt = new Date().toISOString();
+  const [result] = await getPool().execute<ResultSetHeader>(
+    `INSERT INTO manual_refresh_requests(
+      repo_id, user_id, github_login, requested_layers_json, queued_jobs_json, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, 'queued', ?)`,
+    [
+      input.repoId,
+      input.userId,
+      input.githubLogin,
+      stringify(input.requestedLayers),
+      stringify(input.queuedJobs),
+      sqlDate(createdAt)
+    ]
+  );
+  return {
+    requestId: Number(result.insertId),
+    requestedLayers: input.requestedLayers,
+    queuedJobs: input.queuedJobs,
+    requestedAt: createdAt
+  };
 }
 
 export async function claimNextDueJob(input: {

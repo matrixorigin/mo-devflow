@@ -27,7 +27,7 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCw, ShieldAlert } from "lucide-react";
+import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -213,6 +213,18 @@ interface WorkflowFixExecutionResult {
   message: string;
   errorMessage: string | null;
   executedAt: string;
+}
+
+interface ManualRefreshResult {
+  requestId: number;
+  requestedLayers: Array<"github_sync" | "webhooks" | "rules" | "metrics" | "ai_drift" | "notifications">;
+  queuedJobs: Array<{
+    jobKey: string;
+    jobType: string;
+    status: string;
+    nextRunAt: string | null;
+  }>;
+  requestedAt: string;
 }
 
 interface DashboardSummary {
@@ -484,6 +496,9 @@ export default function App() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
   const [executionSaving, setExecutionSaving] = useState(false);
+  const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
+  const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
+  const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -553,6 +568,29 @@ export default function App() {
       setSession((await response.json()) as SessionView);
     } catch (err) {
       setTokenError(displayError(err));
+    }
+  }
+
+  async function queueManualRefresh() {
+    setManualRefreshSaving(true);
+    setManualRefreshError(null);
+    setManualRefreshResult(null);
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({})
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setManualRefreshResult((await response.json()) as ManualRefreshResult);
+      void load();
+    } catch (err) {
+      setManualRefreshError(displayError(err));
+    } finally {
+      setManualRefreshSaving(false);
     }
   }
 
@@ -1055,10 +1093,38 @@ export default function App() {
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
           </Tooltip>
+          <Tooltip
+            title={
+              session?.authenticated
+                ? "Queue worker refresh"
+                : "Connect GitHub token to queue worker refresh"
+            }
+          >
+            <Button
+              icon={<RefreshCcw size={16} />}
+              disabled={!session?.authenticated}
+              loading={manualRefreshSaving}
+              onClick={() => void queueManualRefresh()}
+            />
+          </Tooltip>
         </Space>
       </Header>
       <Content className="content">
         {error ? <Alert className="band" type="error" message="Dashboard unavailable" description={error} showIcon /> : null}
+        {manualRefreshError ? (
+          <Alert className="band" type="error" message="Refresh was not queued" description={manualRefreshError} showIcon />
+        ) : null}
+        {manualRefreshResult ? (
+          <Alert
+            className="band"
+            type="success"
+            message={`Queued ${manualRefreshResult.queuedJobs.length} refresh jobs`}
+            description={`Request #${manualRefreshResult.requestId} at ${formatDate(manualRefreshResult.requestedAt)}: ${manualRefreshResult.requestedLayers
+              .map(labelText)
+              .join(", ")}`}
+            showIcon
+          />
+        ) : null}
         {loading && !data ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : data ? (
