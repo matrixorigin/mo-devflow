@@ -19,6 +19,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth } from "./notifications";
+import { getWebhookIngestionHealth } from "./webhooks";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -1022,6 +1023,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
   };
   const jobQueue = await getJobQueueHealth();
   const notifications = await getNotificationHealth(repoId, profile);
+  const webhooks = await getWebhookIngestionHealth(repoId);
 
   return {
     repo: {
@@ -1053,6 +1055,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     workflowViolations,
     aiDriftSignals,
     analytics,
-    notifications
+    notifications,
+    webhooks
   };
 }

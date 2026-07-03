@@ -396,6 +396,15 @@ export interface JobQueueHealth {
   latestFailure: string | null;
 }
 
+export interface WebhookIngestionHealth {
+  pendingDeliveries: number;
+  processedDeliveries: number;
+  failedDeliveries: number;
+  duplicateDeliveries: number;
+  lastReceivedAt: string | null;
+  latestFailure: string | null;
+}
+
 export interface DashboardSummary {
   repo: {
     key: string;
@@ -427,6 +436,7 @@ export interface DashboardSummary {
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
   notifications: NotificationHealth;
+  webhooks: WebhookIngestionHealth;
 }
 
 export function parseJsonArray(value: string | null | undefined): string[] {

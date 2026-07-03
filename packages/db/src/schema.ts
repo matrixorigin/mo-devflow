@@ -50,6 +50,24 @@ const schemaStatements = [
     updated_at DATETIME NOT NULL,
     UNIQUE KEY uniq_jobs_job_key (job_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS github_webhook_deliveries (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    delivery_id VARCHAR(128) NOT NULL,
+    event_name VARCHAR(128) NOT NULL,
+    action VARCHAR(128),
+    status VARCHAR(32) NOT NULL,
+    signature256 VARCHAR(256),
+    headers_json LONGTEXT NOT NULL,
+    payload_json LONGTEXT NOT NULL,
+    raw_payload LONGTEXT NOT NULL,
+    duplicate_count INT NOT NULL DEFAULT 0,
+    last_duplicate_at DATETIME,
+    received_at DATETIME NOT NULL,
+    processed_at DATETIME,
+    error_message TEXT,
+    UNIQUE KEY uniq_github_webhook_delivery (delivery_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS app_users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     github_id VARCHAR(64) NOT NULL,
@@ -288,6 +306,8 @@ const indexStatements = [
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
   "CREATE INDEX idx_jobs_status_next_run ON jobs(status, next_run_at)",
   "CREATE INDEX idx_jobs_lease_expires ON jobs(lease_expires_at)",
+  "CREATE INDEX idx_github_webhook_repo_status ON github_webhook_deliveries(repo_id, status)",
+  "CREATE INDEX idx_github_webhook_received ON github_webhook_deliveries(received_at)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
   "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",

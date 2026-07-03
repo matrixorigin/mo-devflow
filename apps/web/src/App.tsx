@@ -249,6 +249,14 @@ interface DashboardSummary {
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
   notifications: NotificationHealth;
+  webhooks: {
+    pendingDeliveries: number;
+    processedDeliveries: number;
+    failedDeliveries: number;
+    duplicateDeliveries: number;
+    lastReceivedAt: string | null;
+    latestFailure: string | null;
+  };
 }
 
 function hours(value: number): string {
@@ -1054,6 +1062,14 @@ export default function App() {
                   strokeColor={data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? "#dc2626" : "#16a34a"}
                 />
               </div>
+              <div className="metric">
+                <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
+                <Progress
+                  percent={Math.min(100, data.webhooks.pendingDeliveries * 20 + data.webhooks.failedDeliveries * 25)}
+                  showInfo={false}
+                  strokeColor={data.webhooks.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
+                />
+              </div>
             </section>
 
             {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
@@ -1065,6 +1081,16 @@ export default function App() {
                   data.sync.jobQueue.latestFailure ??
                   `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
                 }
+                showIcon
+              />
+            ) : null}
+
+            {data.webhooks.failedDeliveries > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message="Webhook ingestion has failed deliveries"
+                description={data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`}
                 showIcon
               />
             ) : null}
@@ -1089,6 +1115,9 @@ export default function App() {
                     }
                   />
                   <Statistic title="Next Run" value={formatDate(data.sync.jobQueue.nextRunAt)} />
+                  <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
+                  <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
+                  <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
                 </div>
                 <Space size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (

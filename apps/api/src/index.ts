@@ -4,6 +4,13 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
 import { registerActionRoutes } from "./actionRoutes";
 import { registerAuthRoutes } from "./authRoutes";
+import { registerWebhookRoutes } from "./webhookRoutes";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    rawBody?: string;
+  }
+}
 
 loadEnv();
 
@@ -15,6 +22,21 @@ const app = Fastify({
   }
 });
 
+app.removeContentTypeParser("application/json");
+app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
+  const rawBody = typeof body === "string" ? body : body.toString("utf8");
+  request.rawBody = rawBody;
+  if (!rawBody) {
+    done(null, {});
+    return;
+  }
+  try {
+    done(null, JSON.parse(rawBody));
+  } catch (error) {
+    done(error as Error);
+  }
+});
+
 await app.register(cors, {
   origin: true,
   credentials: true
@@ -22,6 +44,7 @@ await app.register(cors, {
 
 await registerAuthRoutes(app);
 await registerActionRoutes(app);
+await registerWebhookRoutes(app);
 
 app.get("/health", async () => {
   try {
