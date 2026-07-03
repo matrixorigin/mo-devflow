@@ -1,0 +1,71 @@
+import cors from "@fastify/cors";
+import Fastify from "fastify";
+import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
+import { getDashboardSummary, getRepoId, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
+
+loadEnv();
+
+const host = process.env.MO_DEVFLOW_API_HOST ?? "0.0.0.0";
+const port = Number(process.env.MO_DEVFLOW_API_PORT ?? "18081");
+const app = Fastify({
+  logger: {
+    level: process.env.MO_DEVFLOW_LOG_LEVEL ?? "info"
+  }
+});
+
+await app.register(cors, {
+  origin: true
+});
+
+app.get("/health", async () => {
+  try {
+    await pingDatabase();
+    return {
+      status: "healthy",
+      database: "connected",
+      generatedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    app.log.error({ error }, "health check failed");
+    return {
+      status: "unhealthy",
+      database: "disconnected",
+      generatedAt: new Date().toISOString()
+    };
+  }
+});
+
+app.get("/api/dashboard", async (_request, reply) => {
+  const profile = loadRepoProfile();
+  const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
+  try {
+    return await getDashboardSummary(profile, repoId);
+  } catch (error) {
+    app.log.error({ error }, "dashboard query failed");
+    return reply.status(500).send({
+      error: "dashboard_query_failed",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.get("/api/profile", async () => {
+  const profile = loadRepoProfile();
+  return {
+    key: profile.key,
+    repo: profile.repo,
+    reporting: profile.reporting,
+    access: profile.access,
+    people: profile.people,
+    labels: profile.labels,
+    thresholds: profile.thresholds
+  };
+});
+
+try {
+  await migrate();
+  await app.listen({ host, port });
+} catch (error) {
+  app.log.error(error);
+  process.exitCode = 1;
+}

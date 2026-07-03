@@ -1,0 +1,370 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Empty,
+  Layout,
+  Progress,
+  Segmented,
+  Skeleton,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Tooltip,
+  Typography
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { RefreshCw, ShieldAlert } from "lucide-react";
+
+const { Header, Content } = Layout;
+const { Text, Title } = Typography;
+
+interface CriticalIssueView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  severity: string | null;
+  ownerLogin: string | null;
+  ownerReason: string | null;
+  lifecycleState: string;
+  ageHours: number;
+  lastSyncedAt: string;
+  isComplete: boolean;
+  labels: string[];
+}
+
+interface PersonSummary {
+  login: string;
+  activeCriticalIssues: number;
+  needsTriageIssues: number;
+  deferredIssues: number;
+  prsCreatedYesterday: number;
+  prsMergedYesterday: number;
+  pendingPrs: number;
+  attentionPrs: number;
+}
+
+interface PendingPrView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  ownerLogin: string;
+  ageHours: number;
+  lastHumanActionAt: string;
+  attentionFlags: string[];
+  isComplete: boolean;
+}
+
+interface DashboardSummary {
+  repo: {
+    key: string;
+    owner: string;
+    name: string;
+    timezone: string;
+  };
+  sync: {
+    generatedAt: string;
+    health: Array<{
+      layer: string;
+      status: string;
+      lastSuccessfulAt: string | null;
+      lastAttemptedAt: string | null;
+      errorMessage: string | null;
+    }>;
+    staleObjects: number;
+    partialObjects: number;
+  };
+  counts: {
+    criticalIssues: number;
+    unownedCriticalIssues: number;
+    pendingPrs: number;
+    attentionPrs: number;
+  };
+  criticalIssues: CriticalIssueView[];
+  people: PersonSummary[];
+  pendingPrs: PendingPrView[];
+}
+
+function hours(value: number): string {
+  if (value < 24) {
+    return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
+  }
+  return `${(value / 24).toFixed(1)}d`;
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function severityColor(severity: string | null): string {
+  if (severity === "severity/s-1") {
+    return "red";
+  }
+  if (severity === "severity/s0") {
+    return "volcano";
+  }
+  return "blue";
+}
+
+export default function App() {
+  const [data, setData] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState("Overview");
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/dashboard");
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+      setData((await response.json()) as DashboardSummary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const criticalColumns: ColumnsType<CriticalIssueView> = useMemo(
+    () => [
+      {
+        title: "Issue",
+        dataIndex: "number",
+        width: 92,
+        render: (_, issue) => (
+          <a href={issue.htmlUrl} target="_blank" rel="noreferrer">
+            #{issue.number}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title, issue) => (
+          <Space size={8} className="table-title-cell">
+            {!issue.isComplete ? <Badge color="#d97706" /> : null}
+            <Text strong ellipsis={{ tooltip: title }}>{title}</Text>
+          </Space>
+        )
+      },
+      {
+        title: "Severity",
+        dataIndex: "severity",
+        width: 132,
+        render: (severity) => <Tag color={severityColor(severity)}>{severity ?? "unknown"}</Tag>
+      },
+      {
+        title: "Owner",
+        dataIndex: "ownerLogin",
+        width: 148,
+        render: (owner, issue) =>
+          owner ? (
+            <Tooltip title={issue.ownerReason ? `by ${issue.ownerReason}` : undefined}>
+              <Tag>{owner}</Tag>
+            </Tooltip>
+          ) : (
+            <Tag color="red">unowned</Tag>
+          )
+      },
+      {
+        title: "Age",
+        dataIndex: "ageHours",
+        width: 96,
+        render: (age) => hours(age)
+      }
+    ],
+    []
+  );
+
+  const peopleColumns: ColumnsType<PersonSummary> = useMemo(
+    () => [
+      { title: "Person", dataIndex: "login", render: (login) => <Text strong>{login}</Text> },
+      { title: "Critical", dataIndex: "activeCriticalIssues", width: 104 },
+      { title: "Needs triage", dataIndex: "needsTriageIssues", width: 128 },
+      { title: "Deferred", dataIndex: "deferredIssues", width: 104 },
+      { title: "PR created", dataIndex: "prsCreatedYesterday", width: 112 },
+      { title: "PR merged", dataIndex: "prsMergedYesterday", width: 112 },
+      { title: "Pending PR", dataIndex: "pendingPrs", width: 112 },
+      {
+        title: "Attention",
+        dataIndex: "attentionPrs",
+        width: 112,
+        render: (value) => (value > 0 ? <Tag color="orange">{value}</Tag> : <Tag>0</Tag>)
+      }
+    ],
+    []
+  );
+
+  const prColumns: ColumnsType<PendingPrView> = useMemo(
+    () => [
+      {
+        title: "PR",
+        dataIndex: "number",
+        width: 88,
+        render: (_, pr) => (
+          <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+            #{pr.number}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title, pr) => (
+          <Space size={8} className="table-title-cell">
+            {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
+            {!pr.isComplete ? <Badge color="#d97706" /> : null}
+            <Text ellipsis={{ tooltip: title }}>{title}</Text>
+          </Space>
+        )
+      },
+      { title: "Owner", dataIndex: "ownerLogin", width: 148, render: (owner) => <Tag>{owner}</Tag> },
+      { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
+      {
+        title: "Last human action",
+        dataIndex: "lastHumanActionAt",
+        width: 168,
+        render: (value) => formatDate(value)
+      },
+      {
+        title: "Flags",
+        dataIndex: "attentionFlags",
+        width: 220,
+        render: (flags: string[]) =>
+          flags.length === 0 ? <Tag>clear</Tag> : flags.map((flag) => <Tag color="orange" key={flag}>{flag}</Tag>)
+      }
+    ],
+    []
+  );
+
+  return (
+    <Layout className="app-shell">
+      <Header className="topbar">
+        <div>
+          <Text className="eyebrow">mo-devflow</Text>
+          <Title level={3} className="page-title">
+            {data ? data.repo.key : "Development Flow"}
+          </Title>
+        </div>
+        <Space>
+          <Segmented value={view} onChange={(value) => setView(String(value))} options={["Overview", "People", "PRs"]} />
+          <Tooltip title="Refresh cached dashboard">
+            <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
+          </Tooltip>
+        </Space>
+      </Header>
+      <Content className="content">
+        {error ? <Alert className="band" type="error" message="Dashboard unavailable" description={error} showIcon /> : null}
+        {loading && !data ? (
+          <Skeleton active paragraph={{ rows: 10 }} />
+        ) : data ? (
+          <>
+            {data.sync.partialObjects > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message={`${data.sync.partialObjects} cached objects are partial`}
+                description="Timeline, review, or CI backfill is not complete yet; stale decisions stay visible as partial evidence."
+                showIcon
+              />
+            ) : null}
+
+            <section className="kpi-grid">
+              <div className="metric">
+                <Statistic title="Critical Issues" value={data.counts.criticalIssues} />
+                <Progress percent={Math.min(100, data.counts.criticalIssues * 10)} showInfo={false} strokeColor="#dc2626" />
+              </div>
+              <div className="metric">
+                <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
+                <Progress percent={Math.min(100, data.counts.unownedCriticalIssues * 20)} showInfo={false} strokeColor="#d97706" />
+              </div>
+              <div className="metric">
+                <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
+                <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
+              </div>
+              <div className="metric">
+                <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
+                <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
+              </div>
+            </section>
+
+            <section className="section">
+              <div className="section-heading">
+                <Space>
+                  <ShieldAlert size={18} />
+                  <Title level={4}>Critical Issues</Title>
+                </Space>
+                <Text type="secondary">Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}</Text>
+              </div>
+              <Table
+                rowKey="number"
+                size="middle"
+                columns={criticalColumns}
+                dataSource={data.criticalIssues}
+                scroll={{ x: 760 }}
+                pagination={{ pageSize: 8 }}
+                locale={{ emptyText: <Empty description="No active critical issues in cache" /> }}
+              />
+            </section>
+
+            {view === "People" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>People</Title>
+                  <Text type="secondary">Watched users only</Text>
+                </div>
+                <Table
+                rowKey="login"
+                size="middle"
+                columns={peopleColumns}
+                dataSource={data.people}
+                scroll={{ x: 900 }}
+                pagination={false}
+                locale={{ emptyText: <Empty description="No watched users configured" /> }}
+              />
+              </section>
+            ) : null}
+
+            {view === "PRs" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Pending PRs</Title>
+                  <Text type="secondary">Stale checks use last human action</Text>
+                </div>
+                <Table
+                rowKey="number"
+                size="middle"
+                columns={prColumns}
+                dataSource={data.pendingPrs}
+                scroll={{ x: 980 }}
+                pagination={{ pageSize: 10 }}
+                locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
+              />
+              </section>
+            ) : null}
+
+          </>
+        ) : null}
+      </Content>
+    </Layout>
+  );
+}

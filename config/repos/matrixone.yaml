@@ -1,0 +1,83 @@
+repo:
+  owner: matrixorigin
+  name: matrixone
+  local_path: /Users/xupeng/github/matrixone
+
+reporting:
+  timezone: Asia/Shanghai
+  week_start: Monday
+
+access:
+  anonymous_read: true
+  expose_user_token_synced_private_data: false
+  critical_scope: repo-wide
+
+people:
+  watched_users: []
+  testers: []
+
+ownership:
+  issue_owner_priority:
+    - assignee
+    - linked_pr_author
+    - author
+  pr_owner: author
+  unowned_bucket: true
+
+notifications:
+  wecom:
+    enabled: false
+    webhook_url_env: MO_DEVFLOW_WECOM_WEBHOOK_URL
+    quiet_hours:
+      start: "22:00"
+      end: "09:00"
+  employees: {}
+  routing:
+    critical_issue_stalled:
+      channel: wecom
+      recipient: owner
+      cooldown_hours: 12
+      fallback_recipient: maintainer_group
+      escalate_after_hours: 24
+    daily_digest:
+      channel: wecom
+      recipient: maintainer_group
+      schedule: "0 9 * * 1-5"
+
+labels:
+  bug: kind/bug
+  needs_triage: needs-triage
+  deferred: deferred
+  critical:
+    - severity/s-1
+    - severity/s0
+  active:
+    - severity/s-1
+    - severity/s0
+    - severity/s1
+  ai_effort:
+    - ai-easy
+    - ai-light
+    - ai-medium
+    - ai-heavy
+    - ai-manual
+
+thresholds:
+  pr_no_action_attention_hours: 24
+  critical_no_action_attention_hours: 24
+  ai_easy_s0_to_test_attention_days: 7
+
+testing:
+  handoff_signals:
+    labels: []
+    reviewer_users: []
+    assignee_users: []
+    comments: []
+  states:
+    not_ready: {}
+    dev_done: {}
+    test_requested: {}
+    testing: {}
+    test_changes_requested: {}
+    test_passed: {}
+    closed_or_merged: {}
