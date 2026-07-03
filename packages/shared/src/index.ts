@@ -52,6 +52,8 @@ export interface RepoProfile {
     prNoActionAttentionHours: number;
     criticalNoActionAttentionHours: number;
     aiEasyS0ToTestAttentionDays: number;
+    needsTriageStaleHours: number;
+    prematureSeverityWindowHours: number;
   };
   testing: {
     handoffSignals: {
@@ -192,6 +194,27 @@ export interface PendingPrView {
   isComplete: boolean;
 }
 
+export type WorkflowViolationObjectType = "issue" | "pull_request";
+export type WorkflowViolationSeverity = "info" | "warning" | "critical";
+
+export interface WorkflowViolation {
+  objectType: WorkflowViolationObjectType;
+  objectNumber: number;
+  title: string;
+  htmlUrl: string;
+  ruleKey: string;
+  severity: WorkflowViolationSeverity;
+  relatedLogin: string | null;
+  evidenceSummary: string;
+  suggestedAction: string;
+  fixable: boolean;
+}
+
+export interface WorkflowViolationView extends WorkflowViolation {
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+}
+
 export interface SyncHealth {
   layer: string;
   status: string;
@@ -218,10 +241,13 @@ export interface DashboardSummary {
     unownedCriticalIssues: number;
     pendingPrs: number;
     attentionPrs: number;
+    workflowViolations: number;
+    criticalWorkflowViolations: number;
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
+  workflowViolations: WorkflowViolationView[];
 }
 
 export function parseJsonArray(value: string | null | undefined): string[] {

@@ -136,6 +136,25 @@ const schemaStatements = [
     notification_state VARCHAR(64) NOT NULL,
     UNIQUE KEY uniq_attention_dedupe (dedupe_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS workflow_violations (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    object_type VARCHAR(64) NOT NULL,
+    object_number INT NOT NULL,
+    title TEXT NOT NULL,
+    html_url TEXT NOT NULL,
+    rule_key VARCHAR(128) NOT NULL,
+    severity VARCHAR(32) NOT NULL,
+    related_login VARCHAR(255),
+    dedupe_key VARCHAR(512) NOT NULL,
+    first_detected_at DATETIME NOT NULL,
+    last_detected_at DATETIME NOT NULL,
+    resolved_at DATETIME,
+    evidence_summary TEXT NOT NULL,
+    suggested_action TEXT NOT NULL,
+    fixable TINYINT NOT NULL,
+    UNIQUE KEY uniq_workflow_violation_dedupe (dedupe_key)
+  )`,
   `CREATE TABLE IF NOT EXISTS notification_deliveries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     attention_item_id BIGINT NOT NULL,
@@ -155,7 +174,8 @@ const indexStatements = [
   "CREATE INDEX idx_pull_requests_repo_state ON pull_requests(repo_id, state)",
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
-  "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)"
+  "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
+  "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)"
 ];
 
 const compatibilityStatements = [

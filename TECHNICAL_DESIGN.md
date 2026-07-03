@@ -269,6 +269,7 @@ Backfill:
 - Timeline and review backfill should be resumable by object.
 - Backfill jobs should mark partial objects until all required pages are fetched.
 - Dashboards should avoid treating partial objects as complete evidence.
+- Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
 
 ## 9. Authentication and Token Handling
 

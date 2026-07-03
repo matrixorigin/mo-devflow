@@ -1,6 +1,8 @@
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
+  listCachedIssuesForRules,
   recordSyncRun,
+  replaceWorkflowViolations,
   runWithJobLease,
   upsertAttentionItem,
   upsertIssue,
@@ -8,14 +10,19 @@ import {
   upsertRepoProfile
 } from "@mo-devflow/db";
 import { fetchGitHubSnapshot } from "@mo-devflow/github";
-import { criticalAttentionForIssue, normalizeIssue, normalizePullRequest } from "@mo-devflow/rules";
-import type { NormalizedIssue } from "@mo-devflow/shared";
+import { criticalAttentionForIssue, normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "@mo-devflow/rules";
+import type { NormalizedIssue, WorkflowViolation } from "@mo-devflow/shared";
 
 export interface SyncResult {
   repoId: number;
   issues: number;
   pullRequests: number;
   rateLimitRemaining: number | null;
+}
+
+export interface RuleSyncResult {
+  repoId: number;
+  workflowViolations: number;
 }
 
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
@@ -35,6 +42,26 @@ function prEvidence(flag: string, prNumber: number): string {
   return `PR #${prNumber} has no recent human action.`;
 }
 
+export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const issues = await listCachedIssuesForRules(repoId);
+  const workflowViolations = issues.flatMap((issue) => workflowViolationsForIssue(profile, issue));
+  await replaceWorkflowViolations(repoId, workflowViolations);
+  await recordSyncRun({
+    repoId,
+    syncLayer: "rules",
+    status: "success",
+    sourceAuthType: "cache",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    raw: { workflowViolations: workflowViolations.length }
+  });
+  return { repoId, workflowViolations: workflowViolations.length };
+}
+
 export async function syncOnce(): Promise<SyncResult | null> {
   loadEnv();
   const profile = loadRepoProfile();
@@ -46,6 +73,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
       const snapshot = await fetchGitHubSnapshot(profile);
       let issueCount = 0;
       let prCount = 0;
+      const workflowViolations: WorkflowViolation[] = [];
 
       for (const rawIssue of snapshot.issues) {
         const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType);
@@ -54,6 +82,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
         }
         await upsertIssue(repoId, issue);
         issueCount += 1;
+        workflowViolations.push(...workflowViolationsForIssue(profile, issue));
 
         for (const flag of criticalAttentionForIssue(profile, issue)) {
           await upsertAttentionItem({
@@ -69,6 +98,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
           });
         }
       }
+      await replaceWorkflowViolations(repoId, workflowViolations);
 
       for (const rawPr of snapshot.pullRequests) {
         const pr = normalizePullRequest(
@@ -102,7 +132,12 @@ export async function syncOnce(): Promise<SyncResult | null> {
         startedAt,
         finishedAt: new Date().toISOString(),
         rateLimitRemaining: snapshot.rateLimitRemaining,
-        raw: { issues: issueCount, pullRequests: prCount, pullRequestInsights: snapshot.pullRequestInsights.size }
+        raw: {
+          issues: issueCount,
+          pullRequests: prCount,
+          pullRequestInsights: snapshot.pullRequestInsights.size,
+          workflowViolations: workflowViolations.length
+        }
       });
 
       return {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { normalizeIssue, normalizePullRequest } from "./index";
+import { normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "./index";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -28,7 +28,9 @@ const profile: RepoProfile = {
   thresholds: {
     prNoActionAttentionHours: 24,
     criticalNoActionAttentionHours: 24,
-    aiEasyS0ToTestAttentionDays: 7
+    aiEasyS0ToTestAttentionDays: 7,
+    needsTriageStaleHours: 72,
+    prematureSeverityWindowHours: 24
   },
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
@@ -154,5 +156,111 @@ describe("rules", () => {
     expect(pr.attentionFlags).toContain("requested_changes");
     expect(pr.attentionFlags).toContain("ci_failed");
     expect(pr.attentionFlags).toContain("merge_conflict");
+  });
+
+  test("workflow violations detect bug issues missing intake triage", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 5,
+        number: 11,
+        title: "bug without intake",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/11",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        labels: [{ name: "kind/bug" }],
+        assignees: []
+      },
+      "anonymous"
+    );
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("bug_missing_needs_triage");
+  });
+
+  test("workflow violations detect stale needs-triage issues", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 6,
+        number: 12,
+        title: "old triage",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/12",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "needs-triage" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("needs_triage_stale");
+  });
+
+  test("workflow violations detect premature active severity", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 7,
+        number: 13,
+        title: "premature severity",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/13",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("premature_active_severity");
+  });
+
+  test("workflow violations do not mark old active severity as premature without timeline evidence", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 8,
+        number: 14,
+        title: "old active critical",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/14",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain("premature_active_severity");
+  });
+
+  test("workflow violations detect conflicting lifecycle labels", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 9,
+        number: 15,
+        title: "conflicting state",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/15",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        labels: [{ name: "kind/bug" }, { name: "needs-triage" }, { name: "severity/s0" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    const rules = workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey);
+    expect(rules).toContain("conflicting_lifecycle_labels");
   });
 });

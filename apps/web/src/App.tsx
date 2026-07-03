@@ -66,6 +66,21 @@ interface PendingPrView {
   isComplete: boolean;
 }
 
+interface WorkflowViolationView {
+  objectType: "issue" | "pull_request";
+  objectNumber: number;
+  title: string;
+  htmlUrl: string;
+  ruleKey: string;
+  severity: "info" | "warning" | "critical";
+  relatedLogin: string | null;
+  evidenceSummary: string;
+  suggestedAction: string;
+  fixable: boolean;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -90,10 +105,13 @@ interface DashboardSummary {
     unownedCriticalIssues: number;
     pendingPrs: number;
     attentionPrs: number;
+    workflowViolations: number;
+    criticalWorkflowViolations: number;
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
+  workflowViolations: WorkflowViolationView[];
 }
 
 function hours(value: number): string {
@@ -163,6 +181,16 @@ function mergeColor(value: string): string {
     return "green";
   }
   return "default";
+}
+
+function violationColor(value: WorkflowViolationView["severity"]): string {
+  if (value === "critical") {
+    return "red";
+  }
+  if (value === "warning") {
+    return "orange";
+  }
+  return "blue";
 }
 
 export default function App() {
@@ -346,6 +374,68 @@ export default function App() {
     []
   );
 
+  const violationColumns: ColumnsType<WorkflowViolationView> = useMemo(
+    () => [
+      {
+        title: "Object",
+        width: 108,
+        render: (_, violation) => (
+          <a href={violation.htmlUrl} target="_blank" rel="noreferrer">
+            {violation.objectType === "issue" ? "Issue" : "PR"} #{violation.objectNumber}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title) => (
+          <Text strong ellipsis={{ tooltip: title }}>
+            {title}
+          </Text>
+        )
+      },
+      {
+        title: "Rule",
+        dataIndex: "ruleKey",
+        width: 220,
+        render: (rule) => <Tag color="blue">{labelText(rule)}</Tag>
+      },
+      {
+        title: "Severity",
+        dataIndex: "severity",
+        width: 112,
+        render: (severity) => <Tag color={violationColor(severity)}>{severity}</Tag>
+      },
+      {
+        title: "Related",
+        dataIndex: "relatedLogin",
+        width: 140,
+        render: (login) => (login ? <Tag>{login}</Tag> : <Tag color="red">unowned</Tag>)
+      },
+      {
+        title: "Evidence",
+        dataIndex: "evidenceSummary",
+        width: 320,
+        ellipsis: true,
+        render: (value) => <Text ellipsis={{ tooltip: value }}>{value}</Text>
+      },
+      {
+        title: "Suggested action",
+        dataIndex: "suggestedAction",
+        width: 360,
+        ellipsis: true,
+        render: (value, violation) => (
+          <Space size={6}>
+            {violation.fixable ? <Badge color="#2563eb" /> : null}
+            <Text ellipsis={{ tooltip: value }}>{value}</Text>
+          </Space>
+        )
+      }
+    ],
+    []
+  );
+
   return (
     <Layout className="app-shell">
       <Header className="topbar">
@@ -356,7 +446,11 @@ export default function App() {
           </Title>
         </div>
         <Space>
-          <Segmented value={view} onChange={(value) => setView(String(value))} options={["Overview", "People", "PRs"]} />
+          <Segmented
+            value={view}
+            onChange={(value) => setView(String(value))}
+            options={["Overview", "People", "PRs", "Violations"]}
+          />
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
           </Tooltip>
@@ -395,7 +489,36 @@ export default function App() {
                 <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
                 <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
               </div>
+              <div className="metric">
+                <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
+                <Progress
+                  percent={Math.min(100, data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations)}
+                  showInfo={false}
+                  strokeColor="#7c3aed"
+                />
+              </div>
             </section>
+
+            {view === "Violations" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Space>
+                    <ShieldAlert size={18} />
+                    <Title level={4}>Workflow Violations</Title>
+                  </Space>
+                  <Text type="secondary">Open cache-derived rule outputs</Text>
+                </div>
+                <Table
+                  rowKey={(violation) => `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
+                  size="middle"
+                  columns={violationColumns}
+                  dataSource={data.workflowViolations}
+                  scroll={{ x: 1360 }}
+                  pagination={{ pageSize: 8 }}
+                  locale={{ emptyText: <Empty description="No active workflow violations in cache" /> }}
+                />
+              </section>
+            ) : null}
 
             <section className="section">
               <div className="section-heading">

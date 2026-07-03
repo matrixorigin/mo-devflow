@@ -5,7 +5,8 @@ import type {
   PullRequestInsight,
   RepoProfile,
   SourceAuthType,
-  VisibilityClass
+  VisibilityClass,
+  WorkflowViolation
 } from "@mo-devflow/shared";
 import { hoursBetween } from "@mo-devflow/shared";
 
@@ -234,4 +235,119 @@ export function criticalAttentionForIssue(profile: RepoProfile, issue: Normalize
     return ["critical_no_human_action"];
   }
   return [];
+}
+
+function violation(input: WorkflowViolation): WorkflowViolation {
+  return input;
+}
+
+function activeSeverityLabels(profile: RepoProfile, labels: string[]): string[] {
+  return profile.labels.active.filter((label) => labels.includes(label));
+}
+
+export function workflowViolationsForIssue(profile: RepoProfile, issue: NormalizedIssue): WorkflowViolation[] {
+  if (issue.state !== "open") {
+    return [];
+  }
+
+  const violations: WorkflowViolation[] = [];
+  const labels = issue.labels;
+  const hasBug = labels.includes(profile.labels.bug);
+  const hasNeedsTriage = labels.includes(profile.labels.needsTriage);
+  const hasDeferred = labels.includes(profile.labels.deferred);
+  const severityLabels = activeSeverityLabels(profile, labels);
+  const hasActiveSeverity = severityLabels.length > 0;
+  const hasCriticalSeverity = severityLabels.some((label) => profile.labels.critical.includes(label));
+  const issueAgeHours = hoursBetween(issue.createdAt);
+
+  if (hasBug && !hasNeedsTriage && !hasDeferred && !hasActiveSeverity) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "bug_missing_needs_triage",
+        severity: "warning",
+        relatedLogin: issue.ownerLogin ?? issue.authorLogin,
+        evidenceSummary: `Open bug issue #${issue.number} has no ${profile.labels.needsTriage} label.`,
+        suggestedAction: `Add ${profile.labels.needsTriage} or move it to an explicit lifecycle state.`,
+        fixable: true
+      })
+    );
+  }
+
+  if (hasActiveSeverity && !hasNeedsTriage && !hasDeferred && issueAgeHours <= profile.thresholds.prematureSeverityWindowHours) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "premature_active_severity",
+        severity: hasCriticalSeverity ? "critical" : "warning",
+        relatedLogin: issue.ownerLogin ?? issue.authorLogin,
+        evidenceSummary: `New issue #${issue.number} has ${severityLabels.join(", ")} within ${profile.thresholds.prematureSeverityWindowHours}h and no ${profile.labels.needsTriage}/${profile.labels.deferred}.`,
+        suggestedAction: `Confirm this is active urgent work, or move it back to ${profile.labels.needsTriage}/${profile.labels.deferred}.`,
+        fixable: true
+      })
+    );
+  }
+
+  if (hasNeedsTriage && !hasDeferred && !hasActiveSeverity && issueAgeHours >= profile.thresholds.needsTriageStaleHours) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "needs_triage_stale",
+        severity: "warning",
+        relatedLogin: issue.ownerLogin ?? issue.authorLogin,
+        evidenceSummary: `Issue #${issue.number} has stayed in ${profile.labels.needsTriage} for ${issueAgeHours}h.`,
+        suggestedAction: `Triage it into active work, ${profile.labels.deferred}, or close/merge with an existing issue.`,
+        fixable: true
+      })
+    );
+  }
+
+  if ((hasNeedsTriage && hasDeferred) || (hasNeedsTriage && hasActiveSeverity) || (hasDeferred && hasActiveSeverity)) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "conflicting_lifecycle_labels",
+        severity: "warning",
+        relatedLogin: issue.ownerLogin ?? issue.authorLogin,
+        evidenceSummary: `Issue #${issue.number} has conflicting lifecycle labels: ${[
+          hasNeedsTriage ? profile.labels.needsTriage : null,
+          hasDeferred ? profile.labels.deferred : null,
+          ...severityLabels
+        ].filter(Boolean).join(", ")}.`,
+        suggestedAction: "Keep exactly one lifecycle state label that matches the current workflow stage.",
+        fixable: true
+      })
+    );
+  }
+
+  if (hasCriticalSeverity && !issue.ownerLogin) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "critical_issue_unowned",
+        severity: "critical",
+        relatedLogin: null,
+        evidenceSummary: `Critical issue #${issue.number} has no derived owner in the cache.`,
+        suggestedAction: "Assign an owner or update the repository profile ownership rules.",
+        fixable: true
+      })
+    );
+  }
+
+  return violations;
 }

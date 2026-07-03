@@ -6,9 +6,11 @@ import type {
   PendingPrView,
   PersonSummary,
   RepoProfile,
-  SyncHealth
+  SyncHealth,
+  WorkflowViolation,
+  WorkflowViolationView
 } from "@mo-devflow/shared";
-import { parseJsonArray } from "@mo-devflow/shared";
+import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 
@@ -185,6 +187,40 @@ export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promi
   );
 }
 
+export async function listCachedIssuesForRules(repoId: number): Promise<NormalizedIssue[]> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM issues
+     WHERE repo_id = ? AND state = 'open' AND is_pull_request = 0`,
+    [repoId]
+  );
+
+  return rows.map((row) => ({
+    githubId: asNumber(row.github_id),
+    number: asNumber(row.number),
+    title: asString(row.title),
+    body: asString(row.body),
+    state: "open",
+    authorLogin: asString(row.author_login),
+    htmlUrl: asString(row.html_url),
+    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString(),
+    updatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
+    closedAt: fromSqlDate(row.closed_at),
+    labels: parseJsonArray(asString(row.labels_json)),
+    assignees: parseJsonArray(asString(row.assignees_json)),
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
+    lifecycleState: asString(row.lifecycle_state) as NormalizedIssue["lifecycleState"],
+    severity: row.severity ? asString(row.severity) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    isPullRequest: false,
+    sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
+    visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
+    isComplete: asNumber(row.is_complete) === 1,
+    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+  }));
+}
+
 export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<void> {
   const now = nowSql();
   let next = pr;
@@ -327,6 +363,90 @@ export async function upsertAttentionItem(input: {
   }
 }
 
+function workflowViolationDedupeKey(repoId: number, violation: WorkflowViolation): string {
+  return `${repoId}:${violation.objectType}:${violation.objectNumber}:${violation.ruleKey}`;
+}
+
+export async function replaceWorkflowViolations(repoId: number, violations: WorkflowViolation[]): Promise<void> {
+  const now = nowSql();
+  const activeDedupeKeys = violations.map((violation) => workflowViolationDedupeKey(repoId, violation));
+
+  for (let index = 0; index < violations.length; index += 1) {
+    const violation = violations[index]!;
+    const dedupeKey = activeDedupeKeys[index]!;
+    try {
+      await getPool().execute(
+        `INSERT INTO workflow_violations(
+          repo_id, object_type, object_number, title, html_url, rule_key, severity,
+          related_login, dedupe_key, first_detected_at, last_detected_at,
+          resolved_at, evidence_summary, suggested_action, fixable
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [
+          repoId,
+          violation.objectType,
+          violation.objectNumber,
+          violation.title,
+          violation.htmlUrl,
+          violation.ruleKey,
+          violation.severity,
+          violation.relatedLogin,
+          dedupeKey,
+          now,
+          now,
+          violation.evidenceSummary,
+          violation.suggestedAction,
+          violation.fixable ? 1 : 0
+        ]
+      );
+    } catch (error) {
+      if (!isDuplicateError(error)) {
+        throw error;
+      }
+      await getPool().execute(
+        `UPDATE workflow_violations
+         SET title = ?,
+             html_url = ?,
+             severity = ?,
+             related_login = ?,
+             last_detected_at = ?,
+             resolved_at = NULL,
+             evidence_summary = ?,
+             suggested_action = ?,
+             fixable = ?
+         WHERE dedupe_key = ?`,
+        [
+          violation.title,
+          violation.htmlUrl,
+          violation.severity,
+          violation.relatedLogin,
+          now,
+          violation.evidenceSummary,
+          violation.suggestedAction,
+          violation.fixable ? 1 : 0,
+          dedupeKey
+        ]
+      );
+    }
+  }
+
+  if (activeDedupeKeys.length === 0) {
+    await getPool().execute(
+      "UPDATE workflow_violations SET resolved_at = ? WHERE repo_id = ? AND resolved_at IS NULL",
+      [now, repoId]
+    );
+    return;
+  }
+
+  await getPool().execute(
+    `UPDATE workflow_violations
+     SET resolved_at = ?
+     WHERE repo_id = ?
+       AND resolved_at IS NULL
+       AND dedupe_key NOT IN (${activeDedupeKeys.map(() => "?").join(", ")})`,
+    [now, repoId, ...activeDedupeKeys]
+  );
+}
+
 export async function runWithJobLease<T>(
   jobKey: string,
   jobType: string,
@@ -462,6 +582,16 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
      ) t`,
     [repoId, repoId]
   );
+  const [violationRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM workflow_violations
+     WHERE repo_id = ? AND resolved_at IS NULL
+     ORDER BY
+       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       last_detected_at DESC
+     LIMIT 100`,
+    [repoId]
+  );
 
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) => ({
     number: asNumber(row.number),
@@ -501,6 +631,21 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     detailError: row.detail_error ? asString(row.detail_error) : null,
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
     isComplete: asNumber(row.is_complete) === 1
+  }));
+
+  const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
+    objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
+    objectNumber: asNumber(row.object_number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ruleKey: asString(row.rule_key),
+    severity: asString(row.severity) as WorkflowViolationView["severity"],
+    relatedLogin: row.related_login ? asString(row.related_login) : null,
+    evidenceSummary: asString(row.evidence_summary),
+    suggestedAction: asString(row.suggested_action),
+    fixable: asNumber(row.fixable) === 1,
+    firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
   }));
 
   const { start, end } = yesterdayRange(profile.reporting.timezone);
@@ -548,10 +693,13 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
       criticalIssues: criticalIssues.length,
       unownedCriticalIssues: criticalIssues.filter((issue) => !issue.ownerLogin).length,
       pendingPrs: pendingPrs.length,
-      attentionPrs: pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length
+      attentionPrs: pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
+      workflowViolations: workflowViolations.length,
+      criticalWorkflowViolations: workflowViolations.filter((violation) => violation.severity === "critical").length
     },
     criticalIssues,
     people,
-    pendingPrs
+    pendingPrs,
+    workflowViolations
   };
 }
