@@ -1,4 +1,5 @@
 import type {
+  AggregatedMetricPoint,
   AiDriftSignal,
   AiDriftSignalView,
   AnalyticsSummary,
@@ -853,6 +854,105 @@ function bumpMetric(
   }
 }
 
+function utcDateFromKey(dateKey: string): Date {
+  return new Date(`${dateKey}T00:00:00.000Z`);
+}
+
+function dateKeyFromUtcDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const value = utcDateFromKey(dateKey);
+  value.setUTCDate(value.getUTCDate() + days);
+  return dateKeyFromUtcDate(value);
+}
+
+function addMonthsToDateKey(dateKey: string, months: number): string {
+  const value = utcDateFromKey(dateKey);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return dateKeyFromUtcDate(value);
+}
+
+function weekStartDateKey(dateKey: string, weekStart: RepoProfile["reporting"]["weekStart"]): string {
+  const value = utcDateFromKey(dateKey);
+  const day = value.getUTCDay();
+  const offset = weekStart === "Monday" ? (day === 0 ? 6 : day - 1) : day;
+  value.setUTCDate(value.getUTCDate() - offset);
+  return dateKeyFromUtcDate(value);
+}
+
+function monthStartDateKey(dateKey: string): string {
+  return `${dateKey.slice(0, 7)}-01`;
+}
+
+function metricPeriodBounds(
+  dateKey: string,
+  period: AggregatedMetricPoint["period"],
+  weekStart: RepoProfile["reporting"]["weekStart"]
+): { start: string; end: string; label: string } {
+  const start = period === "week" ? weekStartDateKey(dateKey, weekStart) : monthStartDateKey(dateKey);
+  const end = period === "week" ? addDaysToDateKey(start, 7) : addMonthsToDateKey(start, 1);
+  const label =
+    period === "week"
+      ? `${start.slice(5)}-${addDaysToDateKey(end, -1).slice(5)}`
+      : start.slice(0, 7);
+  return { start, end, label };
+}
+
+function latestIso(left: string, right: string): string {
+  return new Date(left).getTime() >= new Date(right).getTime() ? left : right;
+}
+
+export function aggregateMetricPoints(
+  points: DailyMetricPoint[],
+  period: AggregatedMetricPoint["period"],
+  weekStart: RepoProfile["reporting"]["weekStart"]
+): AggregatedMetricPoint[] {
+  const aggregates = new Map<string, AggregatedMetricPoint>();
+
+  for (const point of points) {
+    const bounds = metricPeriodBounds(point.date, period, weekStart);
+    const key = `${period}:${bounds.start}:${point.scopeType}:${point.scopeKey}`;
+    const existing = aggregates.get(key);
+    if (!existing) {
+      aggregates.set(key, {
+        ...point,
+        date: bounds.start,
+        period,
+        periodStart: bounds.start,
+        periodEnd: bounds.end,
+        label: bounds.label
+      });
+      continue;
+    }
+
+    existing.prsCreated += point.prsCreated;
+    existing.prsMerged += point.prsMerged;
+    existing.issuesOpened += point.issuesOpened;
+    existing.issuesClosed += point.issuesClosed;
+    existing.issuesDeferred += point.issuesDeferred;
+    existing.workflowViolationsDetected += point.workflowViolationsDetected;
+    existing.generatedAt = latestIso(existing.generatedAt, point.generatedAt);
+    existing.sourceCompleteness =
+      existing.sourceCompleteness === "complete_cache" && point.sourceCompleteness === "complete_cache"
+        ? "complete_cache"
+        : "partial_cache";
+  }
+
+  return Array.from(aggregates.values()).sort((left, right) => {
+    const dateOrder = left.periodStart.localeCompare(right.periodStart);
+    if (dateOrder !== 0) {
+      return dateOrder;
+    }
+    const scopeOrder = left.scopeType.localeCompare(right.scopeType);
+    if (scopeOrder !== 0) {
+      return scopeOrder;
+    }
+    return left.scopeKey.localeCompare(right.scopeKey);
+  });
+}
+
 export async function recomputeDailyMetricsFromCache(
   repoId: number,
   profile: RepoProfile,
@@ -1240,6 +1340,12 @@ export async function getDashboardSummary(
     sourceCompleteness: asString(row.source_completeness) as DailyMetricPoint["sourceCompleteness"],
     generatedAt: fromSqlDate(row.generated_at) ?? new Date().toISOString()
   }));
+  const weeklyMetrics = aggregateMetricPoints(dailyMetrics, "week", profile.reporting.weekStart);
+  const monthlyMetrics = aggregateMetricPoints(dailyMetrics, "month", profile.reporting.weekStart);
+  const hiddenIssues = asNumber(hiddenIssueRows[0]?.hidden_issues);
+  const hiddenPullRequests = asNumber(hiddenPrRows[0]?.hidden_pull_requests);
+  const hiddenObjects = hiddenIssues + hiddenPullRequests;
+  const analyticsLimitedByVisibility = hiddenObjects > 0;
   const peopleByLogin = new Map(people.map((person) => [person.login, person]));
   const personalPrs = personalPrRows.map(toPersonalPullRequestView);
   const personalViews: PersonalActionView[] = profile.people.watchedUsers.map((login) => {
@@ -1283,13 +1389,18 @@ export async function getDashboardSummary(
       ),
       prsCreatedYesterday: ownedPrs.filter((pr) => inRange(pr.createdAt, start, end)),
       prsMergedYesterday: ownedPrs.filter((pr) => inRange(pr.mergedAt, start, end)),
-      analytics: dailyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login)
+      analytics: analyticsLimitedByVisibility
+        ? []
+        : dailyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login),
+      analyticsWeekly: analyticsLimitedByVisibility
+        ? []
+        : weeklyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login),
+      analyticsMonthly: analyticsLimitedByVisibility
+        ? []
+        : monthlyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login)
     };
   });
 
-  const hiddenIssues = asNumber(hiddenIssueRows[0]?.hidden_issues);
-  const hiddenPullRequests = asNumber(hiddenPrRows[0]?.hidden_pull_requests);
-  const hiddenObjects = hiddenIssues + hiddenPullRequests;
   const visibility: DashboardVisibility = {
     scope: viewer.authenticated ? "logged_in" : "anonymous",
     visibleClasses,
@@ -1301,14 +1412,17 @@ export async function getDashboardSummary(
         ? `${hiddenObjects} cached GitHub objects are hidden from this view by repository visibility policy.`
         : null
   };
-  const analyticsLimitedByVisibility = hiddenObjects > 0;
   const analytics: AnalyticsSummary = {
     periodDays: 30,
     sourceNote: analyticsLimitedByVisibility
       ? "Trend data is hidden because pre-aggregated metrics may include cached objects outside the current visibility scope."
       : "Trend data is derived from the local MatrixOne cache. It is partial until issue, PR, review, and timeline backfill are complete.",
     teamDaily: analyticsLimitedByVisibility ? [] : dailyMetrics.filter((point) => point.scopeType === "team"),
-    peopleDaily: analyticsLimitedByVisibility ? [] : dailyMetrics.filter((point) => point.scopeType === "person")
+    teamWeekly: analyticsLimitedByVisibility ? [] : weeklyMetrics.filter((point) => point.scopeType === "team"),
+    teamMonthly: analyticsLimitedByVisibility ? [] : monthlyMetrics.filter((point) => point.scopeType === "team"),
+    peopleDaily: analyticsLimitedByVisibility ? [] : dailyMetrics.filter((point) => point.scopeType === "person"),
+    peopleWeekly: analyticsLimitedByVisibility ? [] : weeklyMetrics.filter((point) => point.scopeType === "person"),
+    peopleMonthly: analyticsLimitedByVisibility ? [] : monthlyMetrics.filter((point) => point.scopeType === "person")
   };
   const testingQueueRows = allPrRows.filter((row) =>
     ["test_requested", "testing", "test_changes_requested"].includes(asString(row.testing_state))

@@ -238,6 +238,8 @@ export interface PersonalActionView {
   prsCreatedYesterday: PersonalPullRequestView[];
   prsMergedYesterday: PersonalPullRequestView[];
   analytics: DailyMetricPoint[];
+  analyticsWeekly: AggregatedMetricPoint[];
+  analyticsMonthly: AggregatedMetricPoint[];
 }
 
 export type TestingFlowState =
@@ -373,6 +375,7 @@ export interface AiDriftSignalView extends AiDriftSignal {
 
 export type DailyMetricScopeType = "team" | "person";
 export type MetricSourceCompleteness = "partial_cache" | "complete_cache";
+export type MetricPeriod = "day" | "week" | "month";
 
 export interface DailyMetricPoint {
   date: string;
@@ -388,11 +391,22 @@ export interface DailyMetricPoint {
   generatedAt: string;
 }
 
+export interface AggregatedMetricPoint extends DailyMetricPoint {
+  period: Exclude<MetricPeriod, "day">;
+  periodStart: string;
+  periodEnd: string;
+  label: string;
+}
+
 export interface AnalyticsSummary {
   periodDays: number;
   sourceNote: string;
   teamDaily: DailyMetricPoint[];
+  teamWeekly: AggregatedMetricPoint[];
+  teamMonthly: AggregatedMetricPoint[];
   peopleDaily: DailyMetricPoint[];
+  peopleWeekly: AggregatedMetricPoint[];
+  peopleMonthly: AggregatedMetricPoint[];
 }
 
 export type NotificationSourceType = "attention_item" | "workflow_violation" | "ai_drift_signal";

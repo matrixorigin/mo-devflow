@@ -119,6 +119,8 @@ interface PersonalActionView {
   prsCreatedYesterday: PersonalPullRequestView[];
   prsMergedYesterday: PersonalPullRequestView[];
   analytics: DailyMetricPoint[];
+  analyticsWeekly: AggregatedMetricPoint[];
+  analyticsMonthly: AggregatedMetricPoint[];
 }
 
 interface WorkflowViolationView {
@@ -168,11 +170,26 @@ interface DailyMetricPoint {
   generatedAt: string;
 }
 
+type MetricPeriod = "day" | "week" | "month";
+
+interface AggregatedMetricPoint extends DailyMetricPoint {
+  period: Exclude<MetricPeriod, "day">;
+  periodStart: string;
+  periodEnd: string;
+  label: string;
+}
+
+type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
+
 interface AnalyticsSummary {
   periodDays: number;
   sourceNote: string;
   teamDaily: DailyMetricPoint[];
+  teamWeekly: AggregatedMetricPoint[];
+  teamMonthly: AggregatedMetricPoint[];
   peopleDaily: DailyMetricPoint[];
+  peopleWeekly: AggregatedMetricPoint[];
+  peopleMonthly: AggregatedMetricPoint[];
 }
 
 type NotificationStatus =
@@ -536,6 +553,42 @@ function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): st
   return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.`;
 }
 
+const metricPeriodOptions = [
+  { label: "Day", value: "day" },
+  { label: "Week", value: "week" },
+  { label: "Month", value: "month" }
+];
+
+function metricPeriodText(period: MetricPeriod): string {
+  if (period === "week") {
+    return "weekly";
+  }
+  if (period === "month") {
+    return "monthly";
+  }
+  return "daily";
+}
+
+function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {
+  if (period === "week") {
+    return analytics.teamWeekly ?? [];
+  }
+  if (period === "month") {
+    return analytics.teamMonthly ?? [];
+  }
+  return analytics.teamDaily;
+}
+
+function personalMetricPoints(person: PersonalActionView, period: MetricPeriod): TrendMetricPoint[] {
+  if (period === "week") {
+    return person.analyticsWeekly ?? [];
+  }
+  if (period === "month") {
+    return person.analyticsMonthly ?? [];
+  }
+  return person.analytics;
+}
+
 function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: WorkflowFixStateSnapshot }) {
   return (
     <div className="preview-state-panel">
@@ -564,7 +617,7 @@ function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: W
   );
 }
 
-function TrendChart({ points }: { points: DailyMetricPoint[] }) {
+function TrendChart({ points }: { points: TrendMetricPoint[] }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -572,13 +625,13 @@ function TrendChart({ points }: { points: DailyMetricPoint[] }) {
       return;
     }
     const chart = echarts.init(chartRef.current);
-    const dates = points.map((point) => point.date.slice(5));
+    const labels = points.map((point) => ("label" in point ? point.label : point.date.slice(5)));
     chart.setOption({
       color: ["#2563eb", "#16a34a", "#d97706", "#7c3aed"],
       tooltip: { trigger: "axis" },
       legend: { top: 0 },
       grid: { left: 36, right: 20, top: 44, bottom: 32 },
-      xAxis: { type: "category", data: dates, boundaryGap: false },
+      xAxis: { type: "category", data: labels, boundaryGap: false },
       yAxis: { type: "value", minInterval: 1 },
       series: [
         {
@@ -632,6 +685,7 @@ export default function App() {
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
@@ -1335,6 +1389,8 @@ export default function App() {
   );
   const selectedPersonalView =
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
+  const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
+  const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
 
   return (
     <Layout className="app-shell">
@@ -1838,8 +1894,16 @@ export default function App() {
                     </div>
 
                     <div>
-                      <Title level={5}>Personal Trend</Title>
-                      <TrendChart points={selectedPersonalView.analytics} />
+                      <div className="subsection-heading">
+                        <Title level={5}>Personal Trend</Title>
+                        <Segmented
+                          size="small"
+                          value={analyticsPeriod}
+                          onChange={(value) => setAnalyticsPeriod(value as MetricPeriod)}
+                          options={metricPeriodOptions}
+                        />
+                      </div>
+                      <TrendChart points={personalTrendPoints} />
                     </div>
                   </Space>
                 ) : (
@@ -1851,11 +1915,20 @@ export default function App() {
             {view === "Analytics" || view === "Overview" ? (
               <section className="section">
                 <div className="section-heading">
-                  <Title level={4}>Analytics</Title>
-                  <Text type="secondary">Last {data.analytics.periodDays} days | {data.repo.timezone}</Text>
+                  <div>
+                    <Title level={4}>Analytics</Title>
+                    <Text type="secondary">
+                      Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)} | {data.repo.timezone}
+                    </Text>
+                  </div>
+                  <Segmented
+                    value={analyticsPeriod}
+                    onChange={(value) => setAnalyticsPeriod(value as MetricPeriod)}
+                    options={metricPeriodOptions}
+                  />
                 </div>
                 <Alert className="band" type="info" message={data.analytics.sourceNote} showIcon />
-                <TrendChart points={data.analytics.teamDaily} />
+                <TrendChart points={teamTrendPoints} />
               </section>
             ) : null}
 

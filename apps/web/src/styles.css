@@ -92,6 +92,18 @@ body {
   margin: 0 !important;
 }
 
+.subsection-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.subsection-heading h5 {
+  margin: 0 !important;
+}
+
 .health-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -163,6 +175,11 @@ body {
   }
 
   .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .subsection-heading {
     align-items: flex-start;
     flex-direction: column;
   }

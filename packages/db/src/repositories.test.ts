@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { RepoProfile } from "@mo-devflow/shared";
-import { cacheStaleHoursFromEnv, isPersonalNeedsTriageIssue, visibleClassesForDashboard } from "./repositories";
+import type { DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
+import {
+  aggregateMetricPoints,
+  cacheStaleHoursFromEnv,
+  isPersonalNeedsTriageIssue,
+  visibleClassesForDashboard
+} from "./repositories";
 
 const baseProfile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -104,5 +109,86 @@ describe("personal issue buckets", () => {
         baseProfile.labels.critical
       )
     ).toBe(false);
+  });
+});
+
+describe("metric aggregation", () => {
+  const points: DailyMetricPoint[] = [
+    {
+      date: "2026-06-28",
+      scopeType: "team",
+      scopeKey: "all",
+      prsCreated: 1,
+      prsMerged: 0,
+      issuesOpened: 1,
+      issuesClosed: 0,
+      issuesDeferred: 0,
+      workflowViolationsDetected: 0,
+      sourceCompleteness: "complete_cache",
+      generatedAt: "2026-07-04T00:00:00Z"
+    },
+    {
+      date: "2026-06-29",
+      scopeType: "team",
+      scopeKey: "all",
+      prsCreated: 2,
+      prsMerged: 1,
+      issuesOpened: 0,
+      issuesClosed: 0,
+      issuesDeferred: 0,
+      workflowViolationsDetected: 1,
+      sourceCompleteness: "partial_cache",
+      generatedAt: "2026-07-04T00:01:00Z"
+    },
+    {
+      date: "2026-07-01",
+      scopeType: "team",
+      scopeKey: "all",
+      prsCreated: 3,
+      prsMerged: 1,
+      issuesOpened: 2,
+      issuesClosed: 1,
+      issuesDeferred: 1,
+      workflowViolationsDetected: 0,
+      sourceCompleteness: "complete_cache",
+      generatedAt: "2026-07-04T00:02:00Z"
+    }
+  ];
+
+  test("aggregates weeks using the configured Monday start", () => {
+    const weekly = aggregateMetricPoints(points, "week", "Monday");
+
+    expect(weekly.map((point) => ({ start: point.periodStart, prsCreated: point.prsCreated }))).toEqual([
+      { start: "2026-06-22", prsCreated: 1 },
+      { start: "2026-06-29", prsCreated: 5 }
+    ]);
+    expect(weekly[1]).toMatchObject({
+      periodEnd: "2026-07-06",
+      label: "06-29-07-05",
+      prsMerged: 2,
+      issuesOpened: 2,
+      issuesClosed: 1,
+      issuesDeferred: 1,
+      workflowViolationsDetected: 1,
+      sourceCompleteness: "partial_cache",
+      generatedAt: "2026-07-04T00:02:00Z"
+    });
+  });
+
+  test("aggregates weeks using the configured Sunday start", () => {
+    const weekly = aggregateMetricPoints(points, "week", "Sunday");
+
+    expect(weekly.map((point) => ({ start: point.periodStart, prsCreated: point.prsCreated }))).toEqual([
+      { start: "2026-06-28", prsCreated: 6 }
+    ]);
+  });
+
+  test("aggregates months without mixing calendar boundaries", () => {
+    const monthly = aggregateMetricPoints(points, "month", "Monday");
+
+    expect(monthly.map((point) => ({ start: point.periodStart, end: point.periodEnd, created: point.prsCreated }))).toEqual([
+      { start: "2026-06-01", end: "2026-07-01", created: 3 },
+      { start: "2026-07-01", end: "2026-08-01", created: 3 }
+    ]);
   });
 });
