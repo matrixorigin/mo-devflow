@@ -1,0 +1,270 @@
+import type {
+  NotificationCandidate,
+  NotificationDeliveryView,
+  NotificationHealth,
+  NotificationStatus,
+  RepoProfile
+} from "@mo-devflow/shared";
+import type { RowDataPacket } from "mysql2";
+import { fromSqlDate, getPool, nowSql } from "./client";
+
+interface RowData extends RowDataPacket {
+  [key: string]: unknown;
+}
+
+function stringify(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "string") {
+    return Number(value);
+  }
+  return 0;
+}
+
+function githubObjectUrl(profile: RepoProfile, objectType: string, objectNumber: number | null): string | null {
+  if (!objectNumber) {
+    return null;
+  }
+  const segment = objectType === "pull_request" ? "pull" : "issues";
+  return `https://github.com/${profile.repo.owner}/${profile.repo.name}/${segment}/${objectNumber}`;
+}
+
+function notificationSeverity(value: unknown): NotificationCandidate["severity"] {
+  const severity = asString(value);
+  if (severity === "critical" || severity === "warning" || severity === "info") {
+    return severity;
+  }
+  return "warning";
+}
+
+function notificationRecipient(profile: RepoProfile, login: string | null): string {
+  if (login && profile.notifications.employees[login]?.wecomUserId) {
+    return profile.notifications.employees[login].wecomUserId;
+  }
+  return profile.notifications.routing.fallbackRecipient;
+}
+
+function recipientScope(profile: RepoProfile, recipient: unknown): NotificationDeliveryView["recipientScope"] {
+  return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
+}
+
+export async function listNotificationCandidates(
+  repoId: number,
+  profile: RepoProfile,
+  limit = 50
+): Promise<NotificationCandidate[]> {
+  const candidates: NotificationCandidate[] = [];
+  const [attentionRows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM attention_items
+     WHERE repo_id = ? AND resolved_at IS NULL
+     ORDER BY
+       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       last_detected_at DESC
+     LIMIT ?`,
+    [repoId, limit]
+  );
+  for (const row of attentionRows) {
+    const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
+    const relatedLogin = row.related_login ? asString(row.related_login) : null;
+    candidates.push({
+      sourceType: "attention_item",
+      sourceId: asNumber(row.id),
+      ruleKey: asString(row.rule_key),
+      severity: notificationSeverity(row.severity),
+      objectType: asString(row.object_type),
+      objectNumber,
+      title: `${asString(row.object_type)} ${objectNumber ?? ""}`.trim(),
+      htmlUrl: githubObjectUrl(profile, asString(row.object_type), objectNumber),
+      relatedLogin,
+      recipient: notificationRecipient(profile, relatedLogin),
+      dedupeKey: `notification:attention_item:${asNumber(row.id)}:${asString(row.rule_key)}`,
+      evidenceSummary: asString(row.evidence_summary),
+      firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+      lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+    });
+  }
+
+  const remainingAfterAttention = Math.max(0, limit - candidates.length);
+  if (remainingAfterAttention > 0) {
+    const [violationRows] = await getPool().execute<RowData[]>(
+      `SELECT *
+       FROM workflow_violations
+       WHERE repo_id = ? AND resolved_at IS NULL
+       ORDER BY
+         CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+         last_detected_at DESC
+       LIMIT ?`,
+      [repoId, remainingAfterAttention]
+    );
+    for (const row of violationRows) {
+      const objectNumber = asNumber(row.object_number);
+      const relatedLogin = row.related_login ? asString(row.related_login) : null;
+      candidates.push({
+        sourceType: "workflow_violation",
+        sourceId: asNumber(row.id),
+        ruleKey: asString(row.rule_key),
+        severity: notificationSeverity(row.severity),
+        objectType: asString(row.object_type),
+        objectNumber,
+        title: asString(row.title),
+        htmlUrl: asString(row.html_url),
+        relatedLogin,
+        recipient: notificationRecipient(profile, relatedLogin),
+        dedupeKey: `notification:workflow_violation:${asNumber(row.id)}:${asString(row.rule_key)}`,
+        evidenceSummary: asString(row.evidence_summary),
+        firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+        lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+      });
+    }
+  }
+
+  const remainingAfterViolations = Math.max(0, limit - candidates.length);
+  if (remainingAfterViolations > 0) {
+    const [driftRows] = await getPool().execute<RowData[]>(
+      `SELECT *
+       FROM ai_drift_signals
+       WHERE repo_id = ? AND resolved_at IS NULL
+       ORDER BY
+         CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+         actual_hours DESC,
+         last_detected_at DESC
+       LIMIT ?`,
+      [repoId, remainingAfterViolations]
+    );
+    for (const row of driftRows) {
+      const objectNumber = asNumber(row.object_number);
+      const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
+      candidates.push({
+        sourceType: "ai_drift_signal",
+        sourceId: asNumber(row.id),
+        ruleKey: asString(row.rule_key),
+        severity: notificationSeverity(row.severity),
+        objectType: asString(row.object_type),
+        objectNumber,
+        title: asString(row.title),
+        htmlUrl: asString(row.html_url),
+        relatedLogin: ownerLogin,
+        recipient: notificationRecipient(profile, ownerLogin),
+        dedupeKey: `notification:ai_drift_signal:${asNumber(row.id)}:${asString(row.rule_key)}`,
+        evidenceSummary: asString(row.evidence_summary),
+        firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+        lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+      });
+    }
+  }
+
+  return candidates;
+}
+
+export async function isNotificationInCooldown(
+  dedupeKey: string,
+  cooldownHours: number,
+  statuses?: NotificationStatus[]
+): Promise<boolean> {
+  if (cooldownHours <= 0) {
+    return false;
+  }
+  const statusFilter = statuses && statuses.length > 0 ? ` AND status IN (${statuses.map(() => "?").join(", ")})` : "";
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT attempted_at
+     FROM notification_deliveries
+     WHERE dedupe_key = ?
+       ${statusFilter}
+     ORDER BY attempted_at DESC
+     LIMIT 1`,
+    statuses && statuses.length > 0 ? [dedupeKey, ...statuses] : [dedupeKey]
+  );
+  const attemptedAt = fromSqlDate(rows[0]?.attempted_at);
+  if (!attemptedAt) {
+    return false;
+  }
+  return Date.now() - new Date(attemptedAt).getTime() < cooldownHours * 3_600_000;
+}
+
+export async function recordNotificationDelivery(input: {
+  repoId: number;
+  candidate: NotificationCandidate;
+  channel: string;
+  status: NotificationStatus;
+  dryRun: boolean;
+  payload?: unknown;
+  providerResponse?: unknown;
+  errorMessage?: string | null;
+}): Promise<void> {
+  await getPool().execute(
+    `INSERT INTO notification_deliveries(
+      repo_id, attention_item_id, source_type, source_id, rule_key, object_type, object_number,
+      dedupe_key, channel, recipient, status, dry_run, payload_json,
+      provider_response, error_message, attempted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.repoId,
+      input.candidate.sourceType === "attention_item" ? input.candidate.sourceId : null,
+      input.candidate.sourceType,
+      input.candidate.sourceId,
+      input.candidate.ruleKey,
+      input.candidate.objectType,
+      input.candidate.objectNumber,
+      input.candidate.dedupeKey,
+      input.channel,
+      input.candidate.recipient,
+      input.status,
+      input.dryRun ? 1 : 0,
+      input.payload ? stringify(input.payload) : null,
+      input.providerResponse ? stringify(input.providerResponse) : null,
+      input.errorMessage ?? null,
+      nowSql()
+    ]
+  );
+}
+
+export async function getNotificationHealth(repoId: number, profile: RepoProfile): Promise<NotificationHealth> {
+  const [deliveryRows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM notification_deliveries
+     WHERE repo_id = ?
+     ORDER BY attempted_at DESC
+     LIMIT 20`,
+    [repoId]
+  );
+  const [deliveryFailureRows] = await getPool().execute<RowData[]>(
+    `SELECT COUNT(*) AS failed_count
+     FROM notification_deliveries
+     WHERE repo_id = ? AND status = 'failed'`,
+    [repoId]
+  );
+
+  const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
+    sourceType: asString(row.source_type) as NotificationDeliveryView["sourceType"],
+    ruleKey: asString(row.rule_key),
+    objectType: asString(row.object_type),
+    objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
+    recipientScope: recipientScope(profile, row.recipient),
+    channel: asString(row.channel),
+    status: asString(row.status) as NotificationDeliveryView["status"],
+    errorMessage: row.error_message ? asString(row.error_message) : null,
+    attemptedAt: fromSqlDate(row.attempted_at) ?? new Date().toISOString()
+  }));
+
+  return {
+    enabled: profile.notifications.wecom.enabled,
+    channel: "wecom",
+    webhookConfigured: Boolean(profile.notifications.wecom.webhookUrlEnv && process.env[profile.notifications.wecom.webhookUrlEnv]),
+    cooldownHours: profile.notifications.routing.cooldownHours,
+    failedDeliveries: asNumber(deliveryFailureRows[0]?.failed_count),
+    lastDeliveries
+  };
+}

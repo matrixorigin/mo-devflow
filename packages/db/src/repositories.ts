@@ -17,6 +17,7 @@ import type {
 import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
+import { getNotificationHealth } from "./notifications";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -41,6 +42,10 @@ function asNumber(value: unknown): number {
     return Number(value);
   }
   return 0;
+}
+
+function asBoolean(value: unknown): boolean {
+  return asNumber(value) === 1;
 }
 
 function mergeUnique(left: string[], right: string[]): string[] {
@@ -1007,6 +1012,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     teamDaily: dailyMetrics.filter((point) => point.scopeType === "team"),
     peopleDaily: dailyMetrics.filter((point) => point.scopeType === "person")
   };
+  const notifications = await getNotificationHealth(repoId, profile);
 
   return {
     repo: {
@@ -1036,6 +1042,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     pendingPrs,
     workflowViolations,
     aiDriftSignals,
-    analytics
+    analytics,
+    notifications
   };
 }

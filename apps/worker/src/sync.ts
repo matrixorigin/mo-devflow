@@ -1,7 +1,10 @@
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   listCachedIssuesForRules,
+  listNotificationCandidates,
+  isNotificationInCooldown,
   recordSyncRun,
+  recordNotificationDelivery,
   recomputeDailyMetricsFromCache,
   replaceAiDriftSignals,
   replaceWorkflowViolations,
@@ -12,6 +15,7 @@ import {
   upsertRepoProfile
 } from "@mo-devflow/db";
 import { fetchGitHubSnapshot } from "@mo-devflow/github";
+import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
   aiDriftSignalsForIssue,
   criticalAttentionForIssue,
@@ -19,7 +23,7 @@ import {
   normalizePullRequest,
   workflowViolationsForIssue
 } from "@mo-devflow/rules";
-import type { AiDriftSignal, NormalizedIssue, WorkflowViolation } from "@mo-devflow/shared";
+import type { AiDriftSignal, NormalizedIssue, NotificationStatus, WorkflowViolation } from "@mo-devflow/shared";
 
 export interface SyncResult {
   repoId: number;
@@ -43,6 +47,15 @@ export interface DriftSyncResult {
   aiDriftSignals: number;
 }
 
+export interface NotificationSyncResult {
+  repoId: number;
+  candidates: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  cooldown: number;
+}
+
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
   return !issue.isPullRequest;
 }
@@ -58,6 +71,14 @@ function prEvidence(flag: string, prNumber: number): string {
     return `PR #${prNumber} has a merge conflict.`;
   }
   return `PR #${prNumber} has no recent human action.`;
+}
+
+function notificationLimitFromEnv(): number {
+  const parsed = Number(process.env.MO_DEVFLOW_NOTIFICATION_LIMIT ?? "20");
+  if (!Number.isFinite(parsed)) {
+    return 20;
+  }
+  return Math.max(1, Math.floor(parsed));
 }
 
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
@@ -116,6 +137,153 @@ export async function recomputeAiDriftFromCache(): Promise<DriftSyncResult> {
     raw: { aiDriftSignals: aiDriftSignals.length }
   });
   return { repoId, aiDriftSignals: aiDriftSignals.length };
+}
+
+export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const limit = notificationLimitFromEnv();
+  const dryRun = process.env.MO_DEVFLOW_NOTIFICATION_DRY_RUN === "1";
+  const candidates = await listNotificationCandidates(repoId, profile, limit);
+  const webhookUrl = profile.notifications.wecom.webhookUrlEnv
+    ? process.env[profile.notifications.wecom.webhookUrlEnv]
+    : undefined;
+  const summary: NotificationSyncResult = {
+    repoId,
+    candidates: candidates.length,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    cooldown: 0
+  };
+  const deliveryCooldownStatuses: NotificationStatus[] = ["sent", "failed", "dry_run"];
+
+  for (const candidate of candidates) {
+    const payload = {
+      markdown: buildWeComMarkdown(profile, candidate),
+      candidate
+    };
+
+    if (!profile.notifications.wecom.enabled) {
+      if (
+        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+          "skipped_disabled"
+        ])
+      ) {
+        summary.cooldown += 1;
+        continue;
+      }
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "skipped_disabled",
+        dryRun: false,
+        payload
+      });
+      summary.skipped += 1;
+      continue;
+    }
+
+    if (!webhookUrl) {
+      if (
+        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+          "skipped_no_webhook"
+        ])
+      ) {
+        summary.cooldown += 1;
+        continue;
+      }
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "skipped_no_webhook",
+        dryRun: false,
+        payload,
+        errorMessage: "WeCom notification is enabled but webhook URL is not configured."
+      });
+      summary.skipped += 1;
+      continue;
+    }
+
+    if (candidate.severity !== "critical" && isInQuietHours(profile.notifications.wecom.quietHours, profile.reporting.timezone)) {
+      if (
+        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+          "skipped_quiet_hours"
+        ])
+      ) {
+        summary.cooldown += 1;
+        continue;
+      }
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "skipped_quiet_hours",
+        dryRun: false,
+        payload
+      });
+      summary.skipped += 1;
+      continue;
+    }
+
+    if (await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, deliveryCooldownStatuses)) {
+      summary.cooldown += 1;
+      continue;
+    }
+
+    if (dryRun) {
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "dry_run",
+        dryRun: true,
+        payload
+      });
+      summary.skipped += 1;
+      continue;
+    }
+
+    try {
+      const providerResponse = await sendWeComMarkdown(webhookUrl, payload.markdown);
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "sent",
+        dryRun: false,
+        payload,
+        providerResponse
+      });
+      summary.sent += 1;
+    } catch (error) {
+      await recordNotificationDelivery({
+        repoId,
+        candidate,
+        channel: "wecom",
+        status: "failed",
+        dryRun: false,
+        payload,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+      summary.failed += 1;
+    }
+  }
+
+  await recordSyncRun({
+    repoId,
+    syncLayer: "notifications",
+    status: summary.failed > 0 ? "partial" : "success",
+    sourceAuthType: "cache",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    raw: summary
+  });
+  return summary;
 }
 
 export async function syncOnce(): Promise<SyncResult | null> {

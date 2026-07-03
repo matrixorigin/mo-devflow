@@ -16,6 +16,7 @@ make sync-once
 make rules-once
 make metrics-once
 make drift-once
+make notify-once
 make dev-start
 ```
 

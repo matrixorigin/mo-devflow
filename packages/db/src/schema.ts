@@ -195,10 +195,19 @@ const schemaStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS notification_deliveries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    attention_item_id BIGINT NOT NULL,
+    repo_id BIGINT,
+    attention_item_id BIGINT,
+    source_type VARCHAR(64),
+    source_id BIGINT,
+    rule_key VARCHAR(128),
+    object_type VARCHAR(64),
+    object_number INT,
+    dedupe_key VARCHAR(512),
     channel VARCHAR(64) NOT NULL,
     recipient VARCHAR(255) NOT NULL,
     status VARCHAR(32) NOT NULL,
+    dry_run TINYINT NOT NULL DEFAULT 0,
+    payload_json LONGTEXT,
     provider_response LONGTEXT,
     error_message TEXT,
     attempted_at DATETIME NOT NULL
@@ -215,7 +224,10 @@ const indexStatements = [
   "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
   "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)",
   "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)",
-  "CREATE INDEX idx_ai_drift_repo_resolved ON ai_drift_signals(repo_id, resolved_at)"
+  "CREATE INDEX idx_ai_drift_repo_resolved ON ai_drift_signals(repo_id, resolved_at)",
+  "CREATE INDEX idx_notification_deliveries_repo ON notification_deliveries(repo_id)",
+  "CREATE INDEX idx_notification_deliveries_dedupe ON notification_deliveries(dedupe_key)",
+  "CREATE INDEX idx_notification_deliveries_attempted ON notification_deliveries(attempted_at)"
 ];
 
 const compatibilityStatements = [
@@ -228,7 +240,17 @@ const compatibilityStatements = [
   "ALTER TABLE pull_requests ADD COLUMN latest_review_submitted_at DATETIME",
   "ALTER TABLE pull_requests ADD COLUMN latest_commit_at DATETIME",
   "ALTER TABLE pull_requests ADD COLUMN detail_synced_at DATETIME",
-  "ALTER TABLE pull_requests ADD COLUMN detail_error TEXT"
+  "ALTER TABLE pull_requests ADD COLUMN detail_error TEXT",
+  "ALTER TABLE notification_deliveries MODIFY COLUMN attention_item_id BIGINT",
+  "ALTER TABLE notification_deliveries ADD COLUMN source_type VARCHAR(64)",
+  "ALTER TABLE notification_deliveries ADD COLUMN source_id BIGINT",
+  "ALTER TABLE notification_deliveries ADD COLUMN rule_key VARCHAR(128)",
+  "ALTER TABLE notification_deliveries ADD COLUMN object_type VARCHAR(64)",
+  "ALTER TABLE notification_deliveries ADD COLUMN object_number INT",
+  "ALTER TABLE notification_deliveries ADD COLUMN dedupe_key VARCHAR(512)",
+  "ALTER TABLE notification_deliveries ADD COLUMN dry_run TINYINT NOT NULL DEFAULT 0",
+  "ALTER TABLE notification_deliveries ADD COLUMN payload_json LONGTEXT",
+  "ALTER TABLE notification_deliveries ADD COLUMN repo_id BIGINT"
 ];
 
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {

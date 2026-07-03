@@ -24,7 +24,7 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { RefreshCw, ShieldAlert } from "lucide-react";
+import { BellRing, RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -129,6 +129,35 @@ interface AnalyticsSummary {
   peopleDaily: DailyMetricPoint[];
 }
 
+type NotificationStatus =
+  | "sent"
+  | "failed"
+  | "dry_run"
+  | "skipped_disabled"
+  | "skipped_no_webhook"
+  | "skipped_quiet_hours";
+
+interface NotificationDeliveryView {
+  sourceType: "attention_item" | "workflow_violation" | "ai_drift_signal";
+  ruleKey: string;
+  objectType: string;
+  objectNumber: number | null;
+  recipientScope: "fallback" | "mapped_employee";
+  channel: string;
+  status: NotificationStatus;
+  errorMessage: string | null;
+  attemptedAt: string;
+}
+
+interface NotificationHealth {
+  enabled: boolean;
+  channel: "wecom";
+  webhookConfigured: boolean;
+  cooldownHours: number;
+  failedDeliveries: number;
+  lastDeliveries: NotificationDeliveryView[];
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -164,6 +193,7 @@ interface DashboardSummary {
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
+  notifications: NotificationHealth;
 }
 
 function hours(value: number): string {
@@ -253,6 +283,19 @@ function signalColor(value: AiDriftSignalView["severity"]): string {
     return "orange";
   }
   return "blue";
+}
+
+function notificationStatusColor(value: NotificationStatus): string {
+  if (value === "sent") {
+    return "green";
+  }
+  if (value === "failed" || value === "skipped_no_webhook") {
+    return "red";
+  }
+  if (value === "dry_run" || value === "skipped_quiet_hours") {
+    return "orange";
+  }
+  return "default";
 }
 
 function TrendChart({ points }: { points: DailyMetricPoint[] }) {
@@ -629,6 +672,58 @@ export default function App() {
     []
   );
 
+  const notificationColumns: ColumnsType<NotificationDeliveryView> = useMemo(
+    () => [
+      {
+        title: "Status",
+        dataIndex: "status",
+        width: 164,
+        render: (status) => <Tag color={notificationStatusColor(status)}>{labelText(status)}</Tag>
+      },
+      {
+        title: "Source",
+        width: 172,
+        render: (_, delivery) => (
+          <Space size={[4, 4]} wrap>
+            <Tag>{labelText(delivery.sourceType)}</Tag>
+            <Tag color="blue">{labelText(delivery.ruleKey)}</Tag>
+          </Space>
+        )
+      },
+      {
+        title: "Object",
+        width: 120,
+        render: (_, delivery) =>
+          delivery.objectNumber ? (
+            <Text>
+              {labelText(delivery.objectType)} #{delivery.objectNumber}
+            </Text>
+          ) : (
+            <Text type="secondary">-</Text>
+          )
+      },
+      {
+        title: "Route",
+        dataIndex: "recipientScope",
+        width: 148,
+        render: (scope) => <Tag>{labelText(scope)}</Tag>
+      },
+      {
+        title: "Attempted",
+        dataIndex: "attemptedAt",
+        width: 168,
+        render: (value) => formatDate(value)
+      },
+      {
+        title: "Error",
+        dataIndex: "errorMessage",
+        ellipsis: true,
+        render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
+      }
+    ],
+    []
+  );
+
   return (
     <Layout className="app-shell">
       <Header className="topbar">
@@ -642,7 +737,7 @@ export default function App() {
           <Segmented
             value={view}
             onChange={(value) => setView(String(value))}
-            options={["Overview", "Analytics", "People", "PRs", "Violations", "Drift"]}
+            options={["Overview", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
           />
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
@@ -698,7 +793,68 @@ export default function App() {
                   strokeColor="#9333ea"
                 />
               </div>
+              <div className="metric">
+                <Statistic title="Notification Failures" value={data.notifications.failedDeliveries} />
+                <Progress
+                  percent={Math.min(100, data.notifications.failedDeliveries * 20)}
+                  showInfo={false}
+                  strokeColor={data.notifications.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
+                />
+              </div>
             </section>
+
+            {view === "Notifications" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Space>
+                    <BellRing size={18} />
+                    <Title level={4}>Notifications</Title>
+                  </Space>
+                  <Space size={[6, 6]} wrap>
+                    <Tag color={data.notifications.enabled ? "green" : "default"}>
+                      {data.notifications.enabled ? "enabled" : "disabled"}
+                    </Tag>
+                    <Tag color={data.notifications.webhookConfigured ? "green" : "orange"}>
+                      {data.notifications.webhookConfigured ? "webhook configured" : "no webhook"}
+                    </Tag>
+                    <Tag>{data.notifications.cooldownHours}h cooldown</Tag>
+                  </Space>
+                </div>
+                {!data.notifications.enabled ? (
+                  <Alert
+                    className="band"
+                    type="info"
+                    message="WeCom delivery is disabled; notification runs are recorded as skipped without sending external requests."
+                    showIcon
+                  />
+                ) : !data.notifications.webhookConfigured ? (
+                  <Alert
+                    className="band"
+                    type="error"
+                    message="WeCom delivery is enabled but the webhook environment variable is not configured."
+                    showIcon
+                  />
+                ) : data.notifications.failedDeliveries > 0 ? (
+                  <Alert
+                    className="band"
+                    type="warning"
+                    message={`${data.notifications.failedDeliveries} failed notification deliveries need attention.`}
+                    showIcon
+                  />
+                ) : null}
+                <Table
+                  rowKey={(delivery) =>
+                    `${delivery.sourceType}-${delivery.objectType}-${delivery.objectNumber ?? "none"}-${delivery.ruleKey}-${delivery.attemptedAt}`
+                  }
+                  size="middle"
+                  columns={notificationColumns}
+                  dataSource={data.notifications.lastDeliveries}
+                  scroll={{ x: 1040 }}
+                  pagination={{ pageSize: 8 }}
+                  locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
+                />
+              </section>
+            ) : null}
 
             {view === "Analytics" || view === "Overview" ? (
               <section className="section">

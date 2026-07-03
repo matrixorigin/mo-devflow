@@ -36,7 +36,11 @@ const profile: RepoProfile = {
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
   },
-  notifications: { wecom: { enabled: false }, employees: {} },
+  notifications: {
+    wecom: { enabled: false },
+    employees: {},
+    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group" }
+  },
   raw: {}
 };
 

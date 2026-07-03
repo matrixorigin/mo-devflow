@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once check test ci
+.PHONY: help setup dev-init dev-start dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -22,6 +22,7 @@ help:
 	@echo "  make rules-once         - Recompute derived rules from cached data"
 	@echo "  make metrics-once       - Recompute analytics metrics from cached data"
 	@echo "  make drift-once         - Recompute AI drift signals from cached data"
+	@echo "  make notify-once        - Process notification candidates"
 	@echo "  make check              - Typecheck and test"
 	@echo "  make ci                 - check + build"
 
@@ -49,6 +50,9 @@ metrics-once:
 
 drift-once:
 	@npm run drift:once
+
+notify-once:
+	@npm run notify:once
 
 dev-api-start:
 	@if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then echo "API already running (PID $$(cat $(API_PID)))"; exit 0; fi

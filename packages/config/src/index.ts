@@ -5,6 +5,11 @@ import YAML from "yaml";
 import { z } from "zod";
 import type { RepoProfile } from "@mo-devflow/shared";
 
+const notificationRoutingEntrySchema = z.object({
+  cooldown_hours: z.number().min(0).optional(),
+  fallback_recipient: z.string().optional()
+});
+
 const profileSchema = z.object({
   repo: z.object({
     owner: z.string().min(1),
@@ -105,9 +110,16 @@ const profileSchema = z.object({
         .default({ enabled: false }),
       employees: z
         .record(z.string(), z.object({ wecom_user_id: z.string() }))
+        .default({}),
+      routing: z
+        .object({
+          critical_issue_stalled: notificationRoutingEntrySchema.optional(),
+          default: notificationRoutingEntrySchema.optional()
+        })
+        .passthrough()
         .default({})
     })
-    .default({ wecom: { enabled: false }, employees: {} })
+    .default({ wecom: { enabled: false }, employees: {}, routing: {} })
 });
 
 export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? "config/repos/matrixone.yaml"): RepoProfile {
@@ -177,7 +189,17 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
           login,
           { wecomUserId: value.wecom_user_id }
         ])
-      )
+      ),
+      routing: {
+        cooldownHours:
+          parsed.notifications.routing.default?.cooldown_hours ??
+          parsed.notifications.routing.critical_issue_stalled?.cooldown_hours ??
+          12,
+        fallbackRecipient:
+          parsed.notifications.routing.default?.fallback_recipient ??
+          parsed.notifications.routing.critical_issue_stalled?.fallback_recipient ??
+          "maintainer_group"
+      }
     },
     raw
   };

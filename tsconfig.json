@@ -16,7 +16,8 @@
       "@mo-devflow/config": ["packages/config/src/index.ts"],
       "@mo-devflow/db": ["packages/db/src/index.ts"],
       "@mo-devflow/github": ["packages/github/src/index.ts"],
-      "@mo-devflow/rules": ["packages/rules/src/index.ts"]
+      "@mo-devflow/rules": ["packages/rules/src/index.ts"],
+      "@mo-devflow/notifications": ["packages/notifications/src/index.ts"]
     }
   },
   "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx", "vite.config.ts"]

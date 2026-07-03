@@ -74,6 +74,10 @@ export interface RepoProfile {
       };
     };
     employees: Record<string, { wecomUserId: string }>;
+    routing: {
+      cooldownHours: number;
+      fallbackRecipient: string;
+    };
   };
   raw: unknown;
 }
@@ -264,6 +268,53 @@ export interface AnalyticsSummary {
   peopleDaily: DailyMetricPoint[];
 }
 
+export type NotificationSourceType = "attention_item" | "workflow_violation" | "ai_drift_signal";
+export type NotificationStatus =
+  | "sent"
+  | "failed"
+  | "dry_run"
+  | "skipped_disabled"
+  | "skipped_no_webhook"
+  | "skipped_quiet_hours";
+
+export interface NotificationCandidate {
+  sourceType: NotificationSourceType;
+  sourceId: number;
+  ruleKey: string;
+  severity: AttentionSeverity;
+  objectType: string;
+  objectNumber: number | null;
+  title: string;
+  htmlUrl: string | null;
+  relatedLogin: string | null;
+  recipient: string;
+  dedupeKey: string;
+  evidenceSummary: string;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+}
+
+export interface NotificationDeliveryView {
+  sourceType: NotificationSourceType;
+  ruleKey: string;
+  objectType: string;
+  objectNumber: number | null;
+  recipientScope: "fallback" | "mapped_employee";
+  channel: string;
+  status: NotificationStatus;
+  errorMessage: string | null;
+  attemptedAt: string;
+}
+
+export interface NotificationHealth {
+  enabled: boolean;
+  channel: "wecom";
+  webhookConfigured: boolean;
+  cooldownHours: number;
+  failedDeliveries: number;
+  lastDeliveries: NotificationDeliveryView[];
+}
+
 export interface SyncHealth {
   layer: string;
   status: string;
@@ -301,6 +352,7 @@ export interface DashboardSummary {
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
+  notifications: NotificationHealth;
 }
 
 export function parseJsonArray(value: string | null | undefined): string[] {
