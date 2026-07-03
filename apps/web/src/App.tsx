@@ -301,7 +301,7 @@ interface WorkflowFixStateSnapshot {
 
 interface WorkflowFixPreview {
   previewId: string;
-  actionKey: "add_needs_triage";
+  actionKey: WorkflowFixActionKey;
   repoKey: string;
   objectType: "issue" | "pull_request";
   objectNumber: number;
@@ -317,6 +317,8 @@ interface WorkflowFixPreview {
   createdAt: string;
   expiresAt: string;
 }
+
+type WorkflowFixActionKey = "add_needs_triage" | "move_to_deferred";
 
 interface WorkflowFixExecutionResult {
   previewId: string;
@@ -490,6 +492,19 @@ function flagColor(flag: string): string {
     return "orange";
   }
   return "blue";
+}
+
+function workflowFixActionForViolation(violation: WorkflowViolationView): WorkflowFixActionKey | null {
+  if (!violation.fixable || violation.objectType !== "issue") {
+    return null;
+  }
+  if (violation.ruleKey === "bug_missing_needs_triage") {
+    return "add_needs_triage";
+  }
+  if (violation.ruleKey === "needs_triage_stale" || violation.ruleKey === "premature_active_severity") {
+    return "move_to_deferred";
+  }
+  return null;
 }
 
 function testingStateColor(state: TestingFlowState): string {
@@ -901,6 +916,11 @@ export default function App() {
   }
 
   async function previewWorkflowFix(violation: WorkflowViolationView) {
+    const actionKey = workflowFixActionForViolation(violation);
+    if (!actionKey) {
+      setPreviewError("No safe preview action is available for this workflow rule.");
+      return;
+    }
     const loadingKey = `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`;
     setPreviewLoadingKey(loadingKey);
     setPreviewError(null);
@@ -913,7 +933,7 @@ export default function App() {
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({
-          actionKey: "add_needs_triage",
+          actionKey,
           objectType: violation.objectType,
           objectNumber: violation.objectNumber,
           ruleKey: violation.ruleKey
@@ -1380,8 +1400,8 @@ export default function App() {
         title: "Preview",
         width: 132,
         render: (_, violation) => {
-          const supportsPreview =
-            violation.fixable && violation.objectType === "issue" && violation.ruleKey === "bug_missing_needs_triage";
+          const actionKey = workflowFixActionForViolation(violation);
+          const supportsPreview = actionKey !== null;
           const issueLabelCapability = session?.user?.writeCapabilities.issueLabels ?? null;
           const tokenServerReady = session?.tokenEncryptionConfigured !== false;
           const canPreview = supportsPreview && tokenServerReady && issueLabelCapability?.enabled === true;
@@ -1392,7 +1412,7 @@ export default function App() {
             : !supportsPreview
               ? "No safe preview action for this rule yet"
               : issueLabelCapability?.enabled
-                ? "Preview workflow fix"
+                ? `Preview ${labelText(actionKey)}`
                 : (issueLabelCapability?.message ?? "Reconnect GitHub token before workflow fixes are enabled");
           return (
             <Tooltip title={tooltip}>

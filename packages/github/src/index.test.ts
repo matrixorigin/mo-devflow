@@ -5,6 +5,8 @@ import { applyWorkflowFixPreview, classifyGitHubError, configuredGitHubSourceAut
 const octokitMocks = vi.hoisted(() => ({
   issuesGet: vi.fn(),
   issuesAddLabels: vi.fn(),
+  issuesRemoveLabel: vi.fn(),
+  issuesCreateComment: vi.fn(),
   usersGetAuthenticated: vi.fn()
 }));
 
@@ -14,7 +16,9 @@ vi.mock("@octokit/rest", () => ({
       rest: {
         issues: {
           get: octokitMocks.issuesGet,
-          addLabels: octokitMocks.issuesAddLabels
+          addLabels: octokitMocks.issuesAddLabels,
+          removeLabel: octokitMocks.issuesRemoveLabel,
+          createComment: octokitMocks.issuesCreateComment
         },
         users: {
           getAuthenticated: octokitMocks.usersGetAuthenticated
@@ -85,6 +89,27 @@ const preview: WorkflowFixPreview = {
   expiresAt: "2026-07-03T00:10:00.000Z"
 };
 
+const deferredComment =
+  "Deferred by mo-devflow workflow fix.\n\nReason: Issue #42 has stayed in needs-triage for 96h.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label.";
+
+const deferredPreview: WorkflowFixPreview = {
+  ...preview,
+  previewId: "a63a6d37-0b8d-4b93-b4f8-5698e2c6ec8b",
+  actionKey: "move_to_deferred",
+  ruleKey: "needs_triage_stale",
+  reason: "Issue #42 has stayed in needs-triage for 96h.",
+  currentState: stateSnapshot(["kind/bug", "needs-triage"], "cache"),
+  proposedState: {
+    ...stateSnapshot(["kind/bug", "deferred"], "cache"),
+    lifecycleState: "deferred"
+  },
+  operations: [
+    { type: "remove_label", label: "needs-triage" },
+    { type: "add_label", label: "deferred" },
+    { type: "add_comment", body: deferredComment }
+  ]
+};
+
 function stateSnapshot(
   labels: string[],
   source: WorkflowFixStateSnapshot["source"] = "github"
@@ -119,6 +144,15 @@ describe("workflow fix execution", () => {
       status: 200,
       data: [{ name: "kind/bug" }, { name: "needs-triage" }],
       headers: { "x-ratelimit-remaining": "98" }
+    });
+    octokitMocks.issuesRemoveLabel.mockResolvedValue({
+      status: 200,
+      headers: { "x-ratelimit-remaining": "97" }
+    });
+    octokitMocks.issuesCreateComment.mockResolvedValue({
+      status: 201,
+      data: { id: 123, html_url: "https://github.com/matrixorigin/matrixone/issues/42#issuecomment-123" },
+      headers: { "x-ratelimit-remaining": "96" }
     });
   });
 
@@ -168,6 +202,60 @@ describe("workflow fix execution", () => {
     expect(result.beforeState.labels).toEqual(labels);
     expect(result.afterState.labels).toEqual(labels);
     expect(result.response).toEqual({ skipped });
+  });
+
+  test("moves a stale needs-triage issue to deferred and comments with the preview reason", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "needs-triage"]));
+    octokitMocks.issuesAddLabels.mockResolvedValue({
+      status: 200,
+      data: [{ name: "kind/bug" }, { name: "deferred" }],
+      headers: { "x-ratelimit-remaining": "96" }
+    });
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: deferredPreview
+    });
+
+    expect(octokitMocks.issuesRemoveLabel).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 42,
+      name: "needs-triage"
+    });
+    expect(octokitMocks.issuesAddLabels).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 42,
+      labels: ["deferred"]
+    });
+    expect(octokitMocks.issuesCreateComment).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 42,
+      body: deferredComment
+    });
+    expect(result.appliedOperations).toEqual(deferredPreview.operations);
+    expect(result.beforeState.labels).toEqual(["kind/bug", "needs-triage"]);
+    expect(result.afterState.labels).toEqual(["kind/bug", "deferred"]);
+    expect(result.rateLimitRemaining).toBe(96);
+  });
+
+  test("does not move to deferred when the lifecycle labels changed after preview", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "severity/s0"]));
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: deferredPreview
+    });
+
+    expect(octokitMocks.issuesRemoveLabel).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
+    expect(result.appliedOperations).toEqual([]);
+    expect(result.response).toEqual({ skipped: "lifecycle_labels_changed" });
   });
 });
 

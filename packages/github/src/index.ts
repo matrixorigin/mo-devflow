@@ -121,7 +121,21 @@ export async function applyWorkflowFixPreview(input: {
   if (input.preview.objectType !== "issue") {
     throw new Error("Only issue workflow fixes can be executed.");
   }
-  if (input.preview.actionKey !== "add_needs_triage" || input.preview.ruleKey !== "bug_missing_needs_triage") {
+  if (input.preview.actionKey === "add_needs_triage") {
+    return applyAddNeedsTriageWorkflowFix(input);
+  }
+  if (input.preview.actionKey === "move_to_deferred") {
+    return applyMoveToDeferredWorkflowFix(input);
+  }
+  throw new Error("Unsupported workflow fix action.");
+}
+
+async function applyAddNeedsTriageWorkflowFix(input: {
+  token: string;
+  profile: RepoProfile;
+  preview: WorkflowFixPreview;
+}): Promise<GitHubWorkflowFixApplyResult> {
+  if (input.preview.ruleKey !== "bug_missing_needs_triage") {
     throw new Error("Only missing needs-triage workflow fixes can be executed.");
   }
   const unsupportedOperation = input.preview.operations.find((operation) => operation.type !== "add_label");
@@ -175,6 +189,111 @@ export async function applyWorkflowFixPreview(input: {
   };
 }
 
+async function applyMoveToDeferredWorkflowFix(input: {
+  token: string;
+  profile: RepoProfile;
+  preview: WorkflowFixPreview;
+}): Promise<GitHubWorkflowFixApplyResult> {
+  if (!["needs_triage_stale", "premature_active_severity"].includes(input.preview.ruleKey)) {
+    throw new Error("Only stale triage or premature active severity issues can be moved to deferred.");
+  }
+  const unsupportedOperation = input.preview.operations.find(
+    (operation) => !["remove_label", "add_label", "add_comment"].includes(operation.type)
+  );
+  if (unsupportedOperation) {
+    throw new Error(`Unsupported workflow fix operation: ${unsupportedOperation.type}`);
+  }
+  const freshState = await fetchIssueFreshState({
+    token: input.token,
+    profile: input.profile,
+    issueNumber: input.preview.objectNumber
+  });
+  const beforeState = stateSnapshotFromFreshIssue(freshState);
+  const staleReason = moveToDeferredStaleReason(input.profile, input.preview, freshState);
+  if (staleReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
+
+  const octokit = createUserGitHubClient(input.token);
+  const appliedOperations: WorkflowFixOperation[] = [];
+  const responses: unknown[] = [];
+  let rateLimitRemaining = freshState.rateLimitRemaining;
+  let labels = [...freshState.labels];
+
+  for (const operation of input.preview.operations) {
+    if (operation.type === "remove_label") {
+      if (!labels.includes(operation.label)) {
+        continue;
+      }
+      const response = await octokit.rest.issues.removeLabel({
+        owner: input.profile.repo.owner,
+        repo: input.profile.repo.name,
+        issue_number: input.preview.objectNumber,
+        name: operation.label
+      });
+      rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+      labels = labels.filter((label) => label !== operation.label);
+      appliedOperations.push(operation);
+      responses.push({ type: operation.type, status: response.status, label: operation.label });
+      continue;
+    }
+
+    if (operation.type === "add_label") {
+      if (labels.includes(operation.label)) {
+        continue;
+      }
+      const response = await octokit.rest.issues.addLabels({
+        owner: input.profile.repo.owner,
+        repo: input.profile.repo.name,
+        issue_number: input.preview.objectNumber,
+        labels: [operation.label]
+      });
+      rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+      const responseLabels = response.data.map((label) => label.name).filter((label): label is string => Boolean(label));
+      labels = responseLabels.length > 0 ? responseLabels : appendUnique(labels, [operation.label]);
+      appliedOperations.push(operation);
+      responses.push({ type: operation.type, status: response.status, labels: [operation.label] });
+      continue;
+    }
+
+    const response = await octokit.rest.issues.createComment({
+      owner: input.profile.repo.owner,
+      repo: input.profile.repo.name,
+      issue_number: input.preview.objectNumber,
+      body: operation.body
+    });
+    rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+    appliedOperations.push(operation);
+    responses.push({
+      type: operation.type,
+      status: response.status,
+      url: response.data.html_url
+    });
+  }
+
+  return {
+    freshState,
+    appliedOperations,
+    beforeState,
+    afterState: {
+      ...beforeState,
+      labels,
+      lifecycleState: labels.includes(input.profile.labels.deferred) ? "deferred" : beforeState.lifecycleState,
+      severity: null,
+      updatedAt: null
+    },
+    response: { operations: responses },
+    rateLimitRemaining
+  };
+}
+
 function appendUnique(values: string[], additions: string[]): string[] {
   const merged = [...values];
   for (const addition of additions) {
@@ -220,6 +339,41 @@ function missingNeedsTriageStaleReason(
     return "active_lifecycle_present";
   }
   return null;
+}
+
+function moveToDeferredStaleReason(
+  profile: RepoProfile,
+  preview: WorkflowFixPreview,
+  freshState: GitHubIssueFreshState
+): string | null {
+  if (freshState.state !== "open") {
+    return "issue_closed";
+  }
+  if (freshState.labels.includes(profile.labels.deferred)) {
+    return "issue_deferred";
+  }
+  if (!sameStringSet(lifecycleLabels(profile, freshState.labels), lifecycleLabels(profile, preview.currentState.labels))) {
+    return "lifecycle_labels_changed";
+  }
+  if (!preview.operations.some((operation) => operation.type === "add_label" && operation.label === profile.labels.deferred)) {
+    return "missing_deferred_label_operation";
+  }
+  if (!preview.operations.some((operation) => operation.type === "add_comment" && operation.body.trim().length > 0)) {
+    return "missing_deferred_comment_operation";
+  }
+  return null;
+}
+
+function lifecycleLabels(profile: RepoProfile, labels: string[]): string[] {
+  const configured = new Set([profile.labels.needsTriage, profile.labels.deferred, ...profile.labels.active]);
+  return labels.filter((label) => configured.has(label)).sort();
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
 }
 
 function headerValue(headers: Record<string, string | number | undefined>, name: string): string | number | undefined {

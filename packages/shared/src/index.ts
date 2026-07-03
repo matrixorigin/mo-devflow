@@ -313,7 +313,7 @@ export interface WorkflowViolationView extends WorkflowViolation {
   lastDetectedAt: string;
 }
 
-export type WorkflowFixActionKey = "add_needs_triage";
+export type WorkflowFixActionKey = "add_needs_triage" | "move_to_deferred";
 
 export type WorkflowFixOperation =
   | {

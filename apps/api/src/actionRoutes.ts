@@ -30,7 +30,7 @@ import { githubTokenFailureForWorkflowRead } from "./githubTokenFailures";
 import { workflowWriteRefreshJobs } from "./refreshJobs";
 
 const workflowFixPreviewSchema = z.object({
-  actionKey: z.literal("add_needs_triage"),
+  actionKey: z.enum(["add_needs_triage", "move_to_deferred"]),
   objectType: z.literal("issue"),
   objectNumber: z.number().int().positive(),
   ruleKey: z.string().min(1).max(128)

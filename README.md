@@ -31,11 +31,12 @@ to a 32-byte base64 key, for example `openssl rand -base64 32`.
 
 Logged-in users can preview selected workflow fixes from cached violations,
 then confirm execution through their own GitHub token. Previews and execution
-results are audited. Issue-label workflow fixes require a validated token with
-classic `repo` or `public_repo` scope before the UI and API will offer the
-action. Before a preview is recorded, the API also performs a fresh GitHub read
-with the user's token; rejected tokens are revoked locally so the UI moves back
-to the reconnect flow.
+results are audited. Current fixes can add `needs-triage` or move stale or
+premature active issues to `deferred` with an explanatory comment. Issue
+workflow fixes require a validated token with classic `repo` or `public_repo`
+scope before the UI and API will offer the action. Before a preview is
+recorded, the API also performs a fresh GitHub read with the user's token;
+rejected tokens are revoked locally so the UI moves back to the reconnect flow.
 
 The worker is driven by the MatrixOne-backed `jobs` table. Recurring GitHub
 sync, rule, metric, AI drift, and notification jobs use leases, retry backoff,

@@ -35,21 +35,18 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
     blockedReason = "Only issue workflow fixes can be previewed in this version.";
   } else if (input.issue.state !== "open") {
     blockedReason = "The issue is no longer open in the cache.";
-  } else if (input.actionKey !== "add_needs_triage") {
-    blockedReason = "Unsupported workflow fix action.";
-  } else if (input.violation.ruleKey !== "bug_missing_needs_triage") {
-    blockedReason = "This action only applies to bug issues missing needs-triage.";
-  } else if (input.issue.labels.includes(input.profile.labels.needsTriage)) {
-    blockedReason = `Issue already has ${input.profile.labels.needsTriage}.`;
+  } else if (input.actionKey === "add_needs_triage") {
+    const result = buildAddNeedsTriagePreview(input.profile, input.issue, input.violation, proposedState);
+    blockedReason = result.blockedReason;
+    operations.push(...result.operations);
+    proposedState = result.proposedState;
+  } else if (input.actionKey === "move_to_deferred") {
+    const result = buildMoveToDeferredPreview(input.profile, input.issue, input.violation, proposedState);
+    blockedReason = result.blockedReason;
+    operations.push(...result.operations);
+    proposedState = result.proposedState;
   } else {
-    operations.push({
-      type: "add_label",
-      label: input.profile.labels.needsTriage
-    });
-    proposedState = {
-      ...proposedState,
-      labels: appendUnique(proposedState.labels, input.profile.labels.needsTriage)
-    };
+    blockedReason = "Unsupported workflow fix action.";
   }
 
   if (!input.issue.isComplete) {
@@ -87,6 +84,107 @@ function stateSnapshotFromIssue(issue: NormalizedIssue, source: WorkflowFixState
     aiEffortLabel: issue.aiEffortLabel,
     updatedAt: issue.updatedAt
   };
+}
+
+function buildAddNeedsTriagePreview(
+  profile: RepoProfile,
+  issue: NormalizedIssue,
+  violation: WorkflowViolationView,
+  proposedState: WorkflowFixStateSnapshot
+): { blockedReason: string | null; operations: WorkflowFixOperation[]; proposedState: WorkflowFixStateSnapshot } {
+  if (violation.ruleKey !== "bug_missing_needs_triage") {
+    return {
+      blockedReason: "This action only applies to bug issues missing needs-triage.",
+      operations: [],
+      proposedState
+    };
+  }
+  if (issue.labels.includes(profile.labels.needsTriage)) {
+    return {
+      blockedReason: `Issue already has ${profile.labels.needsTriage}.`,
+      operations: [],
+      proposedState
+    };
+  }
+  return {
+    blockedReason: null,
+    operations: [{ type: "add_label", label: profile.labels.needsTriage }],
+    proposedState: {
+      ...proposedState,
+      labels: appendUnique(proposedState.labels, profile.labels.needsTriage)
+    }
+  };
+}
+
+function buildMoveToDeferredPreview(
+  profile: RepoProfile,
+  issue: NormalizedIssue,
+  violation: WorkflowViolationView,
+  proposedState: WorkflowFixStateSnapshot
+): { blockedReason: string | null; operations: WorkflowFixOperation[]; proposedState: WorkflowFixStateSnapshot } {
+  if (!["needs_triage_stale", "premature_active_severity"].includes(violation.ruleKey)) {
+    return {
+      blockedReason: "This action only applies to stale triage or premature active severity issues.",
+      operations: [],
+      proposedState
+    };
+  }
+  if (issue.labels.includes(profile.labels.deferred)) {
+    return {
+      blockedReason: `Issue already has ${profile.labels.deferred}.`,
+      operations: [],
+      proposedState
+    };
+  }
+  const lifecycleLabelsToRemove = [profile.labels.needsTriage, ...profile.labels.active].filter((label) =>
+    issue.labels.includes(label)
+  );
+  if (violation.ruleKey === "needs_triage_stale" && !issue.labels.includes(profile.labels.needsTriage)) {
+    return {
+      blockedReason: `Issue no longer has ${profile.labels.needsTriage}.`,
+      operations: [],
+      proposedState
+    };
+  }
+  if (
+    violation.ruleKey === "premature_active_severity" &&
+    !profile.labels.active.some((label) => issue.labels.includes(label))
+  ) {
+    return {
+      blockedReason: "Issue no longer has an active severity label.",
+      operations: [],
+      proposedState
+    };
+  }
+
+  const operations: WorkflowFixOperation[] = [
+    ...lifecycleLabelsToRemove.map((label) => ({ type: "remove_label" as const, label })),
+    { type: "add_label", label: profile.labels.deferred },
+    { type: "add_comment", body: deferredCommentBody(profile, violation) }
+  ];
+  return {
+    blockedReason: null,
+    operations,
+    proposedState: {
+      ...proposedState,
+      labels: appendUnique(
+        proposedState.labels.filter((label) => !lifecycleLabelsToRemove.includes(label)),
+        profile.labels.deferred
+      ),
+      lifecycleState: "deferred",
+      severity: null
+    }
+  };
+}
+
+function deferredCommentBody(profile: RepoProfile, violation: WorkflowViolationView): string {
+  return [
+    "Deferred by mo-devflow workflow fix.",
+    "",
+    `Reason: ${violation.evidenceSummary}`,
+    "",
+    `If this issue becomes urgent or broad-impact again, remove \`${profile.labels.deferred}\` and apply the appropriate severity label.`
+  ].join("\n");
 }
 
 function appendUnique(values: string[], value: string): string[] {

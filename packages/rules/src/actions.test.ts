@@ -143,6 +143,100 @@ describe("workflow fix previews", () => {
     expect(preview.proposedState.source).toBe("github");
   });
 
+  test("previews moving a stale needs-triage issue to deferred with an explanation comment", () => {
+    const deferredPreview = buildWorkflowFixPreview({
+      profile,
+      issue: {
+        ...issue,
+        labels: ["kind/bug", "needs-triage"],
+        lifecycleState: "needs-triage"
+      },
+      violation: {
+        ...violation,
+        ruleKey: "needs_triage_stale",
+        evidenceSummary: "Issue #42 has stayed in needs-triage for 96h.",
+        suggestedAction: "Triage it into active work, deferred, or close/merge with an existing issue."
+      },
+      actionKey: "move_to_deferred",
+      previewId: "preview-4",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(deferredPreview.blockedReason).toBeNull();
+    expect(deferredPreview.operations).toEqual([
+      { type: "remove_label", label: "needs-triage" },
+      { type: "add_label", label: "deferred" },
+      {
+        type: "add_comment",
+        body:
+          "Deferred by mo-devflow workflow fix.\n\nReason: Issue #42 has stayed in needs-triage for 96h.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label."
+      }
+    ]);
+    expect(deferredPreview.proposedState.labels).toEqual(["kind/bug", "deferred"]);
+    expect(deferredPreview.proposedState.lifecycleState).toBe("deferred");
+    expect(deferredPreview.proposedState.severity).toBeNull();
+  });
+
+  test("previews moving premature active severity to deferred by removing active labels", () => {
+    const deferredPreview = buildWorkflowFixPreview({
+      profile,
+      issue: {
+        ...issue,
+        labels: ["kind/bug", "severity/s0", "ai-easy"],
+        lifecycleState: "critical",
+        severity: "severity/s0",
+        aiEffortLabel: "ai-easy"
+      },
+      violation: {
+        ...violation,
+        ruleKey: "premature_active_severity",
+        evidenceSummary: "New issue #42 has severity/s0 without triage evidence.",
+        suggestedAction: "Confirm this is active urgent work, or move it back to needs-triage/deferred."
+      },
+      actionKey: "move_to_deferred",
+      previewId: "preview-5",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(deferredPreview.blockedReason).toBeNull();
+    expect(deferredPreview.operations.map((operation) => operation.type)).toEqual([
+      "remove_label",
+      "add_label",
+      "add_comment"
+    ]);
+    expect(deferredPreview.operations).toContainEqual({ type: "remove_label", label: "severity/s0" });
+    expect(deferredPreview.proposedState.labels).toEqual(["kind/bug", "ai-easy", "deferred"]);
+    expect(deferredPreview.proposedState.lifecycleState).toBe("deferred");
+    expect(deferredPreview.proposedState.severity).toBeNull();
+    expect(deferredPreview.proposedState.aiEffortLabel).toBe("ai-easy");
+  });
+
+  test("blocks deferred preview when issue is already deferred", () => {
+    const deferredPreview = buildWorkflowFixPreview({
+      profile,
+      issue: {
+        ...issue,
+        labels: ["kind/bug", "deferred"],
+        lifecycleState: "deferred"
+      },
+      violation: {
+        ...violation,
+        ruleKey: "needs_triage_stale",
+        evidenceSummary: "Issue #42 has stayed in needs-triage for 96h.",
+        suggestedAction: "Triage it into active work, deferred, or close/merge with an existing issue."
+      },
+      actionKey: "move_to_deferred",
+      previewId: "preview-6",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(deferredPreview.operations).toEqual([]);
+    expect(deferredPreview.blockedReason).toBe("Issue already has deferred.");
+  });
+
   test("blocks unsupported rule/action combinations", () => {
     const preview = buildWorkflowFixPreview({
       profile,
