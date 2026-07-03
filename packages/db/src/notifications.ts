@@ -33,6 +33,11 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
+function isDuplicateError(error: unknown): boolean {
+  const err = error as { code?: string; errno?: number; message?: string };
+  return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
+}
+
 function githubObjectUrl(profile: RepoProfile, objectType: string, objectNumber: number | null): string | null {
   if (!objectNumber) {
     return null;
@@ -231,12 +236,65 @@ export async function recordNotificationDelivery(input: {
   );
 }
 
-export async function getNotificationHealth(repoId: number, profile: RepoProfile): Promise<NotificationHealth> {
-  const [deliveryRows] = await getPool().execute<RowData[]>(
+export async function acknowledgeNotificationDelivery(input: {
+  repoId: number;
+  deliveryId: number;
+  userId: number;
+  githubLogin: string;
+}): Promise<{ deliveryId: number; acknowledgedAt: string; acknowledgedBy: string } | null> {
+  const pool = getPool();
+  const [deliveryRows] = await pool.execute<RowData[]>(
     `SELECT *
      FROM notification_deliveries
-     WHERE repo_id = ?
-     ORDER BY attempted_at DESC
+     WHERE id = ? AND repo_id = ?
+     LIMIT 1`,
+    [input.deliveryId, input.repoId]
+  );
+  const delivery = deliveryRows[0];
+  if (!delivery) {
+    return null;
+  }
+
+  const acknowledgedAt = nowSql();
+  try {
+    await pool.execute(
+      `INSERT INTO notification_acknowledgements(
+        notification_delivery_id, repo_id, user_id, github_login,
+        acknowledgement_source, acknowledged_at
+      ) VALUES (?, ?, ?, ?, 'product_ui', ?)`,
+      [input.deliveryId, input.repoId, input.userId, input.githubLogin, acknowledgedAt]
+    );
+  } catch (error) {
+    if (!isDuplicateError(error)) {
+      throw error;
+    }
+  }
+  const [ackRows] = await pool.execute<RowData[]>(
+    `SELECT github_login, acknowledged_at
+     FROM notification_acknowledgements
+     WHERE notification_delivery_id = ?
+     LIMIT 1`,
+    [input.deliveryId]
+  );
+  const acknowledgement = ackRows[0];
+
+  return {
+    deliveryId: asNumber(delivery.id),
+    acknowledgedAt: fromSqlDate(acknowledgement?.acknowledged_at) ?? fromSqlDate(acknowledgedAt) ?? new Date().toISOString(),
+    acknowledgedBy: acknowledgement?.github_login ? asString(acknowledgement.github_login) : input.githubLogin
+  };
+}
+
+export async function getNotificationHealth(repoId: number, profile: RepoProfile): Promise<NotificationHealth> {
+  const [deliveryRows] = await getPool().execute<RowData[]>(
+    `SELECT
+       d.*,
+       a.acknowledged_at,
+       a.github_login AS acknowledged_by
+     FROM notification_deliveries d
+     LEFT JOIN notification_acknowledgements a ON a.notification_delivery_id = d.id
+     WHERE d.repo_id = ?
+     ORDER BY d.attempted_at DESC
      LIMIT 20`,
     [repoId]
   );
@@ -246,8 +304,17 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
      WHERE repo_id = ? AND status = 'failed'`,
     [repoId]
   );
+  const [unacknowledgedRows] = await getPool().execute<RowData[]>(
+    `SELECT COUNT(*) AS unacknowledged_count
+     FROM notification_deliveries d
+     LEFT JOIN notification_acknowledgements a ON a.notification_delivery_id = d.id
+     WHERE d.repo_id = ?
+       AND a.id IS NULL`,
+    [repoId]
+  );
 
   const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
+    id: asNumber(row.id),
     sourceType: asString(row.source_type) as NotificationDeliveryView["sourceType"],
     ruleKey: asString(row.rule_key),
     objectType: asString(row.object_type),
@@ -256,7 +323,9 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
     channel: asString(row.channel),
     status: asString(row.status) as NotificationDeliveryView["status"],
     errorMessage: row.error_message ? asString(row.error_message) : null,
-    attemptedAt: fromSqlDate(row.attempted_at) ?? new Date().toISOString()
+    attemptedAt: fromSqlDate(row.attempted_at) ?? new Date().toISOString(),
+    acknowledgedAt: fromSqlDate(row.acknowledged_at),
+    acknowledgedBy: row.acknowledged_by ? asString(row.acknowledged_by) : null
   }));
 
   return {
@@ -265,6 +334,7 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
     webhookConfigured: Boolean(profile.notifications.wecom.webhookUrlEnv && process.env[profile.notifications.wecom.webhookUrlEnv]),
     cooldownHours: profile.notifications.routing.cooldownHours,
     failedDeliveries: asNumber(deliveryFailureRows[0]?.failed_count),
+    unacknowledgedDeliveries: asNumber(unacknowledgedRows[0]?.unacknowledged_count),
     lastDeliveries
   };
 }

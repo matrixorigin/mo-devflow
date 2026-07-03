@@ -4,6 +4,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, getWorkerHealth, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
+import { registerNotificationRoutes } from "./notificationRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 
@@ -46,6 +47,7 @@ await app.register(cors, {
 await registerAuthRoutes(app);
 await registerActionRoutes(app);
 await registerRefreshRoutes(app);
+await registerNotificationRoutes(app);
 await registerWebhookRoutes(app);
 
 app.get("/health", async () => {

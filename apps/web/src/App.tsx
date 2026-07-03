@@ -233,6 +233,7 @@ type NotificationStatus =
   | "skipped_quiet_hours";
 
 interface NotificationDeliveryView {
+  id: number;
   sourceType: "attention_item" | "workflow_violation" | "ai_drift_signal";
   ruleKey: string;
   objectType: string;
@@ -242,6 +243,8 @@ interface NotificationDeliveryView {
   status: NotificationStatus;
   errorMessage: string | null;
   attemptedAt: string;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
 }
 
 interface NotificationHealth {
@@ -250,6 +253,7 @@ interface NotificationHealth {
   webhookConfigured: boolean;
   cooldownHours: number;
   failedDeliveries: number;
+  unacknowledgedDeliveries: number;
   lastDeliveries: NotificationDeliveryView[];
 }
 
@@ -770,6 +774,8 @@ export default function App() {
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
+  const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
+  const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -868,6 +874,29 @@ export default function App() {
       setManualRefreshError(displayError(err));
     } finally {
       setManualRefreshSaving(false);
+    }
+  }
+
+  async function acknowledgeNotification(delivery: NotificationDeliveryView) {
+    if (!session?.authenticated) {
+      setNotificationAckError("Connect GitHub token before acknowledging notifications.");
+      return;
+    }
+    setNotificationAckSavingId(delivery.id);
+    setNotificationAckError(null);
+    try {
+      const response = await fetch(`/api/notifications/deliveries/${delivery.id}/acknowledge`, {
+        method: "POST",
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      await load();
+    } catch (err) {
+      setNotificationAckError(displayError(err));
+    } finally {
+      setNotificationAckSavingId(null);
     }
   }
 
@@ -1501,13 +1530,37 @@ export default function App() {
         render: (value) => formatDate(value)
       },
       {
+        title: "Acknowledgement",
+        width: 188,
+        render: (_, delivery) =>
+          delivery.acknowledgedAt ? (
+            <Tooltip title={`Acknowledged by ${delivery.acknowledgedBy ?? "unknown"}`}>
+              <Tag color="green">{formatDate(delivery.acknowledgedAt)}</Tag>
+            </Tooltip>
+          ) : (
+            <Tooltip title={session?.authenticated ? "Acknowledge notification" : "Connect GitHub token to acknowledge"}>
+              <span>
+                <Button
+                  size="small"
+                  icon={<ClipboardCheck size={14} />}
+                  disabled={!session?.authenticated}
+                  loading={notificationAckSavingId === delivery.id}
+                  onClick={() => void acknowledgeNotification(delivery)}
+                >
+                  Ack
+                </Button>
+              </span>
+            </Tooltip>
+          )
+      },
+      {
         title: "Error",
         dataIndex: "errorMessage",
         ellipsis: true,
         render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
       }
     ],
-    []
+    [notificationAckSavingId, session]
   );
 
   const testerColumns: ColumnsType<DashboardSummary["testing"]["testers"][number]> = useMemo(
@@ -1876,8 +1929,20 @@ export default function App() {
                       {data.notifications.webhookConfigured ? "webhook configured" : "no webhook"}
                     </Tag>
                     <Tag>{data.notifications.cooldownHours}h cooldown</Tag>
+                    <Tag color={data.notifications.unacknowledgedDeliveries > 0 ? "orange" : "green"}>
+                      {data.notifications.unacknowledgedDeliveries} unacknowledged
+                    </Tag>
                   </Space>
                 </div>
+                {notificationAckError ? (
+                  <Alert
+                    className="band"
+                    type="error"
+                    message="Notification acknowledgement failed"
+                    description={notificationAckError}
+                    showIcon
+                  />
+                ) : null}
                 {!data.notifications.enabled ? (
                   <Alert
                     className="band"
@@ -1901,13 +1966,11 @@ export default function App() {
                   />
                 ) : null}
                 <Table
-                  rowKey={(delivery) =>
-                    `${delivery.sourceType}-${delivery.objectType}-${delivery.objectNumber ?? "none"}-${delivery.ruleKey}-${delivery.attemptedAt}`
-                  }
+                  rowKey="id"
                   size="middle"
                   columns={notificationColumns}
                   dataSource={data.notifications.lastDeliveries}
-                  scroll={{ x: 1040 }}
+                  scroll={{ x: 1220 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
                 />

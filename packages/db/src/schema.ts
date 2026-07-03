@@ -332,6 +332,16 @@ const schemaStatements = [
     provider_response LONGTEXT,
     error_message TEXT,
     attempted_at DATETIME NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS notification_acknowledgements (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    notification_delivery_id BIGINT NOT NULL,
+    repo_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    github_login VARCHAR(255) NOT NULL,
+    acknowledgement_source VARCHAR(64) NOT NULL,
+    acknowledged_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_notification_ack_delivery (notification_delivery_id)
   )`
 ];
 
@@ -363,7 +373,9 @@ const indexStatements = [
   "CREATE INDEX idx_ai_drift_repo_resolved ON ai_drift_signals(repo_id, resolved_at)",
   "CREATE INDEX idx_notification_deliveries_repo ON notification_deliveries(repo_id)",
   "CREATE INDEX idx_notification_deliveries_dedupe ON notification_deliveries(dedupe_key)",
-  "CREATE INDEX idx_notification_deliveries_attempted ON notification_deliveries(attempted_at)"
+  "CREATE INDEX idx_notification_deliveries_attempted ON notification_deliveries(attempted_at)",
+  "CREATE INDEX idx_notification_ack_repo ON notification_acknowledgements(repo_id)",
+  "CREATE INDEX idx_notification_ack_user ON notification_acknowledgements(user_id)"
 ];
 
 const compatibilityStatements = [

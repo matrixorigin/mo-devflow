@@ -466,6 +466,7 @@ export interface NotificationCandidate {
 }
 
 export interface NotificationDeliveryView {
+  id: number;
   sourceType: NotificationSourceType;
   ruleKey: string;
   objectType: string;
@@ -475,6 +476,8 @@ export interface NotificationDeliveryView {
   status: NotificationStatus;
   errorMessage: string | null;
   attemptedAt: string;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
 }
 
 export interface NotificationHealth {
@@ -483,6 +486,7 @@ export interface NotificationHealth {
   webhookConfigured: boolean;
   cooldownHours: number;
   failedDeliveries: number;
+  unacknowledgedDeliveries: number;
   lastDeliveries: NotificationDeliveryView[];
 }
 
