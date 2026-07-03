@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { RepoProfile, WorkflowFixPreview } from "@mo-devflow/shared";
+import type { RepoProfile, WorkflowFixPreview, WorkflowFixStateSnapshot } from "@mo-devflow/shared";
 import { applyWorkflowFixPreview, classifyGitHubError, configuredGitHubSourceAuthType } from "./index";
 
 const octokitMocks = vi.hoisted(() => ({
@@ -75,12 +75,31 @@ const preview: WorkflowFixPreview = {
   ruleKey: "bug_missing_needs_triage",
   title: "panic on insert",
   htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+  reason: "Open bug issue #42 has no needs-triage label.",
+  currentState: stateSnapshot(["kind/bug"], "cache"),
+  proposedState: stateSnapshot(["kind/bug", "needs-triage"], "cache"),
   operations: [{ type: "add_label", label: "needs-triage" }],
   warnings: [],
   blockedReason: null,
   createdAt: "2026-07-03T00:00:00.000Z",
   expiresAt: "2026-07-03T00:10:00.000Z"
 };
+
+function stateSnapshot(
+  labels: string[],
+  source: WorkflowFixStateSnapshot["source"] = "github"
+): WorkflowFixStateSnapshot {
+  return {
+    source,
+    state: "open",
+    labels,
+    assignees: [],
+    lifecycleState: null,
+    severity: null,
+    aiEffortLabel: null,
+    updatedAt: source === "github" ? "2026-07-03T00:01:00.000Z" : "2026-07-03T00:00:00.000Z"
+  };
+}
 
 function issueResponse(labels: string[], state: "open" | "closed" = "open") {
   return {
@@ -119,6 +138,13 @@ describe("workflow fix execution", () => {
       labels: ["needs-triage"]
     });
     expect(result.appliedOperations).toEqual(preview.operations);
+    expect(result.beforeState).toMatchObject(stateSnapshot(["kind/bug"]));
+    expect(result.afterState).toMatchObject({
+      source: "github",
+      state: "open",
+      labels: ["kind/bug", "needs-triage"],
+      updatedAt: null
+    });
     expect(result.rateLimitRemaining).toBe(98);
   });
 
@@ -139,6 +165,8 @@ describe("workflow fix execution", () => {
 
     expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
+    expect(result.beforeState.labels).toEqual(labels);
+    expect(result.afterState.labels).toEqual(labels);
     expect(result.response).toEqual({ skipped });
   });
 });

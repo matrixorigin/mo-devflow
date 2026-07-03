@@ -265,6 +265,19 @@ export type WorkflowFixOperation =
       label: string;
     };
 
+export type WorkflowFixStateSource = "cache" | "github";
+
+export interface WorkflowFixStateSnapshot {
+  source: WorkflowFixStateSource;
+  state: "open" | "closed";
+  labels: string[];
+  assignees: string[];
+  lifecycleState: LifecycleState | null;
+  severity: string | null;
+  aiEffortLabel: string | null;
+  updatedAt: string | null;
+}
+
 export interface WorkflowFixPreview {
   previewId: string;
   actionKey: WorkflowFixActionKey;
@@ -274,6 +287,9 @@ export interface WorkflowFixPreview {
   ruleKey: string;
   title: string;
   htmlUrl: string;
+  reason: string;
+  currentState: WorkflowFixStateSnapshot;
+  proposedState: WorkflowFixStateSnapshot;
   operations: WorkflowFixOperation[];
   warnings: string[];
   blockedReason: string | null;
@@ -292,6 +308,8 @@ export interface WorkflowFixExecutionResult {
   previewId: string;
   status: WorkflowFixExecutionStatus;
   executedOperations: WorkflowFixOperation[];
+  beforeState: WorkflowFixStateSnapshot | null;
+  afterState: WorkflowFixStateSnapshot | null;
   message: string;
   errorMessage: string | null;
   executedAt: string;

@@ -16,7 +16,12 @@ import {
 import { applyWorkflowFixPreview } from "@mo-devflow/github";
 import { buildWorkflowFixPreview } from "@mo-devflow/rules";
 import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
-import type { WorkflowFixExecutionResult, WorkflowFixExecutionStatus, WorkflowFixPreview } from "@mo-devflow/shared";
+import type {
+  WorkflowFixExecutionResult,
+  WorkflowFixExecutionStatus,
+  WorkflowFixPreview,
+  WorkflowFixStateSnapshot
+} from "@mo-devflow/shared";
 import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
 
@@ -43,6 +48,8 @@ function executionResult(input: {
   previewId: string;
   status: WorkflowFixExecutionStatus;
   executedOperations?: WorkflowFixExecutionResult["executedOperations"];
+  beforeState?: WorkflowFixStateSnapshot | null;
+  afterState?: WorkflowFixStateSnapshot | null;
   message: string;
   errorMessage?: string | null;
 }): WorkflowFixExecutionResult {
@@ -50,6 +57,8 @@ function executionResult(input: {
     previewId: input.previewId,
     status: input.status,
     executedOperations: input.executedOperations ?? [],
+    beforeState: input.beforeState ?? null,
+    afterState: input.afterState ?? null,
     message: input.message,
     errorMessage: input.errorMessage ?? null,
     executedAt: new Date().toISOString()
@@ -274,6 +283,8 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         previewId: preview.previewId,
         status: stale ? "stale_preview" : "success",
         executedOperations: applied.appliedOperations,
+        beforeState: applied.beforeState,
+        afterState: applied.afterState,
         message: stale
           ? "GitHub state changed since preview; no operation was executed."
           : "Workflow fix executed with the connected GitHub token."

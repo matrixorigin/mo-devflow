@@ -193,9 +193,9 @@ export async function recordWorkflowFixExecution(input: {
   await getPool().execute(
     `INSERT INTO write_action_executions(
       preview_id, repo_id, user_id, github_login, action_key, object_type,
-      object_number, status, operations_json, github_response_json, error_message,
+      object_number, status, operations_json, before_state_json, after_state_json, github_response_json, error_message,
       started_at, finished_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.preview.previewId,
       input.repoId,
@@ -206,6 +206,8 @@ export async function recordWorkflowFixExecution(input: {
       input.preview.objectNumber,
       input.result.status,
       stringify(input.result.executedOperations),
+      input.result.beforeState ? stringify(input.result.beforeState) : null,
+      input.result.afterState ? stringify(input.result.afterState) : null,
       input.githubResponse ? stringify(input.githubResponse) : null,
       input.result.errorMessage,
       sqlDate(input.result.executedAt),

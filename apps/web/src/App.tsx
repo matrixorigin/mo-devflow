@@ -203,6 +203,17 @@ type WorkflowFixOperation =
   | { type: "remove_label"; label: string }
   | { type: "add_comment"; body: string };
 
+interface WorkflowFixStateSnapshot {
+  source: "cache" | "github";
+  state: "open" | "closed";
+  labels: string[];
+  assignees: string[];
+  lifecycleState: string | null;
+  severity: string | null;
+  aiEffortLabel: string | null;
+  updatedAt: string | null;
+}
+
 interface WorkflowFixPreview {
   previewId: string;
   actionKey: "add_needs_triage";
@@ -212,6 +223,9 @@ interface WorkflowFixPreview {
   ruleKey: string;
   title: string;
   htmlUrl: string;
+  reason: string;
+  currentState: WorkflowFixStateSnapshot;
+  proposedState: WorkflowFixStateSnapshot;
   operations: WorkflowFixOperation[];
   warnings: string[];
   blockedReason: string | null;
@@ -223,6 +237,8 @@ interface WorkflowFixExecutionResult {
   previewId: string;
   status: "success" | "failed" | "stale_preview" | "blocked" | "token_unavailable";
   executedOperations: WorkflowFixOperation[];
+  beforeState: WorkflowFixStateSnapshot | null;
+  afterState: WorkflowFixStateSnapshot | null;
   message: string;
   errorMessage: string | null;
   executedAt: string;
@@ -485,6 +501,34 @@ function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): st
     return worker.lastError ?? "The latest worker tick failed.";
   }
   return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.`;
+}
+
+function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: WorkflowFixStateSnapshot }) {
+  return (
+    <div className="preview-state-panel">
+      <Space direction="vertical" size={6}>
+        <Space size={6} wrap>
+          <Text strong>{title}</Text>
+          <Tag>{snapshot.source}</Tag>
+          <Tag color={snapshot.state === "open" ? "green" : "default"}>{snapshot.state}</Tag>
+        </Space>
+        <Space size={[4, 4]} wrap>
+          <Text type="secondary">Labels</Text>
+          {snapshot.labels.length > 0 ? snapshot.labels.map((label) => <Tag key={label}>{label}</Tag>) : <Tag>none</Tag>}
+        </Space>
+        <Space size={[4, 4]} wrap>
+          <Text type="secondary">Assignees</Text>
+          {snapshot.assignees.length > 0 ? snapshot.assignees.map((assignee) => <Tag key={assignee}>{assignee}</Tag>) : <Tag>none</Tag>}
+        </Space>
+        <Space size={[4, 4]} wrap>
+          {snapshot.lifecycleState ? <Tag>{labelText(snapshot.lifecycleState)}</Tag> : null}
+          {snapshot.severity ? <Tag color={severityColor(snapshot.severity)}>{snapshot.severity}</Tag> : null}
+          {snapshot.aiEffortLabel ? <Tag color="blue">{snapshot.aiEffortLabel}</Tag> : null}
+          {snapshot.updatedAt ? <Text type="secondary">{formatDate(snapshot.updatedAt)}</Text> : null}
+        </Space>
+      </Space>
+    </div>
+  );
 }
 
 function TrendChart({ points }: { points: DailyMetricPoint[] }) {
@@ -1652,6 +1696,11 @@ export default function App() {
               </Tag>
             </Space>
             <Text strong>{workflowPreview.title}</Text>
+            <Text type="secondary">{workflowPreview.reason}</Text>
+            <div className="preview-state-grid">
+              <WorkflowStateSnapshot title="Current" snapshot={workflowPreview.currentState} />
+              <WorkflowStateSnapshot title="Proposed" snapshot={workflowPreview.proposedState} />
+            </div>
             {workflowPreview.blockedReason ? <Alert type="warning" message={workflowPreview.blockedReason} showIcon /> : null}
             {workflowPreview.operations.length > 0 ? (
               <div className="preview-operations">
@@ -1673,6 +1722,12 @@ export default function App() {
                 description={workflowExecution.errorMessage ?? workflowExecution.message}
                 showIcon
               />
+            ) : null}
+            {workflowExecution?.beforeState && workflowExecution.afterState ? (
+              <div className="preview-state-grid">
+                <WorkflowStateSnapshot title="Before execute" snapshot={workflowExecution.beforeState} />
+                <WorkflowStateSnapshot title="After execute" snapshot={workflowExecution.afterState} />
+              </div>
             ) : null}
             <Text type="secondary">Preview expires {formatDate(workflowPreview.expiresAt)}.</Text>
           </Space>

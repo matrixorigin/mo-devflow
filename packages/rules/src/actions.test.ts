@@ -98,6 +98,15 @@ describe("workflow fix previews", () => {
 
     expect(preview.blockedReason).toBeNull();
     expect(preview.operations).toEqual([{ type: "add_label", label: "needs-triage" }]);
+    expect(preview.reason).toBe("Open bug issue #42 has no needs-triage label.");
+    expect(preview.currentState).toMatchObject({
+      source: "cache",
+      state: "open",
+      labels: ["kind/bug"],
+      assignees: [],
+      lifecycleState: "other"
+    });
+    expect(preview.proposedState.labels).toEqual(["kind/bug", "needs-triage"]);
     expect(preview.warnings).toContain("Preview is based on partial cached issue data; confirm execution should re-check GitHub state.");
   });
 
@@ -114,6 +123,8 @@ describe("workflow fix previews", () => {
 
     expect(preview.operations).toEqual([]);
     expect(preview.blockedReason).toBe("Issue already has needs-triage.");
+    expect(preview.currentState.labels).toEqual(["kind/bug", "needs-triage"]);
+    expect(preview.proposedState.labels).toEqual(["kind/bug", "needs-triage"]);
   });
 
   test("blocks unsupported rule/action combinations", () => {

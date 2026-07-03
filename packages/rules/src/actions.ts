@@ -4,6 +4,7 @@ import type {
   WorkflowFixActionKey,
   WorkflowFixOperation,
   WorkflowFixPreview,
+  WorkflowFixStateSnapshot,
   WorkflowViolationView
 } from "@mo-devflow/shared";
 
@@ -21,6 +22,12 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
   const warnings: string[] = [];
   let blockedReason: string | null = null;
   const operations: WorkflowFixOperation[] = [];
+  const currentState = stateSnapshotFromIssue(input.issue);
+  let proposedState: WorkflowFixStateSnapshot = {
+    ...currentState,
+    labels: [...currentState.labels],
+    assignees: [...currentState.assignees]
+  };
 
   if (input.violation.objectType !== "issue") {
     blockedReason = "Only issue workflow fixes can be previewed in this version.";
@@ -37,6 +44,10 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
       type: "add_label",
       label: input.profile.labels.needsTriage
     });
+    proposedState = {
+      ...proposedState,
+      labels: appendUnique(proposedState.labels, input.profile.labels.needsTriage)
+    };
   }
 
   if (!input.issue.isComplete) {
@@ -52,10 +63,30 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
     ruleKey: input.violation.ruleKey,
     title: input.issue.title,
     htmlUrl: input.issue.htmlUrl,
+    reason: input.violation.evidenceSummary,
+    currentState,
+    proposedState,
     operations,
     warnings,
     blockedReason,
     createdAt: input.createdAt,
     expiresAt: input.expiresAt
   };
+}
+
+function stateSnapshotFromIssue(issue: NormalizedIssue): WorkflowFixStateSnapshot {
+  return {
+    source: "cache",
+    state: issue.state,
+    labels: [...issue.labels],
+    assignees: [...issue.assignees],
+    lifecycleState: issue.lifecycleState,
+    severity: issue.severity,
+    aiEffortLabel: issue.aiEffortLabel,
+    updatedAt: issue.updatedAt
+  };
+}
+
+function appendUnique(values: string[], value: string): string[] {
+  return values.includes(value) ? values : [...values, value];
 }

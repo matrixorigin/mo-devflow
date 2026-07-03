@@ -5,7 +5,8 @@ import type {
   RepoProfile,
   SourceAuthType,
   WorkflowFixOperation,
-  WorkflowFixPreview
+  WorkflowFixPreview,
+  WorkflowFixStateSnapshot
 } from "@mo-devflow/shared";
 
 type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"]["data"][number];
@@ -36,6 +37,8 @@ export interface GitHubIssueFreshState {
 export interface GitHubWorkflowFixApplyResult {
   freshState: GitHubIssueFreshState;
   appliedOperations: WorkflowFixOperation[];
+  beforeState: WorkflowFixStateSnapshot;
+  afterState: WorkflowFixStateSnapshot;
   response: unknown;
   rateLimitRemaining: number | null;
 }
@@ -135,10 +138,13 @@ export async function applyWorkflowFixPreview(input: {
     .map((operation) => operation.label);
 
   const staleReason = missingNeedsTriageStaleReason(input.profile, freshState, labelsToAdd);
+  const beforeState = stateSnapshotFromFreshIssue(freshState);
   if (staleReason) {
     return {
       freshState,
       appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
       response: { skipped: staleReason },
       rateLimitRemaining: freshState.rateLimitRemaining
     };
@@ -150,15 +156,45 @@ export async function applyWorkflowFixPreview(input: {
     issue_number: input.preview.objectNumber,
     labels: labelsToAdd
   });
+  const responseLabels = response.data.map((label) => label.name).filter((label): label is string => Boolean(label));
 
   return {
     freshState,
     appliedOperations: input.preview.operations,
+    beforeState,
+    afterState: {
+      ...beforeState,
+      labels: responseLabels.length > 0 ? responseLabels : appendUnique(freshState.labels, labelsToAdd),
+      updatedAt: null
+    },
     response: {
       status: response.status,
       labels: response.data.map((label) => label.name)
     },
     rateLimitRemaining: readRateLimit(response.headers) ?? freshState.rateLimitRemaining
+  };
+}
+
+function appendUnique(values: string[], additions: string[]): string[] {
+  const merged = [...values];
+  for (const addition of additions) {
+    if (!merged.includes(addition)) {
+      merged.push(addition);
+    }
+  }
+  return merged;
+}
+
+function stateSnapshotFromFreshIssue(freshState: GitHubIssueFreshState): WorkflowFixStateSnapshot {
+  return {
+    source: "github",
+    state: freshState.state,
+    labels: [...freshState.labels],
+    assignees: [],
+    lifecycleState: null,
+    severity: null,
+    aiEffortLabel: null,
+    updatedAt: freshState.updatedAt
   };
 }
 

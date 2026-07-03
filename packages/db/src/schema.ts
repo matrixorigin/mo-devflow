@@ -159,6 +159,8 @@ const schemaStatements = [
     object_number INT NOT NULL,
     status VARCHAR(64) NOT NULL,
     operations_json LONGTEXT NOT NULL,
+    before_state_json LONGTEXT,
+    after_state_json LONGTEXT,
     github_response_json LONGTEXT,
     error_message TEXT,
     started_at DATETIME NOT NULL,
@@ -394,7 +396,9 @@ const compatibilityStatements = [
   "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_owner VARCHAR(255)",
   "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_started_at DATETIME",
   "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_expires_at DATETIME",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_result_json LONGTEXT"
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_result_json LONGTEXT",
+  "ALTER TABLE write_action_executions ADD COLUMN before_state_json LONGTEXT",
+  "ALTER TABLE write_action_executions ADD COLUMN after_state_json LONGTEXT"
 ];
 
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {
