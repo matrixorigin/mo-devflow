@@ -177,6 +177,13 @@ export interface CriticalIssueLinkedPullRequestView {
   isComplete: boolean;
 }
 
+export interface CriticalIssueBlockerView {
+  key: string;
+  severity: AttentionSeverity;
+  message: string;
+  relatedPrNumber: number | null;
+}
+
 export interface CriticalIssueView {
   number: number;
   title: string;
@@ -193,6 +200,7 @@ export interface CriticalIssueView {
   isComplete: boolean;
   labels: string[];
   linkedPullRequests: CriticalIssueLinkedPullRequestView[];
+  blockers: CriticalIssueBlockerView[];
 }
 
 export interface PersonSummary {

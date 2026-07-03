@@ -3,6 +3,7 @@ import type {
   AiDriftSignal,
   AiDriftSignalView,
   AnalyticsSummary,
+  CriticalIssueBlockerView,
   CriticalIssueView,
   CriticalIssueLinkedPullRequestView,
   DailyMetricPoint,
@@ -793,23 +794,131 @@ function linkedPullRequestsByIssueNumber(
   return linked;
 }
 
+function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string): CriticalIssueBlockerView {
+  if (flag === "merge_conflict") {
+    return {
+      key: `pr:${pr.number}:merge_conflict`,
+      severity: "critical",
+      message: `PR #${pr.number} has a merge conflict.`,
+      relatedPrNumber: pr.number
+    };
+  }
+  if (flag === "ci_failed") {
+    return {
+      key: `pr:${pr.number}:ci_failed`,
+      severity: "warning",
+      message: `PR #${pr.number} has failing CI.`,
+      relatedPrNumber: pr.number
+    };
+  }
+  if (flag === "requested_changes") {
+    return {
+      key: `pr:${pr.number}:requested_changes`,
+      severity: "warning",
+      message: `PR #${pr.number} has unresolved requested changes.`,
+      relatedPrNumber: pr.number
+    };
+  }
+  if (flag === "no_human_action_24h") {
+    return {
+      key: `pr:${pr.number}:no_human_action_24h`,
+      severity: "warning",
+      message: `PR #${pr.number} has no recent human action.`,
+      relatedPrNumber: pr.number
+    };
+  }
+  return {
+    key: `pr:${pr.number}:${flag}`,
+    severity: "warning",
+    message: `PR #${pr.number} needs attention: ${flag}.`,
+    relatedPrNumber: pr.number
+  };
+}
+
+export function criticalIssueBlockersFromCache(input: {
+  ownerLogin: string | null;
+  aiEffortLabel: string | null;
+  isComplete: boolean;
+  syncError: string | null;
+  linkedPullRequests: CriticalIssueLinkedPullRequestView[];
+}): CriticalIssueBlockerView[] {
+  const blockers: CriticalIssueBlockerView[] = [];
+  if (!input.ownerLogin) {
+    blockers.push({
+      key: "issue:unowned",
+      severity: "critical",
+      message: "Critical issue has no owner in cache.",
+      relatedPrNumber: null
+    });
+  }
+  if (!input.aiEffortLabel) {
+    blockers.push({
+      key: "issue:missing_ai_effort",
+      severity: "warning",
+      message: "Critical issue has no AI effort label.",
+      relatedPrNumber: null
+    });
+  }
+  if (input.syncError) {
+    blockers.push({
+      key: "issue:sync_error",
+      severity: "warning",
+      message: "Issue sync has an error; cache evidence may be stale.",
+      relatedPrNumber: null
+    });
+  }
+  if (!input.isComplete) {
+    blockers.push({
+      key: "issue:partial_cache",
+      severity: "info",
+      message: "Issue evidence is partial until detail backfill completes.",
+      relatedPrNumber: null
+    });
+  }
+  if (input.linkedPullRequests.length === 0) {
+    blockers.push({
+      key: "issue:no_linked_pr_in_cache",
+      severity: "info",
+      message: "No linked PR is visible in cache.",
+      relatedPrNumber: null
+    });
+  }
+  for (const pr of input.linkedPullRequests) {
+    for (const flag of pr.attentionFlags) {
+      blockers.push(blockerForPrFlag(pr, flag));
+    }
+  }
+  return blockers.slice(0, 12);
+}
+
 function toCriticalIssueView(row: RowData, linkedPullRequests: CriticalIssueLinkedPullRequestView[] = []): CriticalIssueView {
+  const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
+  const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : null;
+  const syncError = row.sync_error ? asString(row.sync_error) : null;
+  const isComplete = asNumber(row.is_complete) === 1;
   return {
     number: asNumber(row.number),
     title: asString(row.title),
     htmlUrl: asString(row.html_url),
     severity: row.severity ? asString(row.severity) : null,
-    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    ownerLogin,
     ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
-    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    aiEffortLabel,
     ageHours: issueAgeHours(row),
     sourceUpdatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
     lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
-    syncError: row.sync_error ? asString(row.sync_error) : null,
-    isComplete: asNumber(row.is_complete) === 1,
+    syncError,
+    isComplete,
     labels: parseJsonArray(asString(row.labels_json)),
-    linkedPullRequests
+    linkedPullRequests,
+    blockers: criticalIssueBlockersFromCache({
+      ownerLogin,
+      aiEffortLabel,
+      isComplete,
+      syncError,
+      linkedPullRequests
+    })
   };
 }
 

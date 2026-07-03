@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
-import type { DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
+import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   cacheStaleHoursFromEnv,
+  criticalIssueBlockersFromCache,
   extractLinkedIssueNumbers,
   isPersonalNeedsTriageIssue,
   visibleClassesForDashboard
@@ -128,6 +129,63 @@ describe("linked PR issue references", () => {
 
   test("deduplicates repeated issue references", () => {
     expect(extractLinkedIssueNumbers("Closes #42. Fixes #42")).toEqual([42]);
+  });
+});
+
+describe("critical issue cache blockers", () => {
+  const linkedPr: CriticalIssueLinkedPullRequestView = {
+    number: 101,
+    title: "fix critical issue",
+    htmlUrl: "https://github.com/matrixorigin/matrixone/pull/101",
+    state: "open",
+    ownerLogin: "alice",
+    ageHours: 30,
+    lastHumanActionAt: "2026-07-03T00:00:00Z",
+    reviewDecision: "changes_requested",
+    mergeStateStatus: null,
+    ciState: "failure",
+    testingState: "not_ready",
+    testingTesters: [],
+    testingQueueAgeHours: null,
+    attentionFlags: ["requested_changes", "ci_failed"],
+    isComplete: true
+  };
+
+  test("surfaces cache-derived issue and linked PR blockers", () => {
+    expect(
+      criticalIssueBlockersFromCache({
+        ownerLogin: null,
+        aiEffortLabel: null,
+        isComplete: false,
+        syncError: null,
+        linkedPullRequests: [linkedPr]
+      }).map((blocker) => blocker.key)
+    ).toEqual([
+      "issue:unowned",
+      "issue:missing_ai_effort",
+      "issue:partial_cache",
+      "pr:101:requested_changes",
+      "pr:101:ci_failed"
+    ]);
+  });
+
+  test("marks missing linked PR as informational cache evidence", () => {
+    expect(
+      criticalIssueBlockersFromCache({
+        ownerLogin: "alice",
+        aiEffortLabel: "ai-easy",
+        isComplete: true,
+        syncError: null,
+        linkedPullRequests: []
+      })
+    ).toEqual([
+      {
+        key: "issue:no_linked_pr_in_cache",
+        severity: "info",
+        message: "No linked PR is visible in cache.",
+        relatedPrNumber: null
+      }
+    ]);
   });
 });
 

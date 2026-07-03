@@ -60,6 +60,13 @@ interface CriticalIssueLinkedPullRequestView {
   isComplete: boolean;
 }
 
+interface CriticalIssueBlockerView {
+  key: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  relatedPrNumber: number | null;
+}
+
 interface CriticalIssueView {
   number: number;
   title: string;
@@ -76,6 +83,7 @@ interface CriticalIssueView {
   isComplete: boolean;
   labels: string[];
   linkedPullRequests: CriticalIssueLinkedPullRequestView[];
+  blockers: CriticalIssueBlockerView[];
 }
 
 interface PersonSummary {
@@ -591,6 +599,16 @@ function rateLimitHealthTagColor(remaining: number | null): string {
   return "green";
 }
 
+function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
+  if (severity === "critical") {
+    return "red";
+  }
+  if (severity === "warning") {
+    return "orange";
+  }
+  return "blue";
+}
+
 function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): string {
   if (worker.status === "offline") {
     return "No worker heartbeat has been recorded.";
@@ -987,6 +1005,23 @@ export default function App() {
                 </Tooltip>
               ))}
               {issue.linkedPullRequests.length > 4 ? <Tag>+{issue.linkedPullRequests.length - 4}</Tag> : null}
+            </Space>
+          )
+      },
+      {
+        title: "Blockers",
+        width: 320,
+        render: (_, issue) =>
+          issue.blockers.length === 0 ? (
+            <Tag color="green">clear</Tag>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {issue.blockers.slice(0, 4).map((blocker) => (
+                <Tooltip title={blocker.message} key={blocker.key}>
+                  <Tag color={blockerColor(blocker.severity)}>{labelText(blocker.key.split(":").at(-1) ?? blocker.key)}</Tag>
+                </Tooltip>
+              ))}
+              {issue.blockers.length > 4 ? <Tag>+{issue.blockers.length - 4}</Tag> : null}
             </Space>
           )
       },
@@ -1938,7 +1973,7 @@ export default function App() {
                         size="small"
                         columns={criticalColumns}
                         dataSource={selectedPersonalView.activeCriticalIssues}
-                        scroll={{ x: 1380 }}
+                        scroll={{ x: 1700 }}
                         pagination={{ pageSize: 5 }}
                         locale={{ emptyText: <Empty description="No active critical issues for this user" /> }}
                       />
@@ -2109,7 +2144,7 @@ export default function App() {
                 size="middle"
                 columns={criticalColumns}
                 dataSource={data.criticalIssues}
-                scroll={{ x: 1380 }}
+                scroll={{ x: 1700 }}
                 pagination={{ pageSize: 8 }}
                 locale={{ emptyText: <Empty description="No active critical issues in cache" /> }}
               />
