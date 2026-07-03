@@ -674,6 +674,29 @@ export function hoursBetween(startIso: string, endIso = new Date().toISOString()
   return Math.max(0, Math.round(((end - start) / 3_600_000) * 10) / 10);
 }
 
+export function extractLinkedIssueNumbers(text: string): number[] {
+  const linked = new Set<number>();
+  const issueUrlPattern = /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)/gi;
+  for (const match of text.matchAll(issueUrlPattern)) {
+    linked.add(Number(match[1]));
+  }
+
+  const keywordPattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+([^\n.]+)/gi;
+  for (const match of text.matchAll(keywordPattern)) {
+    const clause = match[1] ?? "";
+    for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
+      linked.add(Number(issueMatch[1]));
+    }
+    for (const issueMatch of clause.matchAll(/\/issues\/(\d+)/gi)) {
+      linked.add(Number(issueMatch[1]));
+    }
+  }
+
+  return Array.from(linked)
+    .filter((number) => Number.isInteger(number) && number > 0)
+    .sort((left, right) => left - right);
+}
+
 const issueLabelClassicScopes = ["repo", "public_repo"] as const;
 
 export function buildGitHubWriteCapabilities(input: {

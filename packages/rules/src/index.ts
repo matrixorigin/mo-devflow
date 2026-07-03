@@ -10,7 +10,7 @@ import type {
   VisibilityClass,
   WorkflowViolation
 } from "@mo-devflow/shared";
-import { hoursBetween } from "@mo-devflow/shared";
+import { extractLinkedIssueNumbers, hoursBetween } from "@mo-devflow/shared";
 export * from "./actions";
 
 interface GitHubLabel {
@@ -41,6 +41,7 @@ interface GitHubPullRequestLike {
   id: number;
   number: number;
   title?: string | null;
+  body?: string | null;
   state?: string | null;
   user?: GitHubUser | null;
   html_url?: string | null;
@@ -54,6 +55,10 @@ interface GitHubPullRequestLike {
   labels?: Array<string | GitHubLabel>;
   assignees?: GitHubUser[] | null;
   requested_reviewers?: GitHubUser[] | null;
+}
+
+export interface IssueOwnerHints {
+  linkedPrAuthorByIssueNumber?: ReadonlyMap<number, string>;
 }
 
 interface TestingFlowDerivation {
@@ -73,17 +78,47 @@ export function userLogins(users: GitHubUser[] | null | undefined): string[] {
   return (users ?? []).map((user) => user.login ?? "").filter((login) => login.length > 0);
 }
 
-function chooseIssueOwner(profile: RepoProfile, issue: GitHubIssueLike): { owner: string | null; reason: string | null } {
+function chooseIssueOwner(
+  profile: RepoProfile,
+  issue: GitHubIssueLike,
+  hints?: IssueOwnerHints
+): { owner: string | null; reason: string | null } {
   const assignees = userLogins(issue.assignees);
   for (const source of profile.ownership.issueOwnerPriority) {
     if (source === "assignee" && assignees.length > 0) {
       return { owner: assignees[0] ?? null, reason: "assignee" };
+    }
+    if (source === "linked_pr_author") {
+      const owner = hints?.linkedPrAuthorByIssueNumber?.get(issue.number);
+      if (owner) {
+        return { owner, reason: "linked_pr_author" };
+      }
     }
     if (source === "author" && issue.user?.login) {
       return { owner: issue.user.login, reason: "author" };
     }
   }
   return { owner: null, reason: null };
+}
+
+export function linkedPrAuthorsByIssueNumber(pullRequests: GitHubPullRequestLike[]): Map<number, string> {
+  const owners = new Map<number, string>();
+  for (const pr of pullRequests) {
+    if (pr.state === "closed") {
+      continue;
+    }
+    const author = pr.user?.login;
+    if (!author) {
+      continue;
+    }
+    const linkedIssues = extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`);
+    for (const issueNumber of linkedIssues) {
+      if (!owners.has(issueNumber)) {
+        owners.set(issueNumber, author);
+      }
+    }
+  }
+  return owners;
 }
 
 function chooseLifecycle(profile: RepoProfile, labels: string[]): { lifecycle: LifecycleState; severity: string | null } {
@@ -213,10 +248,11 @@ function maxIso(values: Array<string | null | undefined>): string | null {
 export function normalizeIssue(
   profile: RepoProfile,
   issue: GitHubIssueLike,
-  sourceAuthType: SourceAuthType
+  sourceAuthType: SourceAuthType,
+  ownerHints?: IssueOwnerHints
 ): NormalizedIssue {
   const labels = labelNames(issue.labels);
-  const owner = chooseIssueOwner(profile, issue);
+  const owner = chooseIssueOwner(profile, issue, ownerHints);
   const lifecycle = chooseLifecycle(profile, labels);
   return {
     githubId: issue.id,

@@ -22,6 +22,7 @@ import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devfl
 import {
   aiDriftSignalsForIssue,
   criticalAttentionForIssue,
+  linkedPrAuthorsByIssueNumber,
   normalizeIssue,
   normalizePullRequest,
   workflowViolationsForIssue
@@ -484,13 +485,14 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
 
   try {
     const snapshot = await fetchGitHubSnapshot(profile);
+    const linkedPrAuthorByIssueNumber = linkedPrAuthorsByIssueNumber(snapshot.pullRequests);
     let issueCount = 0;
     let prCount = 0;
     const workflowViolations: WorkflowViolation[] = [];
     const aiDriftSignals: AiDriftSignal[] = [];
 
     for (const rawIssue of snapshot.issues) {
-      const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType);
+      const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType, { linkedPrAuthorByIssueNumber });
       if (!shouldKeepIssue(issue)) {
         continue;
       }

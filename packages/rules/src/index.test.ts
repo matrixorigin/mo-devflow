@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { aiDriftSignalsForIssue, normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "./index";
+import {
+  aiDriftSignalsForIssue,
+  linkedPrAuthorsByIssueNumber,
+  normalizeIssue,
+  normalizePullRequest,
+  workflowViolationsForIssue
+} from "./index";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -68,6 +74,76 @@ describe("rules", () => {
     expect(issue.ownerLogin).toBe("owner");
     expect(issue.ownerReason).toBe("assignee");
     expect(issue.visibilityClass).toBe("anonymous_readable");
+  });
+
+  test("issue owner can be derived from linked active PR author", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 12,
+        number: 18,
+        title: "panic with linked PR",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/18",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T01:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: []
+      },
+      "anonymous",
+      { linkedPrAuthorByIssueNumber: new Map([[18, "pr-author"]]) }
+    );
+
+    expect(issue.ownerLogin).toBe("pr-author");
+    expect(issue.ownerReason).toBe("linked_pr_author");
+  });
+
+  test("assignee issue owner wins before linked PR author", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 13,
+        number: 19,
+        title: "panic with assigned owner",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/19",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T01:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: [{ login: "assigned-owner" }]
+      },
+      "anonymous",
+      { linkedPrAuthorByIssueNumber: new Map([[19, "pr-author"]]) }
+    );
+
+    expect(issue.ownerLogin).toBe("assigned-owner");
+    expect(issue.ownerReason).toBe("assignee");
+  });
+
+  test("linked PR author hints use open PRs only", () => {
+    const owners = linkedPrAuthorsByIssueNumber([
+      {
+        id: 14,
+        number: 20,
+        title: "Fixes #18",
+        body: null,
+        state: "open",
+        user: { login: "open-author" }
+      },
+      {
+        id: 15,
+        number: 21,
+        title: "Closes #19",
+        body: null,
+        state: "closed",
+        user: { login: "closed-author" }
+      }
+    ]);
+
+    expect(owners.get(18)).toBe("open-author");
+    expect(owners.has(19)).toBe(false);
   });
 
   test("stale PR attention uses last human action", () => {

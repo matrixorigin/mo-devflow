@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
+import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   cacheStaleHoursFromEnv,
   criticalIssueBlockersFromCache,
-  extractLinkedIssueNumbers,
   isPersonalNeedsTriageIssue,
   visibleClassesForDashboard
 } from "./repositories";

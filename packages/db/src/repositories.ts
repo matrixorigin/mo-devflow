@@ -24,13 +24,15 @@ import type {
   WorkflowViolation,
   WorkflowViolationView
 } from "@mo-devflow/shared";
-import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
+import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth } from "./notifications";
 import { getWebhookIngestionHealth } from "./webhooks";
 import { getWorkerHealth } from "./workerHealth";
+
+export { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -716,29 +718,6 @@ function issueAgeHours(row: RowData): number {
     0,
     Math.round(((Date.now() - new Date(fromSqlDate(row.created_at) ?? new Date()).getTime()) / 3_600_000) * 10) / 10
   );
-}
-
-export function extractLinkedIssueNumbers(text: string): number[] {
-  const linked = new Set<number>();
-  const issueUrlPattern = /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)/gi;
-  for (const match of text.matchAll(issueUrlPattern)) {
-    linked.add(Number(match[1]));
-  }
-
-  const keywordPattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+([^\n.]+)/gi;
-  for (const match of text.matchAll(keywordPattern)) {
-    const clause = match[1] ?? "";
-    for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
-      linked.add(Number(issueMatch[1]));
-    }
-    for (const issueMatch of clause.matchAll(/\/issues\/(\d+)/gi)) {
-      linked.add(Number(issueMatch[1]));
-    }
-  }
-
-  return Array.from(linked)
-    .filter((number) => Number.isInteger(number) && number > 0)
-    .sort((left, right) => left - right);
 }
 
 function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
