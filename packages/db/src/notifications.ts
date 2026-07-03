@@ -66,6 +66,10 @@ function recipientScope(profile: RepoProfile, recipient: unknown): NotificationD
   return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
 }
 
+export function deliveryStatusRequiresAcknowledgement(status: NotificationStatus): boolean {
+  return status === "sent";
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
@@ -430,6 +434,7 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
      FROM notification_deliveries d
      LEFT JOIN notification_acknowledgements a ON a.notification_delivery_id = d.id
      WHERE d.repo_id = ?
+       AND d.status = 'sent'
        AND a.id IS NULL`,
     [repoId]
   );

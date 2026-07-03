@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { buildDailyDigestNotificationCandidate } from "./notifications";
+import { buildDailyDigestNotificationCandidate, deliveryStatusRequiresAcknowledgement } from "./notifications";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -80,5 +80,16 @@ describe("daily digest notification candidates", () => {
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 4.");
     expect(candidate.evidenceSummary).toContain("alice: 2 created, 1 merged, 3 violations");
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
+  });
+});
+
+describe("notification acknowledgement health", () => {
+  test("counts only actually sent deliveries as awaiting acknowledgement", () => {
+    expect(deliveryStatusRequiresAcknowledgement("sent")).toBe(true);
+    expect(deliveryStatusRequiresAcknowledgement("dry_run")).toBe(false);
+    expect(deliveryStatusRequiresAcknowledgement("failed")).toBe(false);
+    expect(deliveryStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
+    expect(deliveryStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
+    expect(deliveryStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
   });
 });
