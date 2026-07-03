@@ -14,6 +14,7 @@ make setup
 make dev-init
 make sync-once
 make rules-once
+make metrics-once
 make dev-start
 ```
 
@@ -23,4 +24,4 @@ Default local services:
 - Web: `http://localhost:5173`
 - MatrixOne database: `mo_devflow`
 
-The first implementation slice is MVP0: read-only cached observability for repo-wide critical issues, watched-user summaries, pending PRs, workflow violations, owner attribution, and data freshness indicators.
+The first implementation slice is MVP0: read-only cached observability for repo-wide critical issues, watched-user summaries, pending PRs, workflow violations, cached analytics, owner attribution, and data freshness indicators.

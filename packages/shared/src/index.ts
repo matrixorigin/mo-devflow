@@ -215,6 +215,30 @@ export interface WorkflowViolationView extends WorkflowViolation {
   lastDetectedAt: string;
 }
 
+export type DailyMetricScopeType = "team" | "person";
+export type MetricSourceCompleteness = "partial_cache" | "complete_cache";
+
+export interface DailyMetricPoint {
+  date: string;
+  scopeType: DailyMetricScopeType;
+  scopeKey: string;
+  prsCreated: number;
+  prsMerged: number;
+  issuesOpened: number;
+  issuesClosed: number;
+  issuesDeferred: number;
+  workflowViolationsDetected: number;
+  sourceCompleteness: MetricSourceCompleteness;
+  generatedAt: string;
+}
+
+export interface AnalyticsSummary {
+  periodDays: number;
+  sourceNote: string;
+  teamDaily: DailyMetricPoint[];
+  peopleDaily: DailyMetricPoint[];
+}
+
 export interface SyncHealth {
   layer: string;
   status: string;
@@ -248,6 +272,7 @@ export interface DashboardSummary {
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
+  analytics: AnalyticsSummary;
 }
 
 export function parseJsonArray(value: string | null | undefined): string[] {

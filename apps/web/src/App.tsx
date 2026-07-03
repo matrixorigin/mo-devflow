@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Badge,
@@ -16,10 +16,19 @@ import {
   Typography
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { BarChart, LineChart } from "echarts/charts";
+import {
+  GridComponent,
+  LegendComponent,
+  TooltipComponent
+} from "echarts/components";
+import * as echarts from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
 import { RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
+echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 interface CriticalIssueView {
   number: number;
@@ -81,6 +90,27 @@ interface WorkflowViolationView {
   lastDetectedAt: string;
 }
 
+interface DailyMetricPoint {
+  date: string;
+  scopeType: "team" | "person";
+  scopeKey: string;
+  prsCreated: number;
+  prsMerged: number;
+  issuesOpened: number;
+  issuesClosed: number;
+  issuesDeferred: number;
+  workflowViolationsDetected: number;
+  sourceCompleteness: "partial_cache" | "complete_cache";
+  generatedAt: string;
+}
+
+interface AnalyticsSummary {
+  periodDays: number;
+  sourceNote: string;
+  teamDaily: DailyMetricPoint[];
+  peopleDaily: DailyMetricPoint[];
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -112,6 +142,7 @@ interface DashboardSummary {
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
+  analytics: AnalyticsSummary;
 }
 
 function hours(value: number): string {
@@ -191,6 +222,63 @@ function violationColor(value: WorkflowViolationView["severity"]): string {
     return "orange";
   }
   return "blue";
+}
+
+function TrendChart({ points }: { points: DailyMetricPoint[] }) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!chartRef.current || points.length === 0) {
+      return;
+    }
+    const chart = echarts.init(chartRef.current);
+    const dates = points.map((point) => point.date.slice(5));
+    chart.setOption({
+      color: ["#2563eb", "#16a34a", "#d97706", "#7c3aed"],
+      tooltip: { trigger: "axis" },
+      legend: { top: 0 },
+      grid: { left: 36, right: 20, top: 44, bottom: 32 },
+      xAxis: { type: "category", data: dates, boundaryGap: false },
+      yAxis: { type: "value", minInterval: 1 },
+      series: [
+        {
+          name: "PR created",
+          type: "line",
+          smooth: true,
+          data: points.map((point) => point.prsCreated)
+        },
+        {
+          name: "PR merged",
+          type: "line",
+          smooth: true,
+          data: points.map((point) => point.prsMerged)
+        },
+        {
+          name: "Issue opened",
+          type: "line",
+          smooth: true,
+          data: points.map((point) => point.issuesOpened)
+        },
+        {
+          name: "Violations",
+          type: "bar",
+          barMaxWidth: 18,
+          data: points.map((point) => point.workflowViolationsDetected)
+        }
+      ]
+    });
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chart.dispose();
+    };
+  }, [points]);
+
+  if (points.length === 0) {
+    return <Empty description="No cached analytics metrics yet" />;
+  }
+  return <div className="chart-canvas" ref={chartRef} />;
 }
 
 export default function App() {
@@ -449,7 +537,7 @@ export default function App() {
           <Segmented
             value={view}
             onChange={(value) => setView(String(value))}
-            options={["Overview", "People", "PRs", "Violations"]}
+            options={["Overview", "Analytics", "People", "PRs", "Violations"]}
           />
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
@@ -498,6 +586,17 @@ export default function App() {
                 />
               </div>
             </section>
+
+            {view === "Analytics" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Analytics</Title>
+                  <Text type="secondary">Last {data.analytics.periodDays} days | {data.repo.timezone}</Text>
+                </div>
+                <Alert className="band" type="info" message={data.analytics.sourceNote} showIcon />
+                <TrendChart points={data.analytics.teamDaily} />
+              </section>
+            ) : null}
 
             {view === "Violations" || view === "Overview" ? (
               <section className="section">

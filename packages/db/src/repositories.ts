@@ -1,5 +1,7 @@
 import type {
+  AnalyticsSummary,
   CriticalIssueView,
+  DailyMetricPoint,
   DashboardSummary,
   NormalizedIssue,
   NormalizedPullRequest,
@@ -538,6 +540,182 @@ function inRange(value: unknown, start: Date, end: Date): boolean {
   return time >= start.getTime() && time < end.getTime();
 }
 
+function dateKeyInTimezone(value: unknown, timezone: string): string | null {
+  const iso = fromSqlDate(value);
+  if (!iso) {
+    return null;
+  }
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
+}
+
+function recentDateKeys(days: number, timezone: string): string[] {
+  const keys: string[] = [];
+  const now = Date.now();
+  for (let offset = Math.max(days, 1) - 1; offset >= 0; offset -= 1) {
+    const key = dateKeyInTimezone(new Date(now - offset * 24 * 60 * 60 * 1000).toISOString(), timezone);
+    if (key) {
+      keys.push(key);
+    }
+  }
+  return Array.from(new Set(keys)).slice(-days);
+}
+
+function newMetricPoint(date: string, scopeType: "team" | "person", scopeKey: string): DailyMetricPoint {
+  return {
+    date,
+    scopeType,
+    scopeKey,
+    prsCreated: 0,
+    prsMerged: 0,
+    issuesOpened: 0,
+    issuesClosed: 0,
+    issuesDeferred: 0,
+    workflowViolationsDetected: 0,
+    sourceCompleteness: "partial_cache",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function metricKey(date: string, scopeType: "team" | "person", scopeKey: string): string {
+  return `${date}:${scopeType}:${scopeKey}`;
+}
+
+function bumpMetric(
+  metrics: Map<string, DailyMetricPoint>,
+  dateKeys: Set<string>,
+  date: string | null,
+  scopeType: "team" | "person",
+  scopeKey: string,
+  field: keyof Pick<
+    DailyMetricPoint,
+    "prsCreated" | "prsMerged" | "issuesOpened" | "issuesClosed" | "issuesDeferred" | "workflowViolationsDetected"
+  >
+): void {
+  if (!date || !dateKeys.has(date)) {
+    return;
+  }
+  const key = metricKey(date, scopeType, scopeKey);
+  const point = metrics.get(key);
+  if (point) {
+    point[field] += 1;
+  }
+}
+
+export async function recomputeDailyMetricsFromCache(
+  repoId: number,
+  profile: RepoProfile,
+  days = 30
+): Promise<number> {
+  const pool = getPool();
+  const keys = recentDateKeys(days, profile.reporting.timezone);
+  const keySet = new Set(keys);
+  const metrics = new Map<string, DailyMetricPoint>();
+  const people = profile.people.watchedUsers;
+
+  for (const date of keys) {
+    const team = newMetricPoint(date, "team", "all");
+    metrics.set(metricKey(date, "team", "all"), team);
+    for (const login of people) {
+      const person = newMetricPoint(date, "person", login);
+      metrics.set(metricKey(date, "person", login), person);
+    }
+  }
+
+  const [prRows] = await pool.execute<RowData[]>(
+    `SELECT owner_login, created_at, merged_at
+     FROM pull_requests
+     WHERE repo_id = ?`,
+    [repoId]
+  );
+  for (const row of prRows) {
+    const owner = asString(row.owner_login);
+    const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
+    const mergedDate = dateKeyInTimezone(row.merged_at, profile.reporting.timezone);
+    bumpMetric(metrics, keySet, createdDate, "team", "all", "prsCreated");
+    bumpMetric(metrics, keySet, mergedDate, "team", "all", "prsMerged");
+    if (people.includes(owner)) {
+      bumpMetric(metrics, keySet, createdDate, "person", owner, "prsCreated");
+      bumpMetric(metrics, keySet, mergedDate, "person", owner, "prsMerged");
+    }
+  }
+
+  const [issueRows] = await pool.execute<RowData[]>(
+    `SELECT owner_login, created_at, closed_at, lifecycle_state
+     FROM issues
+     WHERE repo_id = ? AND is_pull_request = 0`,
+    [repoId]
+  );
+  for (const row of issueRows) {
+    const owner = row.owner_login ? asString(row.owner_login) : "";
+    const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
+    const closedDate = dateKeyInTimezone(row.closed_at, profile.reporting.timezone);
+    bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesOpened");
+    bumpMetric(metrics, keySet, closedDate, "team", "all", "issuesClosed");
+    if (row.lifecycle_state === "deferred") {
+      bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesDeferred");
+    }
+    if (people.includes(owner)) {
+      bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesOpened");
+      bumpMetric(metrics, keySet, closedDate, "person", owner, "issuesClosed");
+      if (row.lifecycle_state === "deferred") {
+        bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesDeferred");
+      }
+    }
+  }
+
+  const [violationRows] = await pool.execute<RowData[]>(
+    `SELECT related_login, first_detected_at
+     FROM workflow_violations
+     WHERE repo_id = ? AND resolved_at IS NULL`,
+    [repoId]
+  );
+  for (const row of violationRows) {
+    const login = row.related_login ? asString(row.related_login) : "";
+    const detectedDate = dateKeyInTimezone(row.first_detected_at, profile.reporting.timezone);
+    bumpMetric(metrics, keySet, detectedDate, "team", "all", "workflowViolationsDetected");
+    if (people.includes(login)) {
+      bumpMetric(metrics, keySet, detectedDate, "person", login, "workflowViolationsDetected");
+    }
+  }
+
+  const generatedAt = nowSql();
+  await pool.execute("DELETE FROM daily_metrics WHERE repo_id = ?", [repoId]);
+  for (const point of metrics.values()) {
+    await pool.execute(
+      `INSERT INTO daily_metrics(
+        repo_id, metric_date, scope_type, scope_key, prs_created, prs_merged,
+        issues_opened, issues_closed, issues_deferred, workflow_violations_detected,
+        source_completeness, generated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        repoId,
+        point.date,
+        point.scopeType,
+        point.scopeKey,
+        point.prsCreated,
+        point.prsMerged,
+        point.issuesOpened,
+        point.issuesClosed,
+        point.issuesDeferred,
+        point.workflowViolationsDetected,
+        point.sourceCompleteness,
+        generatedAt
+      ]
+    );
+  }
+
+  return metrics.size;
+}
+
 export async function getDashboardSummary(profile: RepoProfile, repoId: number): Promise<DashboardSummary> {
   const pool = getPool();
   const [criticalRows] = await pool.execute<RowData[]>(
@@ -590,6 +768,13 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
        CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        last_detected_at DESC
      LIMIT 100`,
+    [repoId]
+  );
+  const [metricRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM daily_metrics
+     WHERE repo_id = ?
+     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
     [repoId]
   );
 
@@ -676,6 +861,28 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     errorMessage: row.error_message ? asString(row.error_message) : null
   }));
 
+  const dailyMetrics: DailyMetricPoint[] = metricRows.map((row) => ({
+    date: asString(row.metric_date),
+    scopeType: asString(row.scope_type) as DailyMetricPoint["scopeType"],
+    scopeKey: asString(row.scope_key),
+    prsCreated: asNumber(row.prs_created),
+    prsMerged: asNumber(row.prs_merged),
+    issuesOpened: asNumber(row.issues_opened),
+    issuesClosed: asNumber(row.issues_closed),
+    issuesDeferred: asNumber(row.issues_deferred),
+    workflowViolationsDetected: asNumber(row.workflow_violations_detected),
+    sourceCompleteness: asString(row.source_completeness) as DailyMetricPoint["sourceCompleteness"],
+    generatedAt: fromSqlDate(row.generated_at) ?? new Date().toISOString()
+  }));
+
+  const analytics: AnalyticsSummary = {
+    periodDays: 30,
+    sourceNote:
+      "Trend data is derived from the local MatrixOne cache. It is partial until issue, PR, review, and timeline backfill are complete.",
+    teamDaily: dailyMetrics.filter((point) => point.scopeType === "team"),
+    peopleDaily: dailyMetrics.filter((point) => point.scopeType === "person")
+  };
+
   return {
     repo: {
       key: profile.key,
@@ -700,6 +907,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     criticalIssues,
     people,
     pendingPrs,
-    workflowViolations
+    workflowViolations,
+    analytics
   };
 }

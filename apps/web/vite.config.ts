@@ -20,7 +20,8 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             react: ["react", "react-dom"],
             antd: ["antd"],
-            icons: ["lucide-react"]
+            icons: ["lucide-react"],
+            charts: ["echarts"]
           }
         }
       }

@@ -2,6 +2,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   listCachedIssuesForRules,
   recordSyncRun,
+  recomputeDailyMetricsFromCache,
   replaceWorkflowViolations,
   runWithJobLease,
   upsertAttentionItem,
@@ -23,6 +24,11 @@ export interface SyncResult {
 export interface RuleSyncResult {
   repoId: number;
   workflowViolations: number;
+}
+
+export interface MetricSyncResult {
+  repoId: number;
+  dailyMetrics: number;
 }
 
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
@@ -60,6 +66,24 @@ export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncRe
     raw: { workflowViolations: workflowViolations.length }
   });
   return { repoId, workflowViolations: workflowViolations.length };
+}
+
+export async function recomputeMetricsFromCache(): Promise<MetricSyncResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const dailyMetrics = await recomputeDailyMetricsFromCache(repoId, profile, 30);
+  await recordSyncRun({
+    repoId,
+    syncLayer: "metrics",
+    status: "success",
+    sourceAuthType: "cache",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    raw: { dailyMetrics }
+  });
+  return { repoId, dailyMetrics };
 }
 
 export async function syncOnce(): Promise<SyncResult | null> {

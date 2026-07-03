@@ -155,6 +155,22 @@ const schemaStatements = [
     fixable TINYINT NOT NULL,
     UNIQUE KEY uniq_workflow_violation_dedupe (dedupe_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS daily_metrics (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    metric_date VARCHAR(10) NOT NULL,
+    scope_type VARCHAR(32) NOT NULL,
+    scope_key VARCHAR(255) NOT NULL,
+    prs_created INT NOT NULL,
+    prs_merged INT NOT NULL,
+    issues_opened INT NOT NULL,
+    issues_closed INT NOT NULL,
+    issues_deferred INT NOT NULL,
+    workflow_violations_detected INT NOT NULL,
+    source_completeness VARCHAR(64) NOT NULL,
+    generated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_daily_metrics_scope (repo_id, metric_date, scope_type, scope_key)
+  )`,
   `CREATE TABLE IF NOT EXISTS notification_deliveries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     attention_item_id BIGINT NOT NULL,
@@ -175,7 +191,8 @@ const indexStatements = [
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
-  "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)"
+  "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)",
+  "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)"
 ];
 
 const compatibilityStatements = [

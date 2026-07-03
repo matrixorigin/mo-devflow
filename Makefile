@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once check test ci
+.PHONY: help setup dev-init dev-start dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -20,6 +20,7 @@ help:
 	@echo "  make db-migrate         - Run schema migrations"
 	@echo "  make sync-once          - Run one GitHub sync pass"
 	@echo "  make rules-once         - Recompute derived rules from cached data"
+	@echo "  make metrics-once       - Recompute analytics metrics from cached data"
 	@echo "  make check              - Typecheck and test"
 	@echo "  make ci                 - check + build"
 
@@ -41,6 +42,9 @@ sync-once:
 
 rules-once:
 	@npm run rules:once
+
+metrics-once:
+	@npm run metrics:once
 
 dev-api-start:
 	@if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then echo "API already running (PID $$(cat $(API_PID)))"; exit 0; fi
