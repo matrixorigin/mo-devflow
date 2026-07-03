@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
+  enqueueJobsNow,
   getActiveGitHubTokenForUser,
   getActiveWorkflowViolation,
   getCachedIssueByNumber,
@@ -24,6 +25,7 @@ import type {
 } from "@mo-devflow/shared";
 import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
+import { workflowWriteRefreshJobs } from "./refreshJobs";
 
 const workflowFixPreviewSchema = z.object({
   actionKey: z.literal("add_needs_triage"),
@@ -289,7 +291,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
           ? "GitHub state changed since preview; no operation was executed."
           : "Workflow fix executed with the connected GitHub token."
       });
-      return persistExecution({
+      const persisted = await persistExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -297,6 +299,23 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         result,
         githubResponse: applied.response
       });
+      if (!stale) {
+        const refreshJobs = workflowWriteRefreshJobs({
+          repoKey: profile.key,
+          githubLogin: session.githubLogin,
+          requestedAt: persisted.executedAt,
+          previewId: preview.previewId,
+          actionKey: preview.actionKey,
+          objectType: preview.objectType,
+          objectNumber: preview.objectNumber
+        });
+        try {
+          await enqueueJobsNow(refreshJobs);
+        } catch (error) {
+          app.log.error({ error, previewId: preview.previewId }, "post-write refresh queueing failed");
+        }
+      }
+      return persisted;
     } catch (error) {
       const result = executionResult({
         previewId: preview.previewId,

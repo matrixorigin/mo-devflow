@@ -5,20 +5,11 @@ import {
   enqueueJobsNow,
   getRepoId,
   recordManualRefreshRequest,
-  upsertRepoProfile,
-  type RecurringJobSeed
+  upsertRepoProfile
 } from "@mo-devflow/db";
 import type { ManualRefreshLayer } from "@mo-devflow/shared";
 import { getSessionRecordFromRequest } from "./authRoutes";
-
-const manualRefreshLayers = [
-  "github_sync",
-  "webhooks",
-  "rules",
-  "metrics",
-  "ai_drift",
-  "notifications"
-] as const satisfies readonly ManualRefreshLayer[];
+import { jobKeyForLayer, manualRefreshLayers, type RefreshJobSeed } from "./refreshJobs";
 
 const manualRefreshSchema = z.object({
   layers: z.array(z.enum(manualRefreshLayers)).min(1).max(manualRefreshLayers.length).optional()
@@ -27,23 +18,6 @@ const manualRefreshSchema = z.object({
 function uniqueLayers(layers: ManualRefreshLayer[] | undefined): ManualRefreshLayer[] {
   const selected = layers && layers.length > 0 ? layers : [...manualRefreshLayers];
   return selected.filter((layer, index) => selected.indexOf(layer) === index);
-}
-
-function jobKeyForLayer(layer: ManualRefreshLayer, repoKey: string): string {
-  switch (layer) {
-    case "github_sync":
-      return `github-sync:${repoKey}`;
-    case "webhooks":
-      return `webhooks:${repoKey}`;
-    case "rules":
-      return `rules:${repoKey}`;
-    case "metrics":
-      return `metrics:${repoKey}`;
-    case "ai_drift":
-      return `ai-drift:${repoKey}`;
-    case "notifications":
-      return `notifications:${repoKey}`;
-  }
 }
 
 export async function registerRefreshRoutes(app: FastifyInstance): Promise<void> {
@@ -68,7 +42,7 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const requestedAt = new Date().toISOString();
     const requestedLayers = uniqueLayers(parsed.data.layers);
-    const jobs: Array<RecurringJobSeed & { jobType: ManualRefreshLayer }> = requestedLayers.map((layer) => ({
+    const jobs: RefreshJobSeed[] = requestedLayers.map((layer) => ({
       jobKey: jobKeyForLayer(layer, profile.key),
       jobType: layer,
       payload: {

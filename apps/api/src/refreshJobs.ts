@@ -1,0 +1,62 @@
+import type { RecurringJobSeed } from "@mo-devflow/db";
+import type { ManualRefreshLayer, WorkflowFixPreview } from "@mo-devflow/shared";
+
+export const manualRefreshLayers = [
+  "github_sync",
+  "webhooks",
+  "rules",
+  "metrics",
+  "ai_drift",
+  "notifications"
+] as const satisfies readonly ManualRefreshLayer[];
+
+export type RefreshJobSeed = RecurringJobSeed & { jobType: ManualRefreshLayer };
+
+export function jobKeyForLayer(layer: ManualRefreshLayer, repoKey: string): string {
+  switch (layer) {
+    case "github_sync":
+      return `github-sync:${repoKey}`;
+    case "webhooks":
+      return `webhooks:${repoKey}`;
+    case "rules":
+      return `rules:${repoKey}`;
+    case "metrics":
+      return `metrics:${repoKey}`;
+    case "ai_drift":
+      return `ai-drift:${repoKey}`;
+    case "notifications":
+      return `notifications:${repoKey}`;
+  }
+}
+
+export function workflowWriteRefreshJobs(input: {
+  repoKey: string;
+  githubLogin: string;
+  requestedAt: string;
+  previewId: string;
+  actionKey: WorkflowFixPreview["actionKey"];
+  objectType: WorkflowFixPreview["objectType"];
+  objectNumber: number;
+}): RefreshJobSeed[] {
+  const payload = {
+    requestedBy: input.githubLogin,
+    requestedAt: input.requestedAt,
+    trigger: "workflow_fix_execution",
+    previewId: input.previewId,
+    actionKey: input.actionKey,
+    objectType: input.objectType,
+    objectNumber: input.objectNumber
+  };
+  return [
+    {
+      jobKey: jobKeyForLayer("github_sync", input.repoKey),
+      jobType: "github_sync",
+      payload
+    },
+    {
+      jobKey: jobKeyForLayer("rules", input.repoKey),
+      jobType: "rules",
+      payload
+    }
+  ];
+}
