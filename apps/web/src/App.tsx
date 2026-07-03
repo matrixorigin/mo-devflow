@@ -41,8 +41,11 @@ interface CriticalIssueView {
   ownerLogin: string | null;
   ownerReason: string | null;
   lifecycleState: string;
+  aiEffortLabel: string | null;
   ageHours: number;
+  sourceUpdatedAt: string;
   lastSyncedAt: string;
+  syncError: string | null;
   isComplete: boolean;
   labels: string[];
 }
@@ -895,10 +898,21 @@ export default function App() {
         )
       },
       {
-        title: "Severity",
-        dataIndex: "severity",
-        width: 132,
-        render: (severity) => <Tag color={severityColor(severity)}>{severity ?? "unknown"}</Tag>
+        title: "Workflow",
+        width: 280,
+        render: (_, issue) => (
+          <Space size={[4, 4]} wrap>
+            <Tag>{labelText(issue.lifecycleState)}</Tag>
+            <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
+            {issue.aiEffortLabel ? <Tag color="blue">{issue.aiEffortLabel}</Tag> : <Tag>ai unknown</Tag>}
+            {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+            {issue.syncError ? (
+              <Tooltip title={issue.syncError}>
+                <Tag color="red">sync error</Tag>
+              </Tooltip>
+            ) : null}
+          </Space>
+        )
       },
       {
         title: "Owner",
@@ -918,6 +932,16 @@ export default function App() {
         dataIndex: "ageHours",
         width: 96,
         render: (age) => hours(age)
+      },
+      {
+        title: "Updated",
+        dataIndex: "sourceUpdatedAt",
+        width: 168,
+        render: (value, issue) => (
+          <Tooltip title={`Cache synced ${formatDate(issue.lastSyncedAt)}`}>
+            <Text>{formatDate(value)}</Text>
+          </Tooltip>
+        )
       }
     ],
     []
@@ -1813,7 +1837,7 @@ export default function App() {
                         size="small"
                         columns={criticalColumns}
                         dataSource={selectedPersonalView.activeCriticalIssues}
-                        scroll={{ x: 760 }}
+                        scroll={{ x: 1040 }}
                         pagination={{ pageSize: 5 }}
                         locale={{ emptyText: <Empty description="No active critical issues for this user" /> }}
                       />
@@ -1984,7 +2008,7 @@ export default function App() {
                 size="middle"
                 columns={criticalColumns}
                 dataSource={data.criticalIssues}
-                scroll={{ x: 760 }}
+                scroll={{ x: 1040 }}
                 pagination={{ pageSize: 8 }}
                 locale={{ emptyText: <Empty description="No active critical issues in cache" /> }}
               />

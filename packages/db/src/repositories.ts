@@ -725,8 +725,11 @@ function toCriticalIssueView(row: RowData): CriticalIssueView {
     ownerLogin: row.owner_login ? asString(row.owner_login) : null,
     ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
     ageHours: issueAgeHours(row),
+    sourceUpdatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
     lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
+    syncError: row.sync_error ? asString(row.sync_error) : null,
     isComplete: asNumber(row.is_complete) === 1,
     labels: parseJsonArray(asString(row.labels_json))
   };

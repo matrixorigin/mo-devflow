@@ -167,8 +167,11 @@ export interface CriticalIssueView {
   ownerLogin: string | null;
   ownerReason: string | null;
   lifecycleState: LifecycleState;
+  aiEffortLabel: string | null;
   ageHours: number;
+  sourceUpdatedAt: string;
   lastSyncedAt: string;
+  syncError: string | null;
   isComplete: boolean;
   labels: string[];
 }
