@@ -443,6 +443,17 @@ export interface WorkerHealth {
   details: Record<string, unknown> | null;
 }
 
+export type DashboardVisibilityScope = "anonymous" | "logged_in";
+
+export interface DashboardVisibility {
+  scope: DashboardVisibilityScope;
+  visibleClasses: VisibilityClass[];
+  hiddenIssues: number;
+  hiddenPullRequests: number;
+  hiddenObjects: number;
+  note: string | null;
+}
+
 export interface WebhookIngestionHealth {
   pendingDeliveries: number;
   processedDeliveries: number;
@@ -479,6 +490,7 @@ export interface DashboardSummary {
     name: string;
     timezone: string;
   };
+  visibility: DashboardVisibility;
   sync: {
     generatedAt: string;
     health: SyncHealth[];

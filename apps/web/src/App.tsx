@@ -234,6 +234,14 @@ interface DashboardSummary {
     name: string;
     timezone: string;
   };
+  visibility: {
+    scope: "anonymous" | "logged_in";
+    visibleClasses: Array<"anonymous_readable" | "logged_in_readable" | "token_owner_only" | "admin_only">;
+    hiddenIssues: number;
+    hiddenPullRequests: number;
+    hiddenObjects: number;
+    note: string | null;
+  };
   sync: {
     generatedAt: string;
     health: Array<{
@@ -1175,6 +1183,18 @@ export default function App() {
                 type="warning"
                 message={`${data.sync.partialObjects} cached objects are partial`}
                 description="Timeline, review, or CI backfill is not complete yet; stale decisions stay visible as partial evidence."
+                showIcon
+              />
+            ) : null}
+
+            {data.visibility.hiddenObjects > 0 ? (
+              <Alert
+                className="band"
+                type="info"
+                message="This view is filtered by repository visibility policy"
+                description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${data.visibility.visibleClasses
+                  .map(labelText)
+                  .join(", ") || "none"}.`}
                 showIcon
               />
             ) : null}

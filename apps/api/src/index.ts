@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, getWorkerHealth, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
 import { registerActionRoutes } from "./actionRoutes";
-import { registerAuthRoutes } from "./authRoutes";
+import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 
@@ -68,11 +68,12 @@ app.get("/health", async () => {
   }
 });
 
-app.get("/api/dashboard", async (_request, reply) => {
+app.get("/api/dashboard", async (request, reply) => {
   const profile = loadRepoProfile();
   const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
   try {
-    return await getDashboardSummary(profile, repoId);
+    const session = await getSessionRecordFromRequest(request, reply);
+    return await getDashboardSummary(profile, repoId, { authenticated: Boolean(session) });
   } catch (error) {
     app.log.error({ error }, "dashboard query failed");
     return reply.status(500).send({

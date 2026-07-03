@@ -4,6 +4,7 @@ import type {
   AnalyticsSummary,
   CriticalIssueView,
   DailyMetricPoint,
+  DashboardVisibility,
   DashboardSummary,
   NormalizedIssue,
   NormalizedPullRequest,
@@ -12,6 +13,7 @@ import type {
   RepoProfile,
   SyncHealth,
   TestingSummary,
+  VisibilityClass,
   WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView
@@ -53,6 +55,10 @@ function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
 
+export interface DashboardViewer {
+  authenticated: boolean;
+}
+
 function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
 }
@@ -60,6 +66,27 @@ function mergeUnique(left: string[], right: string[]): string[] {
 function isDuplicateError(error: unknown): boolean {
   const err = error as { code?: string; errno?: number; message?: string };
   return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
+}
+
+export function visibleClassesForDashboard(profile: RepoProfile, viewer: DashboardViewer): VisibilityClass[] {
+  if (!viewer.authenticated && !profile.access.anonymousRead) {
+    return [];
+  }
+  return viewer.authenticated ? ["anonymous_readable", "logged_in_readable"] : ["anonymous_readable"];
+}
+
+function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: string; params: string[] } {
+  if (classes.length === 0) {
+    return { sql: "1 = 0", params: [] };
+  }
+  return {
+    sql: `${alias}.visibility_class IN (${visibilityClassListSql(classes)})`,
+    params: []
+  };
+}
+
+function visibilityClassListSql(classes: VisibilityClass[]): string {
+  return classes.map((value) => `'${value}'`).join(", ");
 }
 
 export async function upsertRepoProfile(profile: RepoProfile): Promise<number> {
@@ -835,33 +862,61 @@ export async function recomputeDailyMetricsFromCache(
   return metrics.size;
 }
 
-export async function getDashboardSummary(profile: RepoProfile, repoId: number): Promise<DashboardSummary> {
+export async function getDashboardSummary(
+  profile: RepoProfile,
+  repoId: number,
+  viewer: DashboardViewer = { authenticated: false }
+): Promise<DashboardSummary> {
   const pool = getPool();
+  const visibleClasses = visibleClassesForDashboard(profile, viewer);
+  const criticalVisibility = visibilityClause("i", visibleClasses);
+  const prVisibility = visibilityClause("p", visibleClasses);
+  const issueListVisibility = visibilityClause("i", visibleClasses);
+  const allPrVisibility = visibilityClause("p", visibleClasses);
+  const partialIssueVisibility = visibilityClause("i", visibleClasses);
+  const partialPrVisibility = visibilityClause("p", visibleClasses);
+  const violationIssueVisibility = visibilityClause("i", visibleClasses);
+  const violationPrVisibility = visibilityClause("p", visibleClasses);
+  const driftIssueVisibility = visibilityClause("i", visibleClasses);
+  const driftPrVisibility = visibilityClause("p", visibleClasses);
+  const hiddenIssueExpression =
+    visibleClasses.length === 0
+      ? "COUNT(*)"
+      : `SUM(CASE WHEN visibility_class IN (${visibilityClassListSql(visibleClasses)}) THEN 0 ELSE 1 END)`;
+  const hiddenPrExpression =
+    visibleClasses.length === 0
+      ? "COUNT(*)"
+      : `SUM(CASE WHEN visibility_class IN (${visibilityClassListSql(visibleClasses)}) THEN 0 ELSE 1 END)`;
   const [criticalRows] = await pool.execute<RowData[]>(
-    `SELECT * FROM issues
-     WHERE repo_id = ?
-       AND state = 'open'
-       AND severity IN (${profile.labels.critical.map(() => "?").join(", ")})
+    `SELECT * FROM issues i
+     WHERE i.repo_id = ?
+       AND i.state = 'open'
+       AND i.severity IN (${profile.labels.critical.map(() => "?").join(", ")})
+       AND ${criticalVisibility.sql}
      ORDER BY updated_at ASC
      LIMIT 100`,
-    [repoId, ...profile.labels.critical]
+    [repoId, ...profile.labels.critical, ...criticalVisibility.params]
   );
   const [prRows] = await pool.execute<RowData[]>(
-    `SELECT * FROM pull_requests
-     WHERE repo_id = ? AND state = 'open'
+    `SELECT * FROM pull_requests p
+     WHERE p.repo_id = ? AND p.state = 'open'
+       AND ${prVisibility.sql}
      ORDER BY updated_at ASC
      LIMIT 300`,
-    [repoId]
+    [repoId, ...prVisibility.params]
   );
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, lifecycle_state, severity, state FROM issues WHERE repo_id = ?`,
-    [repoId]
+    `SELECT i.owner_login, i.lifecycle_state, i.severity, i.state
+     FROM issues i
+     WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
+    [repoId, ...issueListVisibility.params]
   );
   const [allPrRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, merged_at, state, attention_flags_json,
-            testing_state, testing_testers_json, testing_queue_age_hours
-     FROM pull_requests WHERE repo_id = ?`,
-    [repoId]
+    `SELECT p.owner_login, p.created_at, p.merged_at, p.state, p.attention_flags_json,
+            p.testing_state, p.testing_testers_json, p.testing_queue_age_hours
+     FROM pull_requests p
+     WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
+    [repoId, ...allPrVisibility.params]
   );
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT sync_layer, status, started_at, finished_at, error_message
@@ -875,21 +930,40 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     `SELECT
        SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
      FROM (
-       SELECT is_complete FROM issues WHERE repo_id = ?
+       SELECT i.is_complete FROM issues i WHERE i.repo_id = ? AND ${partialIssueVisibility.sql}
        UNION ALL
-       SELECT is_complete FROM pull_requests WHERE repo_id = ?
+       SELECT p.is_complete FROM pull_requests p WHERE p.repo_id = ? AND ${partialPrVisibility.sql}
      ) t`,
-    [repoId, repoId]
+    [repoId, ...partialIssueVisibility.params, repoId, ...partialPrVisibility.params]
+  );
+  const [hiddenIssueRows] = await pool.execute<RowData[]>(
+    `SELECT ${hiddenIssueExpression} AS hidden_issues FROM issues WHERE repo_id = ?`,
+    [repoId]
+  );
+  const [hiddenPrRows] = await pool.execute<RowData[]>(
+    `SELECT ${hiddenPrExpression} AS hidden_pull_requests FROM pull_requests WHERE repo_id = ?`,
+    [repoId]
   );
   const [violationRows] = await pool.execute<RowData[]>(
-    `SELECT *
-     FROM workflow_violations
-     WHERE repo_id = ? AND resolved_at IS NULL
+    `SELECT v.*
+     FROM workflow_violations v
+     WHERE v.repo_id = ? AND v.resolved_at IS NULL
+       AND (
+         (v.object_type = 'issue' AND EXISTS (
+           SELECT 1 FROM issues i
+           WHERE i.repo_id = v.repo_id AND i.number = v.object_number AND ${violationIssueVisibility.sql}
+         ))
+         OR
+         (v.object_type = 'pull_request' AND EXISTS (
+           SELECT 1 FROM pull_requests p
+           WHERE p.repo_id = v.repo_id AND p.number = v.object_number AND ${violationPrVisibility.sql}
+         ))
+       )
      ORDER BY
-       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-       last_detected_at DESC
+       CASE v.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       v.last_detected_at DESC
      LIMIT 100`,
-    [repoId]
+    [repoId, ...violationIssueVisibility.params, ...violationPrVisibility.params]
   );
   const [metricRows] = await pool.execute<RowData[]>(
     `SELECT *
@@ -899,15 +973,26 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     [repoId]
   );
   const [driftRows] = await pool.execute<RowData[]>(
-    `SELECT *
-     FROM ai_drift_signals
-     WHERE repo_id = ? AND resolved_at IS NULL
+    `SELECT d.*
+     FROM ai_drift_signals d
+     WHERE d.repo_id = ? AND d.resolved_at IS NULL
+       AND (
+         (d.object_type = 'issue' AND EXISTS (
+           SELECT 1 FROM issues i
+           WHERE i.repo_id = d.repo_id AND i.number = d.object_number AND ${driftIssueVisibility.sql}
+         ))
+         OR
+         (d.object_type = 'pull_request' AND EXISTS (
+           SELECT 1 FROM pull_requests p
+           WHERE p.repo_id = d.repo_id AND p.number = d.object_number AND ${driftPrVisibility.sql}
+         ))
+       )
      ORDER BY
-       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-       actual_hours DESC,
-       last_detected_at DESC
+       CASE d.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       d.actual_hours DESC,
+       d.last_detected_at DESC
      LIMIT 100`,
-    [repoId]
+    [repoId, ...driftIssueVisibility.params, ...driftPrVisibility.params]
   );
 
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) => ({
@@ -1032,12 +1117,28 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     generatedAt: fromSqlDate(row.generated_at) ?? new Date().toISOString()
   }));
 
+  const hiddenIssues = asNumber(hiddenIssueRows[0]?.hidden_issues);
+  const hiddenPullRequests = asNumber(hiddenPrRows[0]?.hidden_pull_requests);
+  const hiddenObjects = hiddenIssues + hiddenPullRequests;
+  const visibility: DashboardVisibility = {
+    scope: viewer.authenticated ? "logged_in" : "anonymous",
+    visibleClasses,
+    hiddenIssues,
+    hiddenPullRequests,
+    hiddenObjects,
+    note:
+      hiddenObjects > 0
+        ? `${hiddenObjects} cached GitHub objects are hidden from this view by repository visibility policy.`
+        : null
+  };
+  const analyticsLimitedByVisibility = hiddenObjects > 0;
   const analytics: AnalyticsSummary = {
     periodDays: 30,
-    sourceNote:
-      "Trend data is derived from the local MatrixOne cache. It is partial until issue, PR, review, and timeline backfill are complete.",
-    teamDaily: dailyMetrics.filter((point) => point.scopeType === "team"),
-    peopleDaily: dailyMetrics.filter((point) => point.scopeType === "person")
+    sourceNote: analyticsLimitedByVisibility
+      ? "Trend data is hidden because pre-aggregated metrics may include cached objects outside the current visibility scope."
+      : "Trend data is derived from the local MatrixOne cache. It is partial until issue, PR, review, and timeline backfill are complete.",
+    teamDaily: analyticsLimitedByVisibility ? [] : dailyMetrics.filter((point) => point.scopeType === "team"),
+    peopleDaily: analyticsLimitedByVisibility ? [] : dailyMetrics.filter((point) => point.scopeType === "person")
   };
   const testingQueueRows = allPrRows.filter((row) =>
     ["test_requested", "testing", "test_changes_requested"].includes(asString(row.testing_state))
@@ -1083,6 +1184,7 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
       name: profile.repo.name,
       timezone: profile.reporting.timezone
     },
+    visibility,
     sync: {
       generatedAt: new Date().toISOString(),
       health: syncHealth,
