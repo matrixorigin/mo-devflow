@@ -90,6 +90,24 @@ interface WorkflowViolationView {
   lastDetectedAt: string;
 }
 
+interface AiDriftSignalView {
+  objectType: "issue" | "pull_request";
+  objectNumber: number;
+  title: string;
+  htmlUrl: string;
+  ruleKey: string;
+  severity: "info" | "warning" | "critical";
+  ownerLogin: string | null;
+  aiEffortLabel: string | null;
+  expectedHours: number | null;
+  actualHours: number | null;
+  evidenceSummary: string;
+  suggestedAction: string;
+  sourceCompleteness: "partial_cache" | "complete_cache";
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+}
+
 interface DailyMetricPoint {
   date: string;
   scopeType: "team" | "person";
@@ -137,11 +155,14 @@ interface DashboardSummary {
     attentionPrs: number;
     workflowViolations: number;
     criticalWorkflowViolations: number;
+    aiDriftSignals: number;
+    criticalAiDriftSignals: number;
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
+  aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
 }
 
@@ -215,6 +236,16 @@ function mergeColor(value: string): string {
 }
 
 function violationColor(value: WorkflowViolationView["severity"]): string {
+  if (value === "critical") {
+    return "red";
+  }
+  if (value === "warning") {
+    return "orange";
+  }
+  return "blue";
+}
+
+function signalColor(value: AiDriftSignalView["severity"]): string {
   if (value === "critical") {
     return "red";
   }
@@ -524,6 +555,80 @@ export default function App() {
     []
   );
 
+  const driftColumns: ColumnsType<AiDriftSignalView> = useMemo(
+    () => [
+      {
+        title: "Object",
+        width: 108,
+        render: (_, signal) => (
+          <a href={signal.htmlUrl} target="_blank" rel="noreferrer">
+            {signal.objectType === "issue" ? "Issue" : "PR"} #{signal.objectNumber}
+          </a>
+        )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title) => (
+          <Text strong ellipsis={{ tooltip: title }}>
+            {title}
+          </Text>
+        )
+      },
+      {
+        title: "Signal",
+        dataIndex: "ruleKey",
+        width: 220,
+        render: (rule) => <Tag color="purple">{labelText(rule)}</Tag>
+      },
+      {
+        title: "Severity",
+        dataIndex: "severity",
+        width: 112,
+        render: (severity) => <Tag color={signalColor(severity)}>{severity}</Tag>
+      },
+      {
+        title: "Owner",
+        dataIndex: "ownerLogin",
+        width: 140,
+        render: (login) => (login ? <Tag>{login}</Tag> : <Tag color="red">unowned</Tag>)
+      },
+      {
+        title: "AI label",
+        dataIndex: "aiEffortLabel",
+        width: 128,
+        render: (label) => (label ? <Tag color="blue">{label}</Tag> : <Tag color="orange">missing</Tag>)
+      },
+      {
+        title: "Elapsed",
+        dataIndex: "actualHours",
+        width: 112,
+        render: (value) => (typeof value === "number" ? hours(value) : "-")
+      },
+      {
+        title: "Evidence",
+        dataIndex: "evidenceSummary",
+        width: 360,
+        ellipsis: true,
+        render: (value, signal) => (
+          <Space size={6}>
+            {signal.sourceCompleteness === "partial_cache" ? <Tag>partial</Tag> : null}
+            <Text ellipsis={{ tooltip: value }}>{value}</Text>
+          </Space>
+        )
+      },
+      {
+        title: "Suggested action",
+        dataIndex: "suggestedAction",
+        width: 360,
+        ellipsis: true,
+        render: (value) => <Text ellipsis={{ tooltip: value }}>{value}</Text>
+      }
+    ],
+    []
+  );
+
   return (
     <Layout className="app-shell">
       <Header className="topbar">
@@ -537,7 +642,7 @@ export default function App() {
           <Segmented
             value={view}
             onChange={(value) => setView(String(value))}
-            options={["Overview", "Analytics", "People", "PRs", "Violations"]}
+            options={["Overview", "Analytics", "People", "PRs", "Violations", "Drift"]}
           />
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
@@ -585,6 +690,14 @@ export default function App() {
                   strokeColor="#7c3aed"
                 />
               </div>
+              <div className="metric">
+                <Statistic title="AI Drift Signals" value={data.counts.aiDriftSignals} />
+                <Progress
+                  percent={Math.min(100, data.counts.criticalAiDriftSignals * 25 + data.counts.aiDriftSignals)}
+                  showInfo={false}
+                  strokeColor="#9333ea"
+                />
+              </div>
             </section>
 
             {view === "Analytics" || view === "Overview" ? (
@@ -595,6 +708,24 @@ export default function App() {
                 </div>
                 <Alert className="band" type="info" message={data.analytics.sourceNote} showIcon />
                 <TrendChart points={data.analytics.teamDaily} />
+              </section>
+            ) : null}
+
+            {view === "Drift" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>AI Drift</Title>
+                  <Text type="secondary">Partial cache evidence until timeline and testing handoff backfill</Text>
+                </div>
+                <Table
+                  rowKey={(signal) => `${signal.objectType}-${signal.objectNumber}-${signal.ruleKey}`}
+                  size="middle"
+                  columns={driftColumns}
+                  dataSource={data.aiDriftSignals}
+                  scroll={{ x: 1480 }}
+                  pagination={{ pageSize: 8 }}
+                  locale={{ emptyText: <Empty description="No active AI drift signals in cache" /> }}
+                />
               </section>
             ) : null}
 

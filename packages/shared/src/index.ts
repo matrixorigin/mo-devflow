@@ -54,6 +54,7 @@ export interface RepoProfile {
     aiEasyS0ToTestAttentionDays: number;
     needsTriageStaleHours: number;
     prematureSeverityWindowHours: number;
+    aiEasyCriticalCriticalDays: number;
   };
   testing: {
     handoffSignals: {
@@ -215,6 +216,30 @@ export interface WorkflowViolationView extends WorkflowViolation {
   lastDetectedAt: string;
 }
 
+export type AiDriftObjectType = "issue" | "pull_request";
+export type AiDriftSeverity = "info" | "warning" | "critical";
+
+export interface AiDriftSignal {
+  objectType: AiDriftObjectType;
+  objectNumber: number;
+  title: string;
+  htmlUrl: string;
+  ruleKey: string;
+  severity: AiDriftSeverity;
+  ownerLogin: string | null;
+  aiEffortLabel: string | null;
+  expectedHours: number | null;
+  actualHours: number | null;
+  evidenceSummary: string;
+  suggestedAction: string;
+  sourceCompleteness: MetricSourceCompleteness;
+}
+
+export interface AiDriftSignalView extends AiDriftSignal {
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+}
+
 export type DailyMetricScopeType = "team" | "person";
 export type MetricSourceCompleteness = "partial_cache" | "complete_cache";
 
@@ -267,11 +292,14 @@ export interface DashboardSummary {
     attentionPrs: number;
     workflowViolations: number;
     criticalWorkflowViolations: number;
+    aiDriftSignals: number;
+    criticalAiDriftSignals: number;
   };
   criticalIssues: CriticalIssueView[];
   people: PersonSummary[];
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
+  aiDriftSignals: AiDriftSignalView[];
   analytics: AnalyticsSummary;
 }
 

@@ -1,4 +1,6 @@
 import type {
+  AiDriftSignal,
+  AiDriftSignalView,
   AnalyticsSummary,
   CriticalIssueView,
   DailyMetricPoint,
@@ -369,6 +371,10 @@ function workflowViolationDedupeKey(repoId: number, violation: WorkflowViolation
   return `${repoId}:${violation.objectType}:${violation.objectNumber}:${violation.ruleKey}`;
 }
 
+function aiDriftDedupeKey(repoId: number, signal: AiDriftSignal): string {
+  return `${repoId}:${signal.objectType}:${signal.objectNumber}:${signal.ruleKey}`;
+}
+
 export async function replaceWorkflowViolations(repoId: number, violations: WorkflowViolation[]): Promise<void> {
   const now = nowSql();
   const activeDedupeKeys = violations.map((violation) => workflowViolationDedupeKey(repoId, violation));
@@ -441,6 +447,96 @@ export async function replaceWorkflowViolations(repoId: number, violations: Work
 
   await getPool().execute(
     `UPDATE workflow_violations
+     SET resolved_at = ?
+     WHERE repo_id = ?
+       AND resolved_at IS NULL
+       AND dedupe_key NOT IN (${activeDedupeKeys.map(() => "?").join(", ")})`,
+    [now, repoId, ...activeDedupeKeys]
+  );
+}
+
+export async function replaceAiDriftSignals(repoId: number, signals: AiDriftSignal[]): Promise<void> {
+  const now = nowSql();
+  const activeDedupeKeys = signals.map((signal) => aiDriftDedupeKey(repoId, signal));
+
+  for (let index = 0; index < signals.length; index += 1) {
+    const signal = signals[index]!;
+    const dedupeKey = activeDedupeKeys[index]!;
+    try {
+      await getPool().execute(
+        `INSERT INTO ai_drift_signals(
+          repo_id, object_type, object_number, title, html_url, rule_key, severity,
+          owner_login, ai_effort_label, expected_hours, actual_hours, dedupe_key,
+          first_detected_at, last_detected_at, resolved_at, evidence_summary,
+          suggested_action, source_completeness
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [
+          repoId,
+          signal.objectType,
+          signal.objectNumber,
+          signal.title,
+          signal.htmlUrl,
+          signal.ruleKey,
+          signal.severity,
+          signal.ownerLogin,
+          signal.aiEffortLabel,
+          signal.expectedHours,
+          signal.actualHours,
+          dedupeKey,
+          now,
+          now,
+          signal.evidenceSummary,
+          signal.suggestedAction,
+          signal.sourceCompleteness
+        ]
+      );
+    } catch (error) {
+      if (!isDuplicateError(error)) {
+        throw error;
+      }
+      await getPool().execute(
+        `UPDATE ai_drift_signals
+         SET title = ?,
+             html_url = ?,
+             severity = ?,
+             owner_login = ?,
+             ai_effort_label = ?,
+             expected_hours = ?,
+             actual_hours = ?,
+             last_detected_at = ?,
+             resolved_at = NULL,
+             evidence_summary = ?,
+             suggested_action = ?,
+             source_completeness = ?
+         WHERE dedupe_key = ?`,
+        [
+          signal.title,
+          signal.htmlUrl,
+          signal.severity,
+          signal.ownerLogin,
+          signal.aiEffortLabel,
+          signal.expectedHours,
+          signal.actualHours,
+          now,
+          signal.evidenceSummary,
+          signal.suggestedAction,
+          signal.sourceCompleteness,
+          dedupeKey
+        ]
+      );
+    }
+  }
+
+  if (activeDedupeKeys.length === 0) {
+    await getPool().execute(
+      "UPDATE ai_drift_signals SET resolved_at = ? WHERE repo_id = ? AND resolved_at IS NULL",
+      [now, repoId]
+    );
+    return;
+  }
+
+  await getPool().execute(
+    `UPDATE ai_drift_signals
      SET resolved_at = ?
      WHERE repo_id = ?
        AND resolved_at IS NULL
@@ -777,6 +873,17 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
      ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
     [repoId]
   );
+  const [driftRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM ai_drift_signals
+     WHERE repo_id = ? AND resolved_at IS NULL
+     ORDER BY
+       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       actual_hours DESC,
+       last_detected_at DESC
+     LIMIT 100`,
+    [repoId]
+  );
 
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) => ({
     number: asNumber(row.number),
@@ -829,6 +936,24 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     evidenceSummary: asString(row.evidence_summary),
     suggestedAction: asString(row.suggested_action),
     fixable: asNumber(row.fixable) === 1,
+    firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+  }));
+
+  const aiDriftSignals: AiDriftSignalView[] = driftRows.map((row) => ({
+    objectType: asString(row.object_type) as AiDriftSignalView["objectType"],
+    objectNumber: asNumber(row.object_number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ruleKey: asString(row.rule_key),
+    severity: asString(row.severity) as AiDriftSignalView["severity"],
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    expectedHours: row.expected_hours === null || row.expected_hours === undefined ? null : asNumber(row.expected_hours),
+    actualHours: row.actual_hours === null || row.actual_hours === undefined ? null : asNumber(row.actual_hours),
+    evidenceSummary: asString(row.evidence_summary),
+    suggestedAction: asString(row.suggested_action),
+    sourceCompleteness: asString(row.source_completeness) as AiDriftSignalView["sourceCompleteness"],
     firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
     lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
   }));
@@ -902,12 +1027,15 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
       pendingPrs: pendingPrs.length,
       attentionPrs: pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
       workflowViolations: workflowViolations.length,
-      criticalWorkflowViolations: workflowViolations.filter((violation) => violation.severity === "critical").length
+      criticalWorkflowViolations: workflowViolations.filter((violation) => violation.severity === "critical").length,
+      aiDriftSignals: aiDriftSignals.length,
+      criticalAiDriftSignals: aiDriftSignals.filter((signal) => signal.severity === "critical").length
     },
     criticalIssues,
     people,
     pendingPrs,
     workflowViolations,
+    aiDriftSignals,
     analytics
   };
 }

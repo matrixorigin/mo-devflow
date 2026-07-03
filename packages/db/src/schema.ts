@@ -171,6 +171,28 @@ const schemaStatements = [
     generated_at DATETIME NOT NULL,
     UNIQUE KEY uniq_daily_metrics_scope (repo_id, metric_date, scope_type, scope_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS ai_drift_signals (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    object_type VARCHAR(64) NOT NULL,
+    object_number INT NOT NULL,
+    title TEXT NOT NULL,
+    html_url TEXT NOT NULL,
+    rule_key VARCHAR(128) NOT NULL,
+    severity VARCHAR(32) NOT NULL,
+    owner_login VARCHAR(255),
+    ai_effort_label VARCHAR(128),
+    expected_hours DOUBLE,
+    actual_hours DOUBLE,
+    dedupe_key VARCHAR(512) NOT NULL,
+    first_detected_at DATETIME NOT NULL,
+    last_detected_at DATETIME NOT NULL,
+    resolved_at DATETIME,
+    evidence_summary TEXT NOT NULL,
+    suggested_action TEXT NOT NULL,
+    source_completeness VARCHAR(64) NOT NULL,
+    UNIQUE KEY uniq_ai_drift_dedupe (dedupe_key)
+  )`,
   `CREATE TABLE IF NOT EXISTS notification_deliveries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     attention_item_id BIGINT NOT NULL,
@@ -192,7 +214,8 @@ const indexStatements = [
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
   "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)",
-  "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)"
+  "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)",
+  "CREATE INDEX idx_ai_drift_repo_resolved ON ai_drift_signals(repo_id, resolved_at)"
 ];
 
 const compatibilityStatements = [

@@ -1,4 +1,5 @@
 import type {
+  AiDriftSignal,
   LifecycleState,
   NormalizedIssue,
   NormalizedPullRequest,
@@ -350,4 +351,55 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
   }
 
   return violations;
+}
+
+export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIssue): AiDriftSignal[] {
+  if (issue.state !== "open" || !issue.severity || !profile.labels.critical.includes(issue.severity)) {
+    return [];
+  }
+
+  const signals: AiDriftSignal[] = [];
+  const ageHours = hoursBetween(issue.createdAt);
+
+  if (!issue.aiEffortLabel) {
+    signals.push({
+      objectType: "issue",
+      objectNumber: issue.number,
+      title: issue.title,
+      htmlUrl: issue.htmlUrl,
+      ruleKey: "critical_missing_ai_effort",
+      severity: "warning",
+      ownerLogin: issue.ownerLogin,
+      aiEffortLabel: null,
+      expectedHours: null,
+      actualHours: ageHours,
+      evidenceSummary: `Critical issue #${issue.number} has no AI effort label in the cache.`,
+      suggestedAction: "Add an ai-* effort label or confirm this issue should be excluded from AI effort analysis.",
+      sourceCompleteness: "partial_cache"
+    });
+  }
+
+  if (issue.aiEffortLabel === "ai-easy") {
+    const warningHours = profile.thresholds.aiEasyS0ToTestAttentionDays * 24;
+    const criticalHours = profile.thresholds.aiEasyCriticalCriticalDays * 24;
+    if (ageHours >= warningHours) {
+      signals.push({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "ai_easy_critical_too_old",
+        severity: ageHours >= criticalHours ? "critical" : "warning",
+        ownerLogin: issue.ownerLogin,
+        aiEffortLabel: issue.aiEffortLabel,
+        expectedHours: warningHours,
+        actualHours: ageHours,
+        evidenceSummary: `Critical ai-easy issue #${issue.number} is ${ageHours}h old; threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
+        suggestedAction: "Review whether ai-easy is still accurate, split blockers, or update the effort label before close.",
+        sourceCompleteness: "partial_cache"
+      });
+    }
+  }
+
+  return signals;
 }

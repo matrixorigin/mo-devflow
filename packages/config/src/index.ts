@@ -63,14 +63,16 @@ const profileSchema = z.object({
       critical_no_action_attention_hours: z.number().default(24),
       ai_easy_s0_to_test_attention_days: z.number().default(7),
       needs_triage_stale_hours: z.number().default(72),
-      premature_severity_window_hours: z.number().default(24)
+      premature_severity_window_hours: z.number().default(24),
+      ai_easy_critical_critical_days: z.number().default(14)
     })
     .default({
       pr_no_action_attention_hours: 24,
       critical_no_action_attention_hours: 24,
       ai_easy_s0_to_test_attention_days: 7,
       needs_triage_stale_hours: 72,
-      premature_severity_window_hours: 24
+      premature_severity_window_hours: 24,
+      ai_easy_critical_critical_days: 14
     }),
   testing: z
     .object({
@@ -153,7 +155,8 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
       criticalNoActionAttentionHours: parsed.thresholds.critical_no_action_attention_hours,
       aiEasyS0ToTestAttentionDays: parsed.thresholds.ai_easy_s0_to_test_attention_days,
       needsTriageStaleHours: parsed.thresholds.needs_triage_stale_hours,
-      prematureSeverityWindowHours: parsed.thresholds.premature_severity_window_hours
+      prematureSeverityWindowHours: parsed.thresholds.premature_severity_window_hours,
+      aiEasyCriticalCriticalDays: parsed.thresholds.ai_easy_critical_critical_days
     },
     testing: {
       handoffSignals: {

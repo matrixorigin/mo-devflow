@@ -271,6 +271,7 @@ Backfill:
 - Dashboards should avoid treating partial objects as complete evidence.
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
 - Metrics evaluation should also be runnable from cached normalized data. Until full historical backfill exists, generated trend points must carry partial-cache completeness metadata and the UI must explain the limitation.
+- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on critical issues and `ai-easy` critical issues exceeding configured age thresholds. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must be marked as partial evidence.
 
 ## 9. Authentication and Token Handling
 

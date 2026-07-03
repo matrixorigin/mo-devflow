@@ -68,6 +68,7 @@ thresholds:
   ai_easy_s0_to_test_attention_days: 7
   needs_triage_stale_hours: 72
   premature_severity_window_hours: 24
+  ai_easy_critical_critical_days: 14
 
 testing:
   handoff_signals:

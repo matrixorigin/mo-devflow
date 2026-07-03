@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "./index";
+import { aiDriftSignalsForIssue, normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "./index";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -30,7 +30,8 @@ const profile: RepoProfile = {
     criticalNoActionAttentionHours: 24,
     aiEasyS0ToTestAttentionDays: 7,
     needsTriageStaleHours: 72,
-    prematureSeverityWindowHours: 24
+    prematureSeverityWindowHours: 24,
+    aiEasyCriticalCriticalDays: 14
   },
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
@@ -262,5 +263,49 @@ describe("rules", () => {
 
     const rules = workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey);
     expect(rules).toContain("conflicting_lifecycle_labels");
+  });
+
+  test("AI drift detects missing effort labels on critical issues", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 10,
+        number: 16,
+        title: "critical missing effort",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/16",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    expect(aiDriftSignalsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("critical_missing_ai_effort");
+  });
+
+  test("AI drift detects old ai-easy critical issues with partial-cache evidence", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 11,
+        number: 17,
+        title: "old ai easy critical",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/17",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }, { name: "ai-easy" }],
+        assignees: [{ login: "alice" }]
+      },
+      "anonymous"
+    );
+
+    const signals = aiDriftSignalsForIssue(profile, issue);
+    expect(signals.map((item) => item.ruleKey)).toContain("ai_easy_critical_too_old");
+    expect(signals.find((item) => item.ruleKey === "ai_easy_critical_too_old")?.sourceCompleteness).toBe("partial_cache");
   });
 });

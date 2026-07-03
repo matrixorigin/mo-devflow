@@ -3,6 +3,7 @@ import {
   listCachedIssuesForRules,
   recordSyncRun,
   recomputeDailyMetricsFromCache,
+  replaceAiDriftSignals,
   replaceWorkflowViolations,
   runWithJobLease,
   upsertAttentionItem,
@@ -11,8 +12,14 @@ import {
   upsertRepoProfile
 } from "@mo-devflow/db";
 import { fetchGitHubSnapshot } from "@mo-devflow/github";
-import { criticalAttentionForIssue, normalizeIssue, normalizePullRequest, workflowViolationsForIssue } from "@mo-devflow/rules";
-import type { NormalizedIssue, WorkflowViolation } from "@mo-devflow/shared";
+import {
+  aiDriftSignalsForIssue,
+  criticalAttentionForIssue,
+  normalizeIssue,
+  normalizePullRequest,
+  workflowViolationsForIssue
+} from "@mo-devflow/rules";
+import type { AiDriftSignal, NormalizedIssue, WorkflowViolation } from "@mo-devflow/shared";
 
 export interface SyncResult {
   repoId: number;
@@ -29,6 +36,11 @@ export interface RuleSyncResult {
 export interface MetricSyncResult {
   repoId: number;
   dailyMetrics: number;
+}
+
+export interface DriftSyncResult {
+  repoId: number;
+  aiDriftSignals: number;
 }
 
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
@@ -86,6 +98,26 @@ export async function recomputeMetricsFromCache(): Promise<MetricSyncResult> {
   return { repoId, dailyMetrics };
 }
 
+export async function recomputeAiDriftFromCache(): Promise<DriftSyncResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const issues = await listCachedIssuesForRules(repoId);
+  const aiDriftSignals = issues.flatMap((issue) => aiDriftSignalsForIssue(profile, issue));
+  await replaceAiDriftSignals(repoId, aiDriftSignals);
+  await recordSyncRun({
+    repoId,
+    syncLayer: "ai_drift",
+    status: "success",
+    sourceAuthType: "cache",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    raw: { aiDriftSignals: aiDriftSignals.length }
+  });
+  return { repoId, aiDriftSignals: aiDriftSignals.length };
+}
+
 export async function syncOnce(): Promise<SyncResult | null> {
   loadEnv();
   const profile = loadRepoProfile();
@@ -98,6 +130,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
       let issueCount = 0;
       let prCount = 0;
       const workflowViolations: WorkflowViolation[] = [];
+      const aiDriftSignals: AiDriftSignal[] = [];
 
       for (const rawIssue of snapshot.issues) {
         const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType);
@@ -107,6 +140,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
         await upsertIssue(repoId, issue);
         issueCount += 1;
         workflowViolations.push(...workflowViolationsForIssue(profile, issue));
+        aiDriftSignals.push(...aiDriftSignalsForIssue(profile, issue));
 
         for (const flag of criticalAttentionForIssue(profile, issue)) {
           await upsertAttentionItem({
@@ -123,6 +157,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
         }
       }
       await replaceWorkflowViolations(repoId, workflowViolations);
+      await replaceAiDriftSignals(repoId, aiDriftSignals);
 
       for (const rawPr of snapshot.pullRequests) {
         const pr = normalizePullRequest(
@@ -160,7 +195,8 @@ export async function syncOnce(): Promise<SyncResult | null> {
           issues: issueCount,
           pullRequests: prCount,
           pullRequestInsights: snapshot.pullRequestInsights.size,
-          workflowViolations: workflowViolations.length
+          workflowViolations: workflowViolations.length,
+          aiDriftSignals: aiDriftSignals.length
         }
       });
 

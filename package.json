@@ -16,6 +16,7 @@
     "sync:once": "tsx apps/worker/src/sync-once.ts",
     "rules:once": "tsx apps/worker/src/rules-once.ts",
     "metrics:once": "tsx apps/worker/src/metrics-once.ts",
+    "drift:once": "tsx apps/worker/src/drift-once.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm run typecheck && npm --workspace @mo-devflow/web run build",
     "test": "vitest run",
