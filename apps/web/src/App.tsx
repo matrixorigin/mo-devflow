@@ -664,6 +664,12 @@ export default function App() {
     }
   }
 
+  function openTokenReconnect() {
+    setTokenError(null);
+    setTokenInput("");
+    setTokenModalOpen(true);
+  }
+
   async function disconnectSession() {
     try {
       const response = await fetch("/api/session", {
@@ -727,6 +733,7 @@ export default function App() {
       setWorkflowPreview((await response.json()) as WorkflowFixPreview);
     } catch (err) {
       setPreviewError(displayError(err));
+      void loadSession();
     } finally {
       setPreviewLoadingKey(null);
     }
@@ -748,10 +755,15 @@ export default function App() {
       if (!response.ok) {
         throw new Error(await responseError(response));
       }
-      setWorkflowExecution((await response.json()) as WorkflowFixExecutionResult);
+      const result = (await response.json()) as WorkflowFixExecutionResult;
+      setWorkflowExecution(result);
+      if (result.status === "token_unavailable") {
+        void loadSession();
+      }
       void load();
     } catch (err) {
       setPreviewError(displayError(err));
+      void loadSession();
     } finally {
       setExecutionSaving(false);
     }
@@ -995,9 +1007,12 @@ export default function App() {
           const supportsPreview =
             violation.fixable && violation.objectType === "issue" && violation.ruleKey === "bug_missing_needs_triage";
           const issueLabelCapability = session?.user?.writeCapabilities.issueLabels ?? null;
-          const canPreview = supportsPreview && issueLabelCapability?.enabled === true;
+          const tokenServerReady = session?.tokenEncryptionConfigured !== false;
+          const canPreview = supportsPreview && tokenServerReady && issueLabelCapability?.enabled === true;
           const tooltip = !session?.authenticated
             ? "Connect GitHub token to preview fixes"
+            : !tokenServerReady
+              ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
             : !supportsPreview
               ? "No safe preview action for this rule yet"
               : issueLabelCapability?.enabled
@@ -1182,6 +1197,24 @@ export default function App() {
                 {session.user.githubLogin.slice(0, 1).toUpperCase()}
               </Avatar>
               <Tag>{session.user.githubLogin}</Tag>
+              <Tooltip
+                title={
+                  session.tokenEncryptionConfigured === false
+                    ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
+                    : session.user.writeCapabilities.issueLabels.enabled
+                      ? "Reconnect GitHub token"
+                      : session.user.writeCapabilities.issueLabels.message
+                }
+              >
+                <Button
+                  aria-label="Reconnect GitHub token"
+                  icon={<KeyRound size={16} />}
+                  disabled={session.tokenEncryptionConfigured === false}
+                  onClick={openTokenReconnect}
+                >
+                  {session.user.writeCapabilities.issueLabels.enabled ? null : "Reconnect"}
+                </Button>
+              </Tooltip>
               <Tooltip title="Disconnect GitHub token">
                 <Button icon={<LogOut size={16} />} onClick={() => void disconnectSession()} />
               </Tooltip>
@@ -1197,10 +1230,7 @@ export default function App() {
               <Button
                 icon={<KeyRound size={16} />}
                 disabled={session?.tokenEncryptionConfigured === false}
-                onClick={() => {
-                  setTokenError(null);
-                  setTokenModalOpen(true);
-                }}
+                onClick={openTokenReconnect}
               >
                 Connect
               </Button>

@@ -4,6 +4,7 @@ import type {
   WorkflowFixActionKey,
   WorkflowFixOperation,
   WorkflowFixPreview,
+  WorkflowFixStateSource,
   WorkflowFixStateSnapshot,
   WorkflowViolationView
 } from "@mo-devflow/shared";
@@ -16,13 +17,14 @@ export interface BuildWorkflowFixPreviewInput {
   previewId: string;
   createdAt: string;
   expiresAt: string;
+  stateSource?: WorkflowFixStateSource;
 }
 
 export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): WorkflowFixPreview {
   const warnings: string[] = [];
   let blockedReason: string | null = null;
   const operations: WorkflowFixOperation[] = [];
-  const currentState = stateSnapshotFromIssue(input.issue);
+  const currentState = stateSnapshotFromIssue(input.issue, input.stateSource ?? "cache");
   let proposedState: WorkflowFixStateSnapshot = {
     ...currentState,
     labels: [...currentState.labels],
@@ -74,9 +76,9 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
   };
 }
 
-function stateSnapshotFromIssue(issue: NormalizedIssue): WorkflowFixStateSnapshot {
+function stateSnapshotFromIssue(issue: NormalizedIssue, source: WorkflowFixStateSource): WorkflowFixStateSnapshot {
   return {
-    source: "cache",
+    source,
     state: issue.state,
     labels: [...issue.labels],
     assignees: [...issue.assignees],

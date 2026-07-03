@@ -12,9 +12,10 @@ import {
   markWorkflowFixPreviewStatus,
   recordWorkflowFixExecution,
   recordWorkflowFixPreview,
+  revokeGitHubTokenForUser,
   upsertRepoProfile
 } from "@mo-devflow/db";
-import { applyWorkflowFixPreview } from "@mo-devflow/github";
+import { applyWorkflowFixPreview, fetchIssueFreshState } from "@mo-devflow/github";
 import { buildWorkflowFixPreview } from "@mo-devflow/rules";
 import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
 import type {
@@ -25,6 +26,7 @@ import type {
 } from "@mo-devflow/shared";
 import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
+import { githubTokenFailureForWorkflowRead } from "./githubTokenFailures";
 import { workflowWriteRefreshJobs } from "./refreshJobs";
 
 const workflowFixPreviewSchema = z.object({
@@ -143,16 +145,81 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
 
+    const storedToken = await getActiveGitHubTokenForUser(session.userId);
+    let encryptionConfig;
+    try {
+      encryptionConfig = tokenEncryptionConfigFromEnv();
+    } catch {
+      encryptionConfig = null;
+    }
+    if (!storedToken || !encryptionConfig || storedToken.keyVersion !== encryptionConfig.keyVersion) {
+      return reply.status(403).send({
+        error: "write_capability_unavailable",
+        message: "A usable GitHub token is not available for this session."
+      });
+    }
+
+    let token: string;
+    try {
+      token = decryptSecret(
+        {
+          ciphertext: storedToken.encryptedToken,
+          iv: storedToken.tokenIv,
+          authTag: storedToken.tokenAuthTag,
+          keyVersion: storedToken.keyVersion
+        },
+        encryptionConfig.key
+      );
+    } catch {
+      return reply.status(403).send({
+        error: "write_capability_unavailable",
+        message: "Stored GitHub token could not be decrypted. Reconnect the token before previewing workflow fixes."
+      });
+    }
+
+    let freshIssue = issue;
+    try {
+      const freshState = await fetchIssueFreshState({
+        token,
+        profile,
+        issueNumber: parsed.data.objectNumber
+      });
+      freshIssue = {
+        ...issue,
+        state: freshState.state,
+        labels: freshState.labels,
+        updatedAt: freshState.updatedAt,
+        isComplete: true
+      };
+    } catch (error) {
+      const failure = githubTokenFailureForWorkflowRead(error);
+      if (failure) {
+        if (failure.shouldRevokeToken) {
+          await revokeGitHubTokenForUser(session.userId);
+        }
+        return reply.status(failure.statusCode).send({
+          error: failure.error,
+          message: failure.message
+        });
+      }
+      app.log.error({ error, issueNumber: parsed.data.objectNumber }, "workflow fix fresh state check failed");
+      return reply.status(502).send({
+        error: "github_fresh_check_failed",
+        message: "GitHub fresh state check failed. Try again after GitHub connectivity recovers."
+      });
+    }
+
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + previewTtlMinutesFromEnv() * 60_000);
     const preview = buildWorkflowFixPreview({
       profile,
-      issue,
+      issue: freshIssue,
       violation,
       actionKey: parsed.data.actionKey,
       previewId: randomUUID(),
       createdAt: createdAt.toISOString(),
-      expiresAt: expiresAt.toISOString()
+      expiresAt: expiresAt.toISOString(),
+      stateSource: "github"
     });
 
     await recordWorkflowFixPreview({
@@ -317,6 +384,25 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       }
       return persisted;
     } catch (error) {
+      const failure = githubTokenFailureForWorkflowRead(error);
+      if (failure) {
+        if (failure.shouldRevokeToken) {
+          await revokeGitHubTokenForUser(session.userId);
+        }
+        const result = executionResult({
+          previewId: preview.previewId,
+          status: failure.shouldRevokeToken ? "token_unavailable" : "stale_preview",
+          message: failure.message,
+          errorMessage: error instanceof Error ? error.message : String(error)
+        });
+        return persistExecution({
+          repoId: storedPreview.repoId,
+          userId: session.userId,
+          githubLogin: session.githubLogin,
+          preview,
+          result
+        });
+      }
       const result = executionResult({
         previewId: preview.previewId,
         status: "failed",

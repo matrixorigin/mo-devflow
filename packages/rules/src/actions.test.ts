@@ -127,6 +127,22 @@ describe("workflow fix previews", () => {
     expect(preview.proposedState.labels).toEqual(["kind/bug", "needs-triage"]);
   });
 
+  test("marks preview state source as github after a fresh API check", () => {
+    const preview = buildWorkflowFixPreview({
+      profile,
+      issue,
+      violation,
+      actionKey: "add_needs_triage",
+      previewId: "preview-2b",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z",
+      stateSource: "github"
+    });
+
+    expect(preview.currentState.source).toBe("github");
+    expect(preview.proposedState.source).toBe("github");
+  });
+
   test("blocks unsupported rule/action combinations", () => {
     const preview = buildWorkflowFixPreview({
       profile,

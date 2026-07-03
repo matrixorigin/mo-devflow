@@ -201,6 +201,16 @@ export async function revokeSession(sessionHash: string): Promise<void> {
   );
 }
 
+export async function revokeGitHubTokenForUser(userId: number): Promise<void> {
+  await getPool().execute(
+    `UPDATE user_github_tokens
+     SET revoked_at = ?,
+         updated_at = ?
+     WHERE user_id = ? AND revoked_at IS NULL`,
+    [nowSql(), nowSql(), userId]
+  );
+}
+
 export async function getActiveGitHubTokenForUser(userId: number): Promise<StoredGitHubTokenRecord | null> {
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT encrypted_token, token_iv, token_auth_tag, key_version, scopes_json, last_validated_at
