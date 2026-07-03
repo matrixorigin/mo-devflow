@@ -94,6 +94,9 @@ function prEvidence(flag: string, prNumber: number): string {
   if (flag === "merge_conflict") {
     return `PR #${prNumber} has a merge conflict.`;
   }
+  if (flag === "testing_stalled") {
+    return `PR #${prNumber} is stalled in testing handoff.`;
+  }
   return `PR #${prNumber} has no recent human action.`;
 }
 

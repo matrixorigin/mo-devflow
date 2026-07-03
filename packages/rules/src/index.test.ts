@@ -267,6 +267,74 @@ describe("rules", () => {
     expect(pr.testingQueueAgeHours).not.toBeNull();
   });
 
+  test("testing handoff that exceeds attention threshold is flagged as stalled", () => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        people: { ...profile.people, testers: ["tester-a"] }
+      },
+      {
+        id: 16,
+        number: 22,
+        title: "stale testing handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/22",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "tester-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      "anonymous"
+    );
+
+    expect(pr.testingState).toBe("test_requested");
+    expect(pr.testingQueueAgeHours).toBeGreaterThanOrEqual(profile.thresholds.prNoActionAttentionHours);
+    expect(pr.attentionFlags).toContain("testing_stalled");
+  });
+
+  test("testing handoff that has passed does not produce a testing stalled flag", () => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        people: { ...profile.people, testers: ["tester-a"] }
+      },
+      {
+        id: 17,
+        number: 23,
+        title: "passed testing handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/23",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "tester-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      "anonymous",
+      {
+        number: 23,
+        reviewDecision: "approved",
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: "APPROVED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(pr.testingState).toBe("test_passed");
+    expect(pr.testingQueueAgeHours).toBeNull();
+    expect(pr.attentionFlags).not.toContain("testing_stalled");
+  });
+
   test("testing flow supports label and assignee handoff signals", () => {
     const pr = normalizePullRequest(
       {

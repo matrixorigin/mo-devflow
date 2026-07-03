@@ -806,6 +806,14 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
       relatedPrNumber: pr.number
     };
   }
+  if (flag === "testing_stalled") {
+    return {
+      key: `pr:${pr.number}:testing_stalled`,
+      severity: "warning",
+      message: `PR #${pr.number} is stalled in testing handoff.`,
+      relatedPrNumber: pr.number
+    };
+  }
   return {
     key: `pr:${pr.number}:${flag}`,
     severity: "warning",

@@ -297,6 +297,7 @@ export function normalizePullRequest(
   const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
   const ciState = normalizeState(insight?.ciState);
   const latestReviewState = normalizeState(insight?.latestReviewState);
+  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight);
   const lastHumanActionAt = insight
     ? maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt]) ?? createdAt
     : updatedAt;
@@ -313,7 +314,14 @@ export function normalizePullRequest(
   if (pr.state !== "closed" && mergeStateStatus === "dirty") {
     attentionFlags.push("merge_conflict");
   }
-  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight);
+  if (
+    pr.state !== "closed" &&
+    testingFlow.queueAgeHours !== null &&
+    ["test_requested", "testing", "test_changes_requested"].includes(testingFlow.state) &&
+    testingFlow.queueAgeHours >= profile.thresholds.prNoActionAttentionHours
+  ) {
+    attentionFlags.push("testing_stalled");
+  }
 
   return {
     githubId: pr.id,

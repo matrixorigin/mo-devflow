@@ -486,7 +486,7 @@ function flagColor(flag: string): string {
   if (flag === "requested_changes" || flag === "ci_failed" || flag === "merge_conflict") {
     return "red";
   }
-  if (flag === "no_human_action_24h") {
+  if (flag === "no_human_action_24h" || flag === "testing_stalled") {
     return "orange";
   }
   return "blue";

@@ -169,6 +169,31 @@ describe("critical issue cache blockers", () => {
     ]);
   });
 
+  test("surfaces stalled testing handoff as a linked PR blocker", () => {
+    const blockers = criticalIssueBlockersFromCache({
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      isComplete: true,
+      syncError: null,
+      linkedPullRequests: [
+        {
+          ...linkedPr,
+          testingState: "test_requested",
+          testingTesters: ["tester-a"],
+          testingQueueAgeHours: 48,
+          attentionFlags: ["testing_stalled"]
+        }
+      ]
+    });
+
+    expect(blockers).toContainEqual({
+      key: "pr:101:testing_stalled",
+      severity: "warning",
+      message: "PR #101 is stalled in testing handoff.",
+      relatedPrNumber: 101
+    });
+  });
+
   test("marks missing linked PR as informational cache evidence", () => {
     expect(
       criticalIssueBlockersFromCache({
