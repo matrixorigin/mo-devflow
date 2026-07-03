@@ -13,12 +13,13 @@ import {
   recomputeAiDriftFromCache,
   recomputeMetricsFromCache,
   recomputeWorkflowViolationsFromCache,
+  processGitHubWebhookDeliveriesOnce,
   sendNotificationsOnce,
   syncGitHubSnapshotOnce,
   syncIntervalSecondsFromEnv
 } from "./sync";
 
-type ScheduledJobType = "github_sync" | "rules" | "metrics" | "ai_drift" | "notifications";
+type ScheduledJobType = "github_sync" | "webhooks" | "rules" | "metrics" | "ai_drift" | "notifications";
 
 interface ScheduledJobDefinition {
   jobKey: string;
@@ -81,6 +82,11 @@ function scheduledJobDefinitions(): ScheduledJobDefinition[] {
       intervalSeconds: syncIntervalSecondsFromEnv()
     },
     {
+      jobKey: `webhooks:${repoKey}`,
+      jobType: "webhooks",
+      intervalSeconds: intervalSecondsFromEnv("MO_DEVFLOW_WEBHOOK_PROCESS_INTERVAL_SECONDS", 60, 10)
+    },
+    {
       jobKey: `rules:${repoKey}`,
       jobType: "rules",
       intervalSeconds: intervalSecondsFromEnv("MO_DEVFLOW_RULES_INTERVAL_SECONDS", 300)
@@ -127,6 +133,10 @@ async function executeJob(job: LeasedJob): Promise<string> {
     case "github_sync": {
       const result = await syncGitHubSnapshotOnce();
       return `synced issues=${result.issues} prs=${result.pullRequests} rate=${result.rateLimitRemaining ?? "unknown"}`;
+    }
+    case "webhooks": {
+      const result = await processGitHubWebhookDeliveriesOnce();
+      return `webhook deliveries claimed=${result.claimed} processed=${result.processed} failed=${result.failed} skipped=${result.skipped}`;
     }
     case "rules": {
       const result = await recomputeWorkflowViolationsFromCache();

@@ -3,6 +3,9 @@ import {
   listCachedIssuesForRules,
   listNotificationCandidates,
   isNotificationInCooldown,
+  claimNextGitHubWebhookDelivery,
+  completeGitHubWebhookDelivery,
+  failGitHubWebhookDelivery,
   recordSyncRun,
   recordNotificationDelivery,
   recomputeDailyMetricsFromCache,
@@ -23,7 +26,7 @@ import {
   normalizePullRequest,
   workflowViolationsForIssue
 } from "@mo-devflow/rules";
-import type { AiDriftSignal, NormalizedIssue, NotificationStatus, WorkflowViolation } from "@mo-devflow/shared";
+import type { AiDriftSignal, NormalizedIssue, NotificationStatus, SourceAuthType, WorkflowViolation } from "@mo-devflow/shared";
 
 export interface SyncResult {
   repoId: number;
@@ -54,6 +57,14 @@ export interface NotificationSyncResult {
   skipped: number;
   failed: number;
   cooldown: number;
+}
+
+export interface WebhookDeliverySyncResult {
+  repoId: number;
+  claimed: number;
+  processed: number;
+  failed: number;
+  skipped: number;
 }
 
 export function syncIntervalSecondsFromEnv(): number {
@@ -91,6 +102,41 @@ function notificationLimitFromEnv(): number {
     return 20;
   }
   return Math.max(1, Math.floor(parsed));
+}
+
+function webhookLimitFromEnv(): number {
+  const parsed = Number(process.env.MO_DEVFLOW_WEBHOOK_PROCESS_LIMIT ?? "20");
+  if (!Number.isFinite(parsed)) {
+    return 20;
+  }
+  return Math.max(1, Math.floor(parsed));
+}
+
+function webhookLeaseSecondsFromEnv(): number {
+  const parsed = Number(process.env.MO_DEVFLOW_WEBHOOK_PROCESS_LEASE_SECONDS ?? "300");
+  if (!Number.isFinite(parsed)) {
+    return 300;
+  }
+  return Math.max(60, Math.floor(parsed));
+}
+
+function webhookWorkerId(): string {
+  return `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function recordPayload(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function ensureGitHubObjectWithNumber(input: Record<string, unknown>, label: string): Record<string, unknown> & { id: number; number: number } {
+  if (typeof input.id !== "number" || typeof input.number !== "number") {
+    throw new Error(`${label} payload must include numeric id and number.`);
+  }
+  return input as Record<string, unknown> & { id: number; number: number };
+}
+
+function sourceAuthTypeForWebhook(): SourceAuthType {
+  return "service_read_token";
 }
 
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
@@ -289,6 +335,138 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
   await recordSyncRun({
     repoId,
     syncLayer: "notifications",
+    status: summary.failed > 0 ? "partial" : "success",
+    sourceAuthType: "cache",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    raw: summary
+  });
+  return summary;
+}
+
+async function processWebhookPayload(input: {
+  repoId: number;
+  profile: ReturnType<typeof loadRepoProfile>;
+  eventName: string;
+  payload: Record<string, unknown>;
+}): Promise<{ processed: boolean; skipped: boolean; message: string }> {
+  if (input.eventName === "issues") {
+    const rawIssue = recordPayload(input.payload.issue);
+    if (!rawIssue) {
+      return { processed: true, skipped: true, message: "issues payload missing issue object" };
+    }
+    const issue = normalizeIssue(input.profile, ensureGitHubObjectWithNumber(rawIssue, "issue"), sourceAuthTypeForWebhook());
+    if (issue.isPullRequest) {
+      return { processed: true, skipped: true, message: `issue #${issue.number} is a pull request shadow issue` };
+    }
+    await upsertIssue(input.repoId, issue);
+    for (const flag of criticalAttentionForIssue(input.profile, issue)) {
+      await upsertAttentionItem({
+        repoId: input.repoId,
+        objectType: "issue",
+        objectNumber: issue.number,
+        ruleKey: flag,
+        severity: "critical",
+        relatedLogin: issue.ownerLogin,
+        targetRecipient: issue.ownerLogin,
+        dedupeKey: `${input.profile.key}:issue:${issue.number}:${flag}`,
+        evidenceSummary: `Critical issue #${issue.number} has no recent human action.`
+      });
+    }
+    await recomputeWorkflowViolationsFromCache();
+    await recomputeAiDriftFromCache();
+    return { processed: true, skipped: false, message: `updated issue #${issue.number}` };
+  }
+
+  if (input.eventName === "pull_request") {
+    const rawPullRequest = recordPayload(input.payload.pull_request);
+    if (!rawPullRequest) {
+      return { processed: true, skipped: true, message: "pull_request payload missing pull_request object" };
+    }
+    const pr = normalizePullRequest(
+      input.profile,
+      ensureGitHubObjectWithNumber(rawPullRequest, "pull_request"),
+      sourceAuthTypeForWebhook()
+    );
+    await upsertPullRequest(input.repoId, pr);
+    for (const flag of pr.attentionFlags) {
+      await upsertAttentionItem({
+        repoId: input.repoId,
+        objectType: "pull_request",
+        objectNumber: pr.number,
+        ruleKey: flag,
+        severity: "warning",
+        relatedLogin: pr.ownerLogin,
+        targetRecipient: pr.ownerLogin,
+        dedupeKey: `${input.profile.key}:pr:${pr.number}:${flag}`,
+        evidenceSummary: prEvidence(flag, pr.number)
+      });
+    }
+    return { processed: true, skipped: false, message: `updated PR #${pr.number}` };
+  }
+
+  return { processed: true, skipped: true, message: `unsupported event ${input.eventName}` };
+}
+
+export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliverySyncResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const repoId = await upsertRepoProfile(profile);
+  const startedAt = new Date().toISOString();
+  const summary: WebhookDeliverySyncResult = {
+    repoId,
+    claimed: 0,
+    processed: 0,
+    failed: 0,
+    skipped: 0
+  };
+  const limit = webhookLimitFromEnv();
+
+  for (let index = 0; index < limit; index += 1) {
+    const processingOwner = webhookWorkerId();
+    const delivery = await claimNextGitHubWebhookDelivery({
+      repoId,
+      processingOwner,
+      leaseSeconds: webhookLeaseSecondsFromEnv()
+    });
+    if (!delivery) {
+      break;
+    }
+
+    summary.claimed += 1;
+    try {
+      const result = await processWebhookPayload({
+        repoId,
+        profile,
+        eventName: delivery.eventName,
+        payload: delivery.payload
+      });
+      await completeGitHubWebhookDelivery({
+        deliveryId: delivery.id,
+        processingOwner,
+        result: {
+          deliveryId: delivery.deliveryId,
+          eventName: delivery.eventName,
+          action: delivery.action,
+          message: result.message,
+          skipped: result.skipped
+        }
+      });
+      summary.processed += result.processed ? 1 : 0;
+      summary.skipped += result.skipped ? 1 : 0;
+    } catch (error) {
+      await failGitHubWebhookDelivery({
+        deliveryId: delivery.id,
+        processingOwner,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+      summary.failed += 1;
+    }
+  }
+
+  await recordSyncRun({
+    repoId,
+    syncLayer: "webhooks",
     status: summary.failed > 0 ? "partial" : "success",
     sourceAuthType: "cache",
     startedAt,

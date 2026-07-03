@@ -61,6 +61,11 @@ const schemaStatements = [
     headers_json LONGTEXT NOT NULL,
     payload_json LONGTEXT NOT NULL,
     raw_payload LONGTEXT NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    processing_owner VARCHAR(255),
+    processing_started_at DATETIME,
+    processing_expires_at DATETIME,
+    processing_result_json LONGTEXT,
     duplicate_count INT NOT NULL DEFAULT 0,
     last_duplicate_at DATETIME,
     received_at DATETIME NOT NULL,
@@ -307,6 +312,7 @@ const indexStatements = [
   "CREATE INDEX idx_jobs_status_next_run ON jobs(status, next_run_at)",
   "CREATE INDEX idx_jobs_lease_expires ON jobs(lease_expires_at)",
   "CREATE INDEX idx_github_webhook_repo_status ON github_webhook_deliveries(repo_id, status)",
+  "CREATE INDEX idx_github_webhook_processing_expires ON github_webhook_deliveries(processing_expires_at)",
   "CREATE INDEX idx_github_webhook_received ON github_webhook_deliveries(received_at)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
@@ -345,7 +351,12 @@ const compatibilityStatements = [
   "ALTER TABLE notification_deliveries ADD COLUMN dedupe_key VARCHAR(512)",
   "ALTER TABLE notification_deliveries ADD COLUMN dry_run TINYINT NOT NULL DEFAULT 0",
   "ALTER TABLE notification_deliveries ADD COLUMN payload_json LONGTEXT",
-  "ALTER TABLE notification_deliveries ADD COLUMN repo_id BIGINT"
+  "ALTER TABLE notification_deliveries ADD COLUMN repo_id BIGINT",
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN attempts INT NOT NULL DEFAULT 0",
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_owner VARCHAR(255)",
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_started_at DATETIME",
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_expires_at DATETIME",
+  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_result_json LONGTEXT"
 ];
 
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {

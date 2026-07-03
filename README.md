@@ -40,6 +40,8 @@ and queue health surfaced on the dashboard.
 GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
 `X-Hub-Signature-256` when `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET` is configured,
 then stores each delivery ID and raw payload before acknowledging it. Duplicate
-deliveries are ignored and counted for operational visibility.
+deliveries are ignored and counted for operational visibility. The worker
+processes stored issue and pull request deliveries asynchronously into the
+MatrixOne cache.
 
 The first implementation slice is MVP0: read-only cached observability for repo-wide critical issues, watched-user summaries, pending PRs, workflow violations, AI drift signals, cached analytics, owner attribution, and data freshness indicators.
