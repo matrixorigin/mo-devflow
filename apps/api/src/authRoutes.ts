@@ -150,14 +150,15 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     reply.header("set-cookie", buildSessionCookie(sessionToken, expiresAt, cookieSecureFromEnv()));
     return {
       authenticated: true,
-      user: {
+      user: toAuthenticatedUserView({
+        userId,
         githubLogin: validation.githubLogin,
         githubId: validation.githubId,
         avatarUrl: validation.avatarUrl,
         tokenScopes: validation.scopes,
         tokenLastValidatedAt: validatedAt,
         sessionExpiresAt: expiresAt.toISOString()
-      },
+      }),
       tokenEncryptionConfigured: true
     } satisfies SessionView;
   });

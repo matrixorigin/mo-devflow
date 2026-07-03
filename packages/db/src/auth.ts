@@ -1,5 +1,5 @@
 import type { AuthenticatedUserView } from "@mo-devflow/shared";
-import { parseJsonArray } from "@mo-devflow/shared";
+import { buildGitHubWriteCapabilities, parseJsonArray } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 
@@ -230,6 +230,10 @@ export function toAuthenticatedUserView(record: SessionRecord): AuthenticatedUse
     avatarUrl: record.avatarUrl,
     tokenScopes: record.tokenScopes,
     tokenLastValidatedAt: record.tokenLastValidatedAt,
-    sessionExpiresAt: record.sessionExpiresAt
+    sessionExpiresAt: record.sessionExpiresAt,
+    writeCapabilities: buildGitHubWriteCapabilities({
+      tokenScopes: record.tokenScopes,
+      tokenLastValidatedAt: record.tokenLastValidatedAt
+    })
   };
 }

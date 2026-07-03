@@ -15,6 +15,7 @@ import {
 } from "@mo-devflow/db";
 import { applyWorkflowFixPreview } from "@mo-devflow/github";
 import { buildWorkflowFixPreview } from "@mo-devflow/rules";
+import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
 import type { WorkflowFixExecutionResult, WorkflowFixExecutionStatus, WorkflowFixPreview } from "@mo-devflow/shared";
 import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
@@ -87,6 +88,18 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       return reply.status(422).send({
         error: "invalid_workflow_fix_preview_input",
         message: "Workflow fix preview input is invalid."
+      });
+    }
+
+    const capability = buildGitHubWriteCapabilities({
+      tokenScopes: session.tokenScopes,
+      tokenLastValidatedAt: session.tokenLastValidatedAt
+    }).issueLabels;
+    if (!capability.enabled) {
+      return reply.status(403).send({
+        error: "write_capability_unavailable",
+        message: capability.message,
+        capability
       });
     }
 

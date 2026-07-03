@@ -392,6 +392,24 @@ export interface NotificationHealth {
   lastDeliveries: NotificationDeliveryView[];
 }
 
+export type GitHubWriteCapabilityStatus =
+  | "ready"
+  | "missing_token"
+  | "insufficient_scope"
+  | "scope_unverified";
+
+export interface GitHubWriteCapability {
+  enabled: boolean;
+  status: GitHubWriteCapabilityStatus;
+  message: string;
+  requiredScopes: string[];
+  currentScopes: string[];
+}
+
+export interface GitHubWriteCapabilities {
+  issueLabels: GitHubWriteCapability;
+}
+
 export interface AuthenticatedUserView {
   githubLogin: string;
   githubId: string;
@@ -399,6 +417,7 @@ export interface AuthenticatedUserView {
   tokenScopes: string[];
   tokenLastValidatedAt: string | null;
   sessionExpiresAt: string;
+  writeCapabilities: GitHubWriteCapabilities;
 }
 
 export interface SessionView {
@@ -553,4 +572,63 @@ export function hoursBetween(startIso: string, endIso = new Date().toISOString()
     return 0;
   }
   return Math.max(0, Math.round(((end - start) / 3_600_000) * 10) / 10);
+}
+
+const issueLabelClassicScopes = ["repo", "public_repo"] as const;
+
+export function buildGitHubWriteCapabilities(input: {
+  tokenScopes: string[];
+  tokenLastValidatedAt: string | null;
+}): GitHubWriteCapabilities {
+  const currentScopes = Array.from(new Set(input.tokenScopes.map((scope) => scope.trim()).filter(Boolean))).sort();
+  const normalizedScopes = new Set(currentScopes.map((scope) => scope.toLowerCase()));
+  const hasIssueLabelScope = issueLabelClassicScopes.some((scope) => normalizedScopes.has(scope));
+  const requiredScopes = [...issueLabelClassicScopes];
+
+  if (!input.tokenLastValidatedAt) {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "missing_token",
+        message: "Connect or reconnect a GitHub token before workflow fixes are enabled.",
+        requiredScopes,
+        currentScopes
+      }
+    };
+  }
+
+  if (currentScopes.length === 0) {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "scope_unverified",
+        message:
+          "GitHub did not report classic token scopes. Reconnect a token with repo or public_repo before workflow fixes are enabled.",
+        requiredScopes,
+        currentScopes
+      }
+    };
+  }
+
+  if (!hasIssueLabelScope) {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "insufficient_scope",
+        message: "GitHub token needs repo or public_repo scope to add issue labels.",
+        requiredScopes,
+        currentScopes
+      }
+    };
+  }
+
+  return {
+    issueLabels: {
+      enabled: true,
+      status: "ready",
+      message: "GitHub token can preview issue label workflow fixes.",
+      requiredScopes,
+      currentScopes
+    }
+  };
 }

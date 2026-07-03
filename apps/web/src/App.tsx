@@ -172,6 +172,16 @@ interface NotificationHealth {
   lastDeliveries: NotificationDeliveryView[];
 }
 
+type GitHubWriteCapabilityStatus = "ready" | "missing_token" | "insufficient_scope" | "scope_unverified";
+
+interface GitHubWriteCapability {
+  enabled: boolean;
+  status: GitHubWriteCapabilityStatus;
+  message: string;
+  requiredScopes: string[];
+  currentScopes: string[];
+}
+
 interface SessionView {
   authenticated: boolean;
   user: {
@@ -181,6 +191,9 @@ interface SessionView {
     tokenScopes: string[];
     tokenLastValidatedAt: string | null;
     sessionExpiresAt: string;
+    writeCapabilities: {
+      issueLabels: GitHubWriteCapability;
+    };
   } | null;
   tokenEncryptionConfigured: boolean;
 }
@@ -935,26 +948,34 @@ export default function App() {
         title: "Preview",
         width: 132,
         render: (_, violation) => {
-          const canPreview = violation.fixable && violation.objectType === "issue" && violation.ruleKey === "bug_missing_needs_triage";
+          const supportsPreview =
+            violation.fixable && violation.objectType === "issue" && violation.ruleKey === "bug_missing_needs_triage";
+          const issueLabelCapability = session?.user?.writeCapabilities.issueLabels ?? null;
+          const canPreview = supportsPreview && issueLabelCapability?.enabled === true;
           const tooltip = !session?.authenticated
             ? "Connect GitHub token to preview fixes"
-            : canPreview
-              ? "Preview workflow fix"
-              : "No safe preview action for this rule yet";
+            : !supportsPreview
+              ? "No safe preview action for this rule yet"
+              : issueLabelCapability?.enabled
+                ? "Preview workflow fix"
+                : (issueLabelCapability?.message ?? "Reconnect GitHub token before workflow fixes are enabled");
           return (
             <Tooltip title={tooltip}>
-              <Button
-                icon={<ClipboardCheck size={15} />}
-                disabled={!session?.authenticated || !canPreview}
-                loading={previewLoadingKey === `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
-                onClick={() => void previewWorkflowFix(violation)}
-              />
+              <span>
+                <Button
+                  aria-label="Preview workflow fix"
+                  icon={<ClipboardCheck size={15} />}
+                  disabled={!session?.authenticated || !canPreview}
+                  loading={previewLoadingKey === `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
+                  onClick={() => void previewWorkflowFix(violation)}
+                />
+              </span>
             </Tooltip>
           );
         }
       }
     ],
-    [previewLoadingKey, session?.authenticated]
+    [previewLoadingKey, session]
   );
 
   const driftColumns: ColumnsType<AiDriftSignalView> = useMemo(
