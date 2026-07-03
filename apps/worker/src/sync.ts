@@ -22,6 +22,19 @@ function shouldKeepIssue(issue: NormalizedIssue): boolean {
   return !issue.isPullRequest;
 }
 
+function prEvidence(flag: string, prNumber: number): string {
+  if (flag === "requested_changes") {
+    return `PR #${prNumber} has unresolved requested changes.`;
+  }
+  if (flag === "ci_failed") {
+    return `PR #${prNumber} has failing CI checks.`;
+  }
+  if (flag === "merge_conflict") {
+    return `PR #${prNumber} has a merge conflict.`;
+  }
+  return `PR #${prNumber} has no recent human action.`;
+}
+
 export async function syncOnce(): Promise<SyncResult | null> {
   loadEnv();
   const profile = loadRepoProfile();
@@ -58,7 +71,12 @@ export async function syncOnce(): Promise<SyncResult | null> {
       }
 
       for (const rawPr of snapshot.pullRequests) {
-        const pr = normalizePullRequest(profile, rawPr, snapshot.sourceAuthType);
+        const pr = normalizePullRequest(
+          profile,
+          rawPr,
+          snapshot.sourceAuthType,
+          snapshot.pullRequestInsights.get(rawPr.number)
+        );
         await upsertPullRequest(repoId, pr);
         prCount += 1;
         for (const flag of pr.attentionFlags) {
@@ -71,7 +89,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
             relatedLogin: pr.ownerLogin,
             targetRecipient: pr.ownerLogin,
             dedupeKey: `${profile.key}:pr:${pr.number}:${flag}`,
-            evidenceSummary: `PR #${pr.number} has no recent human action.`
+            evidenceSummary: prEvidence(flag, pr.number)
           });
         }
       }
@@ -84,7 +102,7 @@ export async function syncOnce(): Promise<SyncResult | null> {
         startedAt,
         finishedAt: new Date().toISOString(),
         rateLimitRemaining: snapshot.rateLimitRemaining,
-        raw: { issues: issueCount, pullRequests: prCount }
+        raw: { issues: issueCount, pullRequests: prCount, pullRequestInsights: snapshot.pullRequestInsights.size }
       });
 
       return {

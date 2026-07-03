@@ -101,6 +101,14 @@ const schemaStatements = [
     age_hours DOUBLE NOT NULL,
     last_human_action_at DATETIME NOT NULL,
     last_system_action_at DATETIME,
+    review_decision VARCHAR(64),
+    merge_state_status VARCHAR(64),
+    ci_state VARCHAR(64),
+    latest_review_state VARCHAR(64),
+    latest_review_submitted_at DATETIME,
+    latest_commit_at DATETIME,
+    detail_synced_at DATETIME,
+    detail_error TEXT,
     attention_flags_json LONGTEXT NOT NULL,
     source_auth_type VARCHAR(64) NOT NULL,
     visibility_class VARCHAR(64) NOT NULL,
@@ -152,7 +160,15 @@ const indexStatements = [
 
 const compatibilityStatements = [
   "ALTER TABLE issues MODIFY COLUMN github_id VARCHAR(64) NOT NULL",
-  "ALTER TABLE pull_requests MODIFY COLUMN github_id VARCHAR(64) NOT NULL"
+  "ALTER TABLE pull_requests MODIFY COLUMN github_id VARCHAR(64) NOT NULL",
+  "ALTER TABLE pull_requests ADD COLUMN review_decision VARCHAR(64)",
+  "ALTER TABLE pull_requests ADD COLUMN merge_state_status VARCHAR(64)",
+  "ALTER TABLE pull_requests ADD COLUMN ci_state VARCHAR(64)",
+  "ALTER TABLE pull_requests ADD COLUMN latest_review_state VARCHAR(64)",
+  "ALTER TABLE pull_requests ADD COLUMN latest_review_submitted_at DATETIME",
+  "ALTER TABLE pull_requests ADD COLUMN latest_commit_at DATETIME",
+  "ALTER TABLE pull_requests ADD COLUMN detail_synced_at DATETIME",
+  "ALTER TABLE pull_requests ADD COLUMN detail_error TEXT"
 ];
 
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {

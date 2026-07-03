@@ -245,6 +245,9 @@ Polling:
 - Use periodic full or wide-window repair syncs to catch missed events.
 - Track seen issue and PR numbers during paginated reads to avoid duplicate processing.
 - Treat GitHub pagination races as expected; repair with later incremental sync.
+- Enrich open PRs with review decision, latest review, latest commit, CI state, and mergeability.
+- Keep PR enrichment bounded by `MO_DEVFLOW_PR_DETAIL_MAX_ITEMS`; default anonymous enrichment is off because GitHub anonymous REST quota is only 60 requests/hour.
+- For production-quality request-change, CI-failure, and merge-conflict attention rules, configure a service read token or authenticated sync path.
 
 Rate limiting:
 

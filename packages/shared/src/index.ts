@@ -120,11 +120,31 @@ export interface NormalizedPullRequest {
   ageHours: number;
   lastHumanActionAt: string;
   lastSystemActionAt: string | null;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  latestReviewState: string | null;
+  latestReviewSubmittedAt: string | null;
+  latestCommitAt: string | null;
+  detailSyncedAt: string | null;
+  detailError: string | null;
   attentionFlags: string[];
   sourceAuthType: SourceAuthType;
   visibilityClass: VisibilityClass;
   isComplete: boolean;
   rawPayload: unknown;
+}
+
+export interface PullRequestInsight {
+  number: number;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  latestReviewState: string | null;
+  latestReviewSubmittedAt: string | null;
+  latestCommitAt: string | null;
+  detailSyncedAt: string;
+  detailError: string | null;
 }
 
 export interface CriticalIssueView {
@@ -157,8 +177,17 @@ export interface PendingPrView {
   title: string;
   htmlUrl: string;
   ownerLogin: string;
+  draft: boolean;
   ageHours: number;
   lastHumanActionAt: string;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  latestReviewState: string | null;
+  latestReviewSubmittedAt: string | null;
+  latestCommitAt: string | null;
+  detailSyncedAt: string | null;
+  detailError: string | null;
   attentionFlags: string[];
   isComplete: boolean;
 }

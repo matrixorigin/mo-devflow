@@ -37,6 +37,10 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
+function mergeUnique(left: string[], right: string[]): string[] {
+  return Array.from(new Set([...left, ...right]));
+}
+
 function isDuplicateError(error: unknown): boolean {
   const err = error as { code?: string; errno?: number; message?: string };
   return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
@@ -183,42 +187,79 @@ export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promi
 
 export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<void> {
   const now = nowSql();
+  let next = pr;
+  if (pr.state === "open" && !pr.detailSyncedAt && !pr.detailError) {
+    const [rows] = await getPool().execute<RowData[]>(
+      `SELECT last_human_action_at, review_decision, merge_state_status, ci_state,
+              latest_review_state, latest_review_submitted_at, latest_commit_at,
+              detail_synced_at, detail_error, attention_flags_json
+       FROM pull_requests
+       WHERE repo_id = ? AND number = ?`,
+      [repoId, pr.number]
+    );
+    const previous = rows[0];
+    if (previous?.detail_synced_at) {
+      next = {
+        ...pr,
+        lastHumanActionAt: fromSqlDate(previous.last_human_action_at) ?? pr.lastHumanActionAt,
+        reviewDecision: previous.review_decision ? asString(previous.review_decision) : null,
+        mergeStateStatus: previous.merge_state_status ? asString(previous.merge_state_status) : null,
+        ciState: previous.ci_state ? asString(previous.ci_state) : null,
+        latestReviewState: previous.latest_review_state ? asString(previous.latest_review_state) : null,
+        latestReviewSubmittedAt: fromSqlDate(previous.latest_review_submitted_at),
+        latestCommitAt: fromSqlDate(previous.latest_commit_at),
+        detailSyncedAt: fromSqlDate(previous.detail_synced_at),
+        detailError: previous.detail_error ? asString(previous.detail_error) : null,
+        attentionFlags: mergeUnique(pr.attentionFlags, parseJsonArray(asString(previous.attention_flags_json)))
+      };
+    }
+  }
   await getPool().execute("DELETE FROM pull_requests WHERE repo_id = ? AND number = ?", [repoId, pr.number]);
   await getPool().execute(
     `INSERT INTO pull_requests(
       repo_id, github_id, number, title, state, author_login, owner_login, html_url,
       created_at, updated_at, closed_at, merged_at, draft, head_ref, base_ref,
       assignees_json, requested_reviewers_json, age_hours, last_human_action_at,
-      last_system_action_at, attention_flags_json, source_auth_type, visibility_class,
-      is_complete, sync_error, raw_payload, last_synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      last_system_action_at, review_decision, merge_state_status, ci_state,
+      latest_review_state, latest_review_submitted_at, latest_commit_at,
+      detail_synced_at, detail_error, attention_flags_json, source_auth_type,
+      visibility_class, is_complete, sync_error, raw_payload, last_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repoId,
-      String(pr.githubId),
-      pr.number,
-      pr.title,
-      pr.state,
-      pr.authorLogin,
-      pr.ownerLogin,
-      pr.htmlUrl,
-      sqlDate(pr.createdAt),
-      sqlDate(pr.updatedAt),
-      sqlDate(pr.closedAt),
-      sqlDate(pr.mergedAt),
-      pr.draft ? 1 : 0,
-      pr.headRef,
-      pr.baseRef,
-      stringify(pr.assignees),
-      stringify(pr.requestedReviewers),
-      pr.ageHours,
-      sqlDate(pr.lastHumanActionAt),
-      sqlDate(pr.lastSystemActionAt),
-      stringify(pr.attentionFlags),
-      pr.sourceAuthType,
-      pr.visibilityClass,
-      pr.isComplete ? 1 : 0,
+      String(next.githubId),
+      next.number,
+      next.title,
+      next.state,
+      next.authorLogin,
+      next.ownerLogin,
+      next.htmlUrl,
+      sqlDate(next.createdAt),
+      sqlDate(next.updatedAt),
+      sqlDate(next.closedAt),
+      sqlDate(next.mergedAt),
+      next.draft ? 1 : 0,
+      next.headRef,
+      next.baseRef,
+      stringify(next.assignees),
+      stringify(next.requestedReviewers),
+      next.ageHours,
+      sqlDate(next.lastHumanActionAt),
+      sqlDate(next.lastSystemActionAt),
+      next.reviewDecision,
+      next.mergeStateStatus,
+      next.ciState,
+      next.latestReviewState,
+      sqlDate(next.latestReviewSubmittedAt),
+      sqlDate(next.latestCommitAt),
+      sqlDate(next.detailSyncedAt),
+      next.detailError,
+      stringify(next.attentionFlags),
+      next.sourceAuthType,
+      next.visibilityClass,
+      next.isComplete ? 1 : 0,
       null,
-      stringify(pr.rawPayload),
+      stringify(next.rawPayload),
       now
     ]
   );
@@ -447,8 +488,17 @@ export async function getDashboardSummary(profile: RepoProfile, repoId: number):
     title: asString(row.title),
     htmlUrl: asString(row.html_url),
     ownerLogin: asString(row.owner_login),
+    draft: asNumber(row.draft) === 1,
     ageHours: asNumber(row.age_hours),
     lastHumanActionAt: fromSqlDate(row.last_human_action_at) ?? new Date().toISOString(),
+    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
+    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null,
+    ciState: row.ci_state ? asString(row.ci_state) : null,
+    latestReviewState: row.latest_review_state ? asString(row.latest_review_state) : null,
+    latestReviewSubmittedAt: fromSqlDate(row.latest_review_submitted_at),
+    latestCommitAt: fromSqlDate(row.latest_commit_at),
+    detailSyncedAt: fromSqlDate(row.detail_synced_at),
+    detailError: row.detail_error ? asString(row.detail_error) : null,
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
     isComplete: asNumber(row.is_complete) === 1
   }));

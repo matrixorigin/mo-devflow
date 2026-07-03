@@ -84,4 +84,75 @@ describe("rules", () => {
     expect(pr.ownerLogin).toBe("alice");
     expect(pr.attentionFlags).toContain("no_human_action_24h");
   });
+
+  test("detailed PR stale check ignores fresh system-only updates", () => {
+    const staleHumanAction = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const freshSystemUpdate = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 3,
+        number: 9,
+        title: "fix stale system update",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/9",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: freshSystemUpdate,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      "anonymous",
+      {
+        number: 9,
+        reviewDecision: null,
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: staleHumanAction,
+        detailSyncedAt: freshSystemUpdate,
+        detailError: null
+      }
+    );
+
+    expect(pr.lastHumanActionAt).toBe(staleHumanAction);
+    expect(pr.attentionFlags).toContain("no_human_action_24h");
+    expect(pr.attentionFlags).not.toContain("ci_failed");
+  });
+
+  test("PR attention includes requested changes, failed CI, and merge conflict", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 4,
+        number: 10,
+        title: "fix broken pr",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/10",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: now,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      "anonymous",
+      {
+        number: 10,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "dirty",
+        ciState: "failure",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).toContain("requested_changes");
+    expect(pr.attentionFlags).toContain("ci_failed");
+    expect(pr.attentionFlags).toContain("merge_conflict");
+  });
 });

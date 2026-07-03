@@ -2,6 +2,7 @@ import type {
   LifecycleState,
   NormalizedIssue,
   NormalizedPullRequest,
+  PullRequestInsight,
   RepoProfile,
   SourceAuthType,
   VisibilityClass
@@ -44,7 +45,7 @@ interface GitHubPullRequestLike {
   closed_at?: string | null;
   merged_at?: string | null;
   draft?: boolean | null;
-  head?: { ref?: string | null } | null;
+  head?: { ref?: string | null; sha?: string | null } | null;
   base?: { ref?: string | null } | null;
   assignees?: GitHubUser[] | null;
   requested_reviewers?: GitHubUser[] | null;
@@ -101,6 +102,29 @@ function visibility(profile: RepoProfile, sourceAuthType: SourceAuthType): Visib
   return profile.access.anonymousRead ? "anonymous_readable" : "logged_in_readable";
 }
 
+function normalizeState(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return value.toLowerCase().replaceAll("-", "_");
+}
+
+function maxIso(values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+    const time = new Date(value).getTime();
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = value;
+      latestTime = time;
+    }
+  }
+  return latest;
+}
+
 export function normalizeIssue(
   profile: RepoProfile,
   issue: GitHubIssueLike,
@@ -138,16 +162,32 @@ export function normalizeIssue(
 export function normalizePullRequest(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
-  sourceAuthType: SourceAuthType
+  sourceAuthType: SourceAuthType,
+  insight?: PullRequestInsight
 ): NormalizedPullRequest {
   const owner = profile.ownership.prOwner === "assignee" ? userLogins(pr.assignees)[0] ?? pr.user?.login : pr.user?.login;
   const createdAt = pr.created_at ?? new Date().toISOString();
   const updatedAt = pr.updated_at ?? createdAt;
   const ageHours = pr.state === "closed" && pr.closed_at ? hoursBetween(createdAt, pr.closed_at) : hoursBetween(createdAt);
-  const lastHumanActionAt = updatedAt;
+  const reviewDecision = normalizeState(insight?.reviewDecision);
+  const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
+  const ciState = normalizeState(insight?.ciState);
+  const latestReviewState = normalizeState(insight?.latestReviewState);
+  const lastHumanActionAt = insight
+    ? maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt]) ?? createdAt
+    : updatedAt;
   const attentionFlags: string[] = [];
   if (pr.state !== "closed" && hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours) {
     attentionFlags.push("no_human_action_24h");
+  }
+  if (pr.state !== "closed" && (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")) {
+    attentionFlags.push("requested_changes");
+  }
+  if (pr.state !== "closed" && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(ciState ?? "")) {
+    attentionFlags.push("ci_failed");
+  }
+  if (pr.state !== "closed" && mergeStateStatus === "dirty") {
+    attentionFlags.push("merge_conflict");
   }
 
   return {
@@ -170,6 +210,14 @@ export function normalizePullRequest(
     ageHours,
     lastHumanActionAt,
     lastSystemActionAt: null,
+    reviewDecision,
+    mergeStateStatus,
+    ciState,
+    latestReviewState,
+    latestReviewSubmittedAt: insight?.latestReviewSubmittedAt ?? null,
+    latestCommitAt: insight?.latestCommitAt ?? null,
+    detailSyncedAt: insight?.detailSyncedAt ?? null,
+    detailError: insight?.detailError ?? null,
     attentionFlags,
     sourceAuthType,
     visibilityClass: visibility(profile, sourceAuthType),

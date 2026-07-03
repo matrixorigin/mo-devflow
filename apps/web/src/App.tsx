@@ -51,8 +51,17 @@ interface PendingPrView {
   title: string;
   htmlUrl: string;
   ownerLogin: string;
+  draft: boolean;
   ageHours: number;
   lastHumanActionAt: string;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  latestReviewState: string | null;
+  latestReviewSubmittedAt: string | null;
+  latestCommitAt: string | null;
+  detailSyncedAt: string | null;
+  detailError: string | null;
   attentionFlags: string[];
   isComplete: boolean;
 }
@@ -114,6 +123,46 @@ function severityColor(severity: string | null): string {
     return "volcano";
   }
   return "blue";
+}
+
+function labelText(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function flagColor(flag: string): string {
+  if (flag === "requested_changes" || flag === "ci_failed" || flag === "merge_conflict") {
+    return "red";
+  }
+  if (flag === "no_human_action_24h") {
+    return "orange";
+  }
+  return "blue";
+}
+
+function ciColor(value: string): string {
+  if (["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(value)) {
+    return "red";
+  }
+  if (value === "pending") {
+    return "blue";
+  }
+  if (value === "success") {
+    return "green";
+  }
+  return "default";
+}
+
+function mergeColor(value: string): string {
+  if (value === "dirty") {
+    return "red";
+  }
+  if (["blocked", "behind", "unstable"].includes(value)) {
+    return "orange";
+  }
+  if (value === "clean") {
+    return "green";
+  }
+  return "default";
 }
 
 export default function App() {
@@ -240,6 +289,39 @@ export default function App() {
       { title: "Owner", dataIndex: "ownerLogin", width: 148, render: (owner) => <Tag>{owner}</Tag> },
       { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
       {
+        title: "State",
+        width: 280,
+        render: (_, pr) => (
+          <Space size={[4, 4]} wrap>
+            {pr.draft ? <Tag color="gold">draft</Tag> : null}
+            {pr.reviewDecision ? (
+              <Tag
+                color={
+                  pr.reviewDecision === "changes_requested"
+                    ? "red"
+                    : pr.reviewDecision === "approved"
+                      ? "green"
+                      : "blue"
+                }
+              >
+                {labelText(pr.reviewDecision)}
+              </Tag>
+            ) : null}
+            {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+            {pr.mergeStateStatus ? (
+              <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+            ) : null}
+            {pr.detailError ? (
+              <Tooltip title={pr.detailError}>
+                <Tag color="red">detail error</Tag>
+              </Tooltip>
+            ) : !pr.detailSyncedAt ? (
+              <Tag>partial</Tag>
+            ) : null}
+          </Space>
+        )
+      },
+      {
         title: "Last human action",
         dataIndex: "lastHumanActionAt",
         width: 168,
@@ -248,9 +330,17 @@ export default function App() {
       {
         title: "Flags",
         dataIndex: "attentionFlags",
-        width: 220,
+        width: 260,
         render: (flags: string[]) =>
-          flags.length === 0 ? <Tag>clear</Tag> : flags.map((flag) => <Tag color="orange" key={flag}>{flag}</Tag>)
+          flags.length === 0 ? (
+            <Tag>clear</Tag>
+          ) : (
+            flags.map((flag) => (
+              <Tag color={flagColor(flag)} key={flag}>
+                {labelText(flag)}
+              </Tag>
+            ))
+          )
       }
     ],
     []
@@ -333,14 +423,14 @@ export default function App() {
                   <Text type="secondary">Watched users only</Text>
                 </div>
                 <Table
-                rowKey="login"
-                size="middle"
-                columns={peopleColumns}
-                dataSource={data.people}
-                scroll={{ x: 900 }}
-                pagination={false}
-                locale={{ emptyText: <Empty description="No watched users configured" /> }}
-              />
+                  rowKey="login"
+                  size="middle"
+                  columns={peopleColumns}
+                  dataSource={data.people}
+                  scroll={{ x: 900 }}
+                  pagination={false}
+                  locale={{ emptyText: <Empty description="No watched users configured" /> }}
+                />
               </section>
             ) : null}
 
@@ -351,14 +441,14 @@ export default function App() {
                   <Text type="secondary">Stale checks use last human action</Text>
                 </div>
                 <Table
-                rowKey="number"
-                size="middle"
-                columns={prColumns}
-                dataSource={data.pendingPrs}
-                scroll={{ x: 980 }}
-                pagination={{ pageSize: 10 }}
-                locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
-              />
+                  rowKey="number"
+                  size="middle"
+                  columns={prColumns}
+                  dataSource={data.pendingPrs}
+                  scroll={{ x: 1220 }}
+                  pagination={{ pageSize: 10 }}
+                  locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
+                />
               </section>
             ) : null}
 
