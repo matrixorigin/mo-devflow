@@ -100,6 +100,22 @@ const schemaStatements = [
     expires_at DATETIME NOT NULL,
     UNIQUE KEY uniq_write_action_previews_id (preview_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS write_action_executions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    preview_id VARCHAR(64) NOT NULL,
+    repo_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    github_login VARCHAR(255) NOT NULL,
+    action_key VARCHAR(128) NOT NULL,
+    object_type VARCHAR(64) NOT NULL,
+    object_number INT NOT NULL,
+    status VARCHAR(64) NOT NULL,
+    operations_json LONGTEXT NOT NULL,
+    github_response_json LONGTEXT,
+    error_message TEXT,
+    started_at DATETIME NOT NULL,
+    finished_at DATETIME NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS issues (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     repo_id BIGINT NOT NULL,
@@ -276,6 +292,8 @@ const indexStatements = [
   "CREATE INDEX idx_write_action_previews_repo ON write_action_previews(repo_id)",
   "CREATE INDEX idx_write_action_previews_user ON write_action_previews(user_id)",
   "CREATE INDEX idx_write_action_previews_expires ON write_action_previews(expires_at)",
+  "CREATE INDEX idx_write_action_executions_preview ON write_action_executions(preview_id)",
+  "CREATE INDEX idx_write_action_executions_user ON write_action_executions(user_id)",
   "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
   "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)",
   "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)",

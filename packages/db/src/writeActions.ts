@@ -1,4 +1,10 @@
-import type { NormalizedIssue, WorkflowFixPreview, WorkflowViolationView } from "@mo-devflow/shared";
+import type {
+  NormalizedIssue,
+  WorkflowFixExecutionResult,
+  WorkflowFixExecutionStatus,
+  WorkflowFixPreview,
+  WorkflowViolationView
+} from "@mo-devflow/shared";
 import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
@@ -127,6 +133,83 @@ export async function recordWorkflowFixPreview(input: {
       stringify(input.preview),
       sqlDate(input.preview.createdAt),
       sqlDate(input.preview.expiresAt)
+    ]
+  );
+}
+
+export interface StoredWorkflowFixPreview {
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  status: string;
+  preview: WorkflowFixPreview;
+  expiresAt: string;
+}
+
+export async function getWorkflowFixPreviewForUser(input: {
+  previewId: string;
+  userId: number;
+}): Promise<StoredWorkflowFixPreview | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT repo_id, user_id, github_login, status, preview_json, expires_at
+     FROM write_action_previews
+     WHERE preview_id = ? AND user_id = ?
+     LIMIT 1`,
+    [input.previewId, input.userId]
+  );
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    repoId: asNumber(row.repo_id),
+    userId: asNumber(row.user_id),
+    githubLogin: asString(row.github_login),
+    status: asString(row.status),
+    preview: parseJsonRecord(asString(row.preview_json), {}) as WorkflowFixPreview,
+    expiresAt: fromSqlDate(row.expires_at) ?? new Date(0).toISOString()
+  };
+}
+
+export async function markWorkflowFixPreviewStatus(input: {
+  previewId: string;
+  userId: number;
+  status: WorkflowFixExecutionStatus | "previewed";
+}): Promise<void> {
+  await getPool().execute(
+    "UPDATE write_action_previews SET status = ? WHERE preview_id = ? AND user_id = ?",
+    [input.status, input.previewId, input.userId]
+  );
+}
+
+export async function recordWorkflowFixExecution(input: {
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  preview: WorkflowFixPreview;
+  result: WorkflowFixExecutionResult;
+  githubResponse?: unknown;
+}): Promise<void> {
+  await getPool().execute(
+    `INSERT INTO write_action_executions(
+      preview_id, repo_id, user_id, github_login, action_key, object_type,
+      object_number, status, operations_json, github_response_json, error_message,
+      started_at, finished_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.preview.previewId,
+      input.repoId,
+      input.userId,
+      input.githubLogin,
+      input.preview.actionKey,
+      input.preview.objectType,
+      input.preview.objectNumber,
+      input.result.status,
+      stringify(input.result.executedOperations),
+      input.githubResponse ? stringify(input.githubResponse) : null,
+      input.result.errorMessage,
+      sqlDate(input.result.executedAt),
+      sqlDate(input.result.executedAt)
     ]
   );
 }

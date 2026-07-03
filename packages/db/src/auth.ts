@@ -55,6 +55,15 @@ export interface SessionRecord {
   sessionExpiresAt: string;
 }
 
+export interface StoredGitHubTokenRecord {
+  encryptedToken: string;
+  tokenIv: string;
+  tokenAuthTag: string;
+  keyVersion: string;
+  scopes: string[];
+  lastValidatedAt: string | null;
+}
+
 export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord): Promise<number> {
   const now = nowSql();
   const pool = getPool();
@@ -190,6 +199,28 @@ export async function revokeSession(sessionHash: string): Promise<void> {
     "UPDATE user_sessions SET revoked_at = ?, last_seen_at = ? WHERE session_hash = ? AND revoked_at IS NULL",
     [nowSql(), nowSql(), sessionHash]
   );
+}
+
+export async function getActiveGitHubTokenForUser(userId: number): Promise<StoredGitHubTokenRecord | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT encrypted_token, token_iv, token_auth_tag, key_version, scopes_json, last_validated_at
+     FROM user_github_tokens
+     WHERE user_id = ? AND revoked_at IS NULL
+     LIMIT 1`,
+    [userId]
+  );
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    encryptedToken: asString(row.encrypted_token),
+    tokenIv: asString(row.token_iv),
+    tokenAuthTag: asString(row.token_auth_tag),
+    keyVersion: asString(row.key_version),
+    scopes: parseJsonArray(asString(row.scopes_json)),
+    lastValidatedAt: fromSqlDate(row.last_validated_at)
+  };
 }
 
 export function toAuthenticatedUserView(record: SessionRecord): AuthenticatedUserView {

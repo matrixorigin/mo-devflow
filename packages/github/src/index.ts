@@ -1,6 +1,12 @@
 import { Octokit } from "@octokit/rest";
 import type { RestEndpointMethodTypes } from "@octokit/rest";
-import type { PullRequestInsight, RepoProfile, SourceAuthType } from "@mo-devflow/shared";
+import type {
+  PullRequestInsight,
+  RepoProfile,
+  SourceAuthType,
+  WorkflowFixOperation,
+  WorkflowFixPreview
+} from "@mo-devflow/shared";
 
 type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"]["data"][number];
 
@@ -20,6 +26,20 @@ export interface GitHubTokenValidation {
   rateLimitRemaining: number | null;
 }
 
+export interface GitHubIssueFreshState {
+  state: "open" | "closed";
+  labels: string[];
+  updatedAt: string;
+  rateLimitRemaining: number | null;
+}
+
+export interface GitHubWorkflowFixApplyResult {
+  freshState: GitHubIssueFreshState;
+  appliedOperations: WorkflowFixOperation[];
+  response: unknown;
+  rateLimitRemaining: number | null;
+}
+
 export function createGitHubClient(): { octokit: Octokit; sourceAuthType: SourceAuthType } {
   const token = process.env.MO_DEVFLOW_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   return {
@@ -28,8 +48,12 @@ export function createGitHubClient(): { octokit: Octokit; sourceAuthType: Source
   };
 }
 
+function createUserGitHubClient(token: string): Octokit {
+  return new Octokit({ auth: token });
+}
+
 export async function validateGitHubToken(token: string): Promise<GitHubTokenValidation> {
-  const octokit = new Octokit({ auth: token });
+  const octokit = createUserGitHubClient(token);
   const response = await octokit.rest.users.getAuthenticated();
   const scopesHeader = response.headers["x-oauth-scopes"];
   const scopes =
@@ -47,6 +71,103 @@ export async function validateGitHubToken(token: string): Promise<GitHubTokenVal
     scopes,
     rateLimitRemaining: readRateLimit(response.headers)
   };
+}
+
+export async function fetchIssueFreshState(input: {
+  token: string;
+  profile: RepoProfile;
+  issueNumber: number;
+}): Promise<GitHubIssueFreshState> {
+  const octokit = createUserGitHubClient(input.token);
+  const response = await octokit.rest.issues.get({
+    owner: input.profile.repo.owner,
+    repo: input.profile.repo.name,
+    issue_number: input.issueNumber
+  });
+  return {
+    state: response.data.state === "closed" ? "closed" : "open",
+    labels: response.data.labels
+      .map((label) => (typeof label === "string" ? label : label.name ?? ""))
+      .filter(Boolean),
+    updatedAt: response.data.updated_at,
+    rateLimitRemaining: readRateLimit(response.headers)
+  };
+}
+
+export async function applyWorkflowFixPreview(input: {
+  token: string;
+  profile: RepoProfile;
+  preview: WorkflowFixPreview;
+}): Promise<GitHubWorkflowFixApplyResult> {
+  if (input.preview.objectType !== "issue") {
+    throw new Error("Only issue workflow fixes can be executed.");
+  }
+  if (input.preview.actionKey !== "add_needs_triage" || input.preview.ruleKey !== "bug_missing_needs_triage") {
+    throw new Error("Only missing needs-triage workflow fixes can be executed.");
+  }
+  const unsupportedOperation = input.preview.operations.find((operation) => operation.type !== "add_label");
+  if (unsupportedOperation) {
+    throw new Error(`Unsupported workflow fix operation: ${unsupportedOperation.type}`);
+  }
+  const freshState = await fetchIssueFreshState({
+    token: input.token,
+    profile: input.profile,
+    issueNumber: input.preview.objectNumber
+  });
+  const labelsToAdd = input.preview.operations
+    .filter((operation): operation is Extract<WorkflowFixOperation, { type: "add_label" }> => operation.type === "add_label")
+    .map((operation) => operation.label);
+
+  const staleReason = missingNeedsTriageStaleReason(input.profile, freshState, labelsToAdd);
+  if (staleReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      response: { skipped: staleReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
+
+  const response = await createUserGitHubClient(input.token).rest.issues.addLabels({
+    owner: input.profile.repo.owner,
+    repo: input.profile.repo.name,
+    issue_number: input.preview.objectNumber,
+    labels: labelsToAdd
+  });
+
+  return {
+    freshState,
+    appliedOperations: input.preview.operations,
+    response: {
+      status: response.status,
+      labels: response.data.map((label) => label.name)
+    },
+    rateLimitRemaining: readRateLimit(response.headers) ?? freshState.rateLimitRemaining
+  };
+}
+
+function missingNeedsTriageStaleReason(
+  profile: RepoProfile,
+  freshState: GitHubIssueFreshState,
+  labelsToAdd: string[]
+): string | null {
+  if (freshState.state !== "open") {
+    return "issue_closed";
+  }
+  const hasLabelToAdd = labelsToAdd.some((label) => freshState.labels.includes(label));
+  if (hasLabelToAdd || freshState.labels.includes(profile.labels.needsTriage)) {
+    return "label_already_present";
+  }
+  if (!freshState.labels.includes(profile.labels.bug)) {
+    return "bug_label_missing";
+  }
+  if (freshState.labels.includes(profile.labels.deferred)) {
+    return "issue_deferred";
+  }
+  if (profile.labels.active.some((label) => freshState.labels.includes(label))) {
+    return "active_lifecycle_present";
+  }
+  return null;
 }
 
 function readRateLimit(headers: Record<string, string | number | undefined>): number | null {

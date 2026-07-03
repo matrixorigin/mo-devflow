@@ -252,6 +252,22 @@ export interface WorkflowFixPreview {
   expiresAt: string;
 }
 
+export type WorkflowFixExecutionStatus =
+  | "success"
+  | "failed"
+  | "stale_preview"
+  | "blocked"
+  | "token_unavailable";
+
+export interface WorkflowFixExecutionResult {
+  previewId: string;
+  status: WorkflowFixExecutionStatus;
+  executedOperations: WorkflowFixOperation[];
+  message: string;
+  errorMessage: string | null;
+  executedAt: string;
+}
+
 export type AiDriftObjectType = "issue" | "pull_request";
 export type AiDriftSeverity = "info" | "warning" | "critical";
 

@@ -195,6 +195,15 @@ interface WorkflowFixPreview {
   expiresAt: string;
 }
 
+interface WorkflowFixExecutionResult {
+  previewId: string;
+  status: "success" | "failed" | "stale_preview" | "blocked" | "token_unavailable";
+  executedOperations: WorkflowFixOperation[];
+  message: string;
+  errorMessage: string | null;
+  executedAt: string;
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -420,8 +429,10 @@ export default function App() {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
+  const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
+  const [executionSaving, setExecutionSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -499,6 +510,7 @@ export default function App() {
     setPreviewLoadingKey(loadingKey);
     setPreviewError(null);
     setWorkflowPreview(null);
+    setWorkflowExecution(null);
     setPreviewModalOpen(true);
     try {
       const response = await fetch("/api/actions/workflow-fix/preview", {
@@ -520,6 +532,31 @@ export default function App() {
       setPreviewError(displayError(err));
     } finally {
       setPreviewLoadingKey(null);
+    }
+  }
+
+  async function confirmWorkflowFix() {
+    if (!workflowPreview) {
+      return;
+    }
+    setExecutionSaving(true);
+    setPreviewError(null);
+    try {
+      const response = await fetch("/api/actions/workflow-fix/confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ previewId: workflowPreview.previewId })
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setWorkflowExecution((await response.json()) as WorkflowFixExecutionResult);
+      void load();
+    } catch (err) {
+      setPreviewError(displayError(err));
+    } finally {
+      setExecutionSaving(false);
     }
   }
 
@@ -1190,9 +1227,23 @@ export default function App() {
       <Modal
         title="Workflow Fix Preview"
         open={previewModalOpen}
-        okText="Close"
-        cancelButtonProps={{ style: { display: "none" } }}
-        onOk={() => setPreviewModalOpen(false)}
+        okText={
+          workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0
+            ? "Confirm Execute"
+            : "Close"
+        }
+        confirmLoading={executionSaving}
+        okButtonProps={{
+          danger: Boolean(workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0)
+        }}
+        cancelButtonProps={{ style: { display: workflowExecution ? "none" : undefined } }}
+        onOk={() => {
+          if (workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0) {
+            void confirmWorkflowFix();
+            return;
+          }
+          setPreviewModalOpen(false);
+        }}
         onCancel={() => setPreviewModalOpen(false)}
       >
         {previewError ? <Alert type="error" message={previewError} showIcon /> : null}
@@ -1223,6 +1274,14 @@ export default function App() {
             {workflowPreview.warnings.map((warning) => (
               <Alert key={warning} type="info" message={warning} showIcon />
             ))}
+            {workflowExecution ? (
+              <Alert
+                type={workflowExecution.status === "success" ? "success" : "warning"}
+                message={labelText(workflowExecution.status)}
+                description={workflowExecution.errorMessage ?? workflowExecution.message}
+                showIcon
+              />
+            ) : null}
             <Text type="secondary">Preview expires {formatDate(workflowPreview.expiresAt)}.</Text>
           </Space>
         ) : null}
