@@ -4,8 +4,11 @@ import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   cacheStaleHoursFromEnv,
+  calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
+  dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
+  previousCalendarDayRange,
   visibleClassesForDashboard
 } from "./repositories";
 
@@ -292,5 +295,26 @@ describe("metric aggregation", () => {
       { start: "2026-06-01", end: "2026-07-01", created: 3 },
       { start: "2026-07-01", end: "2026-08-01", created: 3 }
     ]);
+  });
+});
+
+describe("repo timezone calendar ranges", () => {
+  test("builds Asia/Shanghai calendar-day UTC bounds", () => {
+    const range = calendarDayRangeInTimezone("2026-07-03", "Asia/Shanghai");
+
+    expect(range.start.toISOString()).toBe("2026-07-02T16:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-07-03T16:00:00.000Z");
+  });
+
+  test("derives previous calendar day in the repository timezone", () => {
+    const range = previousCalendarDayRange("Asia/Shanghai", new Date("2026-07-04T01:00:00.000Z"));
+
+    expect(range.start.toISOString()).toBe("2026-07-02T16:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-07-03T16:00:00.000Z");
+  });
+
+  test("maps UTC instants to repo-local date keys", () => {
+    expect(dateKeyInTimezone("2026-07-02T15:59:59.000Z", "Asia/Shanghai")).toBe("2026-07-02");
+    expect(dateKeyInTimezone("2026-07-02T16:00:00.000Z", "Asia/Shanghai")).toBe("2026-07-03");
   });
 });

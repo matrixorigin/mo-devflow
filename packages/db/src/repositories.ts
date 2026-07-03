@@ -686,22 +686,81 @@ export async function runWithJobLease<T>(
   }
 }
 
-function yesterdayRange(timezone: string): { start: Date; end: Date } {
-  const now = new Date();
+function dateTimePartsInTimezone(value: Date, timezone: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+} {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
-    day: "2-digit"
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
   });
-  const parts = formatter.formatToParts(now);
-  const year = Number(parts.find((part) => part.type === "year")?.value);
-  const month = Number(parts.find((part) => part.type === "month")?.value);
-  const day = Number(parts.find((part) => part.type === "day")?.value);
-  const todayUtc = new Date(Date.UTC(year, month - 1, day));
-  const start = new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
-  const end = todayUtc;
-  return { start, end };
+  const parts = formatter.formatToParts(value);
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+    day: Number(parts.find((part) => part.type === "day")?.value),
+    hour: Number(parts.find((part) => part.type === "hour")?.value),
+    minute: Number(parts.find((part) => part.type === "minute")?.value),
+    second: Number(parts.find((part) => part.type === "second")?.value)
+  };
+}
+
+function timeZoneOffsetMinutes(value: Date, timezone: string): number {
+  const parts = dateTimePartsInTimezone(value, timezone);
+  const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return Math.round((localAsUtc - value.getTime()) / 60_000);
+}
+
+function parseDateKey(dateKey: string): { year: number; month: number; day: number } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) {
+    throw new Error(`Invalid date key: ${dateKey}`);
+  }
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
+}
+
+function timezoneDateKeyToUtc(dateKey: string, timezone: string): Date {
+  const { year, month, day } = parseDateKey(dateKey);
+  const localMidnightAsUtc = Date.UTC(year, month - 1, day);
+  let utcMs = localMidnightAsUtc;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const offset = timeZoneOffsetMinutes(new Date(utcMs), timezone);
+    const nextUtcMs = localMidnightAsUtc - offset * 60_000;
+    if (nextUtcMs === utcMs) {
+      break;
+    }
+    utcMs = nextUtcMs;
+  }
+  return new Date(utcMs);
+}
+
+export function calendarDayRangeInTimezone(dateKey: string, timezone: string): { start: Date; end: Date } {
+  return {
+    start: timezoneDateKeyToUtc(dateKey, timezone),
+    end: timezoneDateKeyToUtc(addDaysToDateKey(dateKey, 1), timezone)
+  };
+}
+
+export function previousCalendarDayRange(timezone: string, now = new Date()): { start: Date; end: Date } {
+  const today = dateKeyInTimezone(now, timezone);
+  if (!today) {
+    throw new Error(`Unable to derive current date in timezone ${timezone}.`);
+  }
+  return calendarDayRangeInTimezone(addDaysToDateKey(today, -1), timezone);
 }
 
 function inRange(value: unknown, start: Date, end: Date): boolean {
@@ -961,7 +1020,7 @@ function toPersonalPullRequestView(row: RowData): PersonalPullRequestView {
   };
 }
 
-function dateKeyInTimezone(value: unknown, timezone: string): string | null {
+export function dateKeyInTimezone(value: unknown, timezone: string): string | null {
   const iso = fromSqlDate(value);
   if (!iso) {
     return null;
@@ -1258,7 +1317,7 @@ export async function getDashboardSummary(
   const personalIssueVisibility = visibilityClause("i", visibleClasses);
   const personalPrVisibility = visibilityClause("p", visibleClasses);
   const linkedPrVisibility = visibilityClause("p", visibleClasses);
-  const { start, end } = yesterdayRange(profile.reporting.timezone);
+  const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
   const startSql = sqlDate(start) ?? "1970-01-01 00:00:00";
   const endSql = sqlDate(end) ?? "1970-01-01 00:00:00";
   const watchedUserPlaceholders = profile.people.watchedUsers.map(() => "?").join(", ");
