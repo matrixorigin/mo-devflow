@@ -4,6 +4,7 @@ import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   attentionItemsToResolve,
+  buildSyncHealthSummary,
   cacheStaleHoursFromEnv,
   calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
@@ -92,6 +93,50 @@ describe("cache freshness", () => {
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "0.5" })).toBe(0.5);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "not-a-number" })).toBe(6);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "-1" })).toBe(6);
+  });
+});
+
+describe("sync health summary", () => {
+  test("keeps one row per sync layer with latest attempt and latest success", () => {
+    expect(
+      buildSyncHealthSummary([
+        {
+          sync_layer: "github_snapshot",
+          status: "failed",
+          started_at: "2026-07-04 10:00:00",
+          finished_at: "2026-07-04 10:01:00",
+          error_message: "rate limited",
+          rate_limit_remaining: 0,
+          last_successful_at: "2026-07-04 08:01:00"
+        },
+        {
+          sync_layer: "metrics",
+          status: "success",
+          started_at: "2026-07-04 09:00:00",
+          finished_at: "2026-07-04 09:00:05",
+          error_message: null,
+          rate_limit_remaining: null,
+          last_successful_at: "2026-07-04 09:00:05"
+        }
+      ])
+    ).toEqual([
+      {
+        layer: "github_snapshot",
+        status: "failed",
+        lastSuccessfulAt: "2026-07-04T08:01:00Z",
+        lastAttemptedAt: "2026-07-04T10:00:00Z",
+        errorMessage: "rate limited",
+        rateLimitRemaining: 0
+      },
+      {
+        layer: "metrics",
+        status: "success",
+        lastSuccessfulAt: "2026-07-04T09:00:05Z",
+        lastAttemptedAt: "2026-07-04T09:00:00Z",
+        errorMessage: null,
+        rateLimitRemaining: null
+      }
+    ]);
   });
 });
 

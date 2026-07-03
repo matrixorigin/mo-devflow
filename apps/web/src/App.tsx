@@ -454,6 +454,16 @@ function formatDate(value: string | null | undefined): string {
   }).format(new Date(value));
 }
 
+function syncHealthTooltip(item: DashboardSummary["sync"]["health"][number]) {
+  return (
+    <div>
+      <div>Last attempt: {formatDate(item.lastAttemptedAt)}</div>
+      <div>Last success: {formatDate(item.lastSuccessfulAt)}</div>
+      {item.errorMessage ? <div>Latest error: {item.errorMessage}</div> : null}
+    </div>
+  );
+}
+
 function displayError(value: unknown): string {
   if (value instanceof Error) {
     return value.message;
@@ -1917,12 +1927,15 @@ export default function App() {
                 </div>
                 <Space size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (
-                    <Space key={`${item.layer}-${item.lastAttemptedAt ?? "none"}`} size={2}>
-                      <Tooltip title={item.errorMessage ?? undefined}>
+                    <Space key={item.layer} size={2}>
+                      <Tooltip title={syncHealthTooltip(item)}>
                         <Tag color={item.status === "success" ? "green" : item.status === "partial" ? "orange" : "red"}>
                           {item.layer}: {item.status}
                         </Tag>
                       </Tooltip>
+                      <Tag color={item.lastSuccessfulAt ? "default" : "red"}>
+                        success {formatDate(item.lastSuccessfulAt)}
+                      </Tag>
                       {item.rateLimitRemaining === null ? null : (
                         <Tag color={rateLimitHealthTagColor(item.rateLimitRemaining)}>
                           rate {item.rateLimitRemaining}

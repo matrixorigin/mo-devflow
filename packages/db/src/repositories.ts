@@ -91,6 +91,20 @@ export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> =
   return Math.max(0.25, parsed);
 }
 
+export function buildSyncHealthSummary(rows: Array<Record<string, unknown>>): SyncHealth[] {
+  return rows.map((row) => ({
+    layer: asString(row.sync_layer),
+    status: asString(row.status),
+    lastSuccessfulAt: fromSqlDate(row.last_successful_at),
+    lastAttemptedAt: fromSqlDate(row.started_at),
+    errorMessage: row.error_message ? asString(row.error_message) : null,
+    rateLimitRemaining:
+      row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
+        ? null
+        : asNumber(row.rate_limit_remaining)
+  }));
+}
+
 export function isPersonalNeedsTriageIssue(input: {
   lifecycleState: string;
   severity: string | null;
@@ -1434,12 +1448,25 @@ export async function getDashboardSummary(
     [repoId, ...allPrVisibility.params]
   );
   const [syncRows] = await pool.execute<RowData[]>(
-    `SELECT sync_layer, status, started_at, finished_at, error_message, rate_limit_remaining
-     FROM sync_runs
-     WHERE repo_id = ?
-     ORDER BY id DESC
+    `SELECT latest.sync_layer,
+            latest.status,
+            latest.started_at,
+            latest.error_message,
+            latest.rate_limit_remaining,
+            summary.last_successful_at
+     FROM sync_runs latest
+     JOIN (
+       SELECT sync_layer,
+              MAX(id) AS latest_id,
+              MAX(CASE WHEN status = 'success' THEN finished_at ELSE NULL END) AS last_successful_at
+       FROM sync_runs
+       WHERE repo_id = ?
+       GROUP BY sync_layer
+     ) summary ON summary.latest_id = latest.id
+     WHERE latest.repo_id = ?
+     ORDER BY latest.id DESC
      LIMIT 20`,
-    [repoId]
+    [repoId, repoId]
   );
   const [partialRows] = await pool.execute<RowData[]>(
     `SELECT
@@ -1647,17 +1674,7 @@ export async function getDashboardSummary(
     };
   });
 
-  const syncHealth: SyncHealth[] = syncRows.map((row) => ({
-    layer: asString(row.sync_layer),
-    status: asString(row.status),
-    lastSuccessfulAt: row.status === "success" ? fromSqlDate(row.finished_at) : null,
-    lastAttemptedAt: fromSqlDate(row.started_at),
-    errorMessage: row.error_message ? asString(row.error_message) : null,
-    rateLimitRemaining:
-      row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
-        ? null
-        : asNumber(row.rate_limit_remaining)
-  }));
+  const syncHealth: SyncHealth[] = buildSyncHealthSummary(syncRows);
 
   const dailyMetrics: DailyMetricPoint[] = metricRows.map((row) => ({
     date: asString(row.metric_date),
