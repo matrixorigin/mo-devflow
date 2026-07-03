@@ -17,7 +17,7 @@ import {
   upsertPullRequest,
   upsertRepoProfile
 } from "@mo-devflow/db";
-import { fetchGitHubSnapshot } from "@mo-devflow/github";
+import { classifyGitHubError, configuredGitHubSourceAuthType, fetchGitHubSnapshot } from "@mo-devflow/github";
 import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
   aiDriftSignalsForIssue,
@@ -564,14 +564,24 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       rateLimitRemaining: snapshot.rateLimitRemaining
     };
   } catch (error) {
+    const classified = classifyGitHubError(error);
     await recordSyncRun({
       repoId,
       syncLayer: "github_snapshot",
-      status: "failed",
-      sourceAuthType: "anonymous",
+      status: classified.kind === "permission" || classified.kind === "not_found" ? "blocked" : "failed",
+      sourceAuthType: configuredGitHubSourceAuthType(),
       startedAt,
       finishedAt: new Date().toISOString(),
-      errorMessage: error instanceof Error ? error.message : String(error)
+      errorMessage: classified.message,
+      rateLimitRemaining: classified.rateLimitRemaining,
+      raw: {
+        errorKind: classified.kind,
+        retriable: classified.retriable,
+        status: classified.status,
+        rateLimitRemaining: classified.rateLimitRemaining,
+        rateLimitResetAt: classified.rateLimitResetAt,
+        retryAfterSeconds: classified.retryAfterSeconds
+      }
     });
     throw error;
   }

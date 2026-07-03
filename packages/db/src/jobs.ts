@@ -258,6 +258,28 @@ export async function failLeasedJob(input: {
   }
 }
 
+export async function blockLeasedJob(input: {
+  jobId: number;
+  leaseOwner: string;
+  nextRunAt: string;
+  errorMessage: string;
+}): Promise<void> {
+  const [result] = await getPool().execute<ResultSetHeader>(
+    `UPDATE jobs
+     SET status = 'blocked',
+         lease_owner = NULL,
+         lease_expires_at = NULL,
+         last_error = ?,
+         next_run_at = ?,
+         updated_at = ?
+     WHERE id = ? AND lease_owner = ?`,
+    [input.errorMessage, sqlDate(input.nextRunAt), nowSql(), input.jobId, input.leaseOwner]
+  );
+  if (Number(result.affectedRows ?? 0) === 0) {
+    throw new Error(`Cannot block job ${input.jobId}; lease is no longer owned by this worker.`);
+  }
+}
+
 export async function getJobQueueHealth(): Promise<JobQueueHealth> {
   const pool = getPool();
   const [queueRows] = await pool.execute<RowData[]>(
@@ -276,6 +298,9 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
   );
   const [failedRows] = await pool.execute<RowData[]>(
     "SELECT COUNT(*) AS failed_jobs FROM jobs WHERE status = 'failed'"
+  );
+  const [blockedRows] = await pool.execute<RowData[]>(
+    "SELECT COUNT(*) AS blocked_jobs FROM jobs WHERE status = 'blocked'"
   );
   const [staleRows] = await pool.execute<RowData[]>(
     `SELECT COUNT(*) AS stale_leases
@@ -303,6 +328,7 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
     queueDepth: asNumber(queueRow.queue_depth),
     runningJobs: asNumber(runningRows[0]?.running_jobs),
     failedJobs: asNumber(failedRows[0]?.failed_jobs),
+    blockedJobs: asNumber(blockedRows[0]?.blocked_jobs),
     staleLeases: asNumber(staleRows[0]?.stale_leases),
     oldestPendingAgeHours,
     nextRunAt: fromSqlDate(nextRows[0]?.next_run_at),

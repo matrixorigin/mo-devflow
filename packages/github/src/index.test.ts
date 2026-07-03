@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile, WorkflowFixPreview } from "@mo-devflow/shared";
-import { applyWorkflowFixPreview } from "./index";
+import { applyWorkflowFixPreview, classifyGitHubError, configuredGitHubSourceAuthType } from "./index";
 
 const octokitMocks = vi.hoisted(() => ({
   issuesGet: vi.fn(),
@@ -140,5 +140,54 @@ describe("workflow fix execution", () => {
     expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
     expect(result.response).toEqual({ skipped });
+  });
+});
+
+describe("GitHub error classification", () => {
+  test("classifies exhausted primary rate limit and preserves reset metadata", () => {
+    const resetSeconds = Math.ceil(Date.now() / 1000) + 120;
+    const result = classifyGitHubError({
+      status: 403,
+      message: "API rate limit exceeded",
+      response: {
+        headers: {
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-reset": String(resetSeconds)
+        }
+      }
+    });
+
+    expect(result.kind).toBe("rate_limited");
+    expect(result.retriable).toBe(true);
+    expect(result.rateLimitRemaining).toBe(0);
+    expect(result.retryAfterSeconds).toBeGreaterThan(0);
+    expect(result.rateLimitResetAt).toBe(new Date(resetSeconds * 1000).toISOString());
+  });
+
+  test("classifies permission failures as non-retriable when quota remains", () => {
+    const result = classifyGitHubError({
+      status: 403,
+      message: "Resource not accessible by integration",
+      response: {
+        headers: {
+          "x-ratelimit-remaining": "42"
+        }
+      }
+    });
+
+    expect(result.kind).toBe("permission");
+    expect(result.retriable).toBe(false);
+    expect(result.rateLimitRemaining).toBe(42);
+  });
+
+  test("classifies server and network failures as retriable", () => {
+    expect(classifyGitHubError({ status: 502, message: "Bad gateway" }).kind).toBe("server");
+    expect(classifyGitHubError(new Error("socket hang up")).kind).toBe("network");
+    expect(classifyGitHubError(new Error("socket hang up")).retriable).toBe(true);
+  });
+
+  test("detects configured service-token auth source without creating a client", () => {
+    expect(configuredGitHubSourceAuthType({})).toBe("anonymous");
+    expect(configuredGitHubSourceAuthType({ MO_DEVFLOW_GITHUB_TOKEN: "token" })).toBe("service_read_token");
   });
 });

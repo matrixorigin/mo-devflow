@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
+  blockLeasedJob,
   claimNextDueJob,
   completeLeasedJob,
   ensureRecurringJobs,
@@ -8,6 +9,7 @@ import {
   type LeasedJob,
   type RecurringJobSeed
 } from "@mo-devflow/db";
+import { classifyGitHubError } from "@mo-devflow/github";
 import {
   dateAfterSeconds,
   recomputeAiDriftFromCache,
@@ -54,6 +56,47 @@ export function retryDelaySeconds(attempts: number): number {
   const base = intervalSecondsFromEnv("MO_DEVFLOW_JOB_RETRY_BASE_SECONDS", 60, 10);
   const max = intervalSecondsFromEnv("MO_DEVFLOW_JOB_RETRY_MAX_SECONDS", 1800, base);
   return Math.min(max, base * 2 ** Math.max(0, Math.min(attempts - 1, 6)));
+}
+
+function rateLimitRetryFallbackSecondsFromEnv(): number {
+  return intervalSecondsFromEnv("MO_DEVFLOW_GITHUB_RATE_LIMIT_RETRY_SECONDS", 3600, 60);
+}
+
+function blockedRetrySecondsFromEnv(): number {
+  return intervalSecondsFromEnv("MO_DEVFLOW_GITHUB_BLOCKED_RECHECK_SECONDS", 3600, 300);
+}
+
+export function retryDelaySecondsForJobError(error: unknown, attempts: number): number | null {
+  const classified = classifyGitHubError(error);
+  if (classified.kind === "permission" || classified.kind === "not_found") {
+    return null;
+  }
+  if (classified.kind === "rate_limited") {
+    return Math.max(
+      retryDelaySeconds(attempts),
+      classified.retryAfterSeconds ?? rateLimitRetryFallbackSecondsFromEnv()
+    );
+  }
+  return retryDelaySeconds(attempts);
+}
+
+function jobErrorMessage(error: unknown): string {
+  const classified = classifyGitHubError(error);
+  if (classified.kind === "unknown" || classified.kind === "network") {
+    return error instanceof Error ? error.message : String(error);
+  }
+  const parts = [`github_${classified.kind}`];
+  if (classified.status !== null) {
+    parts.push(`status=${classified.status}`);
+  }
+  if (classified.rateLimitRemaining !== null) {
+    parts.push(`rate_remaining=${classified.rateLimitRemaining}`);
+  }
+  if (classified.rateLimitResetAt) {
+    parts.push(`rate_reset=${classified.rateLimitResetAt}`);
+  }
+  parts.push(classified.message);
+  return parts.join(" ");
 }
 
 function maxJobsPerTickFromEnv(): number {
@@ -203,13 +246,23 @@ export async function runDueJobsOnce(): Promise<WorkerJobRunSummary> {
         message
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await failLeasedJob({
-        jobId: job.id,
-        leaseOwner,
-        nextRunAt: dateAfterSeconds(retryDelaySeconds(job.attempts)),
-        errorMessage
-      });
+      const errorMessage = jobErrorMessage(error);
+      const retryDelaySecondsForError = retryDelaySecondsForJobError(error, job.attempts);
+      if (retryDelaySecondsForError === null) {
+        await blockLeasedJob({
+          jobId: job.id,
+          leaseOwner,
+          nextRunAt: dateAfterSeconds(blockedRetrySecondsFromEnv()),
+          errorMessage
+        });
+      } else {
+        await failLeasedJob({
+          jobId: job.id,
+          leaseOwner,
+          nextRunAt: dateAfterSeconds(retryDelaySecondsForError),
+          errorMessage
+        });
+      }
       summary.failedJobs += 1;
       summary.runs.push({
         jobKey: job.jobKey,

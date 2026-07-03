@@ -158,7 +158,7 @@ export async function getRepoId(profileKey: string): Promise<number | null> {
 export async function recordSyncRun(input: {
   repoId: number;
   syncLayer: string;
-  status: "success" | "failed" | "partial";
+  status: "success" | "failed" | "partial" | "blocked";
   sourceAuthType: string;
   startedAt: string;
   finishedAt?: string;

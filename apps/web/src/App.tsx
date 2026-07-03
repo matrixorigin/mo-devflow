@@ -257,6 +257,7 @@ interface DashboardSummary {
       queueDepth: number;
       runningJobs: number;
       failedJobs: number;
+      blockedJobs: number;
       staleLeases: number;
       oldestPendingAgeHours: number | null;
       nextRunAt: string | null;
@@ -1251,9 +1252,18 @@ export default function App() {
               <div className="metric">
                 <Statistic title="Job Queue" value={data.sync.jobQueue.queueDepth} />
                 <Progress
-                  percent={Math.min(100, data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25)}
+                  percent={Math.min(
+                    100,
+                    data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25 + data.sync.jobQueue.blockedJobs * 30
+                  )}
                   showInfo={false}
-                  strokeColor={data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? "#dc2626" : "#16a34a"}
+                  strokeColor={
+                    data.sync.jobQueue.failedJobs > 0 ||
+                    data.sync.jobQueue.blockedJobs > 0 ||
+                    data.sync.jobQueue.staleLeases > 0
+                      ? "#dc2626"
+                      : "#16a34a"
+                  }
                 />
               </div>
               <div className="metric">
@@ -1266,14 +1276,14 @@ export default function App() {
               </div>
             </section>
 
-            {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
+            {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
               <Alert
                 className="band"
                 type="warning"
                 message="Worker job queue needs attention"
                 description={
                   data.sync.jobQueue.latestFailure ??
-                  `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
+                  `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.blockedJobs} blocked jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
                 }
                 showIcon
               />
@@ -1327,6 +1337,7 @@ export default function App() {
                   <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
                   <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
                   <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />
+                  <Statistic title="Blocked Jobs" value={data.sync.jobQueue.blockedJobs} />
                   <Statistic title="Stale Leases" value={data.sync.jobQueue.staleLeases} />
                   <Statistic
                     title="Oldest Due"

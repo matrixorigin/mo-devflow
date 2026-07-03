@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { intervalSecondsFromEnv, retryDelaySeconds, workerIdFromEnv } from "./jobs";
+import { intervalSecondsFromEnv, retryDelaySeconds, retryDelaySecondsForJobError, workerIdFromEnv } from "./jobs";
 
 const originalEnv = { ...process.env };
 
@@ -35,5 +35,44 @@ describe("worker job scheduling config", () => {
     process.env.MO_DEVFLOW_WORKER_ID = "local-worker";
 
     expect(workerIdFromEnv()).toBe("local-worker");
+  });
+
+  test("uses GitHub rate-limit reset for retry delay", () => {
+    process.env.MO_DEVFLOW_JOB_RETRY_BASE_SECONDS = "10";
+    process.env.MO_DEVFLOW_JOB_RETRY_MAX_SECONDS = "90";
+    const resetSeconds = Math.ceil(Date.now() / 1000) + 300;
+
+    const delay = retryDelaySecondsForJobError(
+      {
+        status: 403,
+        message: "API rate limit exceeded",
+        response: {
+          headers: {
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": String(resetSeconds)
+          }
+        }
+      },
+      1
+    );
+
+    expect(delay).toBeGreaterThanOrEqual(250);
+  });
+
+  test("blocks non-retriable GitHub permission errors", () => {
+    const delay = retryDelaySecondsForJobError(
+      {
+        status: 403,
+        message: "Resource not accessible by integration",
+        response: {
+          headers: {
+            "x-ratelimit-remaining": "20"
+          }
+        }
+      },
+      1
+    );
+
+    expect(delay).toBeNull();
   });
 });

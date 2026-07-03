@@ -40,12 +40,28 @@ export interface GitHubWorkflowFixApplyResult {
   rateLimitRemaining: number | null;
 }
 
+export type GitHubErrorKind = "rate_limited" | "permission" | "not_found" | "server" | "network" | "unknown";
+
+export interface GitHubErrorClassification {
+  kind: GitHubErrorKind;
+  retriable: boolean;
+  status: number | null;
+  message: string;
+  rateLimitRemaining: number | null;
+  rateLimitResetAt: string | null;
+  retryAfterSeconds: number | null;
+}
+
 export function createGitHubClient(): { octokit: Octokit; sourceAuthType: SourceAuthType } {
   const token = process.env.MO_DEVFLOW_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   return {
     octokit: new Octokit(token ? { auth: token } : {}),
     sourceAuthType: token ? "service_read_token" : "anonymous"
   };
+}
+
+export function configuredGitHubSourceAuthType(env: Record<string, string | undefined> = process.env): SourceAuthType {
+  return env.MO_DEVFLOW_GITHUB_TOKEN || env.GITHUB_TOKEN || env.GH_TOKEN ? "service_read_token" : "anonymous";
 }
 
 function createUserGitHubClient(token: string): Octokit {
@@ -170,9 +186,129 @@ function missingNeedsTriageStaleReason(
   return null;
 }
 
+function headerValue(headers: Record<string, string | number | undefined>, name: string): string | number | undefined {
+  return headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()];
+}
+
 function readRateLimit(headers: Record<string, string | number | undefined>): number | null {
-  const remainingHeader = headers["x-ratelimit-remaining"];
+  const remainingHeader = headerValue(headers, "x-ratelimit-remaining");
   return remainingHeader === undefined ? null : Number(remainingHeader);
+}
+
+function readRetryAfterSeconds(headers: Record<string, string | number | undefined>): number | null {
+  const retryAfter = headerValue(headers, "retry-after");
+  const parsed = retryAfter === undefined ? null : Number(retryAfter);
+  return parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? Math.ceil(parsed) : null;
+}
+
+function readRateLimitResetAt(headers: Record<string, string | number | undefined>): string | null {
+  const resetHeader = headerValue(headers, "x-ratelimit-reset");
+  const resetSeconds = resetHeader === undefined ? null : Number(resetHeader);
+  if (resetSeconds === null || !Number.isFinite(resetSeconds) || resetSeconds <= 0) {
+    return null;
+  }
+  return new Date(resetSeconds * 1000).toISOString();
+}
+
+function secondsUntil(iso: string | null): number | null {
+  if (!iso) {
+    return null;
+  }
+  const diff = Math.ceil((new Date(iso).getTime() - Date.now()) / 1000);
+  return Number.isFinite(diff) ? Math.max(0, diff) : null;
+}
+
+function errorHeaders(error: unknown): Record<string, string | number | undefined> {
+  const headers = (error as { response?: { headers?: Record<string, string | number | undefined> } })?.response?.headers;
+  return headers ?? {};
+}
+
+function errorStatus(error: unknown): number | null {
+  const status = (error as { status?: number; response?: { status?: number } })?.status ?? (error as { response?: { status?: number } })?.response?.status;
+  return typeof status === "number" ? status : null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function classifyGitHubError(error: unknown): GitHubErrorClassification {
+  const headers = errorHeaders(error);
+  const status = errorStatus(error);
+  const message = errorMessage(error);
+  const rateLimitRemaining = readRateLimit(headers);
+  const rateLimitResetAt = readRateLimitResetAt(headers);
+  const retryAfterSeconds = readRetryAfterSeconds(headers) ?? secondsUntil(rateLimitResetAt);
+  const lowerMessage = message.toLowerCase();
+  const rateLimited =
+    status === 429 ||
+    (status === 403 && rateLimitRemaining === 0) ||
+    lowerMessage.includes("rate limit") ||
+    lowerMessage.includes("secondary rate limit");
+  if (rateLimited) {
+    return {
+      kind: "rate_limited",
+      retriable: true,
+      status,
+      message,
+      rateLimitRemaining,
+      rateLimitResetAt,
+      retryAfterSeconds
+    };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      kind: "permission",
+      retriable: false,
+      status,
+      message,
+      rateLimitRemaining,
+      rateLimitResetAt,
+      retryAfterSeconds: null
+    };
+  }
+  if (status === 404) {
+    return {
+      kind: "not_found",
+      retriable: false,
+      status,
+      message,
+      rateLimitRemaining,
+      rateLimitResetAt,
+      retryAfterSeconds: null
+    };
+  }
+  if (status !== null && status >= 500) {
+    return {
+      kind: "server",
+      retriable: true,
+      status,
+      message,
+      rateLimitRemaining,
+      rateLimitResetAt,
+      retryAfterSeconds
+    };
+  }
+  if (status === null) {
+    return {
+      kind: "network",
+      retriable: true,
+      status,
+      message,
+      rateLimitRemaining,
+      rateLimitResetAt,
+      retryAfterSeconds
+    };
+  }
+  return {
+    kind: "unknown",
+    retriable: true,
+    status,
+    message,
+    rateLimitRemaining,
+    rateLimitResetAt,
+    retryAfterSeconds
+  };
 }
 
 async function collectPages<T>(

@@ -419,6 +419,7 @@ export interface JobQueueHealth {
   queueDepth: number;
   runningJobs: number;
   failedJobs: number;
+  blockedJobs: number;
   staleLeases: number;
   oldestPendingAgeHours: number | null;
   nextRunAt: string | null;
