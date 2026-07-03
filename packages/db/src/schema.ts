@@ -50,6 +50,40 @@ const schemaStatements = [
     updated_at DATETIME NOT NULL,
     UNIQUE KEY uniq_jobs_job_key (job_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS app_users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    github_id VARCHAR(64) NOT NULL,
+    github_login VARCHAR(255) NOT NULL,
+    avatar_url TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_app_users_github_id (github_id),
+    UNIQUE KEY uniq_app_users_github_login (github_login)
+  )`,
+  `CREATE TABLE IF NOT EXISTS user_github_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    encrypted_token LONGTEXT NOT NULL,
+    token_iv VARCHAR(64) NOT NULL,
+    token_auth_tag VARCHAR(64) NOT NULL,
+    key_version VARCHAR(64) NOT NULL,
+    scopes_json LONGTEXT NOT NULL,
+    last_validated_at DATETIME NOT NULL,
+    revoked_at DATETIME,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_user_github_tokens_user (user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS user_sessions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    session_hash VARCHAR(128) NOT NULL,
+    created_at DATETIME NOT NULL,
+    last_seen_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME,
+    UNIQUE KEY uniq_user_sessions_hash (session_hash)
+  )`,
   `CREATE TABLE IF NOT EXISTS issues (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     repo_id BIGINT NOT NULL,
@@ -221,6 +255,8 @@ const indexStatements = [
   "CREATE INDEX idx_pull_requests_repo_state ON pull_requests(repo_id, state)",
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
   "CREATE INDEX idx_sync_runs_repo_layer ON sync_runs(repo_id, sync_layer)",
+  "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
+  "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",
   "CREATE INDEX idx_attention_repo_resolved ON attention_items(repo_id, resolved_at)",
   "CREATE INDEX idx_workflow_violations_repo_resolved ON workflow_violations(repo_id, resolved_at)",
   "CREATE INDEX idx_daily_metrics_repo_date ON daily_metrics(repo_id, metric_date)",

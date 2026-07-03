@@ -110,6 +110,10 @@ body {
   height: 320px;
 }
 
+.token-modal-body {
+  width: 100%;
+}
+
 @media (max-width: 920px) {
   .topbar {
     align-items: flex-start;

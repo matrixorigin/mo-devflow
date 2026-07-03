@@ -315,6 +315,21 @@ export interface NotificationHealth {
   lastDeliveries: NotificationDeliveryView[];
 }
 
+export interface AuthenticatedUserView {
+  githubLogin: string;
+  githubId: string;
+  avatarUrl: string | null;
+  tokenScopes: string[];
+  tokenLastValidatedAt: string | null;
+  sessionExpiresAt: string;
+}
+
+export interface SessionView {
+  authenticated: boolean;
+  user: AuthenticatedUserView | null;
+  tokenEncryptionConfigured: boolean;
+}
+
 export interface SyncHealth {
   layer: string;
   status: string;

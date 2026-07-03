@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Avatar,
   Badge,
   Button,
   Empty,
+  Input,
   Layout,
+  Modal,
   Progress,
   Segmented,
   Skeleton,
@@ -24,7 +27,7 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { BellRing, RefreshCw, ShieldAlert } from "lucide-react";
+import { BellRing, KeyRound, LogOut, RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -158,6 +161,19 @@ interface NotificationHealth {
   lastDeliveries: NotificationDeliveryView[];
 }
 
+interface SessionView {
+  authenticated: boolean;
+  user: {
+    githubLogin: string;
+    githubId: string;
+    avatarUrl: string | null;
+    tokenScopes: string[];
+    tokenLastValidatedAt: string | null;
+    sessionExpiresAt: string;
+  } | null;
+  tokenEncryptionConfigured: boolean;
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -213,6 +229,22 @@ function formatDate(value: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function displayError(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  return String(value);
+}
+
+async function responseError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string; error?: string };
+    return body.message ?? body.error ?? `API returned ${response.status}`;
+  } catch {
+    return `API returned ${response.status}`;
+  }
 }
 
 function severityColor(severity: string | null): string {
@@ -357,9 +389,14 @@ function TrendChart({ points }: { points: DailyMetricPoint[] }) {
 
 export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [session, setSession] = useState<SessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState("Overview");
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -371,14 +408,70 @@ export default function App() {
       }
       setData((await response.json()) as DashboardSummary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(displayError(err));
     } finally {
       setLoading(false);
     }
   }
 
+  async function loadSession() {
+    try {
+      const response = await fetch("/api/session", { credentials: "same-origin" });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setSession((await response.json()) as SessionView);
+    } catch (err) {
+      setSession({
+        authenticated: false,
+        user: null,
+        tokenEncryptionConfigured: false
+      });
+      setTokenError(displayError(err));
+    }
+  }
+
+  async function connectGitHubToken() {
+    setTokenSaving(true);
+    setTokenError(null);
+    try {
+      const response = await fetch("/api/session/github-token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ token: tokenInput.trim() })
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setSession((await response.json()) as SessionView);
+      setTokenInput("");
+      setTokenModalOpen(false);
+    } catch (err) {
+      setTokenError(displayError(err));
+    } finally {
+      setTokenSaving(false);
+    }
+  }
+
+  async function disconnectSession() {
+    try {
+      const response = await fetch("/api/session", {
+        method: "DELETE",
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setSession((await response.json()) as SessionView);
+    } catch (err) {
+      setTokenError(displayError(err));
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadSession();
   }, []);
 
   const criticalColumns: ColumnsType<CriticalIssueView> = useMemo(
@@ -739,6 +832,36 @@ export default function App() {
             onChange={(value) => setView(String(value))}
             options={["Overview", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
           />
+          {session?.authenticated && session.user ? (
+            <Space size={8}>
+              <Avatar size={28} src={session.user.avatarUrl}>
+                {session.user.githubLogin.slice(0, 1).toUpperCase()}
+              </Avatar>
+              <Tag>{session.user.githubLogin}</Tag>
+              <Tooltip title="Disconnect GitHub token">
+                <Button icon={<LogOut size={16} />} onClick={() => void disconnectSession()} />
+              </Tooltip>
+            </Space>
+          ) : (
+            <Tooltip
+              title={
+                session?.tokenEncryptionConfigured === false
+                  ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
+                  : "Connect GitHub token"
+              }
+            >
+              <Button
+                icon={<KeyRound size={16} />}
+                disabled={session?.tokenEncryptionConfigured === false}
+                onClick={() => {
+                  setTokenError(null);
+                  setTokenModalOpen(true);
+                }}
+              >
+                Connect
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
           </Tooltip>
@@ -964,6 +1087,30 @@ export default function App() {
           </>
         ) : null}
       </Content>
+      <Modal
+        title="Connect GitHub Token"
+        open={tokenModalOpen}
+        okText="Connect"
+        confirmLoading={tokenSaving}
+        okButtonProps={{ disabled: tokenInput.trim().length < 20 }}
+        onOk={() => void connectGitHubToken()}
+        onCancel={() => {
+          setTokenModalOpen(false);
+          setTokenInput("");
+          setTokenError(null);
+        }}
+      >
+        <Space direction="vertical" size={12} className="token-modal-body">
+          <Input.Password
+            aria-label="GitHub token"
+            value={tokenInput}
+            autoComplete="off"
+            placeholder="GitHub token"
+            onChange={(event) => setTokenInput(event.target.value)}
+          />
+          {tokenError ? <Alert type="error" message={tokenError} showIcon /> : null}
+        </Space>
+      </Modal>
     </Layout>
   );
 }

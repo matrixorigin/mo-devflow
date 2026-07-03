@@ -12,11 +12,40 @@ export interface GitHubSnapshot {
   rateLimitRemaining: number | null;
 }
 
+export interface GitHubTokenValidation {
+  githubId: string;
+  githubLogin: string;
+  avatarUrl: string | null;
+  scopes: string[];
+  rateLimitRemaining: number | null;
+}
+
 export function createGitHubClient(): { octokit: Octokit; sourceAuthType: SourceAuthType } {
   const token = process.env.MO_DEVFLOW_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   return {
     octokit: new Octokit(token ? { auth: token } : {}),
     sourceAuthType: token ? "service_read_token" : "anonymous"
+  };
+}
+
+export async function validateGitHubToken(token: string): Promise<GitHubTokenValidation> {
+  const octokit = new Octokit({ auth: token });
+  const response = await octokit.rest.users.getAuthenticated();
+  const scopesHeader = response.headers["x-oauth-scopes"];
+  const scopes =
+    typeof scopesHeader === "string"
+      ? scopesHeader
+          .split(",")
+          .map((scope) => scope.trim())
+          .filter(Boolean)
+      : [];
+
+  return {
+    githubId: String(response.data.id),
+    githubLogin: response.data.login,
+    avatarUrl: response.data.avatar_url ?? null,
+    scopes,
+    rateLimitRemaining: readRateLimit(response.headers)
   };
 }
 
