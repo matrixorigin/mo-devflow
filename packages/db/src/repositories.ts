@@ -75,6 +75,14 @@ export function visibleClassesForDashboard(profile: RepoProfile, viewer: Dashboa
   return viewer.authenticated ? ["anonymous_readable", "logged_in_readable"] : ["anonymous_readable"];
 }
 
+export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const parsed = Number(env.MO_DEVFLOW_CACHE_STALE_HOURS ?? "6");
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 6;
+  }
+  return Math.max(0.25, parsed);
+}
+
 function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: string; params: string[] } {
   if (classes.length === 0) {
     return { sql: "1 = 0", params: [] };
@@ -87,6 +95,10 @@ function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: str
 
 function visibilityClassListSql(classes: VisibilityClass[]): string {
   return classes.map((value) => `'${value}'`).join(", ");
+}
+
+function sqlStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 export async function upsertRepoProfile(profile: RepoProfile): Promise<number> {
@@ -875,6 +887,8 @@ export async function getDashboardSummary(
   const allPrVisibility = visibilityClause("p", visibleClasses);
   const partialIssueVisibility = visibilityClause("i", visibleClasses);
   const partialPrVisibility = visibilityClause("p", visibleClasses);
+  const staleIssueVisibility = visibilityClause("i", visibleClasses);
+  const stalePrVisibility = visibilityClause("p", visibleClasses);
   const violationIssueVisibility = visibilityClause("i", visibleClasses);
   const violationPrVisibility = visibilityClause("p", visibleClasses);
   const driftIssueVisibility = visibilityClause("i", visibleClasses);
@@ -887,6 +901,8 @@ export async function getDashboardSummary(
     visibleClasses.length === 0
       ? "COUNT(*)"
       : `SUM(CASE WHEN visibility_class IN (${visibilityClassListSql(visibleClasses)}) THEN 0 ELSE 1 END)`;
+  const staleThresholdHours = cacheStaleHoursFromEnv();
+  const staleCutoff = sqlDate(new Date(Date.now() - staleThresholdHours * 3_600_000)) ?? "1970-01-01 00:00:00";
   const [criticalRows] = await pool.execute<RowData[]>(
     `SELECT * FROM issues i
      WHERE i.repo_id = ?
@@ -935,6 +951,17 @@ export async function getDashboardSummary(
        SELECT p.is_complete FROM pull_requests p WHERE p.repo_id = ? AND ${partialPrVisibility.sql}
      ) t`,
     [repoId, ...partialIssueVisibility.params, repoId, ...partialPrVisibility.params]
+  );
+  const [staleRows] = await pool.execute<RowData[]>(
+    `SELECT
+       SUM(CASE WHEN last_synced_at < ${sqlStringLiteral(staleCutoff)} THEN 1 ELSE 0 END) AS stale_count,
+       MIN(last_synced_at) AS oldest_synced_at
+     FROM (
+       SELECT i.last_synced_at FROM issues i WHERE i.repo_id = ? AND ${staleIssueVisibility.sql}
+       UNION ALL
+       SELECT p.last_synced_at FROM pull_requests p WHERE p.repo_id = ? AND ${stalePrVisibility.sql}
+     ) t`,
+    [repoId, ...staleIssueVisibility.params, repoId, ...stalePrVisibility.params]
   );
   const [hiddenIssueRows] = await pool.execute<RowData[]>(
     `SELECT ${hiddenIssueExpression} AS hidden_issues FROM issues WHERE repo_id = ?`,
@@ -1176,6 +1203,10 @@ export async function getDashboardSummary(
   const worker: WorkerHealth = await getWorkerHealth();
   const notifications = await getNotificationHealth(repoId, profile);
   const webhooks = await getWebhookIngestionHealth(repoId);
+  const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
+  const oldestCacheAgeHours = oldestSyncedAt
+    ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
+    : null;
 
   return {
     repo: {
@@ -1188,7 +1219,9 @@ export async function getDashboardSummary(
     sync: {
       generatedAt: new Date().toISOString(),
       health: syncHealth,
-      staleObjects: 0,
+      staleObjects: asNumber(staleRows[0]?.stale_count),
+      staleThresholdHours,
+      oldestCacheAgeHours,
       partialObjects: asNumber(partialRows[0]?.partial_count),
       jobQueue,
       worker

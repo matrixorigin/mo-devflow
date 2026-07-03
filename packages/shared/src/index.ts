@@ -496,6 +496,8 @@ export interface DashboardSummary {
     generatedAt: string;
     health: SyncHealth[];
     staleObjects: number;
+    staleThresholdHours: number;
+    oldestCacheAgeHours: number | null;
     partialObjects: number;
     jobQueue: JobQueueHealth;
     worker: WorkerHealth;

@@ -41,6 +41,9 @@ stopped or stale background process.
 GitHub rate-limit failures are retried after the advertised reset window, while
 non-retriable permission failures are marked as blocked until credentials or a
 manual refresh changes the job state.
+Visible cached GitHub objects are counted as stale after
+`MO_DEVFLOW_CACHE_STALE_HOURS` so dashboards can keep serving cache while still
+showing freshness risk.
 
 GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
 `X-Hub-Signature-256` when `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET` is configured,

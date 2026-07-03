@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { visibleClassesForDashboard } from "./repositories";
+import { cacheStaleHoursFromEnv, visibleClassesForDashboard } from "./repositories";
 
 const baseProfile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -69,5 +69,17 @@ describe("dashboard visibility", () => {
         { authenticated: false }
       )
     ).toEqual([]);
+  });
+});
+
+describe("cache freshness", () => {
+  test("uses a conservative default stale threshold", () => {
+    expect(cacheStaleHoursFromEnv({})).toBe(6);
+  });
+
+  test("accepts configured positive stale threshold and ignores invalid values", () => {
+    expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "0.5" })).toBe(0.5);
+    expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "not-a-number" })).toBe(6);
+    expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "-1" })).toBe(6);
   });
 });

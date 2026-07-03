@@ -252,6 +252,8 @@ interface DashboardSummary {
       errorMessage: string | null;
     }>;
     staleObjects: number;
+    staleThresholdHours: number;
+    oldestCacheAgeHours: number | null;
     partialObjects: number;
     jobQueue: {
       queueDepth: number;
@@ -1178,6 +1180,18 @@ export default function App() {
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : data ? (
           <>
+            {data.sync.staleObjects > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message={`${data.sync.staleObjects} cached objects are stale`}
+                description={`Oldest visible cache age is ${
+                  data.sync.oldestCacheAgeHours === null ? "unknown" : hours(data.sync.oldestCacheAgeHours)
+                }; stale threshold is ${hours(data.sync.staleThresholdHours)}.`}
+                showIcon
+              />
+            ) : null}
+
             {data.sync.partialObjects > 0 ? (
               <Alert
                 className="band"
@@ -1212,6 +1226,14 @@ export default function App() {
               <div className="metric">
                 <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
                 <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
+              </div>
+              <div className="metric">
+                <Statistic title="Stale Cache" value={data.sync.staleObjects} />
+                <Progress
+                  percent={Math.min(100, data.sync.staleObjects * 5)}
+                  showInfo={false}
+                  strokeColor={data.sync.staleObjects > 0 ? "#d97706" : "#16a34a"}
+                />
               </div>
               <div className="metric">
                 <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
@@ -1334,6 +1356,8 @@ export default function App() {
                   <Statistic title="Worker Phase" value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"} />
                   <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
                   <Statistic title="Last Tick" value={formatDate(data.sync.worker.lastTickFinishedAt)} />
+                  <Statistic title="Stale Objects" value={data.sync.staleObjects} />
+                  <Statistic title="Oldest Cache" value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)} />
                   <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
                   <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
                   <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />
