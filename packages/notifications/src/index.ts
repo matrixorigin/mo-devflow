@@ -12,6 +12,16 @@ export function buildWeComMarkdown(profile: RepoProfile, candidate: Notification
     candidate.evidenceSummary.length > 280 ? `${candidate.evidenceSummary.slice(0, 277)}...` : candidate.evidenceSummary;
   const target = candidate.htmlUrl ? `[${objectText}](${candidate.htmlUrl})` : objectText;
   const owner = candidate.relatedLogin ? `\n> Owner: ${candidate.relatedLogin}` : "";
+  if (candidate.sourceType === "daily_digest") {
+    return [
+      "## mo-devflow daily digest",
+      `> Repo: ${profile.key}`,
+      `> Date: ${title}`,
+      `> Dashboard: ${target}`,
+      "",
+      evidence
+    ].join("\n");
+  }
   return [
     `## mo-devflow ${candidate.severity.toUpperCase()} alert`,
     `> Repo: ${profile.key}`,

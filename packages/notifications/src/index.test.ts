@@ -72,6 +72,25 @@ describe("notifications", () => {
     expect(markdown).not.toContain("webhook");
   });
 
+  test("builds daily digest markdown as a summary instead of an alert", () => {
+    const markdown = buildWeComMarkdown(profile, {
+      ...candidate,
+      sourceType: "daily_digest",
+      ruleKey: "daily_maintainer_digest",
+      severity: "info",
+      objectType: "digest",
+      objectNumber: null,
+      title: "Daily digest for matrixorigin/matrixone on 2026-07-03",
+      htmlUrl: "https://github.com/matrixorigin/matrixone",
+      relatedLogin: null,
+      evidenceSummary: "Team: 5 PRs created, 3 merged."
+    });
+
+    expect(markdown).toContain("mo-devflow daily digest");
+    expect(markdown).toContain("Daily digest for matrixorigin/matrixone on 2026-07-03");
+    expect(markdown).not.toContain("INFO alert");
+  });
+
   test("truncates long titles and evidence to keep notifications readable", () => {
     const markdown = buildWeComMarkdown(profile, {
       ...candidate,

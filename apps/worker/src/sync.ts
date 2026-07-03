@@ -31,7 +31,14 @@ import {
   normalizePullRequest,
   workflowViolationsForIssue
 } from "@mo-devflow/rules";
-import type { AiDriftSignal, NormalizedIssue, NotificationStatus, SourceAuthType, WorkflowViolation } from "@mo-devflow/shared";
+import type {
+  AiDriftSignal,
+  NormalizedIssue,
+  NotificationCandidate,
+  NotificationStatus,
+  SourceAuthType,
+  WorkflowViolation
+} from "@mo-devflow/shared";
 
 export interface SyncResult {
   repoId: number;
@@ -118,6 +125,13 @@ function notificationLimitFromEnv(): number {
     return 20;
   }
   return Math.max(1, Math.floor(parsed));
+}
+
+function notificationCooldownHours(candidate: NotificationCandidate, defaultCooldownHours: number): number {
+  if (candidate.sourceType === "daily_digest") {
+    return 24 * 365 * 10;
+  }
+  return defaultCooldownHours;
 }
 
 function webhookLimitFromEnv(): number {
@@ -235,6 +249,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
   const deliveryCooldownStatuses: NotificationStatus[] = ["sent", "failed", "dry_run"];
 
   for (const candidate of candidates) {
+    const cooldownHours = notificationCooldownHours(candidate, profile.notifications.routing.cooldownHours);
     const payload = {
       markdown: buildWeComMarkdown(profile, candidate),
       candidate
@@ -242,7 +257,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
 
     if (!profile.notifications.wecom.enabled) {
       if (
-        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
           "skipped_disabled"
         ])
       ) {
@@ -263,7 +278,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
 
     if (!webhookUrl) {
       if (
-        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
           "skipped_no_webhook"
         ])
       ) {
@@ -285,7 +300,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
 
     if (candidate.severity !== "critical" && isInQuietHours(profile.notifications.wecom.quietHours, profile.reporting.timezone)) {
       if (
-        await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, [
+        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
           "skipped_quiet_hours"
         ])
       ) {
@@ -304,7 +319,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
       continue;
     }
 
-    if (await isNotificationInCooldown(candidate.dedupeKey, profile.notifications.routing.cooldownHours, deliveryCooldownStatuses)) {
+    if (await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, deliveryCooldownStatuses)) {
       summary.cooldown += 1;
       continue;
     }

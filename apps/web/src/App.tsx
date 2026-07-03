@@ -234,7 +234,7 @@ type NotificationStatus =
 
 interface NotificationDeliveryView {
   id: number;
-  sourceType: "attention_item" | "workflow_violation" | "ai_drift_signal";
+  sourceType: "attention_item" | "workflow_violation" | "ai_drift_signal" | "daily_digest";
   ruleKey: string;
   objectType: string;
   objectNumber: number | null;

@@ -1,4 +1,5 @@
 import type {
+  MetricSourceCompleteness,
   NotificationCandidate,
   NotificationDeliveryView,
   NotificationHealth,
@@ -65,12 +66,125 @@ function recipientScope(profile: RepoProfile, recipient: unknown): NotificationD
   return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
 }
 
+function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
+  return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
+}
+
+export interface DailyDigestTeamMetrics {
+  prsCreated: number;
+  prsMerged: number;
+  issuesOpened: number;
+  issuesClosed: number;
+  issuesDeferred: number;
+  workflowViolationsDetected: number;
+  sourceCompleteness: MetricSourceCompleteness;
+}
+
+export interface DailyDigestPersonMetrics {
+  login: string;
+  prsCreated: number;
+  prsMerged: number;
+  workflowViolationsDetected: number;
+}
+
+export function buildDailyDigestNotificationCandidate(input: {
+  profile: RepoProfile;
+  metricDate: string;
+  team: DailyDigestTeamMetrics;
+  people: DailyDigestPersonMetrics[];
+  generatedAt: string;
+}): NotificationCandidate {
+  const peopleSummary = input.people.length
+    ? `\nWatched users: ${input.people
+        .map(
+          (person) =>
+            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
+        )
+        .join("; ")}.`
+    : "";
+  return {
+    sourceType: "daily_digest",
+    sourceId: 0,
+    ruleKey: "daily_maintainer_digest",
+    severity: "info",
+    objectType: "digest",
+    objectNumber: null,
+    title: `Daily digest for ${input.profile.key} on ${input.metricDate}`,
+    htmlUrl: `https://github.com/${input.profile.repo.owner}/${input.profile.repo.name}`,
+    relatedLogin: null,
+    recipient: input.profile.notifications.routing.fallbackRecipient,
+    dedupeKey: `notification:daily_digest:${input.profile.key}:${input.metricDate}`,
+    evidenceSummary:
+      `Team: ${input.team.prsCreated} PRs created, ${input.team.prsMerged} merged, ` +
+      `${input.team.issuesOpened} issues opened, ${input.team.issuesClosed} closed, ${input.team.issuesDeferred} deferred.\n` +
+      `Workflow violations detected: ${input.team.workflowViolationsDetected}.` +
+      peopleSummary +
+      `\nCache completeness: ${input.team.sourceCompleteness}.`,
+    firstDetectedAt: input.generatedAt,
+    lastDetectedAt: input.generatedAt
+  };
+}
+
+async function getLatestDailyDigestCandidate(
+  repoId: number,
+  profile: RepoProfile
+): Promise<NotificationCandidate | null> {
+  const [dateRows] = await getPool().execute<RowData[]>(
+    "SELECT MAX(metric_date) AS metric_date FROM daily_metrics WHERE repo_id = ?",
+    [repoId]
+  );
+  const metricDate = dateRows[0]?.metric_date ? asString(dateRows[0].metric_date) : "";
+  if (!metricDate) {
+    return null;
+  }
+  const [metricRows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM daily_metrics
+     WHERE repo_id = ? AND metric_date = ?
+     ORDER BY scope_type ASC, scope_key ASC`,
+    [repoId, metricDate]
+  );
+  const teamRow = metricRows.find((row) => asString(row.scope_type) === "team" && asString(row.scope_key) === "all");
+  if (!teamRow) {
+    return null;
+  }
+  const watchedUsers = new Set(profile.people.watchedUsers);
+  const people = metricRows
+    .filter((row) => asString(row.scope_type) === "person" && watchedUsers.has(asString(row.scope_key)))
+    .map((row) => ({
+      login: asString(row.scope_key),
+      prsCreated: asNumber(row.prs_created),
+      prsMerged: asNumber(row.prs_merged),
+      workflowViolationsDetected: asNumber(row.workflow_violations_detected)
+    }));
+
+  return buildDailyDigestNotificationCandidate({
+    profile,
+    metricDate,
+    team: {
+      prsCreated: asNumber(teamRow.prs_created),
+      prsMerged: asNumber(teamRow.prs_merged),
+      issuesOpened: asNumber(teamRow.issues_opened),
+      issuesClosed: asNumber(teamRow.issues_closed),
+      issuesDeferred: asNumber(teamRow.issues_deferred),
+      workflowViolationsDetected: asNumber(teamRow.workflow_violations_detected),
+      sourceCompleteness: metricSourceCompleteness(teamRow.source_completeness)
+    },
+    people,
+    generatedAt: fromSqlDate(teamRow.generated_at) ?? new Date().toISOString()
+  });
+}
+
 export async function listNotificationCandidates(
   repoId: number,
   profile: RepoProfile,
   limit = 50
 ): Promise<NotificationCandidate[]> {
+  if (limit <= 0) {
+    return [];
+  }
   const candidates: NotificationCandidate[] = [];
+  const immediateLimit = limit > 1 ? limit - 1 : 1;
   const [attentionRows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM attention_items
@@ -79,7 +193,7 @@ export async function listNotificationCandidates(
        CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        last_detected_at DESC
      LIMIT ?`,
-    [repoId, limit]
+    [repoId, immediateLimit]
   );
   for (const row of attentionRows) {
     const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
@@ -102,7 +216,7 @@ export async function listNotificationCandidates(
     });
   }
 
-  const remainingAfterAttention = Math.max(0, limit - candidates.length);
+  const remainingAfterAttention = Math.max(0, immediateLimit - candidates.length);
   if (remainingAfterAttention > 0) {
     const [violationRows] = await getPool().execute<RowData[]>(
       `SELECT *
@@ -136,7 +250,7 @@ export async function listNotificationCandidates(
     }
   }
 
-  const remainingAfterViolations = Math.max(0, limit - candidates.length);
+  const remainingAfterViolations = Math.max(0, immediateLimit - candidates.length);
   if (remainingAfterViolations > 0) {
     const [driftRows] = await getPool().execute<RowData[]>(
       `SELECT *
@@ -168,6 +282,13 @@ export async function listNotificationCandidates(
         firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
         lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
       });
+    }
+  }
+
+  if (candidates.length < limit) {
+    const digest = await getLatestDailyDigestCandidate(repoId, profile);
+    if (digest) {
+      candidates.push(digest);
     }
   }
 
