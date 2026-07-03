@@ -499,6 +499,7 @@ export interface SyncHealth {
   lastSuccessfulAt: string | null;
   lastAttemptedAt: string | null;
   errorMessage: string | null;
+  rateLimitRemaining: number | null;
 }
 
 export interface JobQueueHealth {

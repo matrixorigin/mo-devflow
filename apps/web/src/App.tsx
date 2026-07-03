@@ -331,6 +331,7 @@ interface DashboardSummary {
       lastSuccessfulAt: string | null;
       lastAttemptedAt: string | null;
       errorMessage: string | null;
+      rateLimitRemaining: number | null;
     }>;
     staleObjects: number;
     staleThresholdHours: number;
@@ -541,6 +542,32 @@ function workerStatusColor(value: DashboardSummary["sync"]["worker"]["status"]):
     return "#d97706";
   }
   return "#6b7280";
+}
+
+function rateLimitColor(remaining: number | null): string {
+  if (remaining === null) {
+    return "#6b7280";
+  }
+  if (remaining <= 0) {
+    return "#dc2626";
+  }
+  if (remaining <= 10) {
+    return "#d97706";
+  }
+  return "#16a34a";
+}
+
+function rateLimitHealthTagColor(remaining: number | null): string {
+  if (remaining === null) {
+    return "default";
+  }
+  if (remaining <= 0) {
+    return "red";
+  }
+  if (remaining <= 10) {
+    return "orange";
+  }
+  return "green";
 }
 
 function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): string {
@@ -1415,6 +1442,9 @@ export default function App() {
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
+  const latestRateLimitHealth =
+    data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
+  const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
 
   return (
     <Layout className="app-shell">
@@ -1656,6 +1686,16 @@ export default function App() {
               />
             ) : null}
 
+            {latestRateLimitRemaining !== null && latestRateLimitRemaining <= 10 ? (
+              <Alert
+                className="band"
+                type={latestRateLimitRemaining <= 0 ? "error" : "warning"}
+                message="GitHub API rate limit is low"
+                description={`Latest ${latestRateLimitHealth?.layer ?? "sync"} run reported ${latestRateLimitRemaining} requests remaining.`}
+                showIcon
+              />
+            ) : null}
+
             {data.testing.staleQueuePrs > 0 ? (
               <Alert
                 className="band"
@@ -1691,6 +1731,11 @@ export default function App() {
                   <Statistic title="Worker Phase" value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"} />
                   <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
                   <Statistic title="Last Tick" value={formatDate(data.sync.worker.lastTickFinishedAt)} />
+                  <Statistic
+                    title="GitHub Rate"
+                    value={latestRateLimitRemaining === null ? "-" : latestRateLimitRemaining}
+                    valueStyle={{ color: rateLimitColor(latestRateLimitRemaining) }}
+                  />
                   <Statistic title="Stale Objects" value={data.sync.staleObjects} />
                   <Statistic title="Oldest Cache" value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)} />
                   <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
@@ -1715,11 +1760,18 @@ export default function App() {
                 </div>
                 <Space size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (
-                    <Tooltip key={`${item.layer}-${item.lastAttemptedAt ?? "none"}`} title={item.errorMessage ?? undefined}>
-                      <Tag color={item.status === "success" ? "green" : item.status === "partial" ? "orange" : "red"}>
-                        {item.layer}: {item.status}
-                      </Tag>
-                    </Tooltip>
+                    <Space key={`${item.layer}-${item.lastAttemptedAt ?? "none"}`} size={2}>
+                      <Tooltip title={item.errorMessage ?? undefined}>
+                        <Tag color={item.status === "success" ? "green" : item.status === "partial" ? "orange" : "red"}>
+                          {item.layer}: {item.status}
+                        </Tag>
+                      </Tooltip>
+                      {item.rateLimitRemaining === null ? null : (
+                        <Tag color={rateLimitHealthTagColor(item.rateLimitRemaining)}>
+                          rate {item.rateLimitRemaining}
+                        </Tag>
+                      )}
+                    </Space>
                   ))}
                 </Space>
               </section>

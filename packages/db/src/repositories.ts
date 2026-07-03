@@ -1129,7 +1129,7 @@ export async function getDashboardSummary(
     [repoId, ...allPrVisibility.params]
   );
   const [syncRows] = await pool.execute<RowData[]>(
-    `SELECT sync_layer, status, started_at, finished_at, error_message
+    `SELECT sync_layer, status, started_at, finished_at, error_message, rate_limit_remaining
      FROM sync_runs
      WHERE repo_id = ?
      ORDER BY id DESC
@@ -1327,7 +1327,11 @@ export async function getDashboardSummary(
     status: asString(row.status),
     lastSuccessfulAt: row.status === "success" ? fromSqlDate(row.finished_at) : null,
     lastAttemptedAt: fromSqlDate(row.started_at),
-    errorMessage: row.error_message ? asString(row.error_message) : null
+    errorMessage: row.error_message ? asString(row.error_message) : null,
+    rateLimitRemaining:
+      row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
+        ? null
+        : asNumber(row.rate_limit_remaining)
   }));
 
   const dailyMetrics: DailyMetricPoint[] = metricRows.map((row) => ({
