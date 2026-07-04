@@ -44,6 +44,8 @@ and daily, weekly, and monthly maintainer digests derived from cached repository
 metrics.
 Delivery failures are recorded as transient or permanent so the dashboard can
 show retrying provider failures separately from configuration problems.
+Authenticated users can request an immediate retry for the latest failed
+delivery; the worker still performs the actual send.
 
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.

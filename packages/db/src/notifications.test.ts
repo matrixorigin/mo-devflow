@@ -289,6 +289,7 @@ describe("notification acknowledgement health", () => {
     expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("failed_transient")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("failed_permanent")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("retry_requested")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
@@ -319,6 +320,7 @@ describe("notification acknowledgement health", () => {
     expect(notificationDeliveryCooldownHours([{ status: "failed_permanent" }], 12)).toBe(
       PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS
     );
+    expect(notificationDeliveryCooldownHours([{ status: "retry_requested" }], 12)).toBeNull();
     expect(notificationDeliveryCooldownHours([{ status: "skipped_quiet_hours" }], 12)).toBeNull();
   });
 

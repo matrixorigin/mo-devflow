@@ -572,6 +572,7 @@ export type NotificationStatus =
   | "sent"
   | "failed_transient"
   | "failed_permanent"
+  | "retry_requested"
   | "dry_run"
   | "skipped_disabled"
   | "skipped_no_webhook"
@@ -644,6 +645,10 @@ export interface NotificationHealth {
 
 export function notificationStatusRequiresAcknowledgement(status: NotificationStatus): boolean {
   return status === "sent";
+}
+
+export function notificationStatusAllowsRetry(status: NotificationStatus): boolean {
+  return status === "failed_transient" || status === "failed_permanent";
 }
 
 export type GitHubWriteCapabilityStatus =

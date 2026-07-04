@@ -577,12 +577,13 @@ Enterprise WeChat channel:
 - Stop sending reminders once the underlying attention item is resolved.
 
 Delivery status should use explicit current-state values: `sent`,
-`failed_transient`, `failed_permanent`, `dry_run`, `skipped_disabled`,
-`skipped_no_webhook`, and `skipped_quiet_hours`. Transient failures should
-retry with exponential backoff starting at 15 minutes and capped by the profile
-cooldown. Permanent failures should enter a long cooldown and remain visible in
-dashboard health until the underlying attention source is resolved or operators
-clear the bad configuration.
+`failed_transient`, `failed_permanent`, `retry_requested`, `dry_run`,
+`skipped_disabled`, `skipped_no_webhook`, and `skipped_quiet_hours`. Transient
+failures should retry with exponential backoff starting at 15 minutes and
+capped by the profile cooldown. Permanent failures should enter a long cooldown
+and remain visible in dashboard health until the underlying attention source is
+resolved, operators clear the bad configuration, or an authenticated user
+explicitly requests an immediate retry.
 
 Initial notification rules:
 

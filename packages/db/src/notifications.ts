@@ -7,8 +7,8 @@ import type {
   NotificationStatus,
   RepoProfile
 } from "@mo-devflow/shared";
-import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
-import type { RowDataPacket } from "mysql2";
+import { notificationStatusAllowsRetry, notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { addDaysToDateKey, dateKeyInTimezone } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
@@ -199,6 +199,7 @@ export const notificationDeliveryCooldownStatuses: NotificationStatus[] = [
   "sent",
   "failed_transient",
   "failed_permanent",
+  "retry_requested",
   "dry_run"
 ];
 
@@ -891,6 +892,102 @@ export async function recordNotificationDelivery(input: {
   );
 }
 
+export type NotificationRetryRequestResult =
+  | {
+      outcome: "requested";
+      deliveryId: number;
+      retryDeliveryId: number;
+      deliveryStatus: NotificationStatus;
+      dedupeKey: string;
+    }
+  | {
+      outcome: "not_retryable";
+      deliveryId: number;
+      deliveryStatus: NotificationStatus;
+    }
+  | {
+      outcome: "not_found";
+    };
+
+export async function requestNotificationDeliveryRetry(input: {
+  repoId: number;
+  deliveryId: number;
+  githubLogin: string;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
+}): Promise<NotificationRetryRequestResult> {
+  const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
+  const [deliveryRows] = await getPool().execute<RowData[]>(
+    `SELECT
+       d.*,
+       (
+         SELECT nd.id
+         FROM notification_deliveries nd
+         WHERE nd.repo_id = d.repo_id AND nd.dedupe_key = d.dedupe_key
+         ORDER BY nd.id DESC
+         LIMIT 1
+       ) AS latest_id,
+       (
+         SELECT nd.status
+         FROM notification_deliveries nd
+         WHERE nd.repo_id = d.repo_id AND nd.dedupe_key = d.dedupe_key
+         ORDER BY nd.id DESC
+         LIMIT 1
+       ) AS latest_status
+     FROM notification_deliveries d
+     WHERE d.id = ? AND d.repo_id = ? AND ${visibility.sql}
+     LIMIT 1`,
+    [input.deliveryId, input.repoId, ...visibility.params]
+  );
+  const delivery = deliveryRows[0];
+  if (!delivery) {
+    return { outcome: "not_found" };
+  }
+
+  const deliveryStatus = asString(delivery.latest_status) as NotificationStatus;
+  if (asNumber(delivery.latest_id) !== asNumber(delivery.id) || !notificationStatusAllowsRetry(deliveryStatus)) {
+    return {
+      outcome: "not_retryable",
+      deliveryId: asNumber(delivery.id),
+      deliveryStatus
+    };
+  }
+
+  const attemptedAt = nowSql();
+  const retryInsertValues: Array<string | number | null> = [
+    input.repoId,
+    delivery.attention_item_id === null || delivery.attention_item_id === undefined
+      ? null
+      : asNumber(delivery.attention_item_id),
+    delivery.source_type === null || delivery.source_type === undefined ? null : asString(delivery.source_type),
+    delivery.source_id === null || delivery.source_id === undefined ? null : asNumber(delivery.source_id),
+    asString(delivery.rule_key),
+    asString(delivery.object_type),
+    delivery.object_number === null || delivery.object_number === undefined ? null : asNumber(delivery.object_number),
+    asString(delivery.dedupe_key),
+    asString(delivery.channel),
+    asString(delivery.recipient),
+    `Manual retry requested by ${input.githubLogin} for delivery #${asNumber(delivery.id)} after ${deliveryStatus}.`,
+    attemptedAt
+  ];
+  const [result] = await getPool().execute<ResultSetHeader>(
+    `INSERT INTO notification_deliveries(
+      repo_id, attention_item_id, source_type, source_id, rule_key, object_type, object_number,
+      dedupe_key, channel, recipient, status, dry_run, payload_json,
+      provider_response, error_message, attempted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retry_requested', 0, NULL, NULL, ?, ?)`,
+    retryInsertValues
+  );
+
+  return {
+    outcome: "requested",
+    deliveryId: asNumber(delivery.id),
+    retryDeliveryId: Number(result.insertId),
+    deliveryStatus,
+    dedupeKey: asString(delivery.dedupe_key)
+  };
+}
+
 export type NotificationAcknowledgementResult =
   | {
       outcome: "acknowledged";
@@ -991,10 +1088,16 @@ export async function getNotificationHealth(input: {
   const [deliveryFailureRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS failed_count
      FROM notification_deliveries d
+     JOIN (
+       SELECT dedupe_key, MAX(id) AS latest_id
+       FROM notification_deliveries
+       WHERE repo_id = ?
+       GROUP BY dedupe_key
+     ) latest_delivery ON latest_delivery.latest_id = d.id
      WHERE d.repo_id = ? AND d.status IN ('failed_transient', 'failed_permanent')
        AND ${activeSourceWhere}
        AND ${visibility.sql}`,
-    [input.repoId, ...visibility.params]
+    [input.repoId, input.repoId, ...visibility.params]
   );
   const [unacknowledgedRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS unacknowledged_count

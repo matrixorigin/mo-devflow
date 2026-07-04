@@ -50,7 +50,12 @@ import type {
   WorkflowFixStateSnapshot,
   WorkflowViolationView
 } from "@mo-devflow/shared";
-import { csrfCookieName, csrfHeaderName, notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
+import {
+  csrfCookieName,
+  csrfHeaderName,
+  notificationStatusAllowsRetry,
+  notificationStatusRequiresAcknowledgement
+} from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
@@ -328,6 +333,9 @@ function notificationStatusColor(value: NotificationStatus): string {
   }
   if (value === "failed_transient" || value === "failed_permanent" || value === "skipped_no_webhook") {
     return "red";
+  }
+  if (value === "retry_requested") {
+    return "blue";
   }
   if (value === "dry_run" || value === "skipped_quiet_hours") {
     return "orange";
@@ -621,6 +629,7 @@ export default function App() {
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
+  const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
 
   async function load() {
@@ -757,6 +766,34 @@ export default function App() {
       setNotificationAckError(displayError(err));
     } finally {
       setNotificationAckSavingId(null);
+    }
+  }
+
+  async function retryNotification(delivery: NotificationDeliveryView) {
+    if (!session?.authenticated) {
+      setNotificationAckError("Connect GitHub token before retrying notifications.");
+      return;
+    }
+    if (!notificationStatusAllowsRetry(delivery.status)) {
+      setNotificationAckError(`${labelText(delivery.status)} notification deliveries cannot be retried.`);
+      return;
+    }
+    setNotificationRetrySavingId(delivery.id);
+    setNotificationAckError(null);
+    try {
+      const response = await fetch(`/api/notifications/deliveries/${delivery.id}/retry`, {
+        method: "POST",
+        headers: csrfHeaders(),
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      await load();
+    } catch (err) {
+      setNotificationAckError(displayError(err));
+    } finally {
+      setNotificationRetrySavingId(null);
     }
   }
 
@@ -1481,9 +1518,34 @@ export default function App() {
         dataIndex: "errorMessage",
         ellipsis: true,
         render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
+      },
+      {
+        title: "Retry",
+        width: 116,
+        render: (_, delivery) => {
+          const canRetry = notificationStatusAllowsRetry(delivery.status);
+          if (!canRetry) {
+            return <Text type="secondary">-</Text>;
+          }
+          return (
+            <Tooltip title={session?.authenticated ? "Retry notification delivery" : "Connect GitHub token to retry"}>
+              <span>
+                <Button
+                  size="small"
+                  icon={<RefreshCw size={14} />}
+                  disabled={!session?.authenticated}
+                  loading={notificationRetrySavingId === delivery.id}
+                  onClick={() => void retryNotification(delivery)}
+                >
+                  Retry
+                </Button>
+              </span>
+            </Tooltip>
+          );
+        }
       }
     ],
-    [notificationAckSavingId, session]
+    [notificationAckSavingId, notificationRetrySavingId, session]
   );
 
   const writeActionColumns: ColumnsType<WriteActionExecutionView> = useMemo(
@@ -2191,7 +2253,7 @@ export default function App() {
                   <Alert
                     className="band"
                     type="error"
-                    title="Notification acknowledgement failed"
+                    title="Notification action failed"
                     description={notificationAckError}
                     showIcon
                   />
@@ -2231,7 +2293,7 @@ export default function App() {
                   size="middle"
                   columns={notificationColumns}
                   dataSource={data.notifications.lastDeliveries}
-                  scroll={{ x: 1220 }}
+                  scroll={{ x: 1340 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
                 />

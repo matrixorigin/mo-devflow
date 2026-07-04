@@ -578,6 +578,7 @@ Notifications must be controlled by policy:
 - Resolve or suppress notifications automatically when the underlying attention item is no longer true.
 - Record repeated delivery failures and show them on the dashboard.
 - Distinguish transient delivery failures that should retry with backoff from permanent delivery failures that need configuration or operator action.
+- Let authenticated users request an immediate retry for the latest failed delivery without sending directly from the browser request.
 - Record notification delivery state.
 - Record acknowledgement state when supported by the channel or by the product UI.
 

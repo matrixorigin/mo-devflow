@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   enqueueJobsNow: vi.fn(),
   getRepoId: vi.fn(),
   recordManualRefreshRequest: vi.fn(),
+  requestNotificationDeliveryRetry: vi.fn(),
   upsertRepoProfile: vi.fn()
 }));
 
@@ -26,6 +27,7 @@ vi.mock("@mo-devflow/db", () => ({
   enqueueJobsNow: mocks.enqueueJobsNow,
   getRepoId: mocks.getRepoId,
   recordManualRefreshRequest: mocks.recordManualRefreshRequest,
+  requestNotificationDeliveryRetry: mocks.requestNotificationDeliveryRetry,
   upsertRepoProfile: mocks.upsertRepoProfile
 }));
 
@@ -80,6 +82,28 @@ describe("CSRF protected routes", () => {
         message: "Refresh the session and retry the request."
       });
       expect(mocks.acknowledgeNotificationDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects notification retry before updating state when CSRF is missing", async () => {
+    const app = Fastify();
+    await registerNotificationRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/notifications/deliveries/10/retry"
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({
+        error: "csrf_required",
+        message: "Refresh the session and retry the request."
+      });
+      expect(mocks.requestNotificationDeliveryRetry).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

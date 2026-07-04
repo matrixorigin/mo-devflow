@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildGitHubWriteCapabilities,
   isSupportedGitHubWebhookEvent,
+  notificationStatusAllowsRetry,
   notificationStatusRequiresAcknowledgement,
   supportedGitHubWebhookEvents
 } from "./index";
@@ -93,9 +94,19 @@ describe("notification acknowledgement policy", () => {
     expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("failed_transient")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("failed_permanent")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("retry_requested")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+  });
+
+  test("only failed notification deliveries can be manually retried", () => {
+    expect(notificationStatusAllowsRetry("failed_transient")).toBe(true);
+    expect(notificationStatusAllowsRetry("failed_permanent")).toBe(true);
+    expect(notificationStatusAllowsRetry("retry_requested")).toBe(false);
+    expect(notificationStatusAllowsRetry("sent")).toBe(false);
+    expect(notificationStatusAllowsRetry("dry_run")).toBe(false);
+    expect(notificationStatusAllowsRetry("skipped_no_webhook")).toBe(false);
   });
 });
 
