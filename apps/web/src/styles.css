@@ -2578,6 +2578,114 @@ button.testing-board-stat:focus-visible {
   padding: 4px 8px;
 }
 
+.observed-person-preview {
+  width: 100%;
+}
+
+.observed-person-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.observed-person-summary span {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.observed-person-summary strong {
+  color: #111827;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.observed-person-summary small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.observed-person-columns {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.observed-person-columns section {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.observed-person-section-title {
+  align-items: center;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.observed-person-list {
+  display: grid;
+  max-height: 390px;
+  overflow: auto;
+}
+
+.observed-person-row {
+  align-items: start;
+  border-bottom: 1px solid #f3f4f6;
+  color: inherit;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+  text-decoration: none;
+}
+
+.observed-person-row:hover {
+  background: #eff6ff;
+}
+
+.observed-person-row:last-child {
+  border-bottom: 0;
+}
+
+.observed-person-row-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.observed-person-row-main span {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.observed-person-row-main small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.observed-person-row-tags {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 260px;
+}
+
 .selected-person-workbench {
   display: grid;
   gap: 16px;
@@ -4350,6 +4458,19 @@ button.testing-board-stat:focus-visible {
 
   .activity-summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .observed-person-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .observed-person-row {
+    grid-template-columns: 1fr;
+  }
+
+  .observed-person-row-tags {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .critical-issue-row {

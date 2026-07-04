@@ -104,6 +104,7 @@ import {
   flowThreadNextAction,
   flowThreadStatusCounts,
   flowEfficiencySummary,
+  observedPeopleFromDashboard,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalGanttChart,
@@ -173,6 +174,14 @@ type PersonalDrilldownFilter =
 type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
+
+interface ObservedPersonPreview {
+  login: string;
+  summary: PersonSummary;
+  issues: CriticalIssueView[];
+  prs: PendingPrView[];
+}
+
 interface WebhookRetryResult {
   retriedDeliveries: number;
   requestId: number | null;
@@ -1657,6 +1666,47 @@ function filterPeople(
   return people.filter((person) => personMatchesScope(person, personalByLogin, scopeFilter));
 }
 
+function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
+  if (filter === "active_issues") {
+    return "critical";
+  }
+  if (filter === "pr_attention") {
+    return "attention";
+  }
+  if (filter === "pending_pr") {
+    return "pending_pr";
+  }
+  if (filter === "testing") {
+    return "testing";
+  }
+  if (filter === "triage") {
+    return "triage";
+  }
+  return "yesterday_pr";
+}
+
+function observedPersonPreview(data: DashboardSummary, login: string): ObservedPersonPreview | null {
+  const summary = observedPeopleFromDashboard({
+    criticalIssues: data.criticalIssues,
+    pendingPrs: data.pendingPrs
+  }).find((person) => person.login === login);
+
+  if (!summary) {
+    return null;
+  }
+
+  const criticalIssuesByPr = criticalIssueContextsByPullRequest(data.criticalIssues);
+  return {
+    login,
+    summary,
+    issues: sortCriticalIssuesForAction(data.criticalIssues.filter((issue) => issue.ownerLogin === login)),
+    prs: sortPendingPrsForAction(
+      data.pendingPrs.filter((pr) => pr.ownerLogin === login),
+      criticalIssuesByPr
+    )
+  };
+}
+
 function CriticalIssueFilterBar({
   issues,
   aiFilter,
@@ -1807,7 +1857,13 @@ function TeamRotationOverview({
   );
   const prRisks = sortPendingPrsForAction(data.pendingPrs, criticalIssuesByPr);
   const testingIssues = sortTestingIssuesForAction(data.testing.issues);
-  const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
+  const observedPeople = observedPeopleFromDashboard({
+    criticalIssues: data.criticalIssues,
+    pendingPrs: data.pendingPrs
+  });
+  const peopleSource = data.people.length > 0 ? data.people : observedPeople;
+  const peopleSourceIsObserved = data.people.length === 0 && observedPeople.length > 0;
+  const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews).slice(0, 6);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
@@ -1886,8 +1942,15 @@ function TeamRotationOverview({
           />
           <TeamMonitorTile
             label="People focus"
-            value={data.people.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0).length}
-            detail={`${data.people.length} watched | ${data.people.reduce((sum, person) => sum + person.needsTriageIssues, 0)} triage`}
+            value={peopleSource.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0).length}
+            detail={
+              peopleSourceIsObserved
+                ? `${peopleSource.length} observed | configure watched users`
+                : `${data.people.length} watched | ${data.people.reduce(
+                    (sum, person) => sum + person.needsTriageIssues,
+                    0
+                  )} triage`
+            }
             tone={peopleFocus.length > 0 ? "attention" : "good"}
             onClick={() => onOpenPeopleFilter("attention")}
           />
@@ -1959,7 +2022,12 @@ function TeamRotationOverview({
         </div>
 
         <aside className="team-rotation-side">
-          <TeamPeopleFocus people={peopleFocus} personalViews={data.personalViews} onPersonSelect={onPersonSelect} />
+          <TeamPeopleFocus
+            people={peopleFocus}
+            personalViews={data.personalViews}
+            observedMode={peopleSourceIsObserved}
+            onPersonSelect={peopleSourceIsObserved ? () => onOpenPeopleFilter("attention") : onPersonSelect}
+          />
           <TeamOpsStatus data={data} onNavigate={onNavigate} />
         </aside>
       </div>
@@ -2845,21 +2913,26 @@ function TeamTestingIssueRow({
 function TeamPeopleFocus({
   people,
   personalViews,
+  observedMode,
   onPersonSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
+  observedMode: boolean;
   onPersonSelect: (login: string) => void;
 }) {
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
         <Text strong>People Focus</Text>
-        <Tag>{people.length}</Tag>
+        <Tag>{observedMode ? "observed" : "watched"}</Tag>
       </div>
       <div className="team-people-list">
         {people.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No watched people with active risk" />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={observedMode ? "No active owners observed" : "No watched people with active risk"}
+          />
         ) : (
           people.map((person) => (
             <button
@@ -2877,6 +2950,9 @@ function TeamPeopleFocus({
                   {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention |{" "}
                   {testingCountForPerson(person.login, personalViews)} testing work
                 </small>
+                {observedMode ? (
+                  <small>Visible cache owner; configure watched users for full personal view</small>
+                ) : null}
               </span>
             </button>
           ))
@@ -5532,6 +5608,7 @@ function PersonWorkloadBoard({
   selectedLogin,
   onSelect,
   onMetricSelect,
+  mode = "watched",
   compact = false
 }: {
   people: PersonSummary[];
@@ -5539,6 +5616,7 @@ function PersonWorkloadBoard({
   selectedLogin: string | null;
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  mode?: "watched" | "observed";
   compact?: boolean;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
@@ -5552,7 +5630,11 @@ function PersonWorkloadBoard({
       : sortedPeopleByWorkload;
 
   if (sortedPeople.length === 0) {
-    return <Empty description="No watched users configured" />;
+    return (
+      <Empty
+        description={mode === "observed" ? "No active owners observed in visible cache" : "No watched users configured"}
+      />
+    );
   }
 
   return (
@@ -5577,7 +5659,9 @@ function PersonWorkloadBoard({
               type="button"
               className="person-card-open"
               aria-pressed={selected}
-              aria-label={`Open ${person.login} workbench`}
+              aria-label={
+                mode === "observed" ? `Preview ${person.login} observed work` : `Open ${person.login} workbench`
+              }
               onClick={() => onSelect(person.login)}
             >
               <span className="person-card-header">
@@ -5651,6 +5735,145 @@ function PersonWorkloadBoard({
         );
       })}
     </div>
+  );
+}
+
+function ObservedPersonPreviewModal({
+  preview,
+  onClose
+}: {
+  preview: ObservedPersonPreview | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      title={preview ? `Observed owner: ${preview.login}` : "Observed owner"}
+      open={Boolean(preview)}
+      width={920}
+      footer={<Button onClick={onClose}>Close</Button>}
+      onCancel={onClose}
+    >
+      {preview ? (
+        <Space direction="vertical" size={14} className="observed-person-preview">
+          <Alert
+            type="info"
+            showIcon
+            title="Derived from visible issue and PR cache"
+            description="Watched users are not configured, so this preview uses only current active s-1/s0 issue owners and pending PR authors. Configure watched users for triage, deferred, yesterday PR, tester workload, and personal analytics."
+          />
+          <div className="observed-person-summary" aria-label={`${preview.login} observed workload summary`}>
+            <span>
+              <strong>{preview.summary.activeCriticalIssues}</strong>
+              <small>s-1/s0</small>
+            </span>
+            <span>
+              <strong>{preview.summary.attentionPrs}</strong>
+              <small>PR attention</small>
+            </span>
+            <span>
+              <strong>{preview.summary.pendingPrs}</strong>
+              <small>pending PR</small>
+            </span>
+          </div>
+          <div className="observed-person-columns">
+            <section>
+              <div className="observed-person-section-title">
+                <Text strong>Active s-1/s0 Issues</Text>
+                <Tag>{preview.issues.length}</Tag>
+              </div>
+              <div className="observed-person-list">
+                {preview.issues.length === 0 ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="No visible active issue owned by this login"
+                  />
+                ) : (
+                  preview.issues.map((issue) => (
+                    <a
+                      className="observed-person-row"
+                      href={issue.htmlUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      key={issue.number}
+                    >
+                      <span className="observed-person-row-main">
+                        <span>
+                          #{issue.number} {issue.title}
+                        </span>
+                        <small>
+                          {issue.criticalAgeHours === null
+                            ? "severity start unknown"
+                            : `${hours(issue.criticalAgeHours)} since severity start`}
+                        </small>
+                      </span>
+                      <span className="observed-person-row-tags">
+                        {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
+                        <Tag color={issue.isComplete ? "green" : "orange"}>
+                          {issue.isComplete ? "complete cache" : "partial cache"}
+                        </Tag>
+                        <ExternalLink size={13} aria-hidden="true" />
+                      </span>
+                    </a>
+                  ))
+                )}
+              </div>
+            </section>
+            <section>
+              <div className="observed-person-section-title">
+                <Text strong>Pending PRs</Text>
+                <Tag>{preview.prs.length}</Tag>
+              </div>
+              <div className="observed-person-list">
+                {preview.prs.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible pending PR by this login" />
+                ) : (
+                  preview.prs.map((pr) => {
+                    const reasons = prAttentionReasons(pr);
+                    return (
+                      <a
+                        className="observed-person-row"
+                        href={pr.htmlUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        key={pr.number}
+                      >
+                        <span className="observed-person-row-main">
+                          <span>
+                            #{pr.number} {pr.title}
+                          </span>
+                          <small>
+                            {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
+                          </small>
+                        </span>
+                        <span className="observed-person-row-tags">
+                          {reasons.length > 0 ? (
+                            reasons.slice(0, 2).map((reason) => (
+                              <Tag color="orange" key={reason}>
+                                {reason}
+                              </Tag>
+                            ))
+                          ) : (
+                            <Tag>no blocker</Tag>
+                          )}
+                          {pr.linkedIssueNumbers.length > 0 ? (
+                            <Tag color="blue">#{pr.linkedIssueNumbers.slice(0, 2).join(", #")}</Tag>
+                          ) : (
+                            <Tag color={pr.isComplete ? "orange" : "default"}>
+                              {pr.isComplete ? "unlinked" : "link sync pending"}
+                            </Tag>
+                          )}
+                          <ExternalLink size={13} aria-hidden="true" />
+                        </span>
+                      </a>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          </div>
+        </Space>
+      ) : null}
+    </Modal>
   );
 }
 
@@ -8754,6 +8977,7 @@ export default function App() {
   const [webhookRetrySaving, setWebhookRetrySaving] = useState(false);
   const [webhookRetryResult, setWebhookRetryResult] = useState<WebhookRetryResult | null>(null);
   const [webhookRetryError, setWebhookRetryError] = useState<string | null>(null);
+  const [observedPersonPreviewState, setObservedPersonPreviewState] = useState<ObservedPersonPreview | null>(null);
   const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(false);
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
@@ -8941,6 +9165,33 @@ export default function App() {
     setPersonalDrilldownFilter(filter);
     setSelectedPerson(login);
     selectView("Personal", login);
+  }
+
+  function openObservedPersonPreview(login: string) {
+    if (!data) {
+      return;
+    }
+    const preview = observedPersonPreview(data, login);
+    if (preview) {
+      setObservedPersonPreviewState(preview);
+    }
+  }
+
+  function openPeopleBoardPerson(login: string) {
+    if (peopleBoardUsesObserved) {
+      openObservedPersonPreview(login);
+      return;
+    }
+    openPersonWorkbench(login);
+  }
+
+  function openPeopleBoardMetric(login: string, filter: PersonalDrilldownFilter) {
+    if (peopleBoardUsesObserved) {
+      setPeopleScopeFilter(peopleScopeForPersonalMetric(filter));
+      openObservedPersonPreview(login);
+      return;
+    }
+    openPersonalDrilldown(login, filter);
   }
 
   function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
@@ -10132,6 +10383,14 @@ export default function App() {
     );
   const selectedPersonalView =
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
+  const observedPeople = data
+    ? observedPeopleFromDashboard({
+        criticalIssues: data.criticalIssues,
+        pendingPrs: data.pendingPrs
+      })
+    : [];
+  const peopleBoardUsesObserved = Boolean(data && data.people.length === 0 && observedPeople.length > 0);
+  const peopleBoardPeople = data ? (data.people.length > 0 ? data.people : observedPeople) : [];
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
@@ -10142,7 +10401,7 @@ export default function App() {
         filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter)
       )
     : [];
-  const filteredPeople = data ? filterPeople(data.people, data.personalViews, peopleScopeFilter) : [];
+  const filteredPeople = data ? filterPeople(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
   const teamFlowSummary = data
     ? flowEfficiencySummary({
         points: teamTrendPoints,
@@ -10924,6 +11183,20 @@ export default function App() {
                     </button>
                   </Space>
                 </div>
+                {!data.personalViews.length && observedPeople.length > 0 ? (
+                  <Alert
+                    className="band"
+                    type="info"
+                    showIcon
+                    title="Personal workbench needs watched users"
+                    description="The repository profile has no watched users yet. Open People to inspect observed active owners from visible issue and PR cache, then configure the watched user list for full personal queues and analytics."
+                    action={
+                      <Button size="small" onClick={() => selectView("People")}>
+                        Open People
+                      </Button>
+                    }
+                  />
+                ) : null}
                 <PersonWorkloadBoard
                   compact
                   people={data.people}
@@ -11070,33 +11343,44 @@ export default function App() {
                       className={`inline-filter-chip ${peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("all")}
                     >
-                      {data.people.length} watched
+                      {peopleBoardUsesObserved
+                        ? `${peopleBoardPeople.length} observed`
+                        : `${data.people.length} watched`}
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        data.people.some((person) => person.activeCriticalIssues > 0)
+                        peopleBoardPeople.some((person) => person.activeCriticalIssues > 0)
                           ? "inline-filter-chip-red"
                           : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("critical")}
                     >
-                      {data.people.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} s-1/s0
+                      {peopleBoardPeople.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} s-1/s0
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        data.people.some((person) => person.attentionPrs > 0) ? "" : "inline-filter-chip-muted"
+                        peopleBoardPeople.some((person) => person.attentionPrs > 0) ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("attention")}
                     >
-                      {data.people.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
+                      {peopleBoardPeople.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
                     </button>
                   </Space>
                 </div>
+                {peopleBoardUsesObserved ? (
+                  <Alert
+                    className="band"
+                    type="info"
+                    showIcon
+                    title="Watched users are not configured"
+                    description="This board is temporarily grouped by owners observed in visible active s-1/s0 issues and pending PRs. Configure watched users to unlock needs-triage, deferred, yesterday PR, testing ownership, and personal analytics."
+                  />
+                ) : null}
                 <PeopleFilterBar scopeFilter={peopleScopeFilter} onScopeFilterChange={setPeopleScopeFilter} />
                 <PeopleBoardSummary
-                  people={data.people}
+                  people={peopleBoardPeople}
                   personalViews={data.personalViews}
                   filteredPeople={filteredPeople}
                   scopeFilter={peopleScopeFilter}
@@ -11106,8 +11390,9 @@ export default function App() {
                   people={filteredPeople}
                   personalViews={data.personalViews}
                   selectedLogin={selectedPersonalView?.login ?? null}
-                  onSelect={openPersonWorkbench}
-                  onMetricSelect={openPersonalDrilldown}
+                  onSelect={openPeopleBoardPerson}
+                  onMetricSelect={openPeopleBoardMetric}
+                  mode={peopleBoardUsesObserved ? "observed" : "watched"}
                 />
               </section>
             ) : null}
@@ -11115,6 +11400,10 @@ export default function App() {
         ) : null}
       </Content>
       <TeamWorkPreviewModal preview={workObjectPreview} onClose={() => setWorkObjectPreview(null)} />
+      <ObservedPersonPreviewModal
+        preview={observedPersonPreviewState}
+        onClose={() => setObservedPersonPreviewState(null)}
+      />
       <Modal
         title="Connect GitHub Token"
         open={tokenModalOpen}

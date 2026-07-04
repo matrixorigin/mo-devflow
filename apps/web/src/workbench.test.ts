@@ -14,6 +14,7 @@ import {
   flowEfficiencySummary,
   flowThreadDurationWarnings,
   flowThreadStatusCounts,
+  observedPeopleFromDashboard,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalFlowThreadCounts,
@@ -89,6 +90,54 @@ describe("person workload summaries", () => {
         2
       )
     ).toEqual(["4 PR attention", "2 testing work", "3 needs triage", "2 pending PRs", "1 deferred"]);
+  });
+
+  it("derives observed owners from visible critical issues and pending PRs when watched users are absent", () => {
+    const people = observedPeopleFromDashboard({
+      criticalIssues: [
+        criticalIssue({ number: 1, ownerLogin: "issue-owner" }),
+        criticalIssue({ number: 2, ownerLogin: "shared-owner" }),
+        criticalIssue({ number: 3, ownerLogin: null })
+      ],
+      pendingPrs: [
+        pullRequest({ number: 10, ownerLogin: "shared-owner", attentionFlags: ["ci_failed"] }),
+        pullRequest({ number: 11, ownerLogin: "pr-owner" }),
+        pullRequest({ number: 12, ownerLogin: "pr-owner", attentionFlags: ["review_requested_no_response"] })
+      ]
+    });
+
+    expect(people).toEqual([
+      {
+        login: "shared-owner",
+        activeCriticalIssues: 1,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0,
+        pendingPrs: 1,
+        attentionPrs: 1
+      },
+      {
+        login: "issue-owner",
+        activeCriticalIssues: 1,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0,
+        pendingPrs: 0,
+        attentionPrs: 0
+      },
+      {
+        login: "pr-owner",
+        activeCriticalIssues: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0,
+        pendingPrs: 2,
+        attentionPrs: 1
+      }
+    ]);
   });
 });
 
@@ -767,7 +816,7 @@ function criticalIssue(input: Partial<CriticalIssueView>): CriticalIssueView {
   return {
     ...personalIssue(input),
     severity: input.severity ?? "severity/s0",
-    ownerLogin: input.ownerLogin ?? "alice",
+    ownerLogin: input.ownerLogin === undefined ? "alice" : input.ownerLogin,
     ownerScope: input.ownerScope ?? "watched",
     ownerReason: input.ownerReason ?? "assignee",
     workflowSkipped: input.workflowSkipped ?? false,

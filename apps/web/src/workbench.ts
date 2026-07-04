@@ -1,6 +1,7 @@
 import type {
   CriticalIssueLinkedPullRequestView,
   CriticalIssueView,
+  PendingPrView,
   PersonSummary,
   PersonalActionView,
   PersonalIssueView,
@@ -327,6 +328,48 @@ export function sortPeopleByWorkload(people: PersonSummary[]): PersonSummary[] {
     const scoreDelta = personWorkloadScore(right) - personWorkloadScore(left);
     return scoreDelta === 0 ? left.login.localeCompare(right.login) : scoreDelta;
   });
+}
+
+export function observedPeopleFromDashboard(input: {
+  criticalIssues: CriticalIssueView[];
+  pendingPrs: PendingPrView[];
+}): PersonSummary[] {
+  const peopleByLogin = new Map<string, PersonSummary>();
+
+  const personForLogin = (login: string): PersonSummary => {
+    const existing = peopleByLogin.get(login);
+    if (existing) {
+      return existing;
+    }
+    const next: PersonSummary = {
+      login,
+      activeCriticalIssues: 0,
+      needsTriageIssues: 0,
+      deferredIssues: 0,
+      prsCreatedYesterday: 0,
+      prsMergedYesterday: 0,
+      pendingPrs: 0,
+      attentionPrs: 0
+    };
+    peopleByLogin.set(login, next);
+    return next;
+  };
+
+  for (const issue of input.criticalIssues) {
+    if (issue.ownerLogin) {
+      personForLogin(issue.ownerLogin).activeCriticalIssues += 1;
+    }
+  }
+
+  for (const pr of input.pendingPrs) {
+    const person = personForLogin(pr.ownerLogin);
+    person.pendingPrs += 1;
+    if (pr.attentionFlags.length > 0) {
+      person.attentionPrs += 1;
+    }
+  }
+
+  return sortPeopleByWorkload([...peopleByLogin.values()]);
 }
 
 function workloadStatusRank(status: WorkloadStatus): number {
