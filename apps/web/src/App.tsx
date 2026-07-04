@@ -256,13 +256,49 @@ function displayError(value: unknown): string {
   return String(value);
 }
 
-async function responseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { message?: string; error?: string };
-    return body.message ?? body.error ?? `API returned ${response.status}`;
-  } catch {
-    return `API returned ${response.status}`;
+class ApiResponseError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(input: { message: string; status: number; code: string | null; retryAfterSeconds: number | null }) {
+    super(input.message);
+    this.name = "ApiResponseError";
+    this.status = input.status;
+    this.code = input.code;
+    this.retryAfterSeconds = input.retryAfterSeconds;
   }
+}
+
+function parseRetryAfterSeconds(response: Response, bodyRetryAfter: unknown): number | null {
+  if (typeof bodyRetryAfter === "number" && Number.isFinite(bodyRetryAfter) && bodyRetryAfter > 0) {
+    return Math.ceil(bodyRetryAfter);
+  }
+  const headerRetryAfter = Number(response.headers.get("retry-after"));
+  return Number.isFinite(headerRetryAfter) && headerRetryAfter > 0 ? Math.ceil(headerRetryAfter) : null;
+}
+
+async function responseApiError(response: Response): Promise<ApiResponseError> {
+  try {
+    const body = (await response.json()) as { message?: string; error?: string; retryAfterSeconds?: unknown };
+    return new ApiResponseError({
+      message: body.message ?? body.error ?? `API returned ${response.status}`,
+      status: response.status,
+      code: body.error ?? null,
+      retryAfterSeconds: parseRetryAfterSeconds(response, body.retryAfterSeconds)
+    });
+  } catch {
+    return new ApiResponseError({
+      message: `API returned ${response.status}`,
+      status: response.status,
+      code: null,
+      retryAfterSeconds: parseRetryAfterSeconds(response, null)
+    });
+  }
+}
+
+async function responseError(response: Response): Promise<string> {
+  return (await responseApiError(response)).message;
 }
 
 function readBrowserCookie(name: string): string | null {
@@ -327,6 +363,16 @@ function workflowSkipTooltip(): string {
 
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function retryDelayText(seconds: number): string {
+  const safeSeconds = Math.max(1, Math.ceil(seconds));
+  if (safeSeconds < 60) {
+    return `${safeSeconds}s`;
+  }
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
 }
 
 function workloadStatusColor(status: WorkloadStatus): string {
@@ -5041,6 +5087,8 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenRetryUntil, setTokenRetryUntil] = useState<number | null>(null);
+  const [tokenRetryRemainingSeconds, setTokenRetryRemainingSeconds] = useState<number | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(initialSelectedPerson);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
@@ -5073,6 +5121,24 @@ export default function App() {
   useEffect(() => {
     latestDataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    if (tokenRetryUntil === null) {
+      setTokenRetryRemainingSeconds(null);
+      return;
+    }
+
+    const updateRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((tokenRetryUntil - Date.now()) / 1000));
+      setTokenRetryRemainingSeconds(remaining);
+      if (remaining === 0) {
+        setTokenRetryUntil(null);
+      }
+    };
+    updateRemaining();
+    const timer = window.setInterval(updateRemaining, 1000);
+    return () => window.clearInterval(timer);
+  }, [tokenRetryUntil]);
 
   async function load(options: { silent?: boolean } = {}) {
     if (dashboardRefreshInFlight.current) {
@@ -5139,13 +5205,19 @@ export default function App() {
         body: JSON.stringify({ token: tokenInput.trim() })
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setSession((await response.json()) as SessionView);
       setTokenInput("");
+      setTokenRetryUntil(null);
       setTokenModalOpen(false);
     } catch (err) {
-      setTokenError(displayError(err));
+      if (err instanceof ApiResponseError && err.retryAfterSeconds) {
+        setTokenRetryUntil(Date.now() + err.retryAfterSeconds * 1000);
+        setTokenError(`${err.message} Try again in ${retryDelayText(err.retryAfterSeconds)}.`);
+      } else {
+        setTokenError(displayError(err));
+      }
     } finally {
       setTokenSaving(false);
     }
@@ -6260,6 +6332,7 @@ export default function App() {
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
+  const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
 
   return (
     <Layout className="app-shell">
@@ -7070,9 +7143,9 @@ export default function App() {
       <Modal
         title="Connect GitHub Token"
         open={tokenModalOpen}
-        okText="Connect"
+        okText={tokenRetryActive ? `Retry in ${retryDelayText(tokenRetryRemainingSeconds)}` : "Connect"}
         confirmLoading={tokenSaving}
-        okButtonProps={{ disabled: tokenInput.trim().length < 20 }}
+        okButtonProps={{ disabled: tokenInput.trim().length < 20 || tokenRetryActive }}
         onOk={() => void connectGitHubToken()}
         onCancel={() => {
           setTokenModalOpen(false);
@@ -7095,9 +7168,17 @@ export default function App() {
             value={tokenInput}
             autoComplete="off"
             placeholder="GitHub token"
+            disabled={tokenRetryActive}
             onChange={(event) => setTokenInput(event.target.value)}
           />
-          {tokenError ? <Alert type="error" title={tokenError} showIcon /> : null}
+          {tokenRetryActive ? (
+            <Alert
+              type="warning"
+              title={`GitHub token connection is rate limited. Retry in ${retryDelayText(tokenRetryRemainingSeconds)}.`}
+              showIcon
+            />
+          ) : null}
+          {tokenError ? <Alert type={tokenRetryActive ? "warning" : "error"} title={tokenError} showIcon /> : null}
         </Space>
       </Modal>
       <Modal

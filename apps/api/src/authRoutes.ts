@@ -194,7 +194,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
           ? "GitHub rejected the token."
           : rateLimited
             ? "GitHub rate limited the repository permission check. Retry later."
-            : "GitHub repository permission check failed."
+            : "GitHub repository permission check failed.",
+        retryAfterSeconds: repoPermissionResult.retryAfterSeconds ?? undefined
       });
     }
 

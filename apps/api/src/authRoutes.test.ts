@@ -366,4 +366,41 @@ describe("auth routes", () => {
       await app.close();
     }
   });
+
+  test("returns retry guidance when repository permission checks are rate limited", async () => {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+    mocks.fetchIssueWritePermission.mockRejectedValue(new Error("rate limited"));
+    mocks.classifyGitHubError.mockReturnValue({
+      kind: "rate_limited",
+      retriable: true,
+      status: 403,
+      message: "rate limited",
+      rateLimitRemaining: 0,
+      rateLimitResetAt: "2026-07-04T01:00:00.000Z",
+      retryAfterSeconds: 120
+    });
+    const token = `ghp_${"c".repeat(40)}`;
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/session/github-token",
+        payload: { token }
+      });
+
+      expect(response.statusCode).toBe(429);
+      expect(response.headers["retry-after"]).toBe("120");
+      expect(response.json()).toEqual({
+        error: "github_repo_permission_check_rate_limited",
+        message: "GitHub rate limited the repository permission check. Retry later.",
+        retryAfterSeconds: 120
+      });
+      expect(mocks.upsertGitHubTokenBinding).not.toHaveBeenCalled();
+      expect(mocks.createUserSession).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 });
