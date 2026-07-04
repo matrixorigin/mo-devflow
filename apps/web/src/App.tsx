@@ -625,10 +625,10 @@ function testingStateColor(state: TestingFlowState): string {
 
 function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "test_requested") {
-    return "legacy test signal";
+    return "legacy PR test signal";
   }
   if (state === "testing") {
-    return "issue in test";
+    return "linked issue in test";
   }
   if (state === "dev_done") {
     return "development done";
@@ -650,6 +650,10 @@ function testingSignalBusinessLabel(signal: string): string {
   if (issueAssignee) {
     return `issue #${issueAssignee[1]} assigned to ${issueAssignee[2]}`;
   }
+  const issueLabel = signal.match(/^issue_label:#(\d+):(.+)$/);
+  if (issueLabel) {
+    return `issue #${issueLabel[1]} label ${issueLabel[2]}`;
+  }
   if (signal.startsWith("reviewer:")) {
     return `PR reviewer signal: ${signal.slice("reviewer:".length)}`;
   }
@@ -663,6 +667,58 @@ function testingSignalBusinessLabel(signal: string): string {
     return `comment signal: ${signal.slice("comment:".length)}`;
   }
   return labelText(signal);
+}
+
+function testingSignalTagLabel(signal: string): string {
+  const issueAssignee = signal.match(/^issue_assignee:#(\d+):(.+)$/);
+  if (issueAssignee) {
+    return `tester assignment: ${issueAssignee[2]}`;
+  }
+  const issueLabel = signal.match(/^issue_label:#(\d+):(.+)$/);
+  if (issueLabel) {
+    return `issue label: ${issueLabel[2]}`;
+  }
+  if (signal.startsWith("reviewer:")) {
+    return `legacy PR reviewer: ${signal.slice("reviewer:".length)}`;
+  }
+  if (signal.startsWith("assignee:")) {
+    return `legacy PR assignee: ${signal.slice("assignee:".length)}`;
+  }
+  if (signal.startsWith("label:")) {
+    return `legacy PR label: ${signal.slice("label:".length)}`;
+  }
+  if (signal.startsWith("comment:")) {
+    return "legacy PR comment signal";
+  }
+  return labelText(signal);
+}
+
+function testingSignalTagColor(signal: string): string {
+  if (signal.startsWith("issue_label:")) {
+    return "purple";
+  }
+  if (signal.startsWith("issue_assignee:")) {
+    return "blue";
+  }
+  if (
+    signal.startsWith("reviewer:") ||
+    signal.startsWith("assignee:") ||
+    signal.startsWith("label:") ||
+    signal.startsWith("comment:")
+  ) {
+    return "gold";
+  }
+  return "default";
+}
+
+function testingIssueHandoffSummary(issue: TestingIssueQueueView): string {
+  if (issue.testingSignals.length > 0) {
+    return `handoff: ${issue.testingSignals.slice(0, 2).map(testingSignalTagLabel).join(", ")}`;
+  }
+  if (issue.testers.length > 0) {
+    return `handoff: tester assignment`;
+  }
+  return "handoff evidence not visible";
 }
 
 function ciColor(value: string): string {
@@ -1136,7 +1192,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "issue in test";
+    return "linked issue in test";
   }
   if (filter === "stale_testing") {
     return "waiting on test";
@@ -1421,7 +1477,7 @@ function peopleScopeLabel(filter: PeopleScopeFilter): string {
     return "pending PR";
   }
   if (filter === "testing") {
-    return "testing";
+    return "test-linked PR";
   }
   if (filter === "yesterday_pr") {
     return "yesterday PR";
@@ -2562,8 +2618,8 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
-          {pr.testingQueueAgeHours !== null ? <Tag>test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+          <Tag color={testingStateColor(pr.testingState)}>linked issue in test</Tag>
+          {pr.testingQueueAgeHours !== null ? <Tag>issue test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
     </Space>
@@ -2609,6 +2665,14 @@ function TeamTestingIssueRow({
           {issue.testers.slice(0, 4).map((tester) => (
             <Tag key={tester}>{tester}</Tag>
           ))}
+          {issue.testingSignals.slice(0, 3).map((signal) => (
+            <Tooltip title={testingSignalBusinessLabel(signal)} key={signal}>
+              <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
+            </Tooltip>
+          ))}
+          {issue.testers.length === 0 && issue.testingSignals.length === 0 ? (
+            <Tag color="gold">handoff evidence pending</Tag>
+          ) : null}
           <Tag>{issue.linkedPullRequests.length} linked PR</Tag>
           {blockerCount > 0 ? <Tag color="orange">{blockerCount} PR blockers</Tag> : null}
           {issue.syncError ? (
@@ -2677,7 +2741,7 @@ function TeamPeopleFocus({
                 <strong>{person.login}</strong>
                 <small>
                   {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention |{" "}
-                  {testingCountForPerson(person.login, personalViews)} testing
+                  {testingCountForPerson(person.login, personalViews)} test-linked PR
                 </small>
               </span>
             </button>
@@ -3040,7 +3104,7 @@ function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { ti
   if (data.testing.staleQueueIssues > 0) {
     return {
       title: `${data.testing.staleQueueIssues} issues have waited on test too long.`,
-      detail: `${data.testing.queueIssues} issues are assigned to configured testers.`
+      detail: `${data.testing.queueIssues} issues match configured testing handoff rules.`
     };
   }
   if (data.counts.attentionPrs > 0) {
@@ -3120,7 +3184,9 @@ function prActiveIssueRiskScore(activeIssues: PrCriticalIssueContext[]): number 
 
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
-    return pr.testingTesters.length > 0 ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "issue in test";
+    return pr.testingTesters.length > 0
+      ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
+      : "linked issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -3144,7 +3210,7 @@ function teamPrNextAction(pr: PendingPrView): string {
     title: pr.title,
     htmlUrl: pr.htmlUrl,
     ownerLogin: pr.ownerLogin,
-    phase: isTestingQueuePr(pr) ? "Issue in test" : "Pending PR",
+    phase: isTestingQueuePr(pr) ? "Linked issue in test" : "Pending PR",
     tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
     priority: 0,
     ageHours: pr.ageHours,
@@ -4077,14 +4143,14 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="issue in test"
+        label="linked issue in test"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
-        label="test wait >24h"
+        label="issue test wait >24h"
         value={staleTestingPrs}
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
@@ -4211,7 +4277,7 @@ function PeopleBoardSummary({
         onClick={() => onScopeFilterChange("pending_pr")}
       />
       <CriticalBoardStat
-        label="testing"
+        label="test-linked PR"
         value={testingPeople}
         tone={testingPeople > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
@@ -4374,7 +4440,9 @@ function sortTestingQueuePrs<T extends PendingPrView>(prs: T[]): T[] {
 }
 
 function testingQueueAgeText(pr: PendingPrView): string {
-  return pr.testingQueueAgeHours === null ? "test wait unknown" : `waiting ${hours(pr.testingQueueAgeHours)}`;
+  return pr.testingQueueAgeHours === null
+    ? "issue test wait unknown"
+    : `issue waiting ${hours(pr.testingQueueAgeHours)}`;
 }
 
 function testingQueueNextAction(pr: PendingPrView): string {
@@ -4391,15 +4459,15 @@ function testingQueueNextAction(pr: PendingPrView): string {
     return "Ask tester for status";
   }
   if (pr.testingState === "testing") {
-    return "Get linked issue test result";
+    return "Get test result on linked issue";
   }
-  return "Confirm linked issue test status";
+  return "Confirm test status on linked issue";
 }
 
 function testingQueueRiskTags(pr: PendingPrView): string[] {
   const tags = pr.attentionFlags.map(labelText);
   if (pr.testingQueueAgeHours === null) {
-    tags.push("test wait unknown");
+    tags.push("issue test wait unknown");
   }
   if (!pr.isComplete) {
     tags.push("PR detail sync pending");
@@ -4475,9 +4543,10 @@ function TestingCommandBoard({
   return (
     <div className="testing-command-board">
       <div className="testing-scope-note">
-        <Text strong>An issue enters testing when it is assigned to a configured tester.</Text>
+        <Text strong>An issue enters testing when it matches configured handoff rules.</Text>
         <Text type="secondary">
-          PR review requests stay review signals; testing status comes from the linked issue.
+          Supported evidence is configured tester assignment or configured issue label. PR reviewer signals remain
+          legacy PR evidence only.
         </Text>
       </div>
 
@@ -4566,7 +4635,7 @@ function TestingCommandBoard({
       {queuePrs.length > 0 ? (
         <div className="testing-command-lanes">
           <TestingQueueLane
-            title="Test Wait Over 24h"
+            title="Linked Issue Wait >24h"
             description="PRs whose linked issues are assigned to testers and have waited more than a day."
             prs={stalePrs}
             visibleLimit={8}
@@ -4582,7 +4651,7 @@ function TestingCommandBoard({
             emptyText="No linked PR data gaps in cached pending PRs"
           />
           <TestingQueueLane
-            title="Linked PRs In Test"
+            title="PRs With Linked Issue In Test"
             description="PRs attached to issues already assigned to testers, without current blocker evidence."
             prs={activePrs}
             visibleLimit={6}
@@ -4782,7 +4851,10 @@ function TestingIssueQueueRow({
           {issue.title}
         </a>
         <div className="testing-issue-meta">
-          <span>testers {issue.testers.slice(0, 4).join(", ")}</span>
+          <span>
+            {issue.testers.length > 0 ? `testers ${issue.testers.slice(0, 4).join(", ")}` : "no tester assigned"}
+          </span>
+          <span>{testingIssueHandoffSummary(issue)}</span>
           <span>{issue.linkedPullRequests.length} linked PRs</span>
           {linkedBlockers > 0 ? <span>{linkedBlockers} PR blockers</span> : null}
         </div>
@@ -4868,6 +4940,21 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
             <small>{linkedBlockers > 0 ? `${linkedBlockers} need attention` : "no linked PR blocker"}</small>
           </div>
         </div>
+
+        <section className="testing-issue-preview-section">
+          <Text strong>Handoff evidence</Text>
+          {issue.testingSignals.length === 0 ? (
+            <Text type="secondary">No configured testing handoff signal is visible in cache.</Text>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {issue.testingSignals.map((signal) => (
+                <Tooltip title={testingSignalBusinessLabel(signal)} key={signal}>
+                  <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          )}
+        </section>
 
         <section className="testing-issue-preview-section">
           <Text strong>Linked PRs</Text>
@@ -4966,7 +5053,7 @@ function TestingTurnoverBreakdown({
         tone={testing.staleQueueIssues > 0 ? "critical" : testing.queueIssues > 0 ? "attention" : "normal"}
       />
       <TestingTurnoverCard
-        label="Request to pass"
+        label="Start to pass"
         value={testing.averageRequestToPassHours === null ? "-" : hours(testing.averageRequestToPassHours)}
         detail={`${testing.requestToPassSamples} samples`}
         tone={requestToPassTone}
@@ -5229,10 +5316,10 @@ function PersonWorkloadBoard({
               <button
                 type="button"
                 onClick={() => openMetric("testing")}
-                aria-label={`Open ${person.login} PRs linked to test issues`}
+                aria-label={`Open ${person.login} PRs whose linked issues are in test`}
               >
                 <strong>{testingPrs}</strong>
-                <small>testing</small>
+                <small>test-linked PR</small>
               </button>
               <button
                 type="button"
@@ -5667,7 +5754,7 @@ function PullRequestCardList({
     { label: "CI", value: "ci" },
     { label: "Review", value: "review" },
     { label: "Merge", value: "merge" },
-    { label: "Testing", value: "testing" }
+    { label: "Issue in test", value: "testing" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
@@ -5771,7 +5858,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("issues")}
         />
         <ActivitySummaryTile
-          label="Issues in test"
+          label="Test-linked PRs"
           value={testingItems.length}
           detail={optionalHours(maxTestingAge(testingItems))}
           tone="normal"
@@ -5896,7 +5983,7 @@ function actionQueueFilterLabel(filter: PersonalActionQueueFilter): string {
     return "Issue threads";
   }
   if (filter === "testing") {
-    return "Issues in test";
+    return "Test-linked PRs";
   }
   if (filter === "prs") {
     return "PR rotation";
@@ -5918,7 +6005,7 @@ function actionQueueFilterDescription(filter: PersonalActionQueueFilter): string
     return "Visible issue work owned by this person.";
   }
   if (filter === "testing") {
-    return "PRs linked to issues currently assigned to testers.";
+    return "PRs whose linked issues currently match testing handoff rules.";
   }
   if (filter === "prs") {
     return "All visible PR work for this person.";
@@ -6102,7 +6189,7 @@ function PersonalActionQueueItem({
             {item.testingQueueAgeHours !== null ? (
               <span>
                 <ClipboardCheck size={13} aria-hidden="true" />
-                testing {hours(item.testingQueueAgeHours)}
+                issue test {hours(item.testingQueueAgeHours)}
               </span>
             ) : null}
           </div>
@@ -6374,7 +6461,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           className={`flow-map-summary-button ${threadFilter === "testing" ? "flow-map-summary-active" : ""}`}
           onClick={() => setThreadFilter("testing")}
         >
-          <strong>{counts.testing}</strong> in test
+          <strong>{counts.testing}</strong> test-linked
         </button>
         <button
           type="button"
@@ -6411,7 +6498,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
         />
         <FlowThreadSection
           title="Attention threads"
-          description="PR or issue lanes with blocker, testing, review, CI, or linking risks."
+          description="PR or issue lanes with blocker, linked issue test, review, CI, or linking risks."
           rows={attentionRows}
           tone="attention"
           visibleLimit={6}
@@ -6444,7 +6531,7 @@ function personalFlowThreadFilterLabel(filter: PersonalFlowThreadFilter): string
     return "blocked PR or duration-risk work";
   }
   if (filter === "testing") {
-    return "issues currently in test";
+    return "PRs whose linked issues are in test";
   }
   if (filter === "needs_link") {
     return "issue-PR linking gaps";
@@ -6566,7 +6653,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
           <Tag>{labelText(row.issue.durationEvidence)}</Tag>
           {statusCounts.prs > 0 ? <Tag>{statusCounts.prs} PR</Tag> : null}
           {statusCounts.blockedPrs > 0 ? <Tag color="orange">{statusCounts.blockedPrs} blocked</Tag> : null}
-          {statusCounts.testingPrs > 0 ? <Tag color="blue">{statusCounts.testingPrs} in test</Tag> : null}
+          {statusCounts.testingPrs > 0 ? <Tag color="blue">{statusCounts.testingPrs} test-linked PR</Tag> : null}
           {statusCounts.sharedPrs > 0 ? <Tag color="purple">{statusCounts.sharedPrs} shared</Tag> : null}
         </div>
       </div>
@@ -6587,7 +6674,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
           </span>
           <span>
             <strong>{statusCounts.testingPrs}</strong>
-            <small>in test</small>
+            <small>test-linked</small>
           </span>
         </div>
         <div className="flow-signal-tags">
@@ -6765,7 +6852,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                   <strong>{pr.title}</strong>
                   <small>
                     owner {pr.ownerLogin} | age {hours(pr.startAgeHours)}
-                    {pr.testingQueueAgeHours !== null ? ` | test wait ${hours(pr.testingQueueAgeHours)}` : ""}
+                    {pr.testingQueueAgeHours !== null ? ` | issue test wait ${hours(pr.testingQueueAgeHours)}` : ""}
                   </small>
                   <Space size={[4, 4]} wrap>
                     {pr.isShared ? <Tag color="purple">shared</Tag> : null}
@@ -6861,7 +6948,7 @@ function FlowTimelinePrRow({ pr }: { pr: PersonalGanttPrBar }) {
     pr.title,
     `owner ${pr.ownerLogin}`,
     `age ${hours(pr.startAgeHours)}`,
-    pr.testingQueueAgeHours !== null ? `test wait ${hours(pr.testingQueueAgeHours)}` : null,
+    pr.testingQueueAgeHours !== null ? `issue test wait ${hours(pr.testingQueueAgeHours)}` : null,
     pr.reasons.length > 0 ? pr.reasons.join(", ") : null
   ]
     .filter((value): value is string => value !== null)
@@ -7093,7 +7180,7 @@ function PersonalRotationOverview({
             onClick={() => onDrilldownChange("pr_attention")}
           />
           <TeamMonitorTile
-            label="Issues in test"
+            label="Test-linked PRs"
             value={person.testingPrs.length}
             detail={`${testingStalePrs.length} waiting >24h | ${oldestPersonalTestingText(person.testingPrs)}`}
             tone={testingStalePrs.length > 0 ? "critical" : person.testingPrs.length > 0 ? "attention" : "good"}
@@ -7154,7 +7241,7 @@ function PersonalRotationOverview({
               <Text strong>PR Rotation</Text>
               <Tag color="orange">{person.attentionPrs.length}</Tag>
             </Space>
-            <Text type="secondary">review, CI, merge, testing</Text>
+            <Text type="secondary">review, CI, merge, linked issue test</Text>
           </div>
           <div className="team-rotation-list">
             {person.attentionPrs.length === 0 ? (
@@ -7172,10 +7259,10 @@ function PersonalRotationOverview({
         <section className="personal-rotation-lane personal-rotation-lane-attention">
           <div className="team-rotation-lane-heading">
             <Space size={[6, 6]} wrap>
-              <Text strong>Issues In Test</Text>
+              <Text strong>PRs Linked To Test Issues</Text>
               <Tag color={testingStalePrs.length > 0 ? "red" : "blue"}>{person.testingPrs.length}</Tag>
             </Space>
-            <Text type="secondary">assigned tester flow</Text>
+            <Text type="secondary">linked issue handoff flow</Text>
           </div>
           <div className="team-rotation-list">
             {person.testingPrs.length === 0 ? (
@@ -7292,7 +7379,7 @@ function personalPrimaryFocus(
   if (person.activeCriticalIssues.length > 0) {
     return {
       title: `${person.activeCriticalIssues.length} active s-1/s0 issues should drive the day.`,
-      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} test waits, ${chart.rows.length} issue/PR threads.`
+      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} linked issue test waits, ${chart.rows.length} issue/PR threads.`
     };
   }
   if (blockedPrs > 0) {
@@ -7341,7 +7428,7 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
     return "Pending PRs";
   }
   if (filter === "testing") {
-    return "Issues In Test";
+    return "PRs Linked To Test Issues";
   }
   if (filter === "triage") {
     return "Needs Triage";
@@ -7548,7 +7635,7 @@ function SelectedPersonWorkbench({
               <Tag color={person.summary.needsTriageIssues > 0 ? "gold" : "default"}>
                 {person.summary.needsTriageIssues} needs triage
               </Tag>
-              <Tag>{person.testingPrs.length} testing</Tag>
+              <Tag>{person.testingPrs.length} test-linked PR</Tag>
               <Tag>
                 yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday}
               </Tag>
@@ -7634,7 +7721,7 @@ function SelectedPersonWorkbench({
                 onPreview={previewPullRequest}
               />
             </WorkLane>
-            <WorkLane title="Issues In Test" count={person.testingPrs.length} tone="normal">
+            <WorkLane title="PRs Linked To Test Issues" count={person.testingPrs.length} tone="normal">
               <PullRequestCardList
                 prs={person.testingPrs}
                 emptyText="No PRs linked to issues in test"
@@ -9270,7 +9357,7 @@ export default function App() {
         render: (value) => (value === null ? "-" : hours(value))
       },
       {
-        title: "Req To Pass",
+        title: "Start To Pass",
         dataIndex: "averageRequestToPassHours",
         render: (value, row) =>
           value === null ? (
@@ -9325,7 +9412,7 @@ export default function App() {
         )
       },
       {
-        title: "Matched people",
+        title: "Legacy matched config",
         dataIndex: "testingTesters",
         width: 220,
         render: (testers: string[]) =>
@@ -9340,7 +9427,7 @@ export default function App() {
           )
       },
       {
-        title: "Signals",
+        title: "Legacy evidence",
         dataIndex: "testingSignals",
         ellipsis: true,
         render: (signals: string[]) =>
@@ -9350,7 +9437,7 @@ export default function App() {
             <Space size={[4, 4]} wrap>
               {signals.slice(0, 4).map((signal) => (
                 <Tooltip key={signal} title={signal}>
-                  <Tag>{testingSignalBusinessLabel(signal)}</Tag>
+                  <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
                 </Tooltip>
               ))}
               {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
@@ -9420,7 +9507,7 @@ export default function App() {
             )
         },
         {
-          title: "Matched assignment",
+          title: "Handoff evidence",
           dataIndex: "testingSignals",
           ellipsis: true,
           render: (signals: string[]) =>
@@ -9430,7 +9517,7 @@ export default function App() {
               <Space size={[4, 4]} wrap>
                 {signals.slice(0, 4).map((signal) => (
                   <Tooltip key={signal} title={signal}>
-                    <Tag>{testingSignalBusinessLabel(signal)}</Tag>
+                    <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
                   </Tooltip>
                 ))}
                 {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
