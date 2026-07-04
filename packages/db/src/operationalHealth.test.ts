@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { SyncHealth } from "@mo-devflow/shared";
+import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { cacheHealthStatus, operationalHealthRecommendedAction, operationalHealthStatus } from "./operationalHealth";
 
 function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHealth {
@@ -43,6 +44,21 @@ describe("operational health summary", () => {
   test("separates partial cache warnings from stale cache degradation", () => {
     expect(cacheHealthStatus({ staleObjects: 0, partialObjects: 3 })).toBe("partial");
     expect(operationalHealthStatus({ ...healthyInput, staleObjects: 0 })).toBe("healthy");
+  });
+
+  test("stale cache SQL only treats active visible GitHub objects as freshness degraders", () => {
+    const sql = activeCacheStaleSummarySql({
+      staleCutoff: "2026-07-04 00:00:00",
+      issueWhereSql: "i.visibility_class = 'anonymous_readable'",
+      pullRequestWhereSql: "p.visibility_class = 'anonymous_readable'"
+    });
+
+    expect(sql).toContain("i.state = 'open'");
+    expect(sql).toContain("i.is_pull_request = 0");
+    expect(sql).toContain("p.state = 'open'");
+    expect(sql).toContain("i.visibility_class = 'anonymous_readable'");
+    expect(sql).toContain("p.visibility_class = 'anonymous_readable'");
+    expect(sql).not.toContain("is_complete");
   });
 
   test("returns the highest priority recovery action", () => {

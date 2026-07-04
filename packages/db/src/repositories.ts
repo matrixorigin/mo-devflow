@@ -38,6 +38,7 @@ import type {
 } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthLayers } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth, notificationRecipientScope } from "./notifications";
@@ -767,10 +768,6 @@ export function profileConfigurationWarnings(input: {
   }
 
   return warnings;
-}
-
-function sqlStringLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 export async function upsertRepoProfile(profile: RepoProfile): Promise<number> {
@@ -2324,14 +2321,11 @@ export async function getDashboardSummary(
     [repoId, ...partialIssueVisibility.params, repoId, ...partialPrVisibility.params]
   );
   const [staleRows] = await pool.execute<RowData[]>(
-    `SELECT
-       SUM(CASE WHEN last_synced_at < ${sqlStringLiteral(staleCutoff)} THEN 1 ELSE 0 END) AS stale_count,
-       MIN(last_synced_at) AS oldest_synced_at
-     FROM (
-       SELECT i.last_synced_at FROM issues i WHERE i.repo_id = ? AND ${staleIssueVisibility.sql}
-       UNION ALL
-       SELECT p.last_synced_at FROM pull_requests p WHERE p.repo_id = ? AND ${stalePrVisibility.sql}
-     ) t`,
+    activeCacheStaleSummarySql({
+      staleCutoff,
+      issueWhereSql: staleIssueVisibility.sql,
+      pullRequestWhereSql: stalePrVisibility.sql
+    }),
     [repoId, ...staleIssueVisibility.params, repoId, ...stalePrVisibility.params]
   );
   const [hiddenIssueRows] = await pool.execute<RowData[]>(

@@ -7,6 +7,7 @@ import type {
 } from "@mo-devflow/shared";
 import { syncHealthLayers } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
+import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, sqlDate } from "./client";
 import { activeNotificationDeliverySourceWhereSql } from "./notifications";
 import { buildSyncHealthSummary, cacheStaleHoursFromEnv } from "./repositories";
@@ -27,10 +28,6 @@ function asNumber(value: unknown): number {
     return Number(value);
   }
   return 0;
-}
-
-function sqlStringLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 export function cacheHealthStatus(input: { staleObjects: number; partialObjects: number }): CacheHealthStatus {
@@ -121,16 +118,19 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
   );
   const syncHealth = buildSyncHealthSummary({ rows: syncRows, expectedLayers: syncHealthLayers });
   const [cacheRows] = await pool.execute<RowData[]>(
-    `SELECT
-       SUM(CASE WHEN last_synced_at < ${sqlStringLiteral(staleCutoff)} THEN 1 ELSE 0 END) AS stale_count,
-       SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS partial_count,
-       MIN(last_synced_at) AS oldest_synced_at
-     FROM (
-       SELECT i.last_synced_at, i.is_complete FROM issues i WHERE i.repo_id = ?
-       UNION ALL
-       SELECT p.last_synced_at, p.is_complete FROM pull_requests p WHERE p.repo_id = ?
-     ) t`,
-    [repoId, repoId]
+    `SELECT stale_summary.stale_count,
+            stale_summary.oldest_synced_at,
+            partial_summary.partial_count
+     FROM (${activeCacheStaleSummarySql({ staleCutoff })}) stale_summary
+     CROSS JOIN (
+       SELECT SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+       FROM (
+         SELECT i.is_complete FROM issues i WHERE i.repo_id = ?
+         UNION ALL
+         SELECT p.is_complete FROM pull_requests p WHERE p.repo_id = ?
+       ) partial_cache
+     ) partial_summary`,
+    [repoId, repoId, repoId, repoId]
   );
   const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
   const [notificationRows] = await pool.execute<RowData[]>(
