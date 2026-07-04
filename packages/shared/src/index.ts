@@ -237,6 +237,7 @@ export interface CriticalIssueLinkedPullRequestView {
   testingTesters: string[];
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
+  linkedIssueNumbers: number[];
   isComplete: boolean;
 }
 
@@ -320,6 +321,7 @@ export interface PendingPrView {
   testingSignals: string[];
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
+  linkedIssueNumbers: number[];
   isComplete: boolean;
 }
 

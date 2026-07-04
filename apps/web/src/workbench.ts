@@ -1,6 +1,38 @@
-import type { CriticalIssueView, PersonSummary, PersonalIssueView, PersonalPullRequestView } from "@mo-devflow/shared";
+import type {
+  CriticalIssueView,
+  PersonSummary,
+  PersonalActionView,
+  PersonalIssueView,
+  PersonalPullRequestView
+} from "@mo-devflow/shared";
 
 export type WorkloadStatus = "critical" | "attention" | "triage" | "active" | "clear";
+export type PersonalActivityTone = "critical" | "attention" | "normal" | "muted";
+export type PersonalActivityObjectType = "issue" | "pull_request";
+
+export interface PersonalActivityItem {
+  id: string;
+  objectType: PersonalActivityObjectType;
+  number: number;
+  title: string;
+  htmlUrl: string;
+  phase: string;
+  tone: PersonalActivityTone;
+  priority: number;
+  ageHours: number;
+  lastHumanActionAt: string | null;
+  testingQueueAgeHours: number | null;
+  severity: string | null;
+  lifecycleState: string | null;
+  reviewDecision: string | null;
+  ciState: string | null;
+  mergeStateStatus: string | null;
+  testingState: string | null;
+  linkedIssueNumbers: number[];
+  linkedPullRequestNumbers: number[];
+  reasons: string[];
+  isComplete: boolean;
+}
 
 export function personWorkloadScore(person: PersonSummary): number {
   return (
@@ -130,4 +162,137 @@ export function personalIssueReasons(issue: PersonalIssueView): string[] {
     return reasons;
   }
   return issue.labels.slice(0, 3);
+}
+
+export function personalActivityItems(person: PersonalActionView): PersonalActivityItem[] {
+  const items: PersonalActivityItem[] = [];
+  const seen = new Set<string>();
+  const add = (item: PersonalActivityItem): void => {
+    if (seen.has(item.id)) {
+      return;
+    }
+    seen.add(item.id);
+    items.push(item);
+  };
+
+  for (const issue of person.activeCriticalIssues) {
+    add(activityFromIssue(issue, "Active s-1/s0", "critical", 1_000 + severityPriority(issue.severity)));
+  }
+  for (const pr of person.attentionPrs) {
+    add(activityFromPullRequest(pr, "PR attention", "attention", 900, prAttentionReasons(pr)));
+  }
+  for (const pr of person.testingPrs) {
+    add(
+      activityFromPullRequest(pr, "Testing handoff", "attention", 780, [
+        ...prAttentionReasons(pr),
+        pr.testingQueueAgeHours !== null ? "Testing queue aging" : "Testing flow active"
+      ])
+    );
+  }
+  for (const issue of person.needsTriageIssues) {
+    add(activityFromIssue(issue, "Needs triage", "attention", 680));
+  }
+  for (const pr of person.pendingPrs) {
+    add(activityFromPullRequest(pr, "Pending PR", "normal", 560, prAttentionReasons(pr)));
+  }
+  for (const issue of person.deferredIssues) {
+    add(activityFromIssue(issue, "Deferred", "muted", 360));
+  }
+  for (const pr of person.prsCreatedYesterday) {
+    add(activityFromPullRequest(pr, "Created yesterday", "muted", 260, prAttentionReasons(pr)));
+  }
+  for (const pr of person.prsMergedYesterday) {
+    add(activityFromPullRequest(pr, "Merged yesterday", "muted", 240, prAttentionReasons(pr)));
+  }
+
+  return items.sort((left, right) => {
+    const priorityDelta = right.priority - left.priority;
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    const ageDelta = right.ageHours - left.ageHours;
+    if (ageDelta !== 0) {
+      return ageDelta;
+    }
+    return left.number - right.number;
+  });
+}
+
+function activityFromIssue(
+  issue: CriticalIssueView | PersonalIssueView,
+  phase: string,
+  tone: PersonalActivityTone,
+  priority: number
+): PersonalActivityItem {
+  const criticalIssue = isCriticalIssue(issue);
+  const reasons = criticalIssue ? criticalIssueReasons(issue) : personalIssueReasons(issue);
+  return {
+    id: `issue:${issue.number}`,
+    objectType: "issue",
+    number: issue.number,
+    title: issue.title,
+    htmlUrl: issue.htmlUrl,
+    phase,
+    tone,
+    priority,
+    ageHours: issue.ageHours,
+    lastHumanActionAt: null,
+    testingQueueAgeHours: null,
+    severity: issue.severity,
+    lifecycleState: issue.lifecycleState,
+    reviewDecision: null,
+    ciState: null,
+    mergeStateStatus: null,
+    testingState: null,
+    linkedIssueNumbers: [],
+    linkedPullRequestNumbers: criticalIssue ? issue.linkedPullRequests.map((pr) => pr.number) : [],
+    reasons,
+    isComplete: issue.isComplete
+  };
+}
+
+function activityFromPullRequest(
+  pr: PersonalPullRequestView,
+  phase: string,
+  tone: PersonalActivityTone,
+  priority: number,
+  reasons: string[]
+): PersonalActivityItem {
+  return {
+    id: `pull_request:${pr.number}`,
+    objectType: "pull_request",
+    number: pr.number,
+    title: pr.title,
+    htmlUrl: pr.htmlUrl,
+    phase,
+    tone,
+    priority,
+    ageHours: pr.ageHours,
+    lastHumanActionAt: pr.lastHumanActionAt,
+    testingQueueAgeHours: pr.testingQueueAgeHours,
+    severity: null,
+    lifecycleState: null,
+    reviewDecision: pr.reviewDecision,
+    ciState: pr.ciState,
+    mergeStateStatus: pr.mergeStateStatus,
+    testingState: pr.testingState,
+    linkedIssueNumbers: pr.linkedIssueNumbers,
+    linkedPullRequestNumbers: [],
+    reasons,
+    isComplete: pr.isComplete
+  };
+}
+
+function isCriticalIssue(issue: CriticalIssueView | PersonalIssueView): issue is CriticalIssueView {
+  return "linkedPullRequests" in issue;
+}
+
+function severityPriority(severity: string | null): number {
+  if (severity === "severity/s-1") {
+    return 30;
+  }
+  if (severity === "severity/s0") {
+    return 20;
+  }
+  return 0;
 }

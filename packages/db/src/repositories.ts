@@ -1815,6 +1815,7 @@ function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinked
         ? null
         : asNumber(row.testing_queue_age_hours),
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
 }
@@ -2031,6 +2032,7 @@ function toPendingPrView(row: RowData): PendingPrView {
         ? null
         : asNumber(row.testing_queue_age_hours),
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
 }

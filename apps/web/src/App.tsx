@@ -82,11 +82,13 @@ import {
 import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 import {
   criticalIssueReasons,
+  personalActivityItems,
   personPrimaryReasons,
   personWorkloadStatus,
   personalIssueReasons,
   prAttentionReasons,
   sortPeopleByWorkload,
+  type PersonalActivityItem,
   type WorkloadStatus
 } from "./workbench";
 
@@ -688,7 +690,73 @@ function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: W
   );
 }
 
+interface MetricSeriesConfig {
+  name: string;
+  type: "line" | "bar";
+  color: string;
+  data: (point: TrendMetricPoint) => number;
+}
+
 function TrendChart({ points }: { points: TrendMetricPoint[] }) {
+  if (points.length === 0) {
+    return <Empty description="No cached analytics metrics yet" />;
+  }
+  return (
+    <div className="flow-chart-grid">
+      <MetricFlowChart
+        title="PR Flow"
+        points={points}
+        series={[
+          { name: "Created", type: "bar", color: "#2563eb", data: (point) => point.prsCreated },
+          { name: "Merged", type: "bar", color: "#16a34a", data: (point) => point.prsMerged },
+          {
+            name: "Open delta",
+            type: "line",
+            color: "#d97706",
+            data: (point) => point.prsCreated - point.prsMerged
+          }
+        ]}
+      />
+      <MetricFlowChart
+        title="Issue Flow"
+        points={points}
+        series={[
+          { name: "Opened", type: "bar", color: "#7c3aed", data: (point) => point.issuesOpened },
+          { name: "Closed", type: "bar", color: "#16a34a", data: (point) => point.issuesClosed },
+          { name: "Deferred", type: "bar", color: "#64748b", data: (point) => point.issuesDeferred }
+        ]}
+      />
+      <MetricFlowChart
+        title="Risk Flow"
+        points={points}
+        series={[
+          {
+            name: "Violations",
+            type: "bar",
+            color: "#dc2626",
+            data: (point) => point.workflowViolationsDetected
+          },
+          {
+            name: "Issue drain",
+            type: "line",
+            color: "#0f766e",
+            data: (point) => point.issuesClosed + point.issuesDeferred - point.issuesOpened
+          }
+        ]}
+      />
+    </div>
+  );
+}
+
+function MetricFlowChart({
+  title,
+  points,
+  series
+}: {
+  title: string;
+  points: TrendMetricPoint[];
+  series: MetricSeriesConfig[];
+}) {
   const chartRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -698,38 +766,19 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
     const chart = echarts.init(chartRef.current);
     const labels = points.map((point) => ("label" in point ? point.label : point.date.slice(5)));
     chart.setOption({
-      color: ["#2563eb", "#16a34a", "#d97706", "#7c3aed"],
+      color: series.map((item) => item.color),
       tooltip: { trigger: "axis" },
-      legend: { top: 0 },
-      grid: { left: 36, right: 20, top: 44, bottom: 32 },
-      xAxis: { type: "category", data: labels, boundaryGap: false },
+      legend: { top: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+      grid: { left: 32, right: 12, top: 42, bottom: 28 },
+      xAxis: { type: "category", data: labels, boundaryGap: true, axisLabel: { fontSize: 11 } },
       yAxis: { type: "value", minInterval: 1 },
-      series: [
-        {
-          name: "PR created",
-          type: "line",
-          smooth: true,
-          data: points.map((point) => point.prsCreated)
-        },
-        {
-          name: "PR merged",
-          type: "line",
-          smooth: true,
-          data: points.map((point) => point.prsMerged)
-        },
-        {
-          name: "Issue opened",
-          type: "line",
-          smooth: true,
-          data: points.map((point) => point.issuesOpened)
-        },
-        {
-          name: "Violations",
-          type: "bar",
-          barMaxWidth: 18,
-          data: points.map((point) => point.workflowViolationsDetected)
-        }
-      ]
+      series: series.map((item) => ({
+        name: item.name,
+        type: item.type,
+        smooth: item.type === "line",
+        barMaxWidth: 18,
+        data: points.map(item.data)
+      }))
     });
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);
@@ -737,12 +786,14 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
       window.removeEventListener("resize", resize);
       chart.dispose();
     };
-  }, [points]);
+  }, [points, series]);
 
-  if (points.length === 0) {
-    return <Empty description="No cached analytics metrics yet" />;
-  }
-  return <div className="chart-canvas" ref={chartRef} />;
+  return (
+    <div className="flow-chart-block">
+      <Text strong>{title}</Text>
+      <div className="chart-canvas chart-canvas-compact" ref={chartRef} />
+    </div>
+  );
 }
 
 function WorkObjectLink({ href, children, icon }: { href: string; children: ReactNode; icon: ReactNode }) {
@@ -1041,6 +1092,141 @@ function PullRequestCardList({
   );
 }
 
+function PersonalActivityFeed({ items }: { items: PersonalActivityItem[] }) {
+  if (items.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
+  }
+
+  return (
+    <div className="activity-feed-list">
+      {items.slice(0, 24).map((item) => (
+        <PersonalActivityCard item={item} key={item.id} />
+      ))}
+    </div>
+  );
+}
+
+function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
+  const icon =
+    item.objectType === "pull_request" ? (
+      <GitPullRequest size={15} aria-hidden="true" />
+    ) : (
+      <CircleAlert size={15} aria-hidden="true" />
+    );
+  const objectLabel = item.objectType === "pull_request" ? `PR #${item.number}` : `Issue #${item.number}`;
+  const linkedIssueUrls = item.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(item.htmlUrl, "issues", number)
+  }));
+  const linkedPrUrls = item.linkedPullRequestNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(item.htmlUrl, "pull", number)
+  }));
+
+  return (
+    <article className={`activity-card activity-card-${item.tone}`}>
+      <div className="activity-card-main">
+        <div className="activity-object-row">
+          <WorkObjectLink href={item.htmlUrl} icon={icon}>
+            {objectLabel}
+          </WorkObjectLink>
+          <Tag color={activityToneColor(item.tone)}>{item.phase}</Tag>
+          <Tag>{hours(item.ageHours)}</Tag>
+          {!item.isComplete ? <Tag color="gold">partial</Tag> : null}
+        </div>
+        <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
+          {item.title}
+        </a>
+        <div className="activity-meta-row">
+          <span>
+            <TimerReset size={13} aria-hidden="true" />
+            age {hours(item.ageHours)}
+          </span>
+          {item.lastHumanActionAt ? (
+            <span>
+              <UserRound size={13} aria-hidden="true" />
+              human {formatDate(item.lastHumanActionAt)}
+            </span>
+          ) : null}
+          {item.testingQueueAgeHours !== null ? (
+            <span>
+              <ClipboardCheck size={13} aria-hidden="true" />
+              testing {hours(item.testingQueueAgeHours)}
+            </span>
+          ) : null}
+        </div>
+        <div className="activity-tag-row">
+          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
+          {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
+          {item.reviewDecision ? (
+            <Tag color={item.reviewDecision === "changes_requested" ? "red" : "blue"}>
+              {labelText(item.reviewDecision)}
+            </Tag>
+          ) : null}
+          {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
+          {item.mergeStateStatus ? (
+            <Tag color={mergeColor(item.mergeStateStatus)}>merge {labelText(item.mergeStateStatus)}</Tag>
+          ) : null}
+          {item.testingState ? (
+            <Tag color={testingStateColor(item.testingState as TestingFlowState)}>{labelText(item.testingState)}</Tag>
+          ) : null}
+        </div>
+        {linkedIssueUrls.length > 0 || linkedPrUrls.length > 0 ? (
+          <div className="activity-link-row">
+            {linkedIssueUrls.map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                issue #{link.number}
+              </a>
+            ))}
+            {linkedPrUrls.map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
+                PR #{link.number}
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {item.reasons.length > 0 ? (
+        <div className="activity-reason-row">
+          {item.reasons.slice(0, 5).map((reason) => (
+            <Tag color={activityReasonColor(reason)} key={reason}>
+              {reason}
+            </Tag>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function linkedObjectUrl(sourceUrl: string, kind: "issues" | "pull", number: number): string {
+  return sourceUrl.replace(/\/(?:issues|pull)\/\d+$/, `/${kind}/${number}`);
+}
+
+function activityToneColor(tone: PersonalActivityItem["tone"]): string {
+  if (tone === "critical") {
+    return "red";
+  }
+  if (tone === "attention") {
+    return "orange";
+  }
+  if (tone === "muted") {
+    return "default";
+  }
+  return "blue";
+}
+
+function activityReasonColor(reason: string): string {
+  const normalized = reason.toLowerCase();
+  if (normalized.includes("failed") || normalized.includes("conflict") || normalized.includes("changes requested")) {
+    return "red";
+  }
+  if (normalized.includes("partial")) {
+    return "gold";
+  }
+  return "orange";
+}
+
 function SelectedPersonWorkbench({
   person,
   analyticsPeriod,
@@ -1054,6 +1240,7 @@ function SelectedPersonWorkbench({
 }) {
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
+  const activityItems = personalActivityItems(person);
 
   return (
     <div className="selected-person-workbench">
@@ -1082,6 +1269,22 @@ function SelectedPersonWorkbench({
           </div>
         </div>
       </div>
+
+      <section className="activity-panel">
+        <div className="subsection-heading">
+          <Title level={5}>Current Activity</Title>
+          <Space size={[6, 6]} wrap>
+            <Tag color={activityItems.some((item) => item.tone === "critical") ? "red" : "default"}>
+              {activityItems.filter((item) => item.tone === "critical").length} active s-1/s0
+            </Tag>
+            <Tag color={activityItems.some((item) => item.tone === "attention") ? "orange" : "default"}>
+              {activityItems.filter((item) => item.tone === "attention").length} attention
+            </Tag>
+            <Tag>{activityItems.filter((item) => item.linkedIssueNumbers.length > 0).length} linked issues</Tag>
+          </Space>
+        </div>
+        <PersonalActivityFeed items={activityItems} />
+      </section>
 
       <div className="work-lane-grid work-lane-grid-priority">
         <WorkLane title="Active s-1/s0 Issues" count={person.activeCriticalIssues.length} tone="critical">
@@ -1118,7 +1321,7 @@ function SelectedPersonWorkbench({
 
       <section className="trend-panel">
         <div className="subsection-heading">
-          <Title level={5}>Personal Trend</Title>
+          <Title level={5}>Personal Flow Efficiency</Title>
           <Segmented
             size="small"
             value={analyticsPeriod}
@@ -2913,8 +3116,8 @@ export default function App() {
                   <div>
                     <Title level={4}>Analytics</Title>
                     <Text type="secondary">
-                      Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)} |{" "}
-                      {data.repo.timezone}
+                      Issue and PR flow, last {data.analytics.periodDays} days, grouped{" "}
+                      {metricPeriodText(analyticsPeriod)} | {data.repo.timezone}
                     </Text>
                   </div>
                   <Segmented

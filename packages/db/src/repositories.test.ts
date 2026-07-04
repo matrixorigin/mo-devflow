@@ -781,6 +781,7 @@ describe("critical issue cache blockers", () => {
     testingTesters: [],
     testingQueueAgeHours: null,
     attentionFlags: ["requested_changes", "ci_failed"],
+    linkedIssueNumbers: [42],
     isComplete: true
   };
 
