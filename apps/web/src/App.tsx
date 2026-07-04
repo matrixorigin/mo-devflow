@@ -150,7 +150,7 @@ interface DashboardReadModelMeta {
 }
 
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
-type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing";
+type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing" | "skipped";
 type CriticalIssueAiFilter = "all" | string;
 type PrScopeFilter =
   | "all"
@@ -1186,6 +1186,9 @@ function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: Critic
   if (scopeFilter === "timeline_missing") {
     return issue.criticalAgeEvidence === "missing_timeline";
   }
+  if (scopeFilter === "skipped") {
+    return issue.workflowSkipped;
+  }
   return true;
 }
 
@@ -1215,6 +1218,9 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   if (filter === "timeline_missing") {
     return "timeline missing";
   }
+  if (filter === "skipped") {
+    return "skip automation";
+  }
   return "all active";
 }
 
@@ -1233,6 +1239,9 @@ function criticalOverflowLabel(filter: CriticalIssueScopeFilter): string {
   }
   if (filter === "timeline_missing") {
     return "issues missing timeline evidence";
+  }
+  if (filter === "skipped") {
+    return "issues skipped by automation";
   }
   return "active issues";
 }
@@ -1624,7 +1633,8 @@ function CriticalIssueFilterBar({
             { label: "s0", value: "s0" },
             { label: "No PR", value: "no_pr" },
             { label: "Owner gap", value: "owner_gap" },
-            { label: "No timeline", value: "timeline_missing" }
+            { label: "No timeline", value: "timeline_missing" },
+            { label: "Skipped", value: "skipped" }
           ]}
         />
       </div>
@@ -4103,13 +4113,15 @@ function CriticalIssueBoard({
   aiFilter,
   scopeFilter,
   onAiFilterChange,
-  onScopeFilterChange
+  onScopeFilterChange,
+  onPreview
 }: {
   issues: CriticalIssueView[];
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onPreview: (preview: TeamWorkPreview) => void;
 }) {
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
@@ -4141,7 +4153,7 @@ function CriticalIssueBoard({
           label="shown"
           value={filteredIssues.length}
           tone={filteredIssues.length > 0 ? "attention" : "good"}
-          active={scopeFilter !== "all" || aiFilter !== "all"}
+          active={scopeFilter === "all" && aiFilter === "all"}
           onClick={() => {
             onScopeFilterChange("all");
             onAiFilterChange("all");
@@ -4182,7 +4194,13 @@ function CriticalIssueBoard({
           active={scopeFilter === "owner_gap"}
           onClick={() => onScopeFilterChange("owner_gap")}
         />
-        <CriticalBoardStat label="skip automation" value={skipped} tone={skipped > 0 ? "muted" : "good"} />
+        <CriticalBoardStat
+          label="skip automation"
+          value={skipped}
+          tone={skipped > 0 ? "muted" : "good"}
+          active={scopeFilter === "skipped"}
+          onClick={() => onScopeFilterChange("skipped")}
+        />
       </div>
       <div className="critical-board-lanes">
         <CriticalIssueLane
@@ -4191,6 +4209,7 @@ function CriticalIssueBoard({
           issues={sMinusOneIssues}
           tone="critical"
           emptyText="No active s-1 issues"
+          onPreview={(issue) => onPreview({ objectType: "issue", issue })}
         />
         <CriticalIssueLane
           title="s0 Execution Risks"
@@ -4200,6 +4219,7 @@ function CriticalIssueBoard({
           emptyText="No active s0 issues"
           overflowLabel="s0 issues"
           visibleLimit={10}
+          onPreview={(issue) => onPreview({ objectType: "issue", issue })}
         />
         {otherCriticalIssues.length > 0 ? (
           <CriticalIssueLane
@@ -4208,6 +4228,7 @@ function CriticalIssueBoard({
             issues={otherCriticalIssues}
             tone="normal"
             emptyText="No other active severity issues"
+            onPreview={(issue) => onPreview({ objectType: "issue", issue })}
           />
         ) : null}
       </div>
@@ -4232,6 +4253,7 @@ function CriticalBoardStat({
     <>
       <strong>{value}</strong>
       <small>{label}</small>
+      {onClick ? <span className="critical-board-stat-action">Filter</span> : null}
     </>
   );
   if (onClick) {
@@ -4284,7 +4306,7 @@ function PrBoardSummary({
         label="shown"
         value={filteredPrs.length}
         tone={filteredPrs.length > 0 ? "attention" : "good"}
-        active={scopeFilter !== "all"}
+        active={scopeFilter === "all"}
         onClick={() => onScopeFilterChange("all")}
       />
       <CriticalBoardStat
@@ -4404,7 +4426,7 @@ function PeopleBoardSummary({
         label="shown"
         value={filteredPeople.length}
         tone={filteredPeople.length > 0 ? "attention" : "good"}
-        active={scopeFilter !== "all"}
+        active={scopeFilter === "all"}
         onClick={() => onScopeFilterChange("all")}
       />
       <CriticalBoardStat
@@ -4460,7 +4482,8 @@ function CriticalIssueLane({
   tone,
   emptyText,
   overflowLabel = "issues",
-  visibleLimit
+  visibleLimit,
+  onPreview
 }: {
   title: string;
   description: string;
@@ -4469,6 +4492,7 @@ function CriticalIssueLane({
   emptyText: string;
   overflowLabel?: string;
   visibleLimit?: number;
+  onPreview?: (issue: CriticalIssueView) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasOverflow = visibleLimit !== undefined && issues.length > visibleLimit;
@@ -4489,7 +4513,7 @@ function CriticalIssueLane({
       ) : (
         <div className="critical-issue-list">
           {visibleIssues.map((issue) => (
-            <CriticalIssueBoardRow issue={issue} key={issue.number} />
+            <CriticalIssueBoardRow issue={issue} key={issue.number} onPreview={onPreview} />
           ))}
         </div>
       )}
@@ -4514,7 +4538,13 @@ function CriticalIssueLane({
   );
 }
 
-function CriticalIssueBoardRow({ issue }: { issue: CriticalIssueView }) {
+function CriticalIssueBoardRow({
+  issue,
+  onPreview
+}: {
+  issue: CriticalIssueView;
+  onPreview?: (issue: CriticalIssueView) => void;
+}) {
   const riskTags = criticalIssueRiskTags(issue);
   const linkedPrs = issue.linkedPullRequests.slice(0, 3);
   return (
@@ -4546,7 +4576,21 @@ function CriticalIssueBoardRow({ issue }: { issue: CriticalIssueView }) {
         </div>
       </div>
       <div className="critical-issue-action">
-        <Text type="secondary">Next</Text>
+        <div className="critical-issue-action-heading">
+          <Text type="secondary">Next</Text>
+          {onPreview ? (
+            <Tooltip title={`Preview issue ${issue.number}`}>
+              <Button
+                aria-label={`Preview issue ${issue.number}`}
+                icon={<Eye size={14} />}
+                size="small"
+                onClick={() => onPreview(issue)}
+              >
+                Preview
+              </Button>
+            </Tooltip>
+          ) : null}
+        </div>
         <Text strong>{criticalIssueNextAction(issue)}</Text>
         {linkedPrs.length > 0 ? (
           <div className="critical-linked-prs">
@@ -8204,7 +8248,7 @@ function WebhookIngestionBoard({
             label="shown"
             value={recentDeliveries.length}
             tone={recentDeliveries.length > 0 ? "attention" : "good"}
-            active={scopeFilter !== "all"}
+            active={scopeFilter === "all"}
             onClick={() => onScopeFilterChange("all")}
           />
           <CriticalBoardStat
@@ -8469,7 +8513,7 @@ function WriteAuditBoard({
           label="shown"
           value={filteredActions.length}
           tone={filteredActions.length > 0 ? "attention" : "good"}
-          active={scopeFilter !== "all"}
+          active={scopeFilter === "all"}
           onClick={() => onScopeFilterChange("all")}
         />
         <CriticalBoardStat
@@ -10826,6 +10870,7 @@ export default function App() {
                   scopeFilter={criticalIssueScopeFilter}
                   onAiFilterChange={setCriticalIssueAiFilter}
                   onScopeFilterChange={setCriticalIssueScopeFilter}
+                  onPreview={setWorkObjectPreview}
                 />
                 {criticalOwnerCoverageRows.length > 0 ? (
                   <div className="owner-coverage-strip">
