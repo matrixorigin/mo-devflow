@@ -11,6 +11,7 @@ import {
   dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
   previousCalendarDayRange,
+  profileConfigurationWarnings,
   visibleClassesForDashboard
 } from "./repositories";
 
@@ -160,6 +161,32 @@ describe("personal issue buckets", () => {
         baseProfile.labels.critical
       )
     ).toBe(false);
+  });
+});
+
+describe("profile configuration warnings", () => {
+  test("surfaces missing watched users and testing handoff configuration", () => {
+    expect(profileConfigurationWarnings(baseProfile).map((warning) => warning.key)).toEqual([
+      "profile:watched_users_empty",
+      "profile:testing_handoff_unconfigured"
+    ]);
+  });
+
+  test("does not warn when personal and testing workflow inputs are configured", () => {
+    expect(
+      profileConfigurationWarnings({
+        ...baseProfile,
+        people: { watchedUsers: ["alice"], testers: ["qa"] },
+        testing: {
+          handoffSignals: {
+            labels: ["testing"],
+            reviewerUsers: [],
+            assigneeUsers: [],
+            comments: []
+          }
+        }
+      })
+    ).toEqual([]);
   });
 });
 

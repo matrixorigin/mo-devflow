@@ -82,6 +82,14 @@ export interface RepoProfile {
   raw: unknown;
 }
 
+export interface ProfileConfigurationWarning {
+  key: string;
+  severity: AttentionSeverity;
+  title: string;
+  description: string;
+  action: string;
+}
+
 export interface NormalizedIssue {
   githubId: number;
   number: number;
@@ -609,6 +617,7 @@ export interface DashboardSummary {
     name: string;
     timezone: string;
   };
+  profileWarnings: ProfileConfigurationWarning[];
   visibility: DashboardVisibility;
   sync: {
     generatedAt: string;

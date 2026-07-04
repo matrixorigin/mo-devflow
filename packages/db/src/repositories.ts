@@ -16,6 +16,7 @@ import type {
   PersonalIssueView,
   PersonalPullRequestView,
   PersonSummary,
+  ProfileConfigurationWarning,
   RepoProfile,
   SyncHealth,
   TestingSummary,
@@ -110,6 +111,39 @@ export function isPersonalNeedsTriageIssue(input: {
   severity: string | null;
 }, criticalLabels: string[]): boolean {
   return input.lifecycleState === "needs-triage" && !criticalLabels.includes(input.severity ?? "");
+}
+
+export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
+  const warnings: ProfileConfigurationWarning[] = [];
+  if (profile.people.watchedUsers.length === 0) {
+    warnings.push({
+      key: "profile:watched_users_empty",
+      severity: "warning",
+      title: "Watched users are not configured",
+      description:
+        "Personal action lists, per-person PR flow, and individual analytics are empty until people.watched_users is configured in the repository profile.",
+      action: "Add GitHub logins under people.watched_users in the active repo profile."
+    });
+  }
+
+  const handoffSignals = profile.testing.handoffSignals;
+  const hasTestingSignal =
+    handoffSignals.labels.length > 0 ||
+    handoffSignals.reviewerUsers.length > 0 ||
+    handoffSignals.assigneeUsers.length > 0 ||
+    handoffSignals.comments.length > 0;
+  if (!hasTestingSignal) {
+    warnings.push({
+      key: "profile:testing_handoff_unconfigured",
+      severity: "warning",
+      title: "Testing handoff rules are not configured",
+      description:
+        "Testing queue and tester turnover views cannot reflect the real workflow until a handoff label, reviewer, assignee, or comment signal is configured.",
+      action: "Configure testing.handoff_signals and people.testers for the repo workflow."
+    });
+  }
+
+  return warnings;
 }
 
 function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: string; params: string[] } {
@@ -1821,6 +1855,7 @@ export async function getDashboardSummary(
       name: profile.repo.name,
       timezone: profile.reporting.timezone
     },
+    profileWarnings: profileConfigurationWarnings(profile),
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),

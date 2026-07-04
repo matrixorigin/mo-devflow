@@ -343,6 +343,14 @@ interface ManualRefreshResult {
   requestedAt: string;
 }
 
+interface ProfileConfigurationWarning {
+  key: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  description: string;
+  action: string;
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -350,6 +358,7 @@ interface DashboardSummary {
     name: string;
     timezone: string;
   };
+  profileWarnings: ProfileConfigurationWarning[];
   visibility: {
     scope: "anonymous" | "logged_in";
     visibleClasses: Array<"anonymous_readable" | "logged_in_readable" | "token_owner_only" | "admin_only">;
@@ -492,6 +501,16 @@ function severityColor(severity: string | null): string {
 
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function profileWarningAlertType(severity: ProfileConfigurationWarning["severity"]): "info" | "warning" | "error" {
+  if (severity === "critical") {
+    return "error";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
 }
 
 function flagColor(flag: string): string {
@@ -1830,6 +1849,17 @@ export default function App() {
               </div>
             </section>
 
+            {(data.profileWarnings ?? []).map((warning) => (
+              <Alert
+                key={warning.key}
+                className="band"
+                type={profileWarningAlertType(warning.severity)}
+                message={warning.title}
+                description={`${warning.description} ${warning.action}`}
+                showIcon
+              />
+            ))}
+
             {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
               <Alert
                 className="band"
@@ -2163,7 +2193,7 @@ export default function App() {
                     </div>
                   </Space>
                 ) : (
-                  <Empty description="No watched users configured" />
+                  <Empty description="No watched users configured for personal action lists" />
                 )}
               </section>
             ) : null}
