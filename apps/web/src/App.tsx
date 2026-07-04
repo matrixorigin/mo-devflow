@@ -1699,7 +1699,10 @@ function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleSc
   if (filter === "triage") {
     return "triage";
   }
-  return "yesterday_pr";
+  if (filter === "yesterday_pr") {
+    return "yesterday_pr";
+  }
+  return "all";
 }
 
 function observedPersonPreview(data: DashboardSummary, login: string): ObservedPersonPreview | null {
@@ -5954,6 +5957,205 @@ function observedThreadDurationText(thread: ObservedOwnerThread): string {
   return thread.durationHours === null ? "PR age unknown" : `${hours(thread.durationHours)} oldest PR`;
 }
 
+function ObservedPersonInlineWorkbench({
+  preview,
+  focus,
+  onFocusChange,
+  onOpenPreview
+}: {
+  preview: ObservedPersonPreview;
+  focus: PersonalDrilldownFilter;
+  onFocusChange: (filter: PersonalDrilldownFilter) => void;
+  onOpenPreview: () => void;
+}) {
+  const focusedPrs = observedPersonPrsForFocus(preview, focus);
+
+  return (
+    <div className="observed-person-workbench">
+      <section className="person-focus-header observed-person-focus-header">
+        <div className="person-focus-title">
+          <Avatar className="person-avatar-large">{preview.login.slice(0, 1).toUpperCase()}</Avatar>
+          <div>
+            <Title level={5}>{preview.login}</Title>
+            <Text type="secondary">Observed owner from visible active issue and pending PR cache</Text>
+          </div>
+        </div>
+        <Button size="small" icon={<Eye size={14} />} onClick={onOpenPreview}>
+          Quick Preview
+        </Button>
+      </section>
+
+      <div className="observed-person-summary observed-person-summary-actions">
+        <button
+          type="button"
+          className={focus === "active_issues" ? "is-active" : ""}
+          onClick={() => onFocusChange("active_issues")}
+        >
+          <strong>{preview.summary.activeCriticalIssues}</strong>
+          <small>s-1/s0</small>
+        </button>
+        <button
+          type="button"
+          className={focus === "pr_attention" ? "is-active" : ""}
+          onClick={() => onFocusChange("pr_attention")}
+        >
+          <strong>{preview.summary.attentionPrs}</strong>
+          <small>PR attention</small>
+        </button>
+        <button
+          type="button"
+          className={focus === "pending_pr" ? "is-active" : ""}
+          onClick={() => onFocusChange("pending_pr")}
+        >
+          <strong>{preview.summary.pendingPrs}</strong>
+          <small>pending PR</small>
+        </button>
+        <button
+          type="button"
+          className={focus === "threads" ? "is-active" : ""}
+          onClick={() => onFocusChange("threads")}
+        >
+          <strong>{preview.threads.length}</strong>
+          <small>threads</small>
+        </button>
+      </div>
+
+      <ObservedPersonThreadBoard threads={preview.threads} />
+      <ObservedPersonDetailPanels
+        issueTitle="Active s-1/s0 Issues"
+        issues={preview.issues}
+        prTitle={observedPersonPrPanelTitle(focus)}
+        prs={focusedPrs}
+      />
+    </div>
+  );
+}
+
+function observedPersonPrsForFocus(preview: ObservedPersonPreview, focus: PersonalDrilldownFilter): PendingPrView[] {
+  if (focus === "pr_attention") {
+    return preview.prs.filter((pr) => prAttentionReasons(pr).length > 0);
+  }
+  return preview.prs;
+}
+
+function observedPersonPrPanelTitle(focus: PersonalDrilldownFilter): string {
+  if (focus === "pr_attention") {
+    return "PRs Needing Attention";
+  }
+  if (focus === "pending_pr") {
+    return "Pending PRs";
+  }
+  return "Visible PRs";
+}
+
+function ObservedPersonDetailPanels({
+  issueTitle,
+  issues,
+  prTitle,
+  prs
+}: {
+  issueTitle: string;
+  issues: CriticalIssueView[];
+  prTitle: string;
+  prs: PendingPrView[];
+}) {
+  return (
+    <div className="observed-person-columns">
+      <ObservedPersonIssuePanel title={issueTitle} issues={issues} />
+      <ObservedPersonPrPanel title={prTitle} prs={prs} />
+    </div>
+  );
+}
+
+function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: CriticalIssueView[] }) {
+  return (
+    <section>
+      <div className="observed-person-section-title">
+        <Text strong>{title}</Text>
+        <Tag>{issues.length}</Tag>
+      </div>
+      <div className="observed-person-list">
+        {issues.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible active issue owned by this login" />
+        ) : (
+          issues.map((issue) => (
+            <a className="observed-person-row" href={issue.htmlUrl} target="_blank" rel="noreferrer" key={issue.number}>
+              <span className="observed-person-row-main">
+                <span>
+                  #{issue.number} {issue.title}
+                </span>
+                <small>
+                  {issue.criticalAgeHours === null
+                    ? "severity start unknown"
+                    : `${hours(issue.criticalAgeHours)} since severity start`}
+                </small>
+              </span>
+              <span className="observed-person-row-tags">
+                {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
+                <Tag color={issue.isComplete ? "green" : "orange"}>
+                  {issue.isComplete ? "complete cache" : "partial cache"}
+                </Tag>
+                <ExternalLink size={13} aria-hidden="true" />
+              </span>
+            </a>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrView[] }) {
+  return (
+    <section>
+      <div className="observed-person-section-title">
+        <Text strong>{title}</Text>
+        <Tag>{prs.length}</Tag>
+      </div>
+      <div className="observed-person-list">
+        {prs.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible pending PR by this login" />
+        ) : (
+          prs.map((pr) => {
+            const reasons = prAttentionReasons(pr);
+            return (
+              <a className="observed-person-row" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
+                <span className="observed-person-row-main">
+                  <span>
+                    #{pr.number} {pr.title}
+                  </span>
+                  <small>
+                    {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
+                  </small>
+                </span>
+                <span className="observed-person-row-tags">
+                  {reasons.length > 0 ? (
+                    reasons.slice(0, 2).map((reason) => (
+                      <Tag color="orange" key={reason}>
+                        {reason}
+                      </Tag>
+                    ))
+                  ) : (
+                    <Tag>no blocker</Tag>
+                  )}
+                  {pr.linkedIssueNumbers.length > 0 ? (
+                    <Tag color="blue">#{pr.linkedIssueNumbers.slice(0, 2).join(", #")}</Tag>
+                  ) : (
+                    <Tag color={pr.isComplete ? "orange" : "default"}>
+                      {pr.isComplete ? "unlinked" : "link sync pending"}
+                    </Tag>
+                  )}
+                  <ExternalLink size={13} aria-hidden="true" />
+                </span>
+              </a>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ObservedPersonPreviewModal({
   preview,
   onClose
@@ -5992,102 +6194,12 @@ function ObservedPersonPreviewModal({
             </span>
           </div>
           <ObservedPersonThreadBoard threads={preview.threads} />
-          <div className="observed-person-columns">
-            <section>
-              <div className="observed-person-section-title">
-                <Text strong>Active s-1/s0 Issues</Text>
-                <Tag>{preview.issues.length}</Tag>
-              </div>
-              <div className="observed-person-list">
-                {preview.issues.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No visible active issue owned by this login"
-                  />
-                ) : (
-                  preview.issues.map((issue) => (
-                    <a
-                      className="observed-person-row"
-                      href={issue.htmlUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      key={issue.number}
-                    >
-                      <span className="observed-person-row-main">
-                        <span>
-                          #{issue.number} {issue.title}
-                        </span>
-                        <small>
-                          {issue.criticalAgeHours === null
-                            ? "severity start unknown"
-                            : `${hours(issue.criticalAgeHours)} since severity start`}
-                        </small>
-                      </span>
-                      <span className="observed-person-row-tags">
-                        {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
-                        <Tag color={issue.isComplete ? "green" : "orange"}>
-                          {issue.isComplete ? "complete cache" : "partial cache"}
-                        </Tag>
-                        <ExternalLink size={13} aria-hidden="true" />
-                      </span>
-                    </a>
-                  ))
-                )}
-              </div>
-            </section>
-            <section>
-              <div className="observed-person-section-title">
-                <Text strong>Pending PRs</Text>
-                <Tag>{preview.prs.length}</Tag>
-              </div>
-              <div className="observed-person-list">
-                {preview.prs.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible pending PR by this login" />
-                ) : (
-                  preview.prs.map((pr) => {
-                    const reasons = prAttentionReasons(pr);
-                    return (
-                      <a
-                        className="observed-person-row"
-                        href={pr.htmlUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        key={pr.number}
-                      >
-                        <span className="observed-person-row-main">
-                          <span>
-                            #{pr.number} {pr.title}
-                          </span>
-                          <small>
-                            {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
-                          </small>
-                        </span>
-                        <span className="observed-person-row-tags">
-                          {reasons.length > 0 ? (
-                            reasons.slice(0, 2).map((reason) => (
-                              <Tag color="orange" key={reason}>
-                                {reason}
-                              </Tag>
-                            ))
-                          ) : (
-                            <Tag>no blocker</Tag>
-                          )}
-                          {pr.linkedIssueNumbers.length > 0 ? (
-                            <Tag color="blue">#{pr.linkedIssueNumbers.slice(0, 2).join(", #")}</Tag>
-                          ) : (
-                            <Tag color={pr.isComplete ? "orange" : "default"}>
-                              {pr.isComplete ? "unlinked" : "link sync pending"}
-                            </Tag>
-                          )}
-                          <ExternalLink size={13} aria-hidden="true" />
-                        </span>
-                      </a>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-          </div>
+          <ObservedPersonDetailPanels
+            issueTitle="Active s-1/s0 Issues"
+            issues={preview.issues}
+            prTitle="Pending PRs"
+            prs={preview.prs}
+          />
         </Space>
       ) : null}
     </Modal>
@@ -9393,11 +9505,15 @@ export default function App() {
     }
   }
 
-  function openObservedPersonalPreview(login: string) {
+  function selectObservedPersonal(login: string) {
     setSelectedPerson(login);
     if (view === "Personal") {
       replaceDashboardHash("Personal", login);
     }
+  }
+
+  function openObservedPersonalPreview(login: string) {
+    selectObservedPersonal(login);
     openObservedPersonPreview(login);
   }
 
@@ -9420,7 +9536,8 @@ export default function App() {
 
   function openObservedPersonalMetric(login: string, filter: PersonalDrilldownFilter) {
     setPeopleScopeFilter(peopleScopeForPersonalMetric(filter));
-    openObservedPersonalPreview(login);
+    setPersonalDrilldownFilter(filter);
+    selectObservedPersonal(login);
   }
 
   function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
@@ -11379,7 +11496,7 @@ export default function App() {
                         selectedPersonalView
                           ? setPersonalDrilldownFilter("active_issues")
                           : selectedObservedPersonPreview
-                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "active_issues")
                             : setPersonalDrilldownFilter("active_issues")
                       }
                     >
@@ -11400,7 +11517,7 @@ export default function App() {
                         selectedPersonalView
                           ? setPersonalDrilldownFilter("pr_attention")
                           : selectedObservedPersonPreview
-                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "pr_attention")
                             : setPersonalDrilldownFilter("pr_attention")
                       }
                     >
@@ -11412,17 +11529,22 @@ export default function App() {
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        personalDrilldownFilter === "testing" ? "inline-filter-chip-active" : ""
+                        personalDrilldownFilter === (selectedPersonalView ? "testing" : "threads")
+                          ? "inline-filter-chip-active"
+                          : ""
                       }`}
                       onClick={() =>
                         selectedPersonalView
                           ? setPersonalDrilldownFilter("testing")
                           : selectedObservedPersonPreview
-                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "threads")
                             : setPersonalDrilldownFilter("testing")
                       }
                     >
-                      {selectedPersonalView ? personalTestingWorkCount(selectedPersonalView) : 0} testing
+                      {selectedPersonalView
+                        ? personalTestingWorkCount(selectedPersonalView)
+                        : (selectedObservedPersonPreview?.threads.length ?? 0)}{" "}
+                      {selectedPersonalView ? "testing" : "threads"}
                     </button>
                   </Space>
                 </div>
@@ -11446,9 +11568,21 @@ export default function App() {
                       people={observedPeople}
                       personalViews={[]}
                       selectedLogin={selectedObservedLogin}
-                      onSelect={openObservedPersonalPreview}
+                      onSelect={selectObservedPersonal}
                       onMetricSelect={openObservedPersonalMetric}
                     />
+                    {selectedObservedPersonPreview ? (
+                      <ObservedPersonInlineWorkbench
+                        preview={selectedObservedPersonPreview}
+                        focus={personalDrilldownFilter}
+                        onFocusChange={(filter) =>
+                          openObservedPersonalMetric(selectedObservedPersonPreview.login, filter)
+                        }
+                        onOpenPreview={() => openObservedPersonPreview(selectedObservedPersonPreview.login)}
+                      />
+                    ) : (
+                      <Empty description="No observed owner selected" />
+                    )}
                   </>
                 ) : (
                   <>

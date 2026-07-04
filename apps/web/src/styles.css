@@ -2710,20 +2710,51 @@ button.testing-board-stat:focus-visible {
   width: 100%;
 }
 
+.observed-person-workbench {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.observed-person-focus-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
 .observed-person-summary {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.observed-person-summary span {
+.observed-person-summary span,
+.observed-person-summary button {
+  appearance: none;
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
+  color: inherit;
   display: grid;
   gap: 2px;
+  font: inherit;
   min-width: 0;
   padding: 10px;
+  text-align: left;
+}
+
+.observed-person-summary button {
+  cursor: pointer;
+}
+
+.observed-person-summary button:hover,
+.observed-person-summary button.is-active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.observed-person-summary-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .observed-person-summary strong {
@@ -4726,6 +4757,16 @@ button.testing-board-stat:focus-visible {
   }
 
   .activity-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .observed-person-focus-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .observed-person-summary-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
