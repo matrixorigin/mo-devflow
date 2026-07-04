@@ -118,6 +118,15 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 
 const dashboardAutoRefreshMs = 30_000;
 
+type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
+
+interface DashboardReadModelMeta {
+  etag: string | null;
+  receivedAt: string;
+  status: DashboardReadModelCacheStatus;
+  version: string | null;
+}
+
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing";
 type CriticalIssueAiFilter = "all" | string;
@@ -271,6 +280,43 @@ function formatDate(value: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function dashboardReadModelMetaFromResponse(response: Response, receivedAt: string): DashboardReadModelMeta {
+  const rawStatus = response.headers.get("x-mo-devflow-dashboard-cache");
+  const status: DashboardReadModelCacheStatus =
+    rawStatus === "miss" || rawStatus === "hit" || rawStatus === "stale-if-error" || rawStatus === "not-modified"
+      ? rawStatus
+      : "unknown";
+  return {
+    etag: response.headers.get("etag"),
+    receivedAt,
+    status,
+    version: response.headers.get("x-mo-devflow-dashboard-version")
+  };
+}
+
+function dashboardReadModelStatusColor(status: DashboardReadModelCacheStatus): string {
+  if (status === "stale-if-error") {
+    return "orange";
+  }
+  if (status === "miss") {
+    return "blue";
+  }
+  if (status === "hit" || status === "not-modified") {
+    return "green";
+  }
+  return "default";
+}
+
+function dashboardReadModelStatusLabel(status: DashboardReadModelCacheStatus): string {
+  if (status === "stale-if-error") {
+    return "snapshot fallback";
+  }
+  if (status === "not-modified") {
+    return "not modified";
+  }
+  return status;
 }
 
 function syncHealthTooltip(item: DashboardSummary["sync"]["health"][number]) {
@@ -6219,6 +6265,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastDashboardLoadedAt, setLastDashboardLoadedAt] = useState<string | null>(null);
+  const [dashboardReadModel, setDashboardReadModel] = useState<DashboardReadModelMeta | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<DashboardView>(initialDashboardView);
@@ -6295,8 +6342,10 @@ export default function App() {
     }
     try {
       const response = await fetch("/api/dashboard");
+      const loadedAt = new Date().toISOString();
       if (response.status === 304) {
-        setLastDashboardLoadedAt(new Date().toISOString());
+        setLastDashboardLoadedAt(loadedAt);
+        setDashboardReadModel(dashboardReadModelMetaFromResponse(response, loadedAt));
         setAutoRefreshError(null);
         return;
       }
@@ -6304,7 +6353,8 @@ export default function App() {
         throw new Error(`API returned ${response.status}`);
       }
       setData((await response.json()) as DashboardSummary);
-      setLastDashboardLoadedAt(new Date().toISOString());
+      setLastDashboardLoadedAt(loadedAt);
+      setDashboardReadModel(dashboardReadModelMetaFromResponse(response, loadedAt));
       setAutoRefreshError(null);
     } catch (err) {
       if (silent) {
@@ -7690,11 +7740,34 @@ export default function App() {
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : data ? (
           <>
+            {dashboardReadModel?.status === "stale-if-error" ? (
+              <Alert
+                className="band"
+                type="warning"
+                title="Showing last successful dashboard snapshot"
+                description={`Read-model refresh failed; visible data was generated ${formatDate(data.sync.generatedAt)} and returned from the in-memory dashboard cache at ${formatDate(dashboardReadModel.receivedAt)}.`}
+                showIcon
+              />
+            ) : null}
+
             {freshness ? (
               <section className="freshness-bar">
                 <Space className="freshness-main" size={[8, 8]} wrap>
                   <Text strong>Freshness</Text>
                   <Tag color={freshness.tagColor}>{freshness.label}</Tag>
+                  {dashboardReadModel ? (
+                    <Tooltip
+                      title={
+                        dashboardReadModel.version
+                          ? `Read-model version ${dashboardReadModel.version}`
+                          : "Read-model cache status"
+                      }
+                    >
+                      <Tag color={dashboardReadModelStatusColor(dashboardReadModel.status)}>
+                        read model {dashboardReadModelStatusLabel(dashboardReadModel.status)}
+                      </Tag>
+                    </Tooltip>
+                  ) : null}
                   <Tag>generated {formatDate(data.sync.generatedAt)}</Tag>
                   <Tag color={freshness.oldestLayerSuccessAt ? "default" : "red"}>
                     oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
