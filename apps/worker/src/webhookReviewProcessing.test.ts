@@ -120,10 +120,7 @@ const profile: RepoProfile = {
     prematureSeverityWindowHours: 24,
     aiEasyCriticalCriticalDays: 14
   },
-  testing: {
-    handoffScope: "issue",
-    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
-  },
+  testing: {},
   workflow: {
     skipUsers: []
   },
@@ -473,18 +470,7 @@ describe("webhook review processing", () => {
   test("refreshes PR comments from issue_comment webhooks without deriving testing handoff", async () => {
     const { processWebhookPayload } = await import("./sync");
     const now = "2026-07-04T00:00:00.000Z";
-    const commentProfile: RepoProfile = {
-      ...profile,
-      testing: {
-        handoffScope: "issue",
-        handoffSignals: {
-          labels: [],
-          reviewerUsers: [],
-          assigneeUsers: [],
-          comments: ["ready for testing"]
-        }
-      }
-    };
+    const commentProfile: RepoProfile = profile;
     mocks.fetchIssueCommentsForNumber.mockResolvedValue({
       comments: [
         {

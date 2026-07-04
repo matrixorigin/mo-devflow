@@ -239,9 +239,9 @@ Webhook handling:
 - Verify `X-Hub-Signature-256` against the exact raw request body.
 - Require `repository.full_name` in the webhook payload and ignore deliveries for any repo other than the active profile.
 - Accept only events with implemented cache ingestion at the API boundary; MVP ingestion supports `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `workflow_run`, and `check_run`.
-- Process `issue_comment` by refreshing the current issue comment cache before updating issue attention or PR testing handoff state.
-- Process `pull_request_review` by refreshing current PR insight from GitHub before updating review/testing attention state.
-- Process `workflow_run` and `check_run` by extracting linked PR numbers, refreshing current PR insight from GitHub, and then updating CI/testing attention state.
+- Process `issue_comment` by refreshing the current issue comment cache before updating issue workflow attention.
+- Process `pull_request_review` by refreshing current PR insight from GitHub before updating review attention state.
+- Process `workflow_run` and `check_run` by extracting linked PR numbers, refreshing current PR insight from GitHub, and then updating CI attention state.
 - Record signed ignored deliveries with `status = ignored` for dashboard health, but do not put them in the worker processing queue.
 - Persist each GitHub delivery ID before processing.
 - Ignore duplicate delivery IDs.
@@ -283,7 +283,7 @@ Backfill:
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
 - Manual refresh should enqueue selected sync layers through the same MatrixOne-backed job lease system as scheduled refreshes, so users can repair a stale layer without consuming rate limit across unrelated layers.
 - Metrics evaluation should also be runnable from cached normalized data. Until full historical backfill exists, generated trend points must carry partial-cache completeness metadata and the UI must explain the limitation.
-- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on active `s-1/s0` issues, `ai-easy` active `s-1/s0` issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
+- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on active `s-1/s0` issues, `ai-easy` active `s-1/s0` issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and issue-assignment testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
 
 ## 9. Authentication and Token Handling
 
@@ -420,19 +420,10 @@ thresholds:
   ai_easy_s0_to_test_attention_days: 7
 
 testing:
-  handoff_signals:
-    labels: []
-    reviewer_users: []
-    assignee_users: []
-    comments: []
-  states:
-    not_ready: {}
-    dev_done: {}
-    test_requested: {}
-    testing: {}
-    test_changes_requested: {}
-    test_passed: {}
-    closed_or_merged: {}
+  handoff_scope: issue
+  # Testing handoff is issue-scoped. A linked PR is considered in testing only
+  # when one of its linked issues is assigned to a configured tester.
+  # Configure tester identities under people.testers.
 
 workflow:
   skip_users: []
@@ -456,7 +447,7 @@ Derived state should include:
 - AI estimate drift status.
 - Workflow violations.
 - Attention items.
-- Profile setup plan with missing capabilities, candidate logins, and a merged YAML patch for watched users, testing handoff, and notification employee mappings.
+- Profile setup plan with missing capabilities, candidate logins, and a merged YAML patch for watched users, configured tester roles, and notification employee mappings.
 
 Deferred explanation checks depend on cached issue comments. A `deferred_missing_explanation_comment` violation should only be emitted when the issue comment sync is complete and no cached comment contains a deferred reason. Partial comment evidence should suppress that rule rather than produce a misleading violation.
 
@@ -476,9 +467,9 @@ PR stale detection should use `last_human_action_at` by default. System-only eve
 
 Review-request attention should be derived from requested reviewers plus review insight. Until review-request timeline timestamps are backfilled, a PR with requested reviewers, no cached review response, and stale `updated_at` can be flagged as `review_requested_no_response` with partial-cache evidence.
 
-Testing state derivation should be event-sourced from normalized PR timeline facts. State transitions should be persisted with the trigger event so ambiguous or incorrect handoff rules can be debugged.
+Testing state derivation should be event-sourced from normalized issue assignment facts. A PR is in testing only when at least one linked issue is currently assigned to a configured tester. State transitions should be persisted with the issue assignment signal so ambiguous or incorrect handoff evidence can be debugged.
 
-Until full PR timeline events are available, configured testing comment signals can be derived from cached PR issue comments. This path should only use complete comment evidence; partial comment evidence must not create a confirmed testing handoff. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.
+PR reviewer, PR label, PR assignee, and PR comment events must not create testing handoff state. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.
 
 ## 13. Development Environment
 

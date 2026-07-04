@@ -65,12 +65,6 @@ export interface RepoProfile {
   };
   testing: {
     handoffScope?: TestingHandoffScope;
-    handoffSignals: {
-      labels: string[];
-      reviewerUsers: string[];
-      assigneeUsers: string[];
-      comments: string[];
-    };
   };
   workflow: {
     skipUsers: string[];

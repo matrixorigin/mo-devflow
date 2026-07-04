@@ -28,10 +28,7 @@ const profile = {
     criticalNoActionAttentionHours: 24,
     aiEasyS0ToTestAttentionDays: 7
   },
-  testing: {
-    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] },
-    states: {}
-  },
+  testing: {},
   workflow: { skipUsers: [] }
 } as unknown as RepoProfile;
 

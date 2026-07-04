@@ -75,21 +75,9 @@ const profileSchema = z.object({
     }),
   testing: z
     .object({
-      handoff_scope: z.literal("issue").default("issue"),
-      handoff_signals: z
-        .object({
-          labels: z.array(z.string()).default([]),
-          reviewer_users: z.array(z.string()).default([]),
-          assignee_users: z.array(z.string()).default([]),
-          comments: z.array(z.string()).default([])
-        })
-        .default({ labels: [], reviewer_users: [], assignee_users: [], comments: [] }),
-      states: z.record(z.string(), z.unknown()).optional()
+      handoff_scope: z.literal("issue").default("issue")
     })
-    .default({
-      handoff_scope: "issue",
-      handoff_signals: { labels: [], reviewer_users: [], assignee_users: [], comments: [] }
-    }),
+    .default({ handoff_scope: "issue" }),
   workflow: z.object({
     skip_users: z.array(z.string())
   }),
@@ -171,13 +159,7 @@ export function loadRepoProfile(
       aiEasyCriticalCriticalDays: parsed.thresholds.ai_easy_critical_critical_days
     },
     testing: {
-      handoffScope: parsed.testing.handoff_scope,
-      handoffSignals: {
-        labels: parsed.testing.handoff_signals.labels,
-        reviewerUsers: parsed.testing.handoff_signals.reviewer_users,
-        assigneeUsers: parsed.testing.handoff_signals.assignee_users,
-        comments: parsed.testing.handoff_signals.comments
-      }
+      handoffScope: parsed.testing.handoff_scope
     },
     workflow: {
       skipUsers: parsed.workflow.skip_users

@@ -68,9 +68,7 @@ const baseProfile: RepoProfile = {
     prematureSeverityWindowHours: 24,
     aiEasyCriticalCriticalDays: 14
   },
-  testing: {
-    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
-  },
+  testing: {},
   workflow: {
     skipUsers: []
   },
@@ -461,7 +459,6 @@ describe("profile configuration guidance", () => {
     const actions = profileActionSuggestions(
       {
         ...baseProfile,
-        testing: { ...baseProfile.testing, handoffScope: "issue" },
         notifications: {
           ...baseProfile.notifications,
           wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
@@ -512,15 +509,7 @@ describe("profile configuration guidance", () => {
       profileSetupPlan(
         {
           ...baseProfile,
-          people: { watchedUsers: ["alice"], testers: ["qa"] },
-          testing: {
-            handoffSignals: {
-              labels: [],
-              reviewerUsers: ["qa"],
-              assigneeUsers: [],
-              comments: []
-            }
-          }
+          people: { watchedUsers: ["alice"], testers: ["qa"] }
         },
         []
       )
@@ -535,7 +524,6 @@ describe("profile configuration guidance", () => {
   test("excludes workflow skip users from configuration suggestions", () => {
     const profile = {
       ...baseProfile,
-      testing: { ...baseProfile.testing, handoffScope: "issue" as const },
       workflow: { skipUsers: ["skip-me", "qa-skip"] },
       notifications: {
         ...baseProfile.notifications,
@@ -686,15 +674,7 @@ describe("profile configuration guidance", () => {
       profileConfigurationWarnings({
         profile: {
           ...baseProfile,
-          people: { watchedUsers: ["alice"], testers: ["qa"] },
-          testing: {
-            handoffSignals: {
-              labels: ["testing"],
-              reviewerUsers: [],
-              assigneeUsers: [],
-              comments: []
-            }
-          }
+          people: { watchedUsers: ["alice"], testers: ["qa"] }
         },
         env: { MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret" }
       })
@@ -1067,29 +1047,8 @@ describe("pull request testing transition events", () => {
       ...baseProfile,
       people: { ...baseProfile.people, testers: ["tester-a"] }
     };
-    const pullRequestScopedProfile: RepoProfile = {
-      ...issueScopedProfile,
-      testing: {
-        ...baseProfile.testing,
-        handoffScope: "issue",
-        handoffSignals: baseProfile.testing.handoffSignals
-      }
-    };
-    const explicitReviewerProfile: RepoProfile = {
-      ...pullRequestScopedProfile,
-      testing: {
-        ...pullRequestScopedProfile.testing,
-        handoffSignals: {
-          ...pullRequestScopedProfile.testing.handoffSignals,
-          reviewerUsers: ["tester-a"]
-        }
-      }
-    };
-
     expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
     expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
-    expect(testingTransitionBelongsToProfile(pullRequestScopedProfile, reviewerTransition)).toBe(false);
-    expect(testingTransitionBelongsToProfile(explicitReviewerProfile, reviewerTransition)).toBe(false);
   });
 
   test("selects recent testing transitions after filtering by current workflow", () => {

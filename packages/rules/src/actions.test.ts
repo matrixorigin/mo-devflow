@@ -35,9 +35,7 @@ const profile: RepoProfile = {
     prematureSeverityWindowHours: 24,
     aiEasyCriticalCriticalDays: 14
   },
-  testing: {
-    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
-  },
+  testing: {},
   workflow: {
     skipUsers: []
   },

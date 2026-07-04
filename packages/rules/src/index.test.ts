@@ -43,9 +43,7 @@ const profile: RepoProfile = {
     prematureSeverityWindowHours: 24,
     aiEasyCriticalCriticalDays: 14
   },
-  testing: {
-    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
-  },
+  testing: {},
   workflow: {
     skipUsers: []
   },
@@ -486,15 +484,7 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] },
-        testing: {
-          ...profile.testing,
-          handoffScope: "issue",
-          handoffSignals: {
-            ...profile.testing.handoffSignals,
-            reviewerUsers: ["tester-a"]
-          }
-        }
+        people: { ...profile.people, testers: ["tester-a"] }
       },
       {
         id: 12,
@@ -522,8 +512,7 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] },
-        testing: { ...profile.testing, handoffScope: "issue" }
+        people: { ...profile.people, testers: ["tester-a"] }
       },
       {
         id: 12,
@@ -579,15 +568,7 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] },
-        testing: {
-          ...profile.testing,
-          handoffScope: "issue",
-          handoffSignals: {
-            ...profile.testing.handoffSignals,
-            reviewerUsers: ["tester-a"]
-          }
-        }
+        people: { ...profile.people, testers: ["tester-a"] }
       },
       {
         id: 16,
@@ -616,15 +597,7 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] },
-        testing: {
-          ...profile.testing,
-          handoffScope: "issue",
-          handoffSignals: {
-            ...profile.testing.handoffSignals,
-            reviewerUsers: ["tester-a"]
-          }
-        }
+        people: { ...profile.people, testers: ["tester-a"] }
       },
       {
         id: 17,
@@ -661,18 +634,7 @@ describe("rules", () => {
 
   test("testing flow ignores PR label and assignee handoff signals", () => {
     const pr = normalizePullRequest(
-      {
-        ...profile,
-        testing: {
-          handoffScope: "issue",
-          handoffSignals: {
-            labels: ["testing/requested"],
-            reviewerUsers: [],
-            assigneeUsers: ["qa-owner"],
-            comments: []
-          }
-        }
-      },
+      profile,
       {
         id: 13,
         number: 19,
@@ -697,18 +659,7 @@ describe("rules", () => {
 
   test("testing flow ignores configured PR comment handoff signals", () => {
     const pr = normalizePullRequest(
-      {
-        ...profile,
-        testing: {
-          handoffScope: "issue",
-          handoffSignals: {
-            labels: [],
-            reviewerUsers: [],
-            assigneeUsers: [],
-            comments: ["ready for testing"]
-          }
-        }
-      },
+      profile,
       {
         id: 18,
         number: 24,
@@ -854,15 +805,7 @@ describe("rules", () => {
   test("testing flow ignores PR review states and still reflects closed PRs", () => {
     const testProfile = {
       ...profile,
-      people: { ...profile.people, testers: ["tester-a"] },
-      testing: {
-        ...profile.testing,
-        handoffScope: "issue" as const,
-        handoffSignals: {
-          ...profile.testing.handoffSignals,
-          reviewerUsers: ["tester-a"]
-        }
-      }
+      people: { ...profile.people, testers: ["tester-a"] }
     };
     const basePr = {
       id: 14,
