@@ -418,6 +418,54 @@ async function responseError(response: Response): Promise<string> {
   return (await responseApiError(response)).message;
 }
 
+interface DashboardLoadError {
+  message: string;
+  status: number | null;
+  code: string | null;
+  retryAfterSeconds: number | null;
+}
+
+function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
+  if (value instanceof ApiResponseError) {
+    return {
+      message: value.message,
+      status: value.status,
+      code: value.code,
+      retryAfterSeconds: value.retryAfterSeconds
+    };
+  }
+  return {
+    message: displayError(value),
+    status: null,
+    code: null,
+    retryAfterSeconds: null
+  };
+}
+
+function dashboardLoadErrorMessage(error: DashboardLoadError): string {
+  const retryText = error.retryAfterSeconds === null ? "" : ` Retry after about ${error.retryAfterSeconds}s.`;
+  return `${error.message}${retryText}`;
+}
+
+function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError }) {
+  const detail =
+    error.code === "dashboard_query_failed"
+      ? "The API could not read the local MatrixOne cache. Check API health, API logs, and MO_DEVFLOW_DB_* configuration."
+      : error.status === 503
+        ? "The API is reachable but unhealthy. Open API health to inspect database, migration, worker, and queue status."
+        : error.status === null
+          ? "The browser could not complete the dashboard request. Check that the API process is running and the Vite proxy can reach it."
+          : "Open API health for the current runtime state, then retry after the service recovers.";
+
+  return (
+    <Space direction="vertical" size={4}>
+      <Text>{dashboardLoadErrorMessage(error)}</Text>
+      <Text type="secondary">{detail}</Text>
+      {error.code ? <Tag color="red">{error.code}</Tag> : null}
+    </Space>
+  );
+}
+
 function readBrowserCookie(name: string): string | null {
   for (const segment of document.cookie.split(";")) {
     const [rawKey, ...valueParts] = segment.trim().split("=");
@@ -8672,7 +8720,7 @@ export default function App() {
   const [lastDashboardLoadedAt, setLastDashboardLoadedAt] = useState<string | null>(null);
   const [dashboardReadModel, setDashboardReadModel] = useState<DashboardReadModelMeta | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DashboardLoadError | null>(null);
   const [view, setView] = useState<DashboardView>(initialDashboardView);
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
@@ -8778,10 +8826,11 @@ export default function App() {
       setDashboardReadModel(dashboardReadModelMetaFromResponse(response, loadedAt));
       setAutoRefreshError(null);
     } catch (err) {
+      const loadError = dashboardLoadErrorFromUnknown(err);
       if (silent) {
-        setAutoRefreshError(displayError(err));
+        setAutoRefreshError(dashboardLoadErrorMessage(loadError));
       } else {
-        setError(displayError(err));
+        setError(loadError);
       }
     } finally {
       if (silent) {
@@ -10240,7 +10289,28 @@ export default function App() {
       </Header>
       <Content className="content">
         {error ? (
-          <Alert className="band" type="error" title="Dashboard unavailable" description={error} showIcon />
+          <Alert
+            className="band"
+            type="error"
+            title="Dashboard unavailable"
+            description={<DashboardLoadErrorDescription error={error} />}
+            action={
+              <Space size={[8, 8]} wrap>
+                <Button
+                  icon={<RefreshCw size={14} />}
+                  loading={loading || refreshing}
+                  size="small"
+                  onClick={() => void load()}
+                >
+                  Retry
+                </Button>
+                <Button href="/health" icon={<ExternalLink size={14} />} size="small" target="_blank">
+                  API health
+                </Button>
+              </Space>
+            }
+            showIcon
+          />
         ) : null}
         {manualRefreshError ? (
           <Alert
