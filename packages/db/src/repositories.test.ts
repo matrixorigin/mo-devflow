@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, RepoProfile } from "@mo-devflow/shared";
+import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, NormalizedPullRequest, RepoProfile } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
@@ -19,6 +19,7 @@ import {
   profileActionSuggestions,
   profileConfigurationWarnings,
   profileSetupPlan,
+  pullRequestTestingTransitionForUpsert,
   testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
@@ -833,6 +834,112 @@ describe("critical issue cache blockers", () => {
         relatedPrNumber: null
       }
     ]);
+  });
+});
+
+describe("pull request testing transition events", () => {
+  const pullRequest: NormalizedPullRequest = {
+    githubId: 101,
+    number: 101,
+    title: "testing handoff",
+    state: "open",
+    authorLogin: "alice",
+    ownerLogin: "alice",
+    htmlUrl: "https://github.com/matrixorigin/matrixone/pull/101",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    closedAt: null,
+    mergedAt: null,
+    draft: false,
+    headRef: "feature",
+    baseRef: "main",
+    labels: [],
+    assignees: [],
+    requestedReviewers: ["tester-a"],
+    ageHours: 48,
+    lastHumanActionAt: "2026-07-02T08:00:00.000Z",
+    lastSystemActionAt: null,
+    reviewDecision: null,
+    mergeStateStatus: null,
+    ciState: null,
+    latestReviewState: null,
+    latestReviewSubmittedAt: null,
+    latestCommitAt: "2026-07-02T07:00:00.000Z",
+    detailSyncedAt: "2026-07-03T00:00:00.000Z",
+    detailError: null,
+    testingState: "test_requested",
+    testingTesters: ["tester-a"],
+    testingSignals: ["reviewer:tester-a"],
+    testingQueueAgeHours: 16,
+    attentionFlags: [],
+    sourceAuthType: "service_read_token",
+    sourceUserId: null,
+    visibilityClass: "anonymous_readable",
+    isComplete: true,
+    rawPayload: {}
+  };
+
+  test("records first observed testing handoff transitions", () => {
+    expect(
+      pullRequestTestingTransitionForUpsert({
+        repoId: 7,
+        previousTestingState: null,
+        pr: pullRequest
+      })
+    ).toEqual({
+      repoId: 7,
+      prNumber: 101,
+      fromState: "not_ready",
+      toState: "test_requested",
+      testingTesters: ["tester-a"],
+      testingSignals: ["reviewer:tester-a"],
+      occurredAt: "2026-07-02T08:00:00.000Z",
+      sourceCompleteness: "complete_cache",
+      sourceAuthType: "service_read_token",
+      sourceUserId: null,
+      visibilityClass: "anonymous_readable",
+      dedupeKey: "7:pr:101:testing:not_ready:test_requested:2026-07-02T08:00:00.000Z"
+    });
+  });
+
+  test("does not record repeated upserts with the same testing state", () => {
+    expect(
+      pullRequestTestingTransitionForUpsert({
+        repoId: 7,
+        previousTestingState: "test_requested",
+        pr: pullRequest
+      })
+    ).toBeNull();
+  });
+
+  test("does not record initial not-ready state", () => {
+    expect(
+      pullRequestTestingTransitionForUpsert({
+        repoId: 7,
+        previousTestingState: null,
+        pr: { ...pullRequest, testingState: "not_ready", testingTesters: [], testingSignals: [] }
+      })
+    ).toBeNull();
+  });
+
+  test("uses review submission time for tester pass and change-request transitions", () => {
+    const event = pullRequestTestingTransitionForUpsert({
+      repoId: 7,
+      previousTestingState: "test_requested",
+      pr: {
+        ...pullRequest,
+        testingState: "test_passed",
+        latestReviewState: "APPROVED",
+        latestReviewSubmittedAt: "2026-07-03T02:00:00.000Z",
+        testingQueueAgeHours: null
+      }
+    });
+
+    expect(event).toMatchObject({
+      fromState: "test_requested",
+      toState: "test_passed",
+      occurredAt: "2026-07-03T02:00:00.000Z"
+    });
   });
 });
 

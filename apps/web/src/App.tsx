@@ -2050,6 +2050,8 @@ export default function App() {
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
                   <Statistic title="Testing Queue" value={data.testing.queuePrs} />
                   <Statistic title="Avg Testing Age" value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)} />
+                  <Statistic title="Testing Events" value={data.testing.transitionEvents} />
+                  <Statistic title="Last Testing Event" value={formatDate(data.testing.lastTransitionAt)} />
                 </div>
                 <Space className="sync-health-tags" size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (
@@ -2185,6 +2187,8 @@ export default function App() {
                   <Space size={[6, 6]} wrap>
                     <Tag color={data.testing.queuePrs > 0 ? "blue" : "default"}>{data.testing.queuePrs} queued</Tag>
                     <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>{data.testing.staleQueuePrs} stale</Tag>
+                    <Tag>{data.testing.transitionEvents} transitions</Tag>
+                    <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
                   </Space>
                 </div>
                 <Table

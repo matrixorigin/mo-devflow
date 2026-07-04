@@ -242,6 +242,23 @@ const schemaStatements = [
     last_synced_at DATETIME NOT NULL,
     UNIQUE KEY uniq_pull_requests_repo_number (repo_id, number)
   )`,
+  `CREATE TABLE IF NOT EXISTS pr_testing_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    pr_number INT NOT NULL,
+    from_state VARCHAR(64) NOT NULL,
+    to_state VARCHAR(64) NOT NULL,
+    testing_testers_json LONGTEXT NOT NULL,
+    testing_signals_json LONGTEXT NOT NULL,
+    occurred_at DATETIME NOT NULL,
+    source_completeness VARCHAR(64) NOT NULL,
+    source_auth_type VARCHAR(64) NOT NULL,
+    source_user_id BIGINT,
+    visibility_class VARCHAR(64) NOT NULL,
+    dedupe_key VARCHAR(512) NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_pr_testing_events_dedupe (dedupe_key)
+  )`,
   `CREATE TABLE IF NOT EXISTS issue_comment_syncs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     repo_id BIGINT NOT NULL,
@@ -384,6 +401,9 @@ const indexStatements = [
   "CREATE INDEX idx_issues_repo_lifecycle ON issues(repo_id, lifecycle_state)",
   "CREATE INDEX idx_pull_requests_repo_state ON pull_requests(repo_id, state)",
   "CREATE INDEX idx_pull_requests_repo_owner ON pull_requests(repo_id, owner_login)",
+  "CREATE INDEX idx_pr_testing_events_repo_pr ON pr_testing_events(repo_id, pr_number)",
+  "CREATE INDEX idx_pr_testing_events_repo_occurred ON pr_testing_events(repo_id, occurred_at)",
+  "CREATE INDEX idx_pr_testing_events_visibility_source ON pr_testing_events(repo_id, visibility_class, source_user_id)",
   "CREATE INDEX idx_jobs_status_next_run ON jobs(status, next_run_at)",
   "CREATE INDEX idx_jobs_lease_expires ON jobs(lease_expires_at)",
   "CREATE INDEX idx_github_webhook_repo_status ON github_webhook_deliveries(repo_id, status)",

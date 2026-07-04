@@ -367,6 +367,8 @@ export interface TestingSummary {
   queuePrs: number;
   staleQueuePrs: number;
   averageQueueAgeHours: number | null;
+  transitionEvents: number;
+  lastTransitionAt: string | null;
   testers: Array<{
     login: string;
     queuePrs: number;

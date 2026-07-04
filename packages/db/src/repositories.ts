@@ -54,6 +54,26 @@ interface RowData extends RowDataPacket {
   [key: string]: unknown;
 }
 
+export interface PullRequestTestingTransitionEvent {
+  repoId: number;
+  prNumber: number;
+  fromState: NormalizedPullRequest["testingState"];
+  toState: NormalizedPullRequest["testingState"];
+  testingTesters: string[];
+  testingSignals: string[];
+  occurredAt: string;
+  sourceCompleteness: "complete_cache" | "partial_cache";
+  sourceAuthType: NormalizedPullRequest["sourceAuthType"];
+  sourceUserId: number | null;
+  visibilityClass: NormalizedPullRequest["visibilityClass"];
+  dedupeKey: string;
+}
+
+export interface PullRequestTestingTransitionEventView extends PullRequestTestingTransitionEvent {
+  id: number;
+  createdAt: string;
+}
+
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -81,6 +101,46 @@ function asBoolean(value: unknown): boolean {
 
 function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
+}
+
+function testingTransitionOccurredAt(pr: NormalizedPullRequest): string {
+  if (pr.testingState === "closed_or_merged") {
+    return pr.mergedAt ?? pr.closedAt ?? pr.updatedAt;
+  }
+  if (pr.testingState === "test_passed" || pr.testingState === "test_changes_requested") {
+    return pr.latestReviewSubmittedAt ?? pr.lastHumanActionAt;
+  }
+  return pr.lastHumanActionAt || pr.updatedAt;
+}
+
+export function pullRequestTestingTransitionForUpsert(input: {
+  repoId: number;
+  previousTestingState: NormalizedPullRequest["testingState"] | null;
+  pr: NormalizedPullRequest;
+}): PullRequestTestingTransitionEvent | null {
+  const fromState = input.previousTestingState ?? "not_ready";
+  const toState = input.pr.testingState;
+  if (fromState === toState) {
+    return null;
+  }
+  if (!input.previousTestingState && toState === "not_ready") {
+    return null;
+  }
+  const occurredAt = testingTransitionOccurredAt(input.pr);
+  return {
+    repoId: input.repoId,
+    prNumber: input.pr.number,
+    fromState,
+    toState,
+    testingTesters: input.pr.testingTesters,
+    testingSignals: input.pr.testingSignals,
+    occurredAt,
+    sourceCompleteness: input.pr.isComplete ? "complete_cache" : "partial_cache",
+    sourceAuthType: input.pr.sourceAuthType,
+    sourceUserId: input.pr.sourceUserId,
+    visibilityClass: input.pr.visibilityClass,
+    dedupeKey: `${input.repoId}:pr:${input.pr.number}:testing:${fromState}:${toState}:${occurredAt}`
+  };
 }
 
 function isDuplicateError(error: unknown): boolean {
@@ -897,16 +957,16 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
 export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<NormalizedPullRequest> {
   const now = nowSql();
   let next = pr;
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT last_human_action_at, review_decision, merge_state_status, ci_state,
+            latest_review_state, latest_review_submitted_at, latest_commit_at,
+            detail_synced_at, detail_error, attention_flags_json, testing_state
+     FROM pull_requests
+     WHERE repo_id = ? AND number = ?`,
+    [repoId, pr.number]
+  );
+  const previous = rows[0];
   if (pr.state === "open" && !pr.detailSyncedAt && !pr.detailError) {
-    const [rows] = await getPool().execute<RowData[]>(
-      `SELECT last_human_action_at, review_decision, merge_state_status, ci_state,
-              latest_review_state, latest_review_submitted_at, latest_commit_at,
-              detail_synced_at, detail_error, attention_flags_json
-       FROM pull_requests
-       WHERE repo_id = ? AND number = ?`,
-      [repoId, pr.number]
-    );
-    const previous = rows[0];
     if (previous?.detail_synced_at) {
       next = {
         ...pr,
@@ -923,6 +983,13 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       };
     }
   }
+  const testingTransition = pullRequestTestingTransitionForUpsert({
+    repoId,
+    previousTestingState: previous?.testing_state
+      ? (asString(previous.testing_state) as NormalizedPullRequest["testingState"])
+      : null,
+    pr: next
+  });
   await getPool().execute("DELETE FROM pull_requests WHERE repo_id = ? AND number = ?", [repoId, pr.number]);
   await getPool().execute(
     `INSERT INTO pull_requests(
@@ -979,7 +1046,74 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       now
     ]
   );
+  if (testingTransition) {
+    await recordPullRequestTestingTransitionEvent(testingTransition);
+  }
   return next;
+}
+
+async function recordPullRequestTestingTransitionEvent(event: PullRequestTestingTransitionEvent): Promise<void> {
+  try {
+    await getPool().execute(
+      `INSERT INTO pr_testing_events(
+        repo_id, pr_number, from_state, to_state, testing_testers_json,
+        testing_signals_json, occurred_at, source_completeness, source_auth_type,
+        source_user_id, visibility_class, dedupe_key, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        event.repoId,
+        event.prNumber,
+        event.fromState,
+        event.toState,
+        stringify(event.testingTesters),
+        stringify(event.testingSignals),
+        sqlDate(event.occurredAt),
+        event.sourceCompleteness,
+        event.sourceAuthType,
+        event.sourceUserId,
+        event.visibilityClass,
+        event.dedupeKey,
+        nowSql()
+      ]
+    );
+  } catch (error) {
+    if (!isDuplicateError(error)) {
+      throw error;
+    }
+  }
+}
+
+export async function listPullRequestTestingTransitionEvents(input: {
+  repoId: number;
+  prNumber?: number;
+  limit?: number;
+}): Promise<PullRequestTestingTransitionEventView[]> {
+  const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)));
+  const prFilter = input.prNumber ? "AND pr_number = ?" : "";
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM pr_testing_events
+     WHERE repo_id = ? ${prFilter}
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT ?`,
+    input.prNumber ? [input.repoId, input.prNumber, limit] : [input.repoId, limit]
+  );
+  return rows.map((row) => ({
+    id: asNumber(row.id),
+    repoId: asNumber(row.repo_id),
+    prNumber: asNumber(row.pr_number),
+    fromState: asString(row.from_state) as NormalizedPullRequest["testingState"],
+    toState: asString(row.to_state) as NormalizedPullRequest["testingState"],
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
+    occurredAt: fromSqlDate(row.occurred_at) ?? new Date().toISOString(),
+    sourceCompleteness: asString(row.source_completeness) === "complete_cache" ? "complete_cache" : "partial_cache",
+    sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
+    sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
+    visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
+    dedupeKey: asString(row.dedupe_key),
+    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString()
+  }));
 }
 
 export async function upsertAttentionItem(input: {
@@ -1922,6 +2056,7 @@ export async function getDashboardSummary(
   const personalIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const personalPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const linkedPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const testingEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
   const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
@@ -1962,6 +2097,12 @@ export async function getDashboardSummary(
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
     [repoId, ...allPrVisibility.params]
+  );
+  const [testingEventRows] = await pool.execute<RowData[]>(
+    `SELECT COUNT(*) AS transition_events, MAX(occurred_at) AS last_transition_at
+     FROM pr_testing_events e
+     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}`,
+    [repoId, ...testingEventVisibility.params]
   );
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
@@ -2371,6 +2512,8 @@ export async function getDashboardSummary(
       queueAges.length === 0
         ? null
         : Math.round((queueAges.reduce((sum, value) => sum + value, 0) / queueAges.length) * 10) / 10,
+    transitionEvents: asNumber(testingEventRows[0]?.transition_events),
+    lastTransitionAt: fromSqlDate(testingEventRows[0]?.last_transition_at),
     testers: Array.from(testerKeys).map((login) => {
       const rows = testingQueueRows.filter((row) => parseJsonArray(asString(row.testing_testers_json)).includes(login));
       const ages = rows
