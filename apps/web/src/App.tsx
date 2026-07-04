@@ -1435,6 +1435,12 @@ function TeamRotationOverview({
             <span>{teamFocus.detail}</span>
           </div>
         </div>
+        <TeamFlowRiskStrip
+          data={data}
+          onNavigate={onNavigate}
+          onOpenIssuesFilter={onOpenIssuesFilter}
+          onOpenPrsFilter={onOpenPrsFilter}
+        />
         <div className="team-monitor-grid" aria-label="Team flow monitor">
           <TeamMonitorTile
             label="Critical issues"
@@ -1556,6 +1562,112 @@ function TeamRotationOverview({
       </section>
     </div>
   );
+}
+
+function TeamFlowRiskStrip({
+  data,
+  onNavigate,
+  onOpenIssuesFilter,
+  onOpenPrsFilter
+}: {
+  data: DashboardSummary;
+  onNavigate: (view: DashboardView) => void;
+  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
+}) {
+  const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
+  const prBlockers = data.pendingPrs.filter(
+    (pr) =>
+      prHasFailedCi(pr) ||
+      prHasRequestChanges(pr) ||
+      prHasConflict(pr) ||
+      pr.attentionFlags.includes("no_human_action_24h")
+  );
+  const staleTestingPrs = data.pendingPrs.filter(isTestingStalePr);
+  const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
+  const dataRiskTone = data.sync.worker.status === "failed" || data.sync.staleObjects > 0 ? "attention" : "normal";
+
+  return (
+    <div className="team-flow-risk-strip" aria-label="Team flow risk shortcuts">
+      <TeamFlowRiskCard
+        label="Highest priority"
+        value={sMinusOneIssues.length}
+        detail={`oldest ${optionalHours(maxCriticalActiveAge(sMinusOneIssues))}`}
+        tone={sMinusOneIssues.length > 0 ? "critical" : "good"}
+        action="Open s-1"
+        onClick={() => onOpenIssuesFilter({ scope: "s-1" })}
+      />
+      <TeamFlowRiskCard
+        label="PR blockers"
+        value={prBlockers.length}
+        detail={`${data.counts.pendingPrs} pending | oldest ${optionalHours(maxPendingPrAge(prBlockers))}`}
+        tone={prBlockers.length > 0 ? "attention" : "good"}
+        action="Open PR risks"
+        onClick={() => onOpenPrsFilter("attention")}
+      />
+      <TeamFlowRiskCard
+        label="Test waits"
+        value={staleTestingPrs.length}
+        detail={`${data.testing.queuePrs} in test | max ${optionalHours(maxTestingPrAge(staleTestingPrs))}`}
+        tone={staleTestingPrs.length > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
+        action="Open test queue"
+        onClick={() => onOpenPrsFilter(staleTestingPrs.length > 0 ? "stale_testing" : "testing")}
+      />
+      <TeamFlowRiskCard
+        label="Data risk"
+        value={dataRiskCount}
+        detail={`${data.sync.staleObjects} stale | ${data.sync.partialObjects} partial | ${labelText(
+          data.sync.worker.status
+        )}`}
+        tone={dataRiskCount > 0 || data.sync.worker.status !== "active" ? dataRiskTone : "good"}
+        action="Open health"
+        onClick={() => onNavigate("Analytics")}
+      />
+    </div>
+  );
+}
+
+function TeamFlowRiskCard({
+  label,
+  value,
+  detail,
+  tone,
+  action,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`team-flow-risk-card team-flow-risk-${tone}`} onClick={onClick}>
+      <span className="team-flow-risk-label">{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+      <span className="team-flow-risk-action">{action}</span>
+    </button>
+  );
+}
+
+function maxCriticalActiveAge(issues: CriticalIssueView[]): number | null {
+  const values = issues
+    .map((issue) => issue.criticalAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(...values);
+}
+
+function maxPendingPrAge(prs: PendingPrView[]): number | null {
+  return prs.length === 0 ? null : Math.max(...prs.map((pr) => pr.ageHours));
+}
+
+function maxTestingPrAge(prs: PendingPrView[]): number | null {
+  const values = prs
+    .map((pr) => pr.testingQueueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(...values);
 }
 
 function TeamMonitorTile({
