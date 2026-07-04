@@ -221,6 +221,10 @@ body {
   white-space: normal;
 }
 
+.testing-transition-table {
+  margin-top: 14px;
+}
+
 .ant-table-wrapper .ant-table {
   border-radius: 8px;
 }

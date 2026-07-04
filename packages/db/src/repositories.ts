@@ -30,6 +30,7 @@ import type {
   SyncHealthLayer,
   SyncHealthStatus,
   TestingSummary,
+  TestingTransitionView,
   WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView,
@@ -140,6 +141,19 @@ export function pullRequestTestingTransitionForUpsert(input: {
     sourceUserId: input.pr.sourceUserId,
     visibilityClass: input.pr.visibilityClass,
     dedupeKey: `${input.repoId}:pr:${input.pr.number}:testing:${fromState}:${toState}:${occurredAt}`
+  };
+}
+
+export function testingTransitionViewFromRow(row: Record<string, unknown>): TestingTransitionView {
+  return {
+    id: asNumber(row.id),
+    prNumber: asNumber(row.pr_number),
+    fromState: asString(row.from_state) as TestingTransitionView["fromState"],
+    toState: asString(row.to_state) as TestingTransitionView["toState"],
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
+    occurredAt: fromSqlDate(row.occurred_at) ?? new Date().toISOString(),
+    sourceCompleteness: asString(row.source_completeness) === "complete_cache" ? "complete_cache" : "partial_cache"
   };
 }
 
@@ -1099,15 +1113,8 @@ export async function listPullRequestTestingTransitionEvents(input: {
     input.prNumber ? [input.repoId, input.prNumber, limit] : [input.repoId, limit]
   );
   return rows.map((row) => ({
-    id: asNumber(row.id),
+    ...testingTransitionViewFromRow(row),
     repoId: asNumber(row.repo_id),
-    prNumber: asNumber(row.pr_number),
-    fromState: asString(row.from_state) as NormalizedPullRequest["testingState"],
-    toState: asString(row.to_state) as NormalizedPullRequest["testingState"],
-    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
-    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
-    occurredAt: fromSqlDate(row.occurred_at) ?? new Date().toISOString(),
-    sourceCompleteness: asString(row.source_completeness) === "complete_cache" ? "complete_cache" : "partial_cache",
     sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
@@ -2104,6 +2111,14 @@ export async function getDashboardSummary(
      WHERE e.repo_id = ? AND ${testingEventVisibility.sql}`,
     [repoId, ...testingEventVisibility.params]
   );
+  const [recentTestingEventRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM pr_testing_events e
+     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}
+     ORDER BY e.occurred_at DESC, e.id DESC
+     LIMIT 12`,
+    [repoId, ...testingEventVisibility.params]
+  );
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
             latest.status,
@@ -2514,6 +2529,7 @@ export async function getDashboardSummary(
         : Math.round((queueAges.reduce((sum, value) => sum + value, 0) / queueAges.length) * 10) / 10,
     transitionEvents: asNumber(testingEventRows[0]?.transition_events),
     lastTransitionAt: fromSqlDate(testingEventRows[0]?.last_transition_at),
+    recentTransitions: recentTestingEventRows.map(testingTransitionViewFromRow),
     testers: Array.from(testerKeys).map((login) => {
       const rows = testingQueueRows.filter((row) => parseJsonArray(asString(row.testing_testers_json)).includes(login));
       const ages = rows

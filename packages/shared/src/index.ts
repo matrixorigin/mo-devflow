@@ -363,12 +363,24 @@ export type TestingFlowState =
   | "test_passed"
   | "closed_or_merged";
 
+export interface TestingTransitionView {
+  id: number;
+  prNumber: number;
+  fromState: TestingFlowState;
+  toState: TestingFlowState;
+  testingTesters: string[];
+  testingSignals: string[];
+  occurredAt: string;
+  sourceCompleteness: MetricSourceCompleteness;
+}
+
 export interface TestingSummary {
   queuePrs: number;
   staleQueuePrs: number;
   averageQueueAgeHours: number | null;
   transitionEvents: number;
   lastTransitionAt: string | null;
+  recentTransitions: TestingTransitionView[];
   testers: Array<{
     login: string;
     queuePrs: number;

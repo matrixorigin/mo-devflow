@@ -20,6 +20,7 @@ import {
   profileConfigurationWarnings,
   profileSetupPlan,
   pullRequestTestingTransitionForUpsert,
+  testingTransitionViewFromRow,
   testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
@@ -939,6 +940,30 @@ describe("pull request testing transition events", () => {
       fromState: "test_requested",
       toState: "test_passed",
       occurredAt: "2026-07-03T02:00:00.000Z"
+    });
+  });
+
+  test("maps testing transition rows to dashboard-safe views", () => {
+    expect(
+      testingTransitionViewFromRow({
+        id: 12,
+        pr_number: 101,
+        from_state: "test_requested",
+        to_state: "test_passed",
+        testing_testers_json: JSON.stringify(["tester-a"]),
+        testing_signals_json: JSON.stringify(["review:APPROVED", "reviewer:tester-a"]),
+        occurred_at: "2026-07-03 02:00:00",
+        source_completeness: "complete_cache"
+      })
+    ).toEqual({
+      id: 12,
+      prNumber: 101,
+      fromState: "test_requested",
+      toState: "test_passed",
+      testingTesters: ["tester-a"],
+      testingSignals: ["review:APPROVED", "reviewer:tester-a"],
+      occurredAt: "2026-07-03T02:00:00Z",
+      sourceCompleteness: "complete_cache"
     });
   });
 });

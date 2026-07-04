@@ -1578,6 +1578,81 @@ export default function App() {
     ],
     []
   );
+  const testingTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentTransitions"][number]> = useMemo(
+    () => [
+      {
+        title: "PR",
+        dataIndex: "prNumber",
+        width: 104,
+        render: (number) => (
+          <a href={`https://github.com/${data?.repo.owner}/${data?.repo.name}/pull/${number}`} target="_blank" rel="noreferrer">
+            #{number}
+          </a>
+        )
+      },
+      {
+        title: "Transition",
+        width: 260,
+        render: (_, transition) => (
+          <Space size={4} wrap>
+            <Tag>{labelText(transition.fromState)}</Tag>
+            <Text type="secondary">-&gt;</Text>
+            <Tag color="blue">{labelText(transition.toState)}</Tag>
+          </Space>
+        )
+      },
+      {
+        title: "Testers",
+        dataIndex: "testingTesters",
+        width: 220,
+        render: (testers: string[]) =>
+          testers.length === 0 ? (
+            <Text type="secondary">-</Text>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {testers.map((tester) => (
+                <Tag key={tester}>{tester}</Tag>
+              ))}
+            </Space>
+          )
+      },
+      {
+        title: "Signals",
+        dataIndex: "testingSignals",
+        ellipsis: true,
+        render: (signals: string[]) =>
+          signals.length === 0 ? (
+            <Text type="secondary">-</Text>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {signals.slice(0, 4).map((signal) => (
+                <Tooltip key={signal} title={signal}>
+                  <Tag>{signal}</Tag>
+                </Tooltip>
+              ))}
+              {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
+            </Space>
+          )
+      },
+      {
+        title: "Occurred",
+        dataIndex: "occurredAt",
+        width: 148,
+        render: (value) => formatDate(value)
+      },
+      {
+        title: "Evidence",
+        dataIndex: "sourceCompleteness",
+        width: 116,
+        render: (value) => (
+          <Tag color={value === "complete_cache" ? "green" : "orange"}>
+            {value === "complete_cache" ? "complete" : "partial"}
+          </Tag>
+        )
+      }
+    ],
+    [data?.repo.name, data?.repo.owner]
+  );
   const selectedPersonalView =
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
@@ -2138,6 +2213,7 @@ export default function App() {
                   />
                 ) : null}
                 <Table
+                  className="testing-transition-table"
                   rowKey="id"
                   size="middle"
                   columns={notificationColumns}
@@ -2198,6 +2274,15 @@ export default function App() {
                   dataSource={data.testing.testers}
                   pagination={false}
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
+                />
+                <Table
+                  rowKey="id"
+                  size="middle"
+                  columns={testingTransitionColumns}
+                  dataSource={data.testing.recentTransitions}
+                  scroll={{ x: 1040 }}
+                  pagination={{ pageSize: 6 }}
+                  locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
                 />
               </section>
             ) : null}
