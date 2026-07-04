@@ -597,6 +597,8 @@ The product should validate token capability before offering a write action. If 
 
 Logged-in browser write operations must also prove that the request originated from the active product session, not only from a browser that happens to carry the session cookie.
 
+Token connection should resist repeated invalid submissions. When a user or script exceeds the configured token-binding attempt window, the UI should receive a clear retry-later response instead of repeatedly calling GitHub.
+
 Before a write, the product must show:
 
 - Target issue or PR.

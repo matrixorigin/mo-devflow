@@ -32,6 +32,11 @@ import {
   readCookieValue,
   sessionCookieName
 } from "./sessionCookie";
+import {
+  clientRateLimitKey,
+  FixedWindowRateLimiter,
+  tokenBindRateLimitConfigFromEnv
+} from "./rateLimit";
 
 const bindGitHubTokenSchema = z.object({
   token: z.string().trim().min(20).max(512)
@@ -105,9 +110,21 @@ function githubTokenErrorStatus(error: unknown): number | null {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
+  const tokenBindRateLimiter = new FixedWindowRateLimiter(tokenBindRateLimitConfigFromEnv());
+
   app.get("/api/session", async (request, reply) => sessionFromRequest(request, reply));
 
   app.post("/api/session/github-token", async (request, reply) => {
+    const rateLimit = tokenBindRateLimiter.consume(clientRateLimitKey(request, "github-token-bind"));
+    if (!rateLimit.allowed) {
+      reply.header("retry-after", String(rateLimit.retryAfterSeconds));
+      return reply.status(429).send({
+        error: "github_token_bind_rate_limited",
+        message: "Too many GitHub token connection attempts. Retry later.",
+        retryAfterSeconds: rateLimit.retryAfterSeconds
+      });
+    }
+
     const parsed = bindGitHubTokenSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(422).send({

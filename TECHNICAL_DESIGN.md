@@ -297,6 +297,7 @@ Token requirements:
 - Never log raw token values.
 - Restrict credentialed browser API access to configured CORS origins.
 - Protect logged-in browser write endpoints with a SameSite double-submit CSRF token: the API issues a readable `mo_devflow_csrf` cookie for authenticated sessions, and the frontend must send the same value in `x-mo-devflow-csrf`.
+- Guard personal GitHub token binding attempts with a fixed-window per-client limit before token validation calls GitHub. The MVP default is 5 attempts per 300 seconds per API process and returns HTTP 429 with `Retry-After`; a database-backed or edge-enforced limiter can replace it when running multiple API instances.
 - Track which user initiated every write.
 - Show write previews before execution.
 - Validate token scopes or capabilities before enabling write actions.
