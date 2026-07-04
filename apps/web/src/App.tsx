@@ -94,6 +94,7 @@ import {
   effectiveAiEffortLabel,
   flowThreadDurationWarnings,
   flowThreadNextAction,
+  flowThreadStatusCounts,
   flowEfficiencySummary,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
@@ -5279,12 +5280,14 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           description="Active s-1/s0 issue lanes and their visible execution PRs."
           rows={criticalRows}
           tone="critical"
+          visibleLimit={6}
         />
         <FlowThreadSection
           title="Attention threads"
           description="PR or issue lanes with blocker, testing, review, CI, or linking risks."
           rows={attentionRows}
           tone="attention"
+          visibleLimit={6}
         />
         <FlowThreadSection
           title="Routine threads"
@@ -5338,7 +5341,7 @@ function FlowThreadSection({
       ) : null}
       {hiddenCount > 0 ? (
         <button type="button" className="flow-thread-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} routine threads hidden. Show all
+          +{hiddenCount} more threads hidden. Show all
         </button>
       ) : hasOverflow && expanded ? (
         <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={() => setExpanded(false)}>
@@ -5353,10 +5356,12 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
   const reasons = flowThreadReasons(row);
   const nextAction = flowThreadNextAction(row);
   const durationWarnings = flowThreadDurationWarnings(row);
+  const statusCounts = flowThreadStatusCounts(row);
   const sourceUrl = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedPrs, setExpandedPrs] = useState(false);
   const visiblePrs = expandedPrs ? row.prs : row.prs.slice(0, 6);
   const hiddenPrCount = Math.max(0, row.prs.length - visiblePrs.length);
@@ -5394,32 +5399,10 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
           {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
           <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{personalDurationText(row.issue)}</Tag>
           <Tag>{labelText(row.issue.durationEvidence)}</Tag>
-          {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
-          {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared</Tag> : null}
-        </div>
-      </div>
-
-      <div className="flow-thread-body">
-        <FlowThreadTimeline row={row} />
-        <div className="flow-pr-stack">
-          {row.prs.length === 0 ? (
-            <div className="flow-pr-empty">No linked PR visible</div>
-          ) : (
-            <>
-              {visiblePrs.map((pr) => (
-                <FlowPrRow pr={pr} key={pr.number} />
-              ))}
-              {hiddenPrCount > 0 ? (
-                <button type="button" className="flow-pr-more" onClick={() => setExpandedPrs(true)}>
-                  +{hiddenPrCount} more PRs. Show all
-                </button>
-              ) : row.prs.length > 6 && expandedPrs ? (
-                <button type="button" className="flow-pr-more flow-pr-more-muted" onClick={() => setExpandedPrs(false)}>
-                  Show compact PR list
-                </button>
-              ) : null}
-            </>
-          )}
+          {statusCounts.prs > 0 ? <Tag>{statusCounts.prs} PR</Tag> : null}
+          {statusCounts.blockedPrs > 0 ? <Tag color="orange">{statusCounts.blockedPrs} blocked</Tag> : null}
+          {statusCounts.testingPrs > 0 ? <Tag color="blue">{statusCounts.testingPrs} in test</Tag> : null}
+          {statusCounts.sharedPrs > 0 ? <Tag color="purple">{statusCounts.sharedPrs} shared</Tag> : null}
         </div>
       </div>
 
@@ -5430,12 +5413,16 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
             <small>{row.issue.durationKind === "critical_active" ? "s0/s-1" : "issue age"}</small>
           </span>
           <span>
-            <strong>{row.prs.length}</strong>
+            <strong>{statusCounts.prs}</strong>
             <small>PRs</small>
           </span>
           <span>
-            <strong>{row.prs.filter((pr) => pr.tone === "attention").length}</strong>
+            <strong>{statusCounts.blockedPrs}</strong>
             <small>blocked</small>
+          </span>
+          <span>
+            <strong>{statusCounts.testingPrs}</strong>
+            <small>in test</small>
           </span>
         </div>
         <div className="flow-signal-tags">
@@ -5462,6 +5449,40 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
           </div>
         ) : null}
       </div>
+
+      <button type="button" className="flow-thread-toggle" onClick={() => setDetailsOpen((open) => !open)}>
+        {detailsOpen ? "Hide timeline and PR details" : "Show timeline and PR details"}
+      </button>
+
+      {detailsOpen ? (
+        <div className="flow-thread-body">
+          <FlowThreadTimeline row={row} />
+          <div className="flow-pr-stack">
+            {row.prs.length === 0 ? (
+              <div className="flow-pr-empty">No linked PR visible</div>
+            ) : (
+              <>
+                {visiblePrs.map((pr) => (
+                  <FlowPrRow pr={pr} key={pr.number} />
+                ))}
+                {hiddenPrCount > 0 ? (
+                  <button type="button" className="flow-pr-more" onClick={() => setExpandedPrs(true)}>
+                    +{hiddenPrCount} more PRs. Show all
+                  </button>
+                ) : row.prs.length > 6 && expandedPrs ? (
+                  <button
+                    type="button"
+                    className="flow-pr-more flow-pr-more-muted"
+                    onClick={() => setExpandedPrs(false)}
+                  >
+                    Show compact PR list
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -5683,6 +5704,10 @@ function PersonalRotationOverview({
   const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
   const focusRows = filteredRows.slice(0, 6);
   const primaryFocus = personalPrimaryFocus(person, chart, blockedPrItems.length, testingStalePrs.length);
+  const criticalIssuesByPr = useMemo(
+    () => criticalIssueContextsByPullRequest(person.activeCriticalIssues),
+    [person.activeCriticalIssues]
+  );
 
   return (
     <div className="personal-rotation-overview">
@@ -5804,7 +5829,11 @@ function PersonalRotationOverview({
             {person.attentionPrs.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PR blockers" />
             ) : (
-              person.attentionPrs.slice(0, 5).map((pr) => <TeamPrRiskRow pr={pr} key={pr.number} />)
+              person.attentionPrs
+                .slice(0, 5)
+                .map((pr) => (
+                  <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
+                ))
             )}
           </div>
         </section>
@@ -5823,7 +5852,9 @@ function PersonalRotationOverview({
             ) : (
               sortTestingQueuePrs(person.testingPrs)
                 .slice(0, 4)
-                .map((pr) => <TeamPrRiskRow pr={pr} key={pr.number} />)
+                .map((pr) => (
+                  <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
+                ))
             )}
           </div>
         </section>

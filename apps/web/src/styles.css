@@ -2726,6 +2726,29 @@ button.critical-board-stat:hover {
   text-align: center;
 }
 
+.flow-thread-toggle {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  justify-self: start;
+  line-height: 1.2;
+  padding: 6px 9px;
+}
+
+.flow-thread-toggle:hover {
+  background: #eff6ff;
+}
+
+.flow-thread-toggle:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .flow-pr-row {
   background: #ffffff;
   border: 1px solid #e5e7eb;

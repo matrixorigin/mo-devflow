@@ -13,6 +13,7 @@ import {
   effectiveAiEffortLabel,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
+  flowThreadStatusCounts,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalGanttChart,
@@ -441,6 +442,20 @@ describe("personal gantt chart", () => {
     expect(chart.sharedPrCount).toBe(1);
     expect(chart.unlinkedPrCount).toBe(1);
     expect(chart.outsideIssuePrCount).toBe(1);
+    expect(flowThreadStatusCounts(issue10!)).toMatchObject({
+      prs: 1,
+      blockedPrs: 1,
+      testingPrs: 0,
+      sharedPrs: 1,
+      unlinkedPrs: 0
+    });
+    expect(flowThreadStatusCounts(otherPrs!)).toMatchObject({
+      prs: 2,
+      blockedPrs: 0,
+      testingPrs: 0,
+      sharedPrs: 0,
+      unlinkedPrs: 1
+    });
   });
 
   it("does not use issue created age as active severity duration when timeline evidence is missing", () => {

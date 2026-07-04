@@ -163,6 +163,14 @@ export interface FlowEfficiencySummary {
   averageTestingQueueAgeHours: number | null;
 }
 
+export interface FlowThreadStatusCounts {
+  prs: number;
+  blockedPrs: number;
+  testingPrs: number;
+  sharedPrs: number;
+  unlinkedPrs: number;
+}
+
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
@@ -1007,6 +1015,16 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     warnings.push("unlinked PR");
   }
   return uniqueStrings(warnings);
+}
+
+export function flowThreadStatusCounts(row: PersonalGanttRow): FlowThreadStatusCounts {
+  return {
+    prs: row.prs.length,
+    blockedPrs: row.prs.filter((pr) => pr.tone === "attention" || pr.reasons.length > 0).length,
+    testingPrs: row.prs.filter((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready").length,
+    sharedPrs: row.prs.filter((pr) => pr.isShared).length,
+    unlinkedPrs: row.prs.filter((pr) => pr.linkedIssueNumbers.length === 0).length
+  };
 }
 
 function activityFromIssue(
