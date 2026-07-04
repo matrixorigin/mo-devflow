@@ -1146,7 +1146,22 @@ interface MetricSeriesConfig {
   data: (point: TrendMetricPoint) => number;
 }
 
-function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
+type FlowEfficiencyActions = Partial<{
+  prFlow: () => void;
+  issueDrain: () => void;
+  pendingPrAge: () => void;
+  prAttention: () => void;
+  activeCriticalAge: () => void;
+  testingQueue: () => void;
+}>;
+
+function FlowEfficiencyStrip({
+  summary,
+  actions = {}
+}: {
+  summary: FlowEfficiencySummary;
+  actions?: FlowEfficiencyActions;
+}) {
   return (
     <div className="flow-efficiency-strip" aria-label="Flow efficiency summary">
       <FlowEfficiencyItem
@@ -1154,6 +1169,8 @@ function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
         value={`${summary.prsMerged}/${summary.prsCreated}`}
         detail={`${percentText(summary.prMergeRatePercent)} merged | open delta ${signedNumber(summary.prOpenDelta)}`}
         tone={summary.prOpenDelta > 0 ? "attention" : "good"}
+        actionLabel="Open PRs"
+        onClick={actions.prFlow}
       />
       <FlowEfficiencyItem
         label="Issue drain"
@@ -1162,6 +1179,8 @@ function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
           summary.issueOpenDelta
         )}`}
         tone={summary.issueOpenDelta > 0 ? "attention" : "good"}
+        actionLabel="Open issues"
+        onClick={actions.issueDrain}
       />
       <FlowEfficiencyItem
         label="Pending PR age"
@@ -1170,18 +1189,24 @@ function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
         tone={
           summary.averagePendingPrAgeHours !== null && summary.averagePendingPrAgeHours >= 24 ? "attention" : "normal"
         }
+        actionLabel="Open pending"
+        onClick={actions.pendingPrAge}
       />
       <FlowEfficiencyItem
         label="PR attention"
         value={percentText(summary.prAttentionRatePercent)}
         detail={`${summary.attentionPrs}/${summary.pendingPrs} pending PRs`}
         tone={summary.attentionPrs > 0 ? "attention" : "good"}
+        actionLabel="Open risks"
+        onClick={actions.prAttention}
       />
       <FlowEfficiencyItem
         label="Active s-1/s0 age"
         value={String(summary.activeCriticalIssues)}
         detail={`avg ${optionalHours(summary.averageActiveIssueAgeHours)} | highest priority`}
         tone={summary.activeCriticalIssues > 0 ? "critical" : "good"}
+        actionLabel="Open issues"
+        onClick={actions.activeCriticalAge}
       />
       <FlowEfficiencyItem
         label="Issues in test"
@@ -1190,6 +1215,8 @@ function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
           summary.workflowViolations
         }`}
         tone={summary.testingQueuePrs > 0 ? "attention" : "normal"}
+        actionLabel="Open testing"
+        onClick={actions.testingQueue}
       />
     </div>
   );
@@ -1199,20 +1226,37 @@ function FlowEfficiencyItem({
   label,
   value,
   detail,
-  tone
+  tone,
+  actionLabel,
+  onClick
 }: {
   label: string;
   value: string;
   detail: string;
   tone: "critical" | "attention" | "normal" | "good";
+  actionLabel?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className={`flow-efficiency-item flow-efficiency-${tone}`}>
+  const content = (
+    <>
       <Text type="secondary">{label}</Text>
       <strong>{value}</strong>
       <span>{detail}</span>
-    </div>
+      {onClick && actionLabel ? <small>{actionLabel}</small> : null}
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`flow-efficiency-item flow-efficiency-button flow-efficiency-${tone}`}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={`flow-efficiency-item flow-efficiency-${tone}`}>{content}</div>;
 }
 
 const defaultCriticalIssueAiLabels = ["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"];
@@ -2072,7 +2116,19 @@ function TeamRotationOverview({
             </Button>
           </Space>
         </div>
-        {flowSummary ? <FlowEfficiencyStrip summary={flowSummary} /> : null}
+        {flowSummary ? (
+          <FlowEfficiencyStrip
+            summary={flowSummary}
+            actions={{
+              prFlow: () => onOpenPrsFilter("all"),
+              issueDrain: () => onOpenIssuesFilter({}),
+              pendingPrAge: () => onOpenPrsFilter("all"),
+              prAttention: () => onOpenPrsFilter("attention"),
+              activeCriticalAge: () => onOpenIssuesFilter({}),
+              testingQueue: () => onOpenPrsFilter("testing")
+            }}
+          />
+        ) : null}
         <TrendChart points={trendPoints} />
       </section>
     </div>
@@ -9052,7 +9108,15 @@ function SelectedPersonWorkbench({
             options={metricPeriodOptions}
           />
         </div>
-        <FlowEfficiencyStrip summary={flowSummary} />
+        <FlowEfficiencyStrip
+          summary={flowSummary}
+          actions={{
+            pendingPrAge: () => onDrilldownChange("pending_pr"),
+            prAttention: () => onDrilldownChange("pr_attention"),
+            activeCriticalAge: () => onDrilldownChange("active_issues"),
+            testingQueue: () => onDrilldownChange("testing")
+          }}
+        />
         <TrendChart points={trendPoints} />
       </section>
     </div>
@@ -11937,7 +12001,19 @@ export default function App() {
                   />
                 </div>
                 <Alert className="band" type="info" title={data.analytics.sourceNote} showIcon />
-                {teamFlowSummary ? <FlowEfficiencyStrip summary={teamFlowSummary} /> : null}
+                {teamFlowSummary ? (
+                  <FlowEfficiencyStrip
+                    summary={teamFlowSummary}
+                    actions={{
+                      prFlow: () => openPrsWithFilter("all"),
+                      issueDrain: () => openIssuesWithFilter({}),
+                      pendingPrAge: () => openPrsWithFilter("all"),
+                      prAttention: () => openPrsWithFilter("attention"),
+                      activeCriticalAge: () => openIssuesWithFilter({}),
+                      testingQueue: () => openPrsWithFilter("testing")
+                    }}
+                  />
+                ) : null}
                 <TrendChart points={teamTrendPoints} />
               </section>
             ) : null}
