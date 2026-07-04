@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { JobQueueHealth, OperationalHealthSummary, WorkerHealth } from "@mo-devflow/shared";
-import { apiHealthStatus } from "./health";
+import { apiHealthHttpStatus, apiHealthStatus } from "./health";
 
 const worker: WorkerHealth = {
   status: "active",
@@ -75,5 +75,11 @@ describe("API health status", () => {
     expect(apiHealthStatus({ worker, jobQueue, operational, operationalError: "Operational probe failed." })).toBe(
       "degraded"
     );
+  });
+
+  test("keeps degraded service readable but reports unhealthy service as unavailable", () => {
+    expect(apiHealthHttpStatus("healthy")).toBe(200);
+    expect(apiHealthHttpStatus("degraded")).toBe(200);
+    expect(apiHealthHttpStatus("unhealthy")).toBe(503);
   });
 });

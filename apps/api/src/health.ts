@@ -1,6 +1,6 @@
 import type { JobQueueHealth, OperationalHealthSummary, WorkerHealth } from "@mo-devflow/shared";
 
-export type ApiHealthStatus = "healthy" | "degraded";
+export type ApiHealthStatus = "healthy" | "degraded" | "unhealthy";
 
 export function apiHealthStatus(input: {
   worker: WorkerHealth;
@@ -21,4 +21,8 @@ export function apiHealthStatus(input: {
     return "degraded";
   }
   return "healthy";
+}
+
+export function apiHealthHttpStatus(status: ApiHealthStatus): 200 | 503 {
+  return status === "unhealthy" ? 503 : 200;
 }

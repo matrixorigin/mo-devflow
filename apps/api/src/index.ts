@@ -13,7 +13,7 @@ import {
 import { registerApiSecurity } from "./apiSecurity";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
-import { apiHealthStatus } from "./health";
+import { apiHealthHttpStatus, apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
@@ -57,7 +57,7 @@ await registerRefreshRoutes(app);
 await registerNotificationRoutes(app);
 await registerWebhookRoutes(app);
 
-app.get("/health", async () => {
+app.get("/health", async (_request, reply) => {
   try {
     await pingDatabase();
     const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
@@ -73,22 +73,23 @@ app.get("/health", async () => {
         operationalError = "Operational health summary failed; inspect API logs.";
       }
     }
-    return {
-      status: apiHealthStatus({ worker, jobQueue, operational, operationalError }),
+    const status = apiHealthStatus({ worker, jobQueue, operational, operationalError });
+    return reply.status(apiHealthHttpStatus(status)).send({
+      status,
       database: "connected",
       worker,
       jobQueue,
       operational,
       operationalError,
       generatedAt: new Date().toISOString()
-    };
+    });
   } catch (error) {
     app.log.error({ error }, "health check failed");
-    return {
+    return reply.status(apiHealthHttpStatus("unhealthy")).send({
       status: "unhealthy",
       database: "disconnected",
       generatedAt: new Date().toISOString()
-    };
+    });
   }
 });
 
