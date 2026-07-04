@@ -773,6 +773,30 @@ export interface WebhookIngestionHealth {
   latestFailure: string | null;
 }
 
+export type CacheHealthStatus = "healthy" | "partial" | "stale";
+export type OperationalHealthStatus = "healthy" | "degraded";
+
+export interface OperationalHealthSummary {
+  status: OperationalHealthStatus;
+  recommendedAction: string | null;
+  sync: {
+    health: SyncHealth[];
+    unhealthyLayers: SyncHealthLayer[];
+    rateLimitedLayers: SyncHealthLayer[];
+  };
+  cache: {
+    status: CacheHealthStatus;
+    staleObjects: number;
+    staleThresholdHours: number;
+    oldestCacheAgeHours: number | null;
+    partialObjects: number;
+  };
+  notifications: {
+    failedDeliveries: number;
+  };
+  webhooks: WebhookIngestionHealth;
+}
+
 export type ManualRefreshLayer = SyncHealthLayer;
 
 export interface ManualRefreshResult {

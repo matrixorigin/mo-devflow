@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { JobQueueHealth, WorkerHealth } from "@mo-devflow/shared";
+import type { JobQueueHealth, OperationalHealthSummary, WorkerHealth } from "@mo-devflow/shared";
 import { apiHealthStatus } from "./health";
 
 const worker: WorkerHealth = {
@@ -31,13 +31,45 @@ const jobQueue: JobQueueHealth = {
   recommendedAction: null
 };
 
+const operational: OperationalHealthSummary = {
+  status: "healthy",
+  recommendedAction: null,
+  sync: {
+    health: [],
+    unhealthyLayers: [],
+    rateLimitedLayers: []
+  },
+  cache: {
+    status: "healthy",
+    staleObjects: 0,
+    staleThresholdHours: 6,
+    oldestCacheAgeHours: null,
+    partialObjects: 0
+  },
+  notifications: {
+    failedDeliveries: 0
+  },
+  webhooks: {
+    pendingDeliveries: 0,
+    processedDeliveries: 0,
+    failedDeliveries: 0,
+    ignoredDeliveries: 0,
+    duplicateDeliveries: 0,
+    lastReceivedAt: null,
+    latestFailure: null
+  }
+};
+
 describe("API health status", () => {
   test("is healthy only when worker and job queue are healthy", () => {
-    expect(apiHealthStatus({ worker, jobQueue })).toBe("healthy");
+    expect(apiHealthStatus({ worker, jobQueue, operational })).toBe("healthy");
   });
 
-  test("degrades for worker or job queue attention states", () => {
-    expect(apiHealthStatus({ worker: { ...worker, status: "stale" }, jobQueue })).toBe("degraded");
-    expect(apiHealthStatus({ worker, jobQueue: { ...jobQueue, status: "attention" } })).toBe("degraded");
+  test("degrades for worker, job queue, or operational attention states", () => {
+    expect(apiHealthStatus({ worker: { ...worker, status: "stale" }, jobQueue, operational })).toBe("degraded");
+    expect(apiHealthStatus({ worker, jobQueue: { ...jobQueue, status: "attention" }, operational })).toBe("degraded");
+    expect(apiHealthStatus({ worker, jobQueue, operational: { ...operational, status: "degraded" } })).toBe(
+      "degraded"
+    );
   });
 });

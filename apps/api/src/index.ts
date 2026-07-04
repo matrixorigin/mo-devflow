@@ -3,6 +3,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   getDashboardSummary,
   getJobQueueHealth,
+  getOperationalHealth,
   getRepoId,
   getWorkerHealth,
   migrate,
@@ -60,11 +61,15 @@ app.get("/health", async () => {
   try {
     await pingDatabase();
     const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
+    const profile = loadRepoProfile();
+    const repoId = await getRepoId(profile.key);
+    const operational = repoId ? await getOperationalHealth(repoId) : null;
     return {
-      status: apiHealthStatus({ worker, jobQueue }),
+      status: apiHealthStatus({ worker, jobQueue, operational }),
       database: "connected",
       worker,
       jobQueue,
+      operational,
       generatedAt: new Date().toISOString()
     };
   } catch (error) {
