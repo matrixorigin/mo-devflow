@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import type { RowDataPacket } from "mysql2";
 import { getDbConfig } from "./client";
 
 const schemaStatements = [
@@ -382,42 +383,6 @@ const indexStatements = [
   "CREATE INDEX idx_notification_ack_user ON notification_acknowledgements(user_id)"
 ];
 
-const compatibilityStatements = [
-  "ALTER TABLE issues MODIFY COLUMN github_id VARCHAR(64) NOT NULL",
-  "ALTER TABLE issues ADD COLUMN source_user_id BIGINT",
-  "ALTER TABLE pull_requests MODIFY COLUMN github_id VARCHAR(64) NOT NULL",
-  "ALTER TABLE pull_requests ADD COLUMN source_user_id BIGINT",
-  "ALTER TABLE pull_requests ADD COLUMN review_decision VARCHAR(64)",
-  "ALTER TABLE pull_requests ADD COLUMN merge_state_status VARCHAR(64)",
-  "ALTER TABLE pull_requests ADD COLUMN ci_state VARCHAR(64)",
-  "ALTER TABLE pull_requests ADD COLUMN latest_review_state VARCHAR(64)",
-  "ALTER TABLE pull_requests ADD COLUMN latest_review_submitted_at DATETIME",
-  "ALTER TABLE pull_requests ADD COLUMN latest_commit_at DATETIME",
-  "ALTER TABLE pull_requests ADD COLUMN detail_synced_at DATETIME",
-  "ALTER TABLE pull_requests ADD COLUMN detail_error TEXT",
-  "ALTER TABLE pull_requests ADD COLUMN labels_json LONGTEXT",
-  "ALTER TABLE pull_requests ADD COLUMN testing_state VARCHAR(64) NOT NULL DEFAULT 'not_ready'",
-  "ALTER TABLE pull_requests ADD COLUMN testing_testers_json LONGTEXT",
-  "ALTER TABLE pull_requests ADD COLUMN testing_signals_json LONGTEXT",
-  "ALTER TABLE pull_requests ADD COLUMN testing_queue_age_hours DOUBLE",
-  "ALTER TABLE notification_deliveries ADD COLUMN source_type VARCHAR(64)",
-  "ALTER TABLE notification_deliveries ADD COLUMN source_id BIGINT",
-  "ALTER TABLE notification_deliveries ADD COLUMN rule_key VARCHAR(128)",
-  "ALTER TABLE notification_deliveries ADD COLUMN object_type VARCHAR(64)",
-  "ALTER TABLE notification_deliveries ADD COLUMN object_number INT",
-  "ALTER TABLE notification_deliveries ADD COLUMN dedupe_key VARCHAR(512)",
-  "ALTER TABLE notification_deliveries ADD COLUMN dry_run TINYINT NOT NULL DEFAULT 0",
-  "ALTER TABLE notification_deliveries ADD COLUMN payload_json LONGTEXT",
-  "ALTER TABLE notification_deliveries ADD COLUMN repo_id BIGINT",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN attempts INT NOT NULL DEFAULT 0",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_owner VARCHAR(255)",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_started_at DATETIME",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_expires_at DATETIME",
-  "ALTER TABLE github_webhook_deliveries ADD COLUMN processing_result_json LONGTEXT",
-  "ALTER TABLE write_action_executions ADD COLUMN before_state_json LONGTEXT",
-  "ALTER TABLE write_action_executions ADD COLUMN after_state_json LONGTEXT"
-];
-
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {
   try {
     await connection.query(statement);
@@ -427,6 +392,107 @@ async function executeIgnoringDuplicateIndex(connection: mysql.Connection, state
       throw error;
     }
   }
+}
+
+interface SchemaColumnRow extends RowDataPacket {
+  table_name: string;
+  column_name: string;
+}
+
+export interface SchemaDrift {
+  missingColumns: string[];
+  unexpectedColumns: string[];
+}
+
+const tableConstraintTokens = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK"]);
+
+export function expectedSchemaColumnsFromStatements(
+  statements: readonly string[] = schemaStatements
+): Map<string, Set<string>> {
+  const expected = new Map<string, Set<string>>();
+
+  for (const statement of statements) {
+    const tableMatch = statement.match(/CREATE TABLE IF NOT EXISTS\s+`?([a-z_][a-z0-9_]*)`?\s*\(/i);
+    if (!tableMatch) {
+      continue;
+    }
+    const tableName = tableMatch[1]!;
+    const bodyStart = statement.indexOf("(");
+    const bodyEnd = statement.lastIndexOf(")");
+    const columns = new Set<string>();
+    for (const rawLine of statement.slice(bodyStart + 1, bodyEnd).split("\n")) {
+      const line = rawLine.trim().replace(/,$/, "");
+      const columnMatch = line.match(/^`?([a-z_][a-z0-9_]*)`?\s+/i);
+      const token = columnMatch?.[1];
+      if (!token || tableConstraintTokens.has(token.toUpperCase())) {
+        continue;
+      }
+      columns.add(token);
+    }
+    expected.set(tableName, columns);
+  }
+
+  return expected;
+}
+
+export function detectSchemaDrift(
+  expected: Map<string, Set<string>>,
+  actualRows: Array<{ table_name: string; column_name: string }>
+): SchemaDrift {
+  const actual = new Map<string, Set<string>>();
+  for (const row of actualRows) {
+    const tableName = row.table_name;
+    const columnName = row.column_name;
+    const existing = actual.get(tableName) ?? new Set<string>();
+    existing.add(columnName);
+    actual.set(tableName, existing);
+  }
+
+  const missingColumns: string[] = [];
+  const unexpectedColumns: string[] = [];
+  for (const [tableName, expectedColumns] of expected.entries()) {
+    const actualColumns = actual.get(tableName) ?? new Set<string>();
+    for (const expectedColumn of expectedColumns) {
+      if (!actualColumns.has(expectedColumn)) {
+        missingColumns.push(`${tableName}.${expectedColumn}`);
+      }
+    }
+    for (const actualColumn of actualColumns) {
+      if (!expectedColumns.has(actualColumn)) {
+        unexpectedColumns.push(`${tableName}.${actualColumn}`);
+      }
+    }
+  }
+
+  return {
+    missingColumns: missingColumns.sort(),
+    unexpectedColumns: unexpectedColumns.sort()
+  };
+}
+
+async function assertCurrentSchema(connection: mysql.Connection, database: string): Promise<void> {
+  const expected = expectedSchemaColumnsFromStatements();
+  const tableNames = Array.from(expected.keys());
+  const [rows] = await connection.query<SchemaColumnRow[]>(
+    `SELECT table_name, column_name
+     FROM information_schema.columns
+     WHERE table_schema = ? AND table_name IN (${tableNames.map(() => "?").join(", ")})`,
+    [database, ...tableNames]
+  );
+  const drift = detectSchemaDrift(expected, rows);
+  if (drift.missingColumns.length === 0 && drift.unexpectedColumns.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    [
+      `Database schema drift detected in ${database}.`,
+      "This early-development migration refuses to repair existing tables implicitly.",
+      "Reset the development database or add an explicit schema migration.",
+      `Missing columns: ${drift.missingColumns.join(", ") || "none"}.`,
+      `Unexpected columns: ${drift.unexpectedColumns.join(", ") || "none"}.`
+    ].join(" ")
+  );
 }
 
 export async function migrate(): Promise<void> {
@@ -460,9 +526,7 @@ export async function migrate(): Promise<void> {
     for (const statement of schemaStatements) {
       await connection.query(statement);
     }
-    for (const statement of compatibilityStatements) {
-      await executeIgnoringDuplicateIndex(connection, statement);
-    }
+    await assertCurrentSchema(connection, config.database);
     for (const statement of indexStatements) {
       await executeIgnoringDuplicateIndex(connection, statement);
     }
