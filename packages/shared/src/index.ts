@@ -607,6 +607,18 @@ export type WriteActionKey = WorkflowFixActionKey | "acknowledge_notification" |
 export type WriteActionObjectType = WorkflowViolationObjectType | "notification_delivery";
 export type WriteActionStatus = WorkflowFixExecutionStatus;
 
+export interface WorkflowFixPostWriteRefresh {
+  queued: boolean;
+  layers: ManualRefreshLayer[];
+  queuedJobs: Array<{
+    jobKey: string;
+    jobType: ManualRefreshLayer;
+    status: string;
+    nextRunAt: string | null;
+  }>;
+  errorMessage: string | null;
+}
+
 export interface WorkflowFixExecutionResult {
   previewId: string;
   status: WorkflowFixExecutionStatus;
@@ -615,6 +627,7 @@ export interface WorkflowFixExecutionResult {
   afterState: WorkflowFixStateSnapshot | null;
   message: string;
   errorMessage: string | null;
+  postWriteRefresh: WorkflowFixPostWriteRefresh | null;
   executedAt: string;
 }
 

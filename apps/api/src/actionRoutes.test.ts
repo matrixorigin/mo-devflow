@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({
   getRepoId: vi.fn(),
   fetchIssueFreshState: vi.fn(),
   fetchIssueWritePermission: vi.fn(),
-  applyWorkflowFixPreview: vi.fn()
+  applyWorkflowFixPreview: vi.fn(),
+  enqueueJobsNow: vi.fn()
 }));
 
 vi.mock("@mo-devflow/config", () => ({
@@ -29,7 +30,7 @@ vi.mock("./authRoutes", () => ({
 }));
 
 vi.mock("@mo-devflow/db", () => ({
-  enqueueJobsNow: vi.fn(),
+  enqueueJobsNow: mocks.enqueueJobsNow,
   getActiveGitHubTokenForUser: mocks.getActiveGitHubTokenForUser,
   getActiveWorkflowViolation: mocks.getActiveWorkflowViolation,
   getCachedIssueByNumber: mocks.getCachedIssueByNumber,
@@ -180,6 +181,14 @@ describe("action routes", () => {
       message: "GitHub token has write permission for issue workflow fixes.",
       rateLimitRemaining: 99
     });
+    mocks.enqueueJobsNow.mockImplementation(async (jobs: Array<{ jobKey: string; jobType: string }>) =>
+      jobs.map((job) => ({
+        jobKey: job.jobKey,
+        jobType: job.jobType,
+        status: "pending",
+        nextRunAt: "2026-07-04T00:00:00.000Z"
+      }))
+    );
   });
 
   test("rejects workflow fix previews without a valid CSRF token", async () => {
@@ -458,6 +467,119 @@ describe("action routes", () => {
         })
       );
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("queues post-write refresh jobs after successful workflow fix confirmation", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.applyWorkflowFixPreview.mockResolvedValue({
+      appliedOperations: preview.operations,
+      beforeState: preview.currentState,
+      afterState: preview.proposedState,
+      response: { ok: true }
+    });
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        previewId: preview.previewId,
+        status: "success",
+        executedOperations: preview.operations,
+        postWriteRefresh: {
+          queued: true,
+          layers: [
+            "github_sync",
+            "issue_timeline_backfill",
+            "comment_backfill",
+            "rules",
+            "metrics",
+            "ai_drift",
+            "notifications"
+          ],
+          errorMessage: null
+        }
+      });
+      expect(mocks.applyWorkflowFixPreview).toHaveBeenCalledWith({
+        token: "test-user-token",
+        profile: writeBackProfile,
+        preview
+      });
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledWith([
+        expect.objectContaining({ jobKey: "github-sync:matrixorigin/matrixone", jobType: "github_sync" }),
+        expect.objectContaining({
+          jobKey: "issue-timeline-backfill:matrixorigin/matrixone",
+          jobType: "issue_timeline_backfill"
+        }),
+        expect.objectContaining({ jobKey: "comment-backfill:matrixorigin/matrixone", jobType: "comment_backfill" }),
+        expect.objectContaining({ jobKey: "rules:matrixorigin/matrixone", jobType: "rules" }),
+        expect.objectContaining({ jobKey: "metrics:matrixorigin/matrixone", jobType: "metrics" }),
+        expect.objectContaining({ jobKey: "ai-drift:matrixorigin/matrixone", jobType: "ai_drift" }),
+        expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("keeps successful workflow fix visible when post-write refresh queueing fails", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.applyWorkflowFixPreview.mockResolvedValue({
+      appliedOperations: preview.operations,
+      beforeState: preview.currentState,
+      afterState: preview.proposedState,
+      response: { ok: true }
+    });
+    mocks.enqueueJobsNow.mockRejectedValue(new Error("database unavailable"));
+
+    const app = Fastify({ logger: false });
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        previewId: preview.previewId,
+        status: "success",
+        postWriteRefresh: {
+          queued: false,
+          queuedJobs: [],
+          errorMessage: expect.stringContaining("post-write refresh jobs could not be queued")
+        }
+      });
+      expect(mocks.recordWorkflowFixExecution).toHaveBeenCalledWith(
+        expect.objectContaining({
+          result: expect.objectContaining({ status: "success" })
+        })
+      );
     } finally {
       await app.close();
     }

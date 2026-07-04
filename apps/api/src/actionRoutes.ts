@@ -21,6 +21,7 @@ import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
 import type {
   WorkflowFixExecutionResult,
   WorkflowFixExecutionStatus,
+  WorkflowFixPostWriteRefresh,
   WorkflowFixPreview,
   WorkflowFixStateSnapshot
 } from "@mo-devflow/shared";
@@ -57,6 +58,7 @@ function executionResult(input: {
   afterState?: WorkflowFixStateSnapshot | null;
   message: string;
   errorMessage?: string | null;
+  postWriteRefresh?: WorkflowFixPostWriteRefresh | null;
 }): WorkflowFixExecutionResult {
   return {
     previewId: input.previewId,
@@ -66,6 +68,7 @@ function executionResult(input: {
     afterState: input.afterState ?? null,
     message: input.message,
     errorMessage: input.errorMessage ?? null,
+    postWriteRefresh: input.postWriteRefresh ?? null,
     executedAt: new Date().toISOString()
   };
 }
@@ -456,10 +459,24 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
           objectType: preview.objectType,
           objectNumber: preview.objectNumber
         });
+        const layers = refreshJobs.map((job) => job.jobType);
         try {
-          await enqueueJobsNow(refreshJobs);
+          const queuedJobs = await enqueueJobsNow(refreshJobs);
+          persisted.postWriteRefresh = {
+            queued: true,
+            layers,
+            queuedJobs,
+            errorMessage: null
+          };
         } catch (error) {
           app.log.error({ error, previewId: preview.previewId }, "post-write refresh queueing failed");
+          persisted.postWriteRefresh = {
+            queued: false,
+            layers,
+            queuedJobs: [],
+            errorMessage:
+              "Workflow fix executed, but post-write refresh jobs could not be queued. Queue a manual refresh before relying on dashboard freshness."
+          };
         }
       }
       return persisted;

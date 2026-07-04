@@ -11,11 +11,13 @@ describe("refresh job helpers", () => {
     expect(jobKeyForLayer("comment_backfill", "matrixorigin/matrixone")).toBe(
       "comment-backfill:matrixorigin/matrixone"
     );
+    expect(jobKeyForLayer("metrics", "matrixorigin/matrixone")).toBe("metrics:matrixorigin/matrixone");
+    expect(jobKeyForLayer("ai_drift", "matrixorigin/matrixone")).toBe("ai-drift:matrixorigin/matrixone");
     expect(jobKeyForLayer("rules", "matrixorigin/matrixone")).toBe("rules:matrixorigin/matrixone");
     expect(jobKeyForLayer("notifications", "matrixorigin/matrixone")).toBe("notifications:matrixorigin/matrixone");
   });
 
-  test("queues cache and rule refresh after a successful workflow write", () => {
+  test("queues cache, evidence, metric, drift, and notification refresh after a successful workflow write", () => {
     const jobs = workflowWriteRefreshJobs({
       repoKey: "matrixorigin/matrixone",
       githubLogin: "alice",
@@ -26,10 +28,23 @@ describe("refresh job helpers", () => {
       requestedAt: "2026-07-04T00:00:00.000Z"
     });
 
-    expect(jobs.map((job) => job.jobType)).toEqual(["github_sync", "rules"]);
+    expect(jobs.map((job) => job.jobType)).toEqual([
+      "github_sync",
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "rules",
+      "metrics",
+      "ai_drift",
+      "notifications"
+    ]);
     expect(jobs.map((job) => job.jobKey)).toEqual([
       "github-sync:matrixorigin/matrixone",
-      "rules:matrixorigin/matrixone"
+      "issue-timeline-backfill:matrixorigin/matrixone",
+      "comment-backfill:matrixorigin/matrixone",
+      "rules:matrixorigin/matrixone",
+      "metrics:matrixorigin/matrixone",
+      "ai-drift:matrixorigin/matrixone",
+      "notifications:matrixorigin/matrixone"
     ]);
     expect(jobs[0].payload).toMatchObject({
       trigger: "workflow_fix_execution",

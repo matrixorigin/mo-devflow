@@ -12733,6 +12733,21 @@ export default function App() {
                 showIcon
               />
             ) : null}
+            {workflowExecution?.postWriteRefresh ? (
+              <Alert
+                type={workflowExecution.postWriteRefresh.queued ? "info" : "warning"}
+                title={
+                  workflowExecution.postWriteRefresh.queued
+                    ? "Post-write refresh queued"
+                    : "Post-write refresh was not queued"
+                }
+                description={
+                  workflowExecution.postWriteRefresh.errorMessage ??
+                  `${workflowExecution.postWriteRefresh.layers.map(labelText).join(", ")} will refresh from GitHub and recompute derived dashboards.`
+                }
+                showIcon
+              />
+            ) : null}
             {workflowExecution?.beforeState && workflowExecution.afterState ? (
               <div className="preview-state-grid">
                 <WorkflowStateSnapshot title="Before execute" snapshot={workflowExecution.beforeState} />

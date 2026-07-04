@@ -56,18 +56,21 @@ export function workflowWriteRefreshJobs(input: {
     objectType: input.objectType,
     objectNumber: input.objectNumber
   };
-  return [
-    {
-      jobKey: jobKeyForLayer("github_sync", input.repoKey),
-      jobType: "github_sync",
-      payload
-    },
-    {
-      jobKey: jobKeyForLayer("rules", input.repoKey),
-      jobType: "rules",
-      payload
-    }
-  ];
+  return (
+    [
+      "github_sync",
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "rules",
+      "metrics",
+      "ai_drift",
+      "notifications"
+    ] as const
+  ).map((layer) => ({
+    jobKey: jobKeyForLayer(layer, input.repoKey),
+    jobType: layer,
+    payload
+  }));
 }
 
 export function webhookDeliveryRefreshJobs(input: {
