@@ -5,6 +5,9 @@ describe("refresh job helpers", () => {
   test("uses stable job keys for configured refresh layers", () => {
     expect(jobKeyForLayer("github_sync", "matrixorigin/matrixone")).toBe("github-sync:matrixorigin/matrixone");
     expect(jobKeyForLayer("pr_backfill", "matrixorigin/matrixone")).toBe("pr-backfill:matrixorigin/matrixone");
+    expect(jobKeyForLayer("comment_backfill", "matrixorigin/matrixone")).toBe(
+      "comment-backfill:matrixorigin/matrixone"
+    );
     expect(jobKeyForLayer("rules", "matrixorigin/matrixone")).toBe("rules:matrixorigin/matrixone");
     expect(jobKeyForLayer("notifications", "matrixorigin/matrixone")).toBe("notifications:matrixorigin/matrixone");
   });

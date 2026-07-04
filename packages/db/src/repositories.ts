@@ -76,6 +76,14 @@ export interface PullRequestTestingTransitionEventView extends PullRequestTestin
   createdAt: string;
 }
 
+export interface IssueCommentBackfillCandidate {
+  issueNumber: number;
+  objectType: "issue" | "pull_request";
+  visibilityClass: NormalizedIssue["visibilityClass"];
+  sourceUpdatedAt: string;
+  lastCommentSyncedAt: string | null;
+}
+
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -1313,6 +1321,71 @@ export async function listPullRequestNumbersForDetailBackfill(repoId: number, li
     [repoId, Math.floor(limit)]
   );
   return rows.map((row) => asNumber(row.number));
+}
+
+export async function listIssueCommentBackfillCandidates(
+  repoId: number,
+  input: { includePullRequests: boolean; limit: number }
+): Promise<IssueCommentBackfillCandidate[]> {
+  if (input.limit <= 0) {
+    return [];
+  }
+  const issueSelect = `
+    SELECT i.number AS issue_number,
+           'issue' AS object_type,
+           i.visibility_class,
+           i.updated_at AS source_updated_at,
+           s.last_synced_at AS comment_synced_at
+    FROM issues i
+    LEFT JOIN issue_comment_syncs s
+      ON s.repo_id = i.repo_id AND s.issue_number = i.number
+    WHERE i.repo_id = ?
+      AND i.state = 'open'
+      AND i.is_pull_request = 0
+      AND i.lifecycle_state = 'deferred'
+      AND (
+        s.issue_number IS NULL
+        OR s.is_complete = 0
+        OR s.sync_error IS NOT NULL
+        OR s.last_synced_at < i.updated_at
+      )`;
+  const pullRequestSelect = `
+    SELECT p.number AS issue_number,
+           'pull_request' AS object_type,
+           p.visibility_class,
+           p.updated_at AS source_updated_at,
+           s.last_synced_at AS comment_synced_at
+    FROM pull_requests p
+    LEFT JOIN issue_comment_syncs s
+      ON s.repo_id = p.repo_id AND s.issue_number = p.number
+    WHERE p.repo_id = ?
+      AND p.state = 'open'
+      AND (
+        s.issue_number IS NULL
+        OR s.is_complete = 0
+        OR s.sync_error IS NOT NULL
+        OR s.last_synced_at < p.updated_at
+      )`;
+  const selects = input.includePullRequests ? [issueSelect, pullRequestSelect] : [issueSelect];
+  const params = input.includePullRequests
+    ? [repoId, repoId, Math.floor(input.limit)]
+    : [repoId, Math.floor(input.limit)];
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM (${selects.join(" UNION ALL ")}) comment_candidates
+     ORDER BY CASE WHEN comment_synced_at IS NULL THEN 0 ELSE 1 END ASC,
+              source_updated_at DESC,
+              issue_number DESC
+     LIMIT ?`,
+    params
+  );
+  return rows.map((row) => ({
+    issueNumber: asNumber(row.issue_number),
+    objectType: asString(row.object_type) === "pull_request" ? "pull_request" : "issue",
+    visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
+    sourceUpdatedAt: fromSqlDate(row.source_updated_at) ?? new Date(0).toISOString(),
+    lastCommentSyncedAt: fromSqlDate(row.comment_synced_at)
+  }));
 }
 
 export async function upsertAttentionItem(input: {

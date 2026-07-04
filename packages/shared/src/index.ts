@@ -696,6 +696,7 @@ export const csrfHeaderName = "x-mo-devflow-csrf";
 export const syncHealthLayers = [
   "github_sync",
   "pr_backfill",
+  "comment_backfill",
   "webhooks",
   "rules",
   "metrics",

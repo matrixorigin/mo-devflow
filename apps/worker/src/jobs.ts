@@ -11,6 +11,7 @@ import {
 } from "@mo-devflow/db";
 import { classifyGitHubError } from "@mo-devflow/github";
 import {
+  backfillIssueCommentsOnce,
   backfillPullRequestDetailsOnce,
   dateAfterSeconds,
   recomputeAiDriftFromCache,
@@ -22,7 +23,8 @@ import {
   syncIntervalSecondsFromEnv
 } from "./sync";
 
-type ScheduledJobType = "github_sync" | "pr_backfill" | "webhooks" | "rules" | "metrics" | "ai_drift" | "notifications";
+type ScheduledJobType =
+  "github_sync" | "pr_backfill" | "comment_backfill" | "webhooks" | "rules" | "metrics" | "ai_drift" | "notifications";
 
 interface ScheduledJobDefinition {
   jobKey: string;
@@ -131,6 +133,11 @@ function scheduledJobDefinitions(): ScheduledJobDefinition[] {
       intervalSeconds: intervalSecondsFromEnv("MO_DEVFLOW_PR_BACKFILL_INTERVAL_SECONDS", 1800)
     },
     {
+      jobKey: `comment-backfill:${repoKey}`,
+      jobType: "comment_backfill",
+      intervalSeconds: intervalSecondsFromEnv("MO_DEVFLOW_COMMENT_BACKFILL_INTERVAL_SECONDS", 1800)
+    },
+    {
       jobKey: `webhooks:${repoKey}`,
       jobType: "webhooks",
       intervalSeconds: intervalSecondsFromEnv("MO_DEVFLOW_WEBHOOK_PROCESS_INTERVAL_SECONDS", 60, 10)
@@ -186,6 +193,10 @@ async function executeJob(job: LeasedJob): Promise<string> {
     case "pr_backfill": {
       const result = await backfillPullRequestDetailsOnce();
       return `pr backfill selected=${result.selected} refreshed=${result.refreshed} failed=${result.failed} skipped=${result.skipped}`;
+    }
+    case "comment_backfill": {
+      const result = await backfillIssueCommentsOnce();
+      return `comment backfill selected=${result.selected} refreshed=${result.refreshed} partial=${result.partial} failed=${result.failed} skipped=${result.skipped}`;
     }
     case "webhooks": {
       const result = await processGitHubWebhookDeliveriesOnce();

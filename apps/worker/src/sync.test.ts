@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { WeComSendError } from "@mo-devflow/notifications";
 import {
+  commentBackfillLimitFromEnv,
   metricsRetentionDaysFromEnv,
   notificationFailureStatus,
   prDetailBackfillLimitFromEnv,
@@ -48,6 +49,24 @@ describe("PR detail backfill config", () => {
     expect(prDetailBackfillLimitFromEnv({ MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS: "3" }, "anonymous")).toBe(3);
     expect(prDetailBackfillLimitFromEnv({ MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS: "-1" }, "service_read_token")).toBe(0);
     expect(prDetailBackfillLimitFromEnv({ MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS: "bad" }, "service_read_token")).toBe(25);
+  });
+});
+
+describe("comment backfill config", () => {
+  test("keeps anonymous backfill disabled by default", () => {
+    expect(commentBackfillLimitFromEnv({}, "anonymous")).toBe(0);
+  });
+
+  test("enables bounded service-token backfill by default", () => {
+    expect(commentBackfillLimitFromEnv({}, "service_read_token")).toBe(25);
+  });
+
+  test("accepts explicit limits and clamps invalid values", () => {
+    expect(commentBackfillLimitFromEnv({ MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "4" }, "anonymous")).toBe(4);
+    expect(commentBackfillLimitFromEnv({ MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "-1" }, "service_read_token")).toBe(0);
+    expect(commentBackfillLimitFromEnv({ MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "bad" }, "service_read_token")).toBe(
+      25
+    );
   });
 });
 

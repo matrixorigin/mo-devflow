@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
   completeGitHubWebhookDelivery: vi.fn(),
   configuredGitHubSourceAuthType: vi.fn(),
   failGitHubWebhookDelivery: vi.fn(),
+  fetchIssueCommentsForNumber: vi.fn(),
   fetchPullRequestInsightForNumber: vi.fn(),
+  listCachedIssuesForRules: vi.fn(),
+  listIssueCommentBackfillCandidates: vi.fn(),
   listPullRequestNumbersForDetailBackfill: vi.fn(),
   loadEnv: vi.fn(),
   loadRepoProfile: vi.fn(),
@@ -15,6 +18,8 @@ const mocks = vi.hoisted(() => ({
     objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`
   ),
   recordSyncRun: vi.fn(),
+  replaceIssueComments: vi.fn(),
+  replaceWorkflowViolations: vi.fn(),
   resolveStaleAttentionItems: vi.fn(),
   upsertAttentionItem: vi.fn(),
   upsertPullRequest: vi.fn(),
@@ -44,7 +49,8 @@ vi.mock("@mo-devflow/db", () => ({
   completeGitHubWebhookDelivery: mocks.completeGitHubWebhookDelivery,
   failGitHubWebhookDelivery: mocks.failGitHubWebhookDelivery,
   isNotificationInCooldown: vi.fn(),
-  listCachedIssuesForRules: vi.fn(),
+  listCachedIssuesForRules: mocks.listCachedIssuesForRules,
+  listIssueCommentBackfillCandidates: mocks.listIssueCommentBackfillCandidates,
   listPullRequestNumbersForDetailBackfill: mocks.listPullRequestNumbersForDetailBackfill,
   listNotificationCandidates: vi.fn(),
   notificationDashboardBaseUrlFromEnv: mocks.notificationDashboardBaseUrlFromEnv,
@@ -53,7 +59,8 @@ vi.mock("@mo-devflow/db", () => ({
   recordSyncRun: mocks.recordSyncRun,
   recomputeDailyMetricsFromCache: vi.fn(),
   replaceAiDriftSignals: vi.fn(),
-  replaceWorkflowViolations: vi.fn(),
+  replaceIssueComments: mocks.replaceIssueComments,
+  replaceWorkflowViolations: mocks.replaceWorkflowViolations,
   resolveStaleAttentionItems: mocks.resolveStaleAttentionItems,
   runWithJobLease: vi.fn(),
   upsertAttentionItem: mocks.upsertAttentionItem,
@@ -65,6 +72,7 @@ vi.mock("@mo-devflow/db", () => ({
 vi.mock("@mo-devflow/github", () => ({
   classifyGitHubError: vi.fn(),
   configuredGitHubSourceAuthType: mocks.configuredGitHubSourceAuthType,
+  fetchIssueCommentsForNumber: mocks.fetchIssueCommentsForNumber,
   fetchGitHubSnapshot: vi.fn(),
   fetchPullRequestInsightForNumber: mocks.fetchPullRequestInsightForNumber
 }));
@@ -201,6 +209,85 @@ describe("webhook review processing", () => {
         raw: expect.objectContaining({ selected: 2, refreshed: 2, failed: 0 })
       })
     );
+  });
+
+  test("backfills selected issue comments and refreshes workflow rules", async () => {
+    const { backfillIssueCommentsOnce } = await import("./sync");
+    process.env.MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS = "2";
+    const syncedAt = "2026-07-04T00:00:00.000Z";
+    mocks.listIssueCommentBackfillCandidates.mockResolvedValue([
+      {
+        issueNumber: 50,
+        objectType: "issue",
+        visibilityClass: "anonymous_readable",
+        sourceUpdatedAt: "2026-07-04T00:00:00.000Z",
+        lastCommentSyncedAt: null
+      }
+    ]);
+    mocks.fetchIssueCommentsForNumber.mockResolvedValue({
+      issueNumber: 50,
+      comments: [
+        {
+          id: 5001,
+          user: { login: "alice" },
+          body: "Deferred because the reproduction is not stable yet.",
+          html_url: "https://github.com/matrixorigin/matrixone/issues/50#issuecomment-5001",
+          created_at: syncedAt,
+          updated_at: syncedAt
+        }
+      ],
+      isComplete: true,
+      syncError: null,
+      syncedAt,
+      rateLimitRemaining: 40,
+      sourceAuthType: "service_read_token"
+    });
+    mocks.listCachedIssuesForRules.mockResolvedValue([]);
+
+    const result = await backfillIssueCommentsOnce();
+
+    expect(result).toMatchObject({
+      repoId: 10,
+      selected: 1,
+      refreshed: 1,
+      complete: 1,
+      partial: 0,
+      failed: 0,
+      workflowViolations: 0
+    });
+    expect(mocks.listIssueCommentBackfillCandidates).toHaveBeenCalledWith(10, {
+      includePullRequests: false,
+      limit: 2
+    });
+    expect(mocks.fetchIssueCommentsForNumber).toHaveBeenCalledWith({ profile, issueNumber: 50 });
+    expect(mocks.replaceIssueComments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        issueNumber: 50,
+        sourceAuthType: "service_read_token",
+        visibilityClass: "anonymous_readable",
+        isComplete: true,
+        syncError: null,
+        syncedAt,
+        comments: [
+          expect.objectContaining({
+            githubId: 5001,
+            authorLogin: "alice",
+            body: "Deferred because the reproduction is not stable yet."
+          })
+        ]
+      })
+    );
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "comment_backfill",
+        status: "success",
+        sourceAuthType: "service_read_token",
+        raw: expect.objectContaining({ selected: 1, refreshed: 1, complete: 1 })
+      })
+    );
+    expect(mocks.replaceWorkflowViolations).toHaveBeenCalledWith(10, []);
   });
 
   test("refreshes PR insight from GitHub before updating requested-change attention", async () => {

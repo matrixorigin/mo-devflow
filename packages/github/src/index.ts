@@ -883,45 +883,78 @@ async function fetchIssueComments(input: {
   const selected = issueCommentBackfillCandidates(input.profile, input.issues).slice(0, limit);
   const comments = new Map<number, GitHubIssueComments>();
   let rateLimitRemaining: number | null = null;
-  const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_ISSUE_COMMENT_MAX_PAGES ?? "2"));
 
   for (const issue of selected) {
-    const syncedAt = new Date().toISOString();
-    try {
-      const result = await collectPages(
-        input.octokit.paginate.iterator(input.octokit.rest.issues.listComments, {
-          owner: input.owner,
-          repo: input.repo,
-          issue_number: issue.number,
-          per_page: 100
-        }),
-        maxPages
-      );
-      rateLimitRemaining = result.rateLimitRemaining ?? rateLimitRemaining;
-      comments.set(issue.number, {
-        issueNumber: issue.number,
-        comments: result.data,
-        isComplete: result.complete,
-        syncError: result.complete ? null : `Issue comments exceeded ${maxPages} pages.`,
-        syncedAt,
-        rateLimitRemaining: result.rateLimitRemaining
-      });
-    } catch (error) {
-      comments.set(issue.number, {
-        issueNumber: issue.number,
-        comments: [],
-        isComplete: false,
-        syncError: error instanceof Error ? error.message : String(error),
-        syncedAt,
-        rateLimitRemaining
-      });
-    }
+    const result = await fetchIssueCommentsForNumberWithClient({
+      octokit: input.octokit,
+      owner: input.owner,
+      repo: input.repo,
+      issueNumber: issue.number
+    });
+    rateLimitRemaining = result.rateLimitRemaining ?? rateLimitRemaining;
+    comments.set(issue.number, result);
     if (input.sourceAuthType === "anonymous" && rateLimitRemaining !== null && rateLimitRemaining < 8) {
       break;
     }
   }
 
   return { comments, rateLimitRemaining };
+}
+
+async function fetchIssueCommentsForNumberWithClient(input: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+}): Promise<GitHubIssueComments> {
+  const syncedAt = new Date().toISOString();
+  const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_ISSUE_COMMENT_MAX_PAGES ?? "2"));
+  try {
+    const result = await collectPages(
+      input.octokit.paginate.iterator(input.octokit.rest.issues.listComments, {
+        owner: input.owner,
+        repo: input.repo,
+        issue_number: input.issueNumber,
+        per_page: 100
+      }),
+      maxPages
+    );
+    return {
+      issueNumber: input.issueNumber,
+      comments: result.data,
+      isComplete: result.complete,
+      syncError: result.complete ? null : `Issue comments exceeded ${maxPages} pages.`,
+      syncedAt,
+      rateLimitRemaining: result.rateLimitRemaining
+    };
+  } catch (error) {
+    return {
+      issueNumber: input.issueNumber,
+      comments: [],
+      isComplete: false,
+      syncError: error instanceof Error ? error.message : String(error),
+      syncedAt,
+      rateLimitRemaining: null
+    };
+  }
+}
+
+export async function fetchIssueCommentsForNumber(input: { profile: RepoProfile; issueNumber: number }): Promise<
+  GitHubIssueComments & {
+    sourceAuthType: SourceAuthType;
+  }
+> {
+  const { octokit, sourceAuthType } = createGitHubClient();
+  const result = await fetchIssueCommentsForNumberWithClient({
+    octokit,
+    owner: input.profile.repo.owner,
+    repo: input.profile.repo.name,
+    issueNumber: input.issueNumber
+  });
+  return {
+    ...result,
+    sourceAuthType
+  };
 }
 
 export async function fetchPullRequestInsightForNumber(input: { profile: RepoProfile; pullNumber: number }): Promise<{

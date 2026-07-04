@@ -1,6 +1,7 @@
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   issueAttentionRuleKeys,
+  listIssueCommentBackfillCandidates,
   listCachedIssuesForRules,
   listCachedPullRequestsForRules,
   listNotificationCandidates,
@@ -32,6 +33,7 @@ import {
   classifyGitHubError,
   configuredGitHubSourceAuthType,
   fetchGitHubSnapshot,
+  fetchIssueCommentsForNumber,
   fetchPullRequestInsightForNumber
 } from "@mo-devflow/github";
 import { buildWeComMarkdown, classifyWeComFailure, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
@@ -53,6 +55,7 @@ import {
   type NotificationCandidate,
   type NotificationStatus,
   type PullRequestInsight,
+  type SourceAuthType,
   type WorkflowViolation
 } from "@mo-devflow/shared";
 
@@ -97,6 +100,19 @@ export interface PullRequestDetailBackfillResult {
   rateLimitRemaining: number | null;
 }
 
+export interface IssueCommentBackfillResult {
+  repoId: number;
+  selected: number;
+  refreshed: number;
+  complete: number;
+  partial: number;
+  failed: number;
+  skipped: boolean;
+  sourceAuthType: SourceAuthType;
+  rateLimitRemaining: number | null;
+  workflowViolations: number | null;
+}
+
 export interface WebhookDeliverySyncResult {
   repoId: number;
   claimed: number;
@@ -127,6 +143,22 @@ export function prDetailBackfillLimitFromEnv(
 ): number {
   const fallback = sourceAuthType === "anonymous" ? 0 : 25;
   const configured = env.MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS;
+  if (configured === undefined) {
+    return fallback;
+  }
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+export function commentBackfillLimitFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  sourceAuthType: SourceAuthType = configuredGitHubSourceAuthType(env)
+): number {
+  const fallback = sourceAuthType === "anonymous" ? 0 : 25;
+  const configured = env.MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS;
   if (configured === undefined) {
     return fallback;
   }
@@ -262,6 +294,10 @@ function ensureGitHubObjectWithNumber(
 
 function cacheSourceForWebhook(): CacheSource {
   return { authType: "service_read_token", userId: null };
+}
+
+function hasTestingCommentHandoffSignals(profile: ReturnType<typeof loadRepoProfile>): boolean {
+  return profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0);
 }
 
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
@@ -611,6 +647,133 @@ export async function backfillPullRequestDetailsOnce(): Promise<PullRequestDetai
     rateLimitRemaining: summary.rateLimitRemaining,
     raw: summary
   });
+
+  return summary;
+}
+
+export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const sourceAuthType = configuredGitHubSourceAuthType();
+  const limit = commentBackfillLimitFromEnv(process.env, sourceAuthType);
+  const summary: IssueCommentBackfillResult = {
+    repoId,
+    selected: 0,
+    refreshed: 0,
+    complete: 0,
+    partial: 0,
+    failed: 0,
+    skipped: limit === 0,
+    sourceAuthType,
+    rateLimitRemaining: null,
+    workflowViolations: null
+  };
+
+  if (limit === 0) {
+    await recordSyncRun({
+      repoId,
+      syncLayer: "comment_backfill",
+      status: "success",
+      sourceAuthType,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      raw: {
+        ...summary,
+        reason: "MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS is 0 for the current GitHub auth source."
+      }
+    });
+    return summary;
+  }
+
+  const candidates = await listIssueCommentBackfillCandidates(repoId, {
+    includePullRequests: hasTestingCommentHandoffSignals(profile),
+    limit
+  });
+  summary.selected = candidates.length;
+  let latestError: string | null = null;
+  let blocked = false;
+
+  for (const candidate of candidates) {
+    try {
+      const result = await fetchIssueCommentsForNumber({
+        profile,
+        issueNumber: candidate.issueNumber
+      });
+      const comments = result.comments.map((comment) =>
+        normalizeIssueComment(profile, candidate.issueNumber, comment, {
+          authType: result.sourceAuthType,
+          userId: null
+        })
+      );
+      await replaceIssueComments({
+        repoId,
+        issueNumber: candidate.issueNumber,
+        comments,
+        sourceAuthType: result.sourceAuthType,
+        sourceUserId: null,
+        visibilityClass: candidate.visibilityClass,
+        isComplete: result.isComplete,
+        syncError: result.syncError,
+        raw: {
+          issueNumber: candidate.issueNumber,
+          objectType: candidate.objectType,
+          comments: comments.length,
+          isComplete: result.isComplete,
+          syncError: result.syncError
+        },
+        syncedAt: result.syncedAt
+      });
+      summary.refreshed += 1;
+      summary.rateLimitRemaining = result.rateLimitRemaining ?? summary.rateLimitRemaining;
+      if (result.isComplete) {
+        summary.complete += 1;
+      } else {
+        summary.partial += 1;
+        latestError = result.syncError ?? latestError;
+        if (result.syncError && comments.length === 0) {
+          summary.failed += 1;
+        }
+      }
+      if (
+        result.sourceAuthType === "anonymous" &&
+        summary.rateLimitRemaining !== null &&
+        summary.rateLimitRemaining < 8
+      ) {
+        break;
+      }
+    } catch (error) {
+      summary.failed += 1;
+      const classified = classifyGitHubError(error);
+      latestError = classified.message;
+      if (classified.kind === "permission" || classified.kind === "not_found") {
+        blocked = true;
+        break;
+      }
+      if (classified.kind === "rate_limited") {
+        summary.rateLimitRemaining = classified.rateLimitRemaining ?? summary.rateLimitRemaining;
+        break;
+      }
+    }
+  }
+
+  await recordSyncRun({
+    repoId,
+    syncLayer: "comment_backfill",
+    status: blocked ? "blocked" : summary.failed > 0 || summary.partial > 0 ? "partial" : "success",
+    sourceAuthType,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    errorMessage: latestError,
+    rateLimitRemaining: summary.rateLimitRemaining,
+    raw: summary
+  });
+
+  if (summary.refreshed > 0) {
+    const rules = await recomputeWorkflowViolationsFromCache();
+    summary.workflowViolations = rules.workflowViolations;
+  }
 
   return summary;
 }
