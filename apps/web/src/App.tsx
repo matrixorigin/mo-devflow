@@ -1494,6 +1494,313 @@ function CriticalIssueBoardRow({ issue }: { issue: CriticalIssueView }) {
   );
 }
 
+function isTestingQueuePr(pr: PendingPrView): boolean {
+  return (
+    pr.testingQueueAgeHours !== null ||
+    ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
+  );
+}
+
+function isTestingStalePr(pr: PendingPrView): boolean {
+  return pr.attentionFlags.includes("testing_stalled") || (pr.testingQueueAgeHours ?? 0) >= 24;
+}
+
+function sortTestingQueuePrs(prs: PendingPrView[]): PendingPrView[] {
+  return [...prs].sort((left, right) => {
+    const staleDelta = Number(isTestingStalePr(right)) - Number(isTestingStalePr(left));
+    if (staleDelta !== 0) {
+      return staleDelta;
+    }
+    const ageDelta = (right.testingQueueAgeHours ?? right.ageHours) - (left.testingQueueAgeHours ?? left.ageHours);
+    if (ageDelta !== 0) {
+      return ageDelta;
+    }
+    return left.number - right.number;
+  });
+}
+
+function testingQueueAgeText(pr: PendingPrView): string {
+  return pr.testingQueueAgeHours === null ? "testing age unknown" : `testing ${hours(pr.testingQueueAgeHours)}`;
+}
+
+function testingQueueNextAction(pr: PendingPrView): string {
+  if (pr.testingTesters.length === 0) {
+    return "Assign tester owner";
+  }
+  if (pr.testingState === "test_changes_requested" || pr.reviewDecision === "changes_requested") {
+    return "Return feedback to developer";
+  }
+  if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
+    return "Fix CI before test closure";
+  }
+  if (pr.mergeStateStatus === "dirty") {
+    return "Resolve merge conflict";
+  }
+  if (isTestingStalePr(pr)) {
+    return "Request tester update";
+  }
+  if (pr.testingState === "testing") {
+    return "Drive test result";
+  }
+  return "Confirm testing handoff";
+}
+
+function testingQueueRiskTags(pr: PendingPrView): string[] {
+  const tags = pr.attentionFlags.map(labelText);
+  if (pr.testingTesters.length === 0) {
+    tags.push("no tester");
+  }
+  if (pr.testingQueueAgeHours === null) {
+    tags.push("queue age unknown");
+  }
+  if (!pr.isComplete) {
+    tags.push("partial cache");
+  }
+  if (pr.reviewDecision === "changes_requested") {
+    tags.push("changes requested");
+  }
+  if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
+    tags.push("CI failed");
+  }
+  if (pr.mergeStateStatus === "dirty") {
+    tags.push("merge conflict");
+  }
+  return Array.from(new Set(tags));
+}
+
+function testingRiskColor(risk: string): string {
+  const normalized = risk.toLowerCase();
+  if (
+    normalized.includes("stalled") ||
+    normalized.includes("changes") ||
+    normalized.includes("failed") ||
+    normalized.includes("conflict") ||
+    normalized.includes("no tester")
+  ) {
+    return "red";
+  }
+  if (normalized.includes("partial") || normalized.includes("unknown")) {
+    return "gold";
+  }
+  return "orange";
+}
+
+function TestingCommandBoard({
+  pendingPrs,
+  testing
+}: {
+  pendingPrs: PendingPrView[];
+  testing: DashboardSummary["testing"];
+}) {
+  const queuePrs = sortTestingQueuePrs(pendingPrs.filter(isTestingQueuePr));
+  const stalePrs = queuePrs.filter(isTestingStalePr);
+  const missingTesterPrs = queuePrs.filter((pr) => pr.testingTesters.length === 0);
+  const activePrs = queuePrs.filter((pr) => !isTestingStalePr(pr) && pr.testingTesters.length > 0);
+  const partialTransitions = testing.recentTransitions.filter(
+    (transition) => transition.sourceCompleteness === "partial_cache"
+  ).length;
+  const testerRows = [...testing.testers]
+    .sort((left, right) => {
+      const queueDelta = right.queuePrs - left.queuePrs;
+      if (queueDelta !== 0) {
+        return queueDelta;
+      }
+      return (right.averageQueueAgeHours ?? 0) - (left.averageQueueAgeHours ?? 0);
+    })
+    .slice(0, 8);
+
+  if (queuePrs.length === 0 && testing.testers.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No testing queue in cache" />;
+  }
+
+  return (
+    <div className="testing-command-board">
+      <div className="testing-command-summary" aria-label="Testing command summary">
+        <TestingBoardStat label="testing queue" value={testing.queuePrs} tone="normal" />
+        <TestingBoardStat label="stale handoff" value={testing.staleQueuePrs} tone="critical" />
+        <TestingBoardStat
+          label="avg queue age"
+          value={testing.averageQueueAgeHours === null ? "-" : hours(testing.averageQueueAgeHours)}
+          tone={testing.averageQueueAgeHours !== null && testing.averageQueueAgeHours >= 24 ? "attention" : "normal"}
+        />
+        <TestingBoardStat label="tester lanes" value={testing.testers.length} tone="normal" />
+        <TestingBoardStat label="transitions" value={testing.transitionEvents} tone="muted" />
+        <TestingBoardStat
+          label="partial events"
+          value={partialTransitions}
+          tone={partialTransitions > 0 ? "attention" : "normal"}
+        />
+      </div>
+
+      {testerRows.length > 0 ? (
+        <div className="testing-tester-strip" aria-label="Tester queue ownership">
+          {testerRows.map((tester) => (
+            <article className="testing-tester-card" key={tester.login}>
+              <div>
+                <Text strong>{tester.login}</Text>
+                <Text type="secondary">{tester.queuePrs} queued</Text>
+              </div>
+              <strong>{tester.averageQueueAgeHours === null ? "-" : hours(tester.averageQueueAgeHours)}</strong>
+              <small>avg queue age</small>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="testing-command-lanes">
+        <TestingQueueLane
+          title="Stale Testing Handoffs"
+          description="PRs in testing for more than a day or flagged by testing attention rules."
+          prs={stalePrs.slice(0, 8)}
+          hiddenCount={Math.max(0, stalePrs.length - 8)}
+          tone="critical"
+          emptyText="No stale testing handoffs in cached pending PRs"
+        />
+        <TestingQueueLane
+          title="Missing Tester Owner"
+          description="Testing-state PRs where the cache cannot identify a tester owner."
+          prs={missingTesterPrs.slice(0, 6)}
+          hiddenCount={Math.max(0, missingTesterPrs.length - 6)}
+          tone="attention"
+          emptyText="All visible testing PRs have tester owners"
+        />
+        <TestingQueueLane
+          title="Active Testing Movement"
+          description="Recently active testing handoffs without stale attention flags."
+          prs={activePrs.slice(0, 6)}
+          hiddenCount={Math.max(0, activePrs.length - 6)}
+          tone="normal"
+          emptyText="No active testing movement outside stale lanes"
+        />
+      </div>
+    </div>
+  );
+}
+
+function TestingBoardStat({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string | number;
+  tone: "critical" | "attention" | "normal" | "muted";
+}) {
+  return (
+    <span className={`testing-board-stat testing-board-stat-${tone}`}>
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
+function TestingQueueLane({
+  title,
+  description,
+  prs,
+  hiddenCount,
+  tone,
+  emptyText
+}: {
+  title: string;
+  description: string;
+  prs: PendingPrView[];
+  hiddenCount: number;
+  tone: "critical" | "attention" | "normal";
+  emptyText: string;
+}) {
+  return (
+    <section className={`testing-queue-lane testing-queue-lane-${tone}`}>
+      <div className="testing-queue-lane-heading">
+        <div>
+          <Text strong>{title}</Text>
+          <Text type="secondary">{description}</Text>
+        </div>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
+          {prs.length + hiddenCount}
+        </Tag>
+      </div>
+      {prs.length > 0 ? (
+        <div className="testing-queue-list">
+          {prs.map((pr) => (
+            <TestingQueueRow pr={pr} key={pr.number} />
+          ))}
+        </div>
+      ) : (
+        <div className="testing-queue-empty">
+          <Text type="secondary">{emptyText}</Text>
+        </div>
+      )}
+      {hiddenCount > 0 ? <div className="testing-queue-more">+{hiddenCount} more PRs in this lane</div> : null}
+    </section>
+  );
+}
+
+function TestingQueueRow({ pr }: { pr: PendingPrView }) {
+  const risks = testingQueueRiskTags(pr);
+  const issueLinks = pr.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(pr.htmlUrl, "issues", number)
+  }));
+  return (
+    <article className={`testing-queue-row ${isTestingStalePr(pr) ? "testing-queue-row-critical" : ""}`}>
+      <div className="testing-queue-main">
+        <div className="testing-queue-object">
+          <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
+            PR #{pr.number}
+          </WorkObjectLink>
+          <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+          <Tag>{testingQueueAgeText(pr)}</Tag>
+          {!pr.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+        </div>
+        <a className="testing-queue-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+          {pr.title}
+        </a>
+        <div className="testing-queue-meta">
+          <span>
+            <UserRound size={13} aria-hidden="true" />
+            owner {pr.ownerLogin}
+          </span>
+          <span>last {formatDate(pr.lastHumanActionAt)}</span>
+          {pr.testingTesters.length > 0 ? (
+            <span>testers {pr.testingTesters.slice(0, 3).join(", ")}</span>
+          ) : (
+            <span>no tester owner</span>
+          )}
+        </div>
+      </div>
+      <div className="testing-queue-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{testingQueueNextAction(pr)}</Text>
+        <div className="testing-queue-risks">
+          {risks.slice(0, 4).map((risk) => (
+            <Tag color={testingRiskColor(risk)} key={risk}>
+              {risk}
+            </Tag>
+          ))}
+          {risks.length > 4 ? <Tag>+{risks.length - 4}</Tag> : null}
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {pr.mergeStateStatus ? (
+            <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
+        </div>
+        {issueLinks.length > 0 ? (
+          <div className="testing-queue-links">
+            {issueLinks.slice(0, 4).map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                issue #{link.number}
+              </a>
+            ))}
+            {issueLinks.length > 4 ? <span>+{issueLinks.length - 4}</span> : null}
+          </div>
+        ) : (
+          <Text type="secondary">No linked issue visible</Text>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function PersonWorkloadBoard({
   people,
   personalViews,
@@ -4403,6 +4710,7 @@ export default function App() {
                     <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
                   </Space>
                 </div>
+                <TestingCommandBoard pendingPrs={data.pendingPrs} testing={data.testing} />
                 <Table
                   rowKey="login"
                   size="middle"
