@@ -106,6 +106,7 @@ import {
   flowThreadStatusCounts,
   flowEfficiencySummary,
   observedPeopleFromDashboard,
+  observedOwnerThreads,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalGanttChart,
@@ -126,6 +127,7 @@ import {
   testingIssueNeedsAttention,
   sortPeopleByWorkload,
   type FlowEfficiencySummary,
+  type ObservedOwnerThread,
   type PersonalActionQueueFilter,
   type PersonalActivityItem,
   type PersonalFlowThreadFilter,
@@ -179,6 +181,7 @@ type WriteAuditScopeFilter =
 interface ObservedPersonPreview {
   login: string;
   summary: PersonSummary;
+  threads: ObservedOwnerThread[];
   issues: CriticalIssueView[];
   prs: PendingPrView[];
 }
@@ -468,7 +471,7 @@ function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError })
           : "Open API health for the current runtime state, then retry after the service recovers.";
 
   return (
-    <Space direction="vertical" size={4}>
+    <Space orientation="vertical" size={4}>
       <Text>{dashboardLoadErrorMessage(error)}</Text>
       <Text type="secondary">{detail}</Text>
       {error.code ? <Tag color="red">{error.code}</Tag> : null}
@@ -1710,14 +1713,18 @@ function observedPersonPreview(data: DashboardSummary, login: string): ObservedP
   }
 
   const criticalIssuesByPr = criticalIssueContextsByPullRequest(data.criticalIssues);
+  const issues = sortCriticalIssuesForAction(data.criticalIssues.filter((issue) => issue.ownerLogin === login));
+  const prs = sortPendingPrsForAction(
+    data.pendingPrs.filter((pr) => pr.ownerLogin === login),
+    criticalIssuesByPr
+  );
+
   return {
     login,
     summary,
-    issues: sortCriticalIssuesForAction(data.criticalIssues.filter((issue) => issue.ownerLogin === login)),
-    prs: sortPendingPrsForAction(
-      data.pendingPrs.filter((pr) => pr.ownerLogin === login),
-      criticalIssuesByPr
-    )
+    threads: observedOwnerThreads(issues, prs),
+    issues,
+    prs
   };
 }
 
@@ -2749,7 +2756,7 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
   const otherIssueNumbers = pr.linkedIssueNumbers.filter((number) => !activeIssueNumbers.has(number));
 
   return (
-    <Space direction="vertical" size={4}>
+    <Space orientation="vertical" size={4}>
       {activeIssues.length > 0 ? (
         <Space size={[4, 4]} wrap>
           {activeIssues.slice(0, 3).map((issue) => (
@@ -5812,6 +5819,141 @@ function PersonWorkloadBoard({
   );
 }
 
+type ObservedThreadPullRequest = CriticalIssueLinkedPullRequestView | PendingPrView;
+
+function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[] }) {
+  const visibleThreads = threads.slice(0, 8);
+  const hiddenThreads = Math.max(0, threads.length - visibleThreads.length);
+
+  return (
+    <section className="observed-thread-panel" aria-label="Observed issue and PR flow">
+      <div className="observed-thread-panel-title">
+        <span>
+          <Text strong>Issue and PR Flow</Text>
+          <Text type="secondary">Active issue first, then linked PR evidence</Text>
+        </span>
+        <Tag>{threads.length}</Tag>
+      </div>
+      <div className="observed-thread-list">
+        {threads.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible issue or PR work for this owner" />
+        ) : (
+          visibleThreads.map((thread) => <ObservedPersonThreadRow thread={thread} key={thread.id} />)
+        )}
+      </div>
+      {hiddenThreads > 0 ? (
+        <Text type="secondary">{hiddenThreads} more rows are available in the detail lists below.</Text>
+      ) : null}
+    </section>
+  );
+}
+
+function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
+  const action = observedThreadAction(thread);
+  const prs = observedThreadPullRequests(thread);
+  const sourceUrl = thread.issue?.htmlUrl ?? prs[0]?.htmlUrl ?? null;
+
+  return (
+    <article className={`observed-thread-row observed-thread-row-${thread.tone}`}>
+      <div className="observed-thread-main">
+        <span className="observed-thread-title">
+          {thread.issue ? (
+            <a href={thread.issue.htmlUrl} target="_blank" rel="noreferrer">
+              #{thread.issue.number} {thread.issue.title}
+            </a>
+          ) : (
+            <span>PRs without a visible active issue</span>
+          )}
+        </span>
+        <span className="observed-thread-meta">
+          <Tag color={action.color}>{action.label}</Tag>
+          <Text type="secondary">{observedThreadDurationText(thread)}</Text>
+          {thread.issue?.aiEffortLabel ? <Tag>{effectiveAiEffortLabel(thread.issue.aiEffortLabel)}</Tag> : null}
+          {thread.issue?.severity ? (
+            <Tag color={severityColor(thread.issue.severity)}>{thread.issue.severity}</Tag>
+          ) : null}
+        </span>
+      </div>
+      <div className="observed-thread-links">
+        {prs.length > 0 ? (
+          prs.slice(0, 4).map((pr) => {
+            const reasons = prAttentionReasons(pr as PendingPrView);
+            return (
+              <a className="observed-thread-pr" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
+                <span>
+                  PR #{pr.number}
+                  {"state" in pr && pr.state === "closed" ? " closed" : ""}
+                </span>
+                <small>
+                  {hours(pr.ageHours)} open
+                  {reasons.length > 0 ? ` | ${reasons[0]}` : ""}
+                </small>
+              </a>
+            );
+          })
+        ) : (
+          <Text type="secondary">No visible PR linked to this active issue</Text>
+        )}
+        {prs.length > 4 ? <Tag>{prs.length - 4} more PRs</Tag> : null}
+        {!thread.issue && thread.linkedIssueNumbers.length > 0 && sourceUrl ? (
+          <span className="observed-thread-issues">
+            {thread.linkedIssueNumbers.slice(0, 3).map((number) => (
+              <a href={linkedObjectUrl(sourceUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
+                Issue #{number}
+              </a>
+            ))}
+          </span>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function observedThreadPullRequests(thread: ObservedOwnerThread): ObservedThreadPullRequest[] {
+  const byNumber = new Map<number, ObservedThreadPullRequest>();
+  for (const pr of thread.issue?.linkedPullRequests ?? []) {
+    byNumber.set(pr.number, pr);
+  }
+  for (const pr of thread.prs) {
+    byNumber.set(pr.number, pr);
+  }
+  return [...byNumber.values()].sort(
+    (left, right) =>
+      right.attentionFlags.length - left.attentionFlags.length ||
+      right.ageHours - left.ageHours ||
+      left.number - right.number
+  );
+}
+
+function observedThreadAction(thread: ObservedOwnerThread): { label: string; color: string } {
+  const prs = observedThreadPullRequests(thread);
+  if (thread.issue && thread.issue.criticalAgeHours === null) {
+    return { label: "severity timeline missing", color: "orange" };
+  }
+  if (thread.needsLink && thread.issue) {
+    return { label: "no visible PR", color: "red" };
+  }
+  if (thread.needsLink) {
+    return { label: "confirm issue link", color: "orange" };
+  }
+  if (prs.some((pr) => prAttentionReasons(pr as PendingPrView).length > 0)) {
+    return { label: "PR needs attention", color: "orange" };
+  }
+  if (thread.issue) {
+    return { label: "active issue", color: "blue" };
+  }
+  return { label: "pending PR", color: "default" };
+}
+
+function observedThreadDurationText(thread: ObservedOwnerThread): string {
+  if (thread.issue) {
+    return thread.durationHours === null
+      ? "severity start unknown"
+      : `${hours(thread.durationHours)} since s-1/s0 start`;
+  }
+  return thread.durationHours === null ? "PR age unknown" : `${hours(thread.durationHours)} oldest PR`;
+}
+
 function ObservedPersonPreviewModal({
   preview,
   onClose
@@ -5828,7 +5970,7 @@ function ObservedPersonPreviewModal({
       onCancel={onClose}
     >
       {preview ? (
-        <Space direction="vertical" size={14} className="observed-person-preview">
+        <Space orientation="vertical" size={14} className="observed-person-preview">
           <Alert
             type="info"
             showIcon
@@ -5849,6 +5991,7 @@ function ObservedPersonPreviewModal({
               <small>pending PR</small>
             </span>
           </div>
+          <ObservedPersonThreadBoard threads={preview.threads} />
           <div className="observed-person-columns">
             <section>
               <div className="observed-person-section-title">
@@ -9767,7 +9910,7 @@ export default function App() {
         dataIndex: "number",
         width: 360,
         render: (_, pr) => (
-          <Space direction="vertical" size={2} className="table-title-cell">
+          <Space orientation="vertical" size={2} className="table-title-cell">
             <Space size={6} wrap>
               <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
                 #{pr.number}

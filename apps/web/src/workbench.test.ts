@@ -15,6 +15,7 @@ import {
   flowThreadDurationWarnings,
   flowThreadStatusCounts,
   observedPeopleFromDashboard,
+  observedOwnerThreads,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalFlowThreadCounts,
@@ -731,6 +732,69 @@ describe("personal gantt chart", () => {
 
     expect(row.issue.durationEvidence).toBe("GitHub issue label event");
     expect(row.issue.reasons).toContain("Issue label handoff");
+  });
+});
+
+describe("observed owner threads", () => {
+  it("groups observed owner PRs under visible active issues before falling back to other PR work", () => {
+    const linkedAttentionPr = pullRequest({
+      number: 20,
+      ageHours: 30,
+      linkedIssueNumbers: [10],
+      attentionFlags: ["no_human_action_24h"]
+    });
+    const unlinkedPr = pullRequest({
+      number: 21,
+      ageHours: 12,
+      linkedIssueNumbers: []
+    });
+    const outsideIssuePr = pullRequest({
+      number: 22,
+      ageHours: 8,
+      linkedIssueNumbers: [999]
+    });
+
+    const threads = observedOwnerThreads(
+      [
+        criticalIssue({
+          number: 10,
+          severity: "severity/s0",
+          criticalAgeHours: 48,
+          linkedPullRequests: [
+            {
+              ...linkedPullRequest(),
+              number: 20
+            }
+          ]
+        }),
+        criticalIssue({
+          number: 11,
+          severity: "severity/s-1",
+          criticalAgeHours: null,
+          linkedPullRequests: []
+        })
+      ],
+      [linkedAttentionPr, unlinkedPr, outsideIssuePr]
+    );
+
+    expect(threads.map((thread) => thread.id)).toEqual(["issue:11", "issue:10", "other-prs"]);
+    expect(threads.find((thread) => thread.id === "issue:10")?.prs.map((pr) => pr.number)).toEqual([20]);
+    expect(threads.find((thread) => thread.id === "issue:10")).toMatchObject({
+      tone: "critical",
+      durationHours: 48,
+      needsLink: false
+    });
+    expect(threads.find((thread) => thread.id === "issue:11")).toMatchObject({
+      tone: "critical",
+      durationHours: null,
+      needsLink: true
+    });
+    expect(threads.find((thread) => thread.id === "other-prs")).toMatchObject({
+      tone: "normal",
+      durationHours: 12,
+      linkedIssueNumbers: [999],
+      needsLink: true
+    });
   });
 });
 

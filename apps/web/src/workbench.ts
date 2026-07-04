@@ -177,6 +177,19 @@ export type PersonalFlowThreadFilter = "all" | "critical" | "blocked" | "testing
 
 export type PersonalFlowThreadCounts = Record<PersonalFlowThreadFilter, number>;
 
+export type ObservedOwnerThreadTone = "critical" | "attention" | "normal";
+
+export interface ObservedOwnerThread {
+  id: string;
+  title: string;
+  issue: CriticalIssueView | null;
+  prs: PendingPrView[];
+  linkedIssueNumbers: number[];
+  tone: ObservedOwnerThreadTone;
+  durationHours: number | null;
+  needsLink: boolean;
+}
+
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
@@ -621,6 +634,68 @@ export function personalGanttChart(
         pr.linkedIssueNumbers.length > 0 && pr.linkedIssueNumbers.every((number) => !visibleIssueNumbers.has(number))
     ).length
   };
+}
+
+export function observedOwnerThreads(issues: CriticalIssueView[], prs: PendingPrView[]): ObservedOwnerThread[] {
+  const prByNumber = new Map(prs.map((pr) => [pr.number, pr]));
+  const shownPrNumbers = new Set<number>();
+  const threads: ObservedOwnerThread[] = [...issues]
+    .sort((left, right) => issuePriority(right) - issuePriority(left))
+    .map((issue) => {
+      const relatedPrs = new Map<number, PendingPrView>();
+      for (const linkedPr of issue.linkedPullRequests) {
+        const pr = prByNumber.get(linkedPr.number);
+        if (pr) {
+          relatedPrs.set(pr.number, pr);
+        }
+      }
+      for (const pr of prs) {
+        if (pr.linkedIssueNumbers.includes(issue.number)) {
+          relatedPrs.set(pr.number, pr);
+        }
+      }
+      const threadPrs = sortObservedOwnerPrs(Array.from(relatedPrs.values()));
+      for (const pr of threadPrs) {
+        shownPrNumbers.add(pr.number);
+      }
+      const blockers = threadPrs.some((pr) => pr.attentionFlags.length > 0);
+
+      return {
+        id: `issue:${issue.number}`,
+        title: `Issue #${issue.number}`,
+        issue,
+        prs: threadPrs,
+        linkedIssueNumbers: [issue.number],
+        tone: issue.severity === "severity/s-1" || blockers ? "critical" : "attention",
+        durationHours: issue.criticalAgeHours,
+        needsLink: threadPrs.length === 0
+      };
+    });
+
+  const otherPrs = sortObservedOwnerPrs(prs.filter((pr) => !shownPrNumbers.has(pr.number)));
+  if (otherPrs.length > 0) {
+    threads.push({
+      id: "other-prs",
+      title: "Other PR work",
+      issue: null,
+      prs: otherPrs,
+      linkedIssueNumbers: uniqueNumbers(otherPrs.flatMap((pr) => pr.linkedIssueNumbers)),
+      tone: otherPrs.some((pr) => pr.attentionFlags.length > 0) ? "attention" : "normal",
+      durationHours: Math.max(...otherPrs.map((pr) => pr.ageHours)),
+      needsLink: otherPrs.some((pr) => pr.linkedIssueNumbers.length === 0)
+    });
+  }
+
+  return threads;
+}
+
+function sortObservedOwnerPrs(prs: PendingPrView[]): PendingPrView[] {
+  return [...prs].sort(
+    (left, right) =>
+      right.attentionFlags.length - left.attentionFlags.length ||
+      right.ageHours - left.ageHours ||
+      left.number - right.number
+  );
 }
 
 function collectPersonalPullRequests(person: PersonalActionView): Map<number, PersonalPullRequestView> {
