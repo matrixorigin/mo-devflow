@@ -1624,7 +1624,11 @@ function TestingCommandBoard({
           tone={testing.averageQueueAgeHours !== null && testing.averageQueueAgeHours >= 24 ? "attention" : "normal"}
         />
         <TestingBoardStat label="tester lanes" value={testing.testers.length} tone="normal" />
-        <TestingBoardStat label="transitions" value={testing.transitionEvents} tone="muted" />
+        <TestingBoardStat
+          label="closed no pass"
+          value={testing.closedWithoutPassSignalSamples}
+          tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
+        />
         <TestingBoardStat
           label="partial events"
           value={partialTransitions}
@@ -3942,6 +3946,11 @@ export default function App() {
           ) : (
             `${hours(value)} (${row.passToCloseSamples})`
           )
+      },
+      {
+        title: "Closed No Pass",
+        dataIndex: "closedWithoutPassSignalSamples",
+        render: (value) => (value > 0 ? <Tag color="orange">{value}</Tag> : <Tag>0</Tag>)
       }
     ],
     []
@@ -4707,6 +4716,9 @@ export default function App() {
                     <Tag>{data.testing.transitionEvents} transitions</Tag>
                     <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
                     <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag>
+                    <Tag color={data.testing.closedWithoutPassSignalSamples > 0 ? "orange" : "default"}>
+                      {data.testing.closedWithoutPassSignalSamples} closed no pass
+                    </Tag>
                     <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
                   </Space>
                 </div>

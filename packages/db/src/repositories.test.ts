@@ -1165,12 +1165,33 @@ describe("pull request testing transition events", () => {
         testingSignals: ["reviewer:tester-b"],
         occurredAt: "2026-07-01T00:00:00.000Z",
         sourceCompleteness: "partial_cache"
+      },
+      {
+        id: 5,
+        prNumber: 103,
+        fromState: "not_ready",
+        toState: "test_requested",
+        testingTesters: ["tester-c"],
+        testingSignals: ["reviewer:tester-c"],
+        occurredAt: "2026-07-01T08:00:00.000Z",
+        sourceCompleteness: "partial_cache"
+      },
+      {
+        id: 6,
+        prNumber: 103,
+        fromState: "test_requested",
+        toState: "closed_or_merged",
+        testingTesters: [],
+        testingSignals: ["closed_or_merged"],
+        occurredAt: "2026-07-02T08:00:00.000Z",
+        sourceCompleteness: "partial_cache"
       }
     ];
 
     expect(testingTurnoverMetricsFromTransitions(transitions)).toEqual({
       requestToPassSamples: 1,
       passToCloseSamples: 1,
+      closedWithoutPassSignalSamples: 1,
       averageRequestToPassHours: 36,
       averagePassToCloseHours: 12
     });
@@ -1181,6 +1202,7 @@ describe("pull request testing transition events", () => {
         {
           requestToPassSamples: 1,
           passToCloseSamples: 1,
+          closedWithoutPassSignalSamples: 0,
           averageRequestToPassHours: 36,
           averagePassToCloseHours: 12
         }
@@ -1190,6 +1212,17 @@ describe("pull request testing transition events", () => {
         {
           requestToPassSamples: 0,
           passToCloseSamples: 0,
+          closedWithoutPassSignalSamples: 0,
+          averageRequestToPassHours: null,
+          averagePassToCloseHours: null
+        }
+      ],
+      [
+        "tester-c",
+        {
+          requestToPassSamples: 0,
+          passToCloseSamples: 0,
+          closedWithoutPassSignalSamples: 1,
           averageRequestToPassHours: null,
           averagePassToCloseHours: null
         }

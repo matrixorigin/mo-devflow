@@ -396,6 +396,7 @@ export interface TestingSummary {
   lastTransitionAt: string | null;
   requestToPassSamples: number;
   passToCloseSamples: number;
+  closedWithoutPassSignalSamples: number;
   averageRequestToPassHours: number | null;
   averagePassToCloseHours: number | null;
   recentTransitions: TestingTransitionView[];
@@ -405,6 +406,7 @@ export interface TestingSummary {
     averageQueueAgeHours: number | null;
     requestToPassSamples: number;
     passToCloseSamples: number;
+    closedWithoutPassSignalSamples: number;
     averageRequestToPassHours: number | null;
     averagePassToCloseHours: number | null;
   }>;
