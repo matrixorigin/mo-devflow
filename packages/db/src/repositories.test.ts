@@ -31,6 +31,7 @@ import {
   pullRequestTestingTransitionForUpsert,
   recentTestingTransitionsForProfile,
   testingIssueTransitionsFromQueueIssues,
+  testingIssuesForLogin,
   testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
   testingTransitionBelongsToProfile,
@@ -1203,6 +1204,65 @@ describe("pull request testing transition events", () => {
         sourceCompleteness: "partial_cache"
       }
     ]);
+  });
+
+  test("maps issue-level testing queue to relevant personal views", () => {
+    const assignedIssue: TestingIssueQueueView = {
+      number: 44,
+      title: "assigned issue in test",
+      htmlUrl: "https://github.com/example/repo/issues/44",
+      testers: ["tester-a"],
+      testingSignals: ["issue_assignee:#44:tester-a"],
+      queueAgeHours: 3,
+      queueStartedAt: "2026-07-03T09:00:00.000Z",
+      queueAgeEvidence: "issue_assignment_event",
+      linkedPullRequests: [],
+      isComplete: true,
+      syncError: null,
+      lastSyncedAt: "2026-07-03T12:00:00.000Z"
+    };
+    const labelIssue: TestingIssueQueueView = {
+      number: 45,
+      title: "label issue in test",
+      htmlUrl: "https://github.com/example/repo/issues/45",
+      testers: [],
+      testingSignals: ["issue_label:#45:testing"],
+      queueAgeHours: 5,
+      queueStartedAt: "2026-07-03T07:00:00.000Z",
+      queueAgeEvidence: "issue_cache_timestamp",
+      linkedPullRequests: [
+        {
+          number: 201,
+          title: "linked implementation",
+          htmlUrl: "https://github.com/example/repo/pull/201",
+          ownerLogin: "alice",
+          ageHours: 12,
+          reviewDecision: null,
+          mergeStateStatus: null,
+          ciState: null,
+          attentionFlags: [],
+          isComplete: true
+        }
+      ],
+      isComplete: true,
+      syncError: null,
+      lastSyncedAt: "2026-07-03T12:00:00.000Z"
+    };
+    const ownerByIssueNumber = new Map<number, string | null>([
+      [44, "dev-owner"],
+      [45, "issue-owner"]
+    ]);
+
+    expect(
+      testingIssuesForLogin("tester-a", [assignedIssue, labelIssue], ownerByIssueNumber).map((issue) => issue.number)
+    ).toEqual([44]);
+    expect(
+      testingIssuesForLogin("issue-owner", [assignedIssue, labelIssue], ownerByIssueNumber).map((issue) => issue.number)
+    ).toEqual([45]);
+    expect(
+      testingIssuesForLogin("alice", [assignedIssue, labelIssue], ownerByIssueNumber).map((issue) => issue.number)
+    ).toEqual([45]);
+    expect(testingIssuesForLogin("someone-else", [assignedIssue, labelIssue], ownerByIssueNumber)).toEqual([]);
   });
 
   test("summarizes testing turnover only from completed transition pairs", () => {

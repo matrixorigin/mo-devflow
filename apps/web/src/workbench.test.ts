@@ -88,7 +88,7 @@ describe("person workload summaries", () => {
         },
         2
       )
-    ).toEqual(["4 PR attention", "2 linked to test issues", "3 needs triage", "2 pending PRs", "1 deferred"]);
+    ).toEqual(["4 PR attention", "2 testing work", "3 needs triage", "2 pending PRs", "1 deferred"]);
   });
 });
 
@@ -318,12 +318,11 @@ describe("flow efficiency summary", () => {
       points: [],
       pendingPrs: [],
       activeIssues: [],
-      testingQueuePrs: 5,
-      averageTestingQueueAgeHours: 30
+      testingIssues: [testingIssue({ queueAgeHours: 30 }), testingIssue({ queueAgeHours: 6 })]
     });
 
-    expect(summary.testingQueuePrs).toBe(5);
-    expect(summary.averageTestingQueueAgeHours).toBe(30);
+    expect(summary.testingQueuePrs).toBe(2);
+    expect(summary.averageTestingQueueAgeHours).toBe(18);
   });
 });
 
@@ -412,6 +411,11 @@ describe("personal activity feed", () => {
       testingQueueAgeHours: 30,
       linkedIssueNumbers: [10]
     });
+    const testingIssueItem = testingIssue({
+      number: 40,
+      queueAgeHours: null,
+      linkedPullRequests: [linkedPullRequest()]
+    });
     const unlinkedPr = pullRequest({
       number: 22,
       linkedIssueNumbers: []
@@ -421,6 +425,7 @@ describe("personal activity feed", () => {
       personalView({
         activeCriticalIssues: [activeIssue],
         attentionPrs: [blockedPr],
+        testingIssues: [testingIssueItem],
         testingPrs: [testingPr],
         pendingPrs: [blockedPr, testingPr, unlinkedPr],
         needsTriageIssues: [triageIssue]
@@ -428,11 +433,11 @@ describe("personal activity feed", () => {
     );
 
     expect(personalActionQueueCounts(items)).toMatchObject({
-      all: 5,
+      all: 6,
       critical: 1,
       pr_blockers: 2,
-      issues: 2,
-      testing: 1,
+      issues: 3,
+      testing: 2,
       prs: 3,
       needs_link: 2
     });
@@ -440,6 +445,10 @@ describe("personal activity feed", () => {
     expect(personalActionQueueItemsForFilter(items, "pr_blockers").map((item) => item.id)).toEqual([
       "pull_request:20",
       "pull_request:21"
+    ]);
+    expect(personalActionQueueItemsForFilter(items, "testing").map((item) => item.id)).toEqual([
+      "pull_request:21",
+      "testing_issue:40"
     ]);
     expect(personalActionQueueItemsForFilter(items, "needs_link").map((item) => item.id)).toEqual([
       "issue:10",
@@ -550,7 +559,7 @@ describe("personal gantt chart", () => {
     expect(personalFlowThreadMatchesFilter(chart.rows[0]!, "needs_link")).toBe(true);
   });
 
-  it("filters personal work threads by linked issue testing state", () => {
+  it("filters personal work threads by issue testing state", () => {
     const person = personalView({
       activeCriticalIssues: [
         criticalIssue({
@@ -586,6 +595,40 @@ describe("personal gantt chart", () => {
       testing: 1,
       blocked: 1
     });
+  });
+
+  it("builds issue-level testing threads with linked PR evidence", () => {
+    const person = personalView({
+      testingIssues: [
+        testingIssue({
+          number: 77,
+          queueAgeHours: 30,
+          linkedPullRequests: [
+            {
+              ...linkedPullRequest(),
+              number: 88,
+              title: "tested fix"
+            }
+          ]
+        })
+      ]
+    });
+
+    const row = personalGanttChart(person, "2026-07-04T00:00:00.000Z").rows[0]!;
+
+    expect(row.id).toBe("issue:77");
+    expect(row.issue.durationKind).toBe("testing_queue");
+    expect(row.issue.durationHours).toBe(30);
+    expect(row.prs.map((pr) => pr.number)).toEqual([88]);
+    expect(row.prs[0]?.linkedIssueNumbers).toEqual([77]);
+    expect(flowThreadStatusCounts(row)).toMatchObject({
+      prs: 1,
+      testingIssues: 1,
+      testingPrs: 1,
+      unlinkedPrs: 0
+    });
+    expect(flowThreadDurationWarnings(row)).toContain("issue test wait over 24h");
+    expect(personalFlowThreadMatchesFilter(row, "testing")).toBe(true);
   });
 });
 
@@ -638,6 +681,7 @@ function personalView(input: Partial<PersonalActionView>): PersonalActionView {
     deferredIssues: input.deferredIssues ?? [],
     pendingPrs: input.pendingPrs ?? [],
     attentionPrs: input.attentionPrs ?? [],
+    testingIssues: input.testingIssues ?? [],
     testingPrs: input.testingPrs ?? [],
     prsCreatedYesterday: input.prsCreatedYesterday ?? [],
     prsMergedYesterday: input.prsMergedYesterday ?? [],
@@ -716,7 +760,7 @@ function testingIssue(input: Partial<TestingIssueQueueView>): TestingIssueQueueV
     htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/issues/50",
     testers: input.testers ?? ["tester-a"],
     testingSignals: input.testingSignals ?? ["issue_assignee:#50:tester-a"],
-    queueAgeHours: input.queueAgeHours ?? 12,
+    queueAgeHours: input.queueAgeHours === undefined ? 12 : input.queueAgeHours,
     queueStartedAt: input.queueStartedAt ?? "2026-07-03T13:00:00Z",
     queueAgeEvidence: input.queueAgeEvidence ?? "issue_assignment_event",
     linkedPullRequests: input.linkedPullRequests ?? [],

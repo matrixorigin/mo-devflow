@@ -377,6 +377,7 @@ export interface PersonalActionView {
   deferredIssues: PersonalIssueView[];
   pendingPrs: PersonalPullRequestView[];
   attentionPrs: PersonalPullRequestView[];
+  testingIssues: TestingIssueQueueView[];
   testingPrs: PersonalPullRequestView[];
   prsCreatedYesterday: PersonalPullRequestView[];
   prsMergedYesterday: PersonalPullRequestView[];

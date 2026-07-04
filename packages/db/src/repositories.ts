@@ -315,6 +315,27 @@ export function testingIssueTransitionsFromQueueIssues(
     .slice(0, limit);
 }
 
+export function testingIssuesForLogin(
+  login: string,
+  issues: TestingIssueQueueView[],
+  ownerByIssueNumber: Map<number, string | null> = new Map()
+): TestingIssueQueueView[] {
+  const loginKey = normalizedLogin(login);
+  if (!loginKey) {
+    return [];
+  }
+  return issues.filter((issue) => {
+    if (issue.testers.some((tester) => normalizedLogin(tester) === loginKey)) {
+      return true;
+    }
+    const ownerLogin = ownerByIssueNumber.get(issue.number);
+    if (ownerLogin && normalizedLogin(ownerLogin) === loginKey) {
+      return true;
+    }
+    return issue.linkedPullRequests.some((pr) => normalizedLogin(pr.ownerLogin) === loginKey);
+  });
+}
+
 function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
   const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
   if (issueAssignee) {
@@ -3833,6 +3854,9 @@ export async function getDashboardSummary(
     applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
   );
   const testingIssueViews = testingIssueQueueViews(issueRows, testingIssueContexts, allPrViews);
+  const ownerByIssueNumber = new Map(
+    issueRows.map((row) => [asNumber(row.number), row.owner_login ? asString(row.owner_login) : null] as const)
+  );
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
@@ -3993,6 +4017,7 @@ export async function getDashboardSummary(
         .map((row) => toPersonalIssueView(row, issueCommentEvidence.get(asNumber(row.number)))),
       pendingPrs: pendingOwnedPrs,
       attentionPrs: pendingOwnedPrs.filter((pr) => pr.attentionFlags.length > 0),
+      testingIssues: testingIssuesForLogin(login, testingIssueViews, ownerByIssueNumber),
       testingPrs: pendingOwnedPrs.filter((pr) =>
         ["test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
       ),

@@ -12,7 +12,7 @@ import type {
 export type WorkloadStatus = "critical" | "attention" | "triage" | "active" | "clear";
 export type PersonalActivityTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalActivityObjectType = "issue" | "pull_request";
-export type PersonalDurationKind = "critical_active" | "issue_age" | "pr_age" | "unknown";
+export type PersonalDurationKind = "critical_active" | "issue_age" | "pr_age" | "testing_queue" | "unknown";
 export type PersonalActionQueueFilter =
   "all" | "critical" | "pr_blockers" | "issues" | "testing" | "prs" | "needs_link";
 
@@ -166,6 +166,7 @@ export interface FlowEfficiencySummary {
 export interface FlowThreadStatusCounts {
   prs: number;
   blockedPrs: number;
+  testingIssues: number;
   testingPrs: number;
   sharedPrs: number;
   unlinkedPrs: number;
@@ -216,6 +217,7 @@ export function flowEfficiencySummary(input: {
   pendingPrs: FlowEfficiencyPullRequest[];
   activeIssues: FlowEfficiencyIssue[];
   testingPrs?: Array<Pick<FlowEfficiencyPullRequest, "testingQueueAgeHours">>;
+  testingIssues?: Array<{ queueAgeHours: number | null }>;
   testingQueuePrs?: number;
   averageTestingQueueAgeHours?: number | null;
 }): FlowEfficiencySummary {
@@ -225,6 +227,11 @@ export function flowEfficiencySummary(input: {
   const issuesResolved =
     sumBy(input.points, (point) => point.issuesClosed) + sumBy(input.points, (point) => point.issuesDeferred);
   const testingPrs = input.testingPrs ?? input.pendingPrs.filter(isTestingQueuePullRequest);
+  const testingIssues = input.testingIssues ?? [];
+  const testingWaits = [
+    ...testingPrs.map((pr) => pr.testingQueueAgeHours),
+    ...testingIssues.map((issue) => issue.queueAgeHours)
+  ].filter((age): age is number => age !== null);
 
   return {
     prsCreated,
@@ -245,11 +252,9 @@ export function flowEfficiencySummary(input: {
     ),
     activeCriticalIssues: input.activeIssues.length,
     averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.ageHours)),
-    testingQueuePrs: input.testingQueuePrs ?? testingPrs.length,
+    testingQueuePrs: input.testingQueuePrs ?? testingPrs.length + testingIssues.length,
     averageTestingQueueAgeHours:
-      input.averageTestingQueueAgeHours !== undefined
-        ? input.averageTestingQueueAgeHours
-        : average(testingPrs.map((pr) => pr.testingQueueAgeHours).filter((age): age is number => age !== null))
+      input.averageTestingQueueAgeHours !== undefined ? input.averageTestingQueueAgeHours : average(testingWaits)
   };
 }
 
@@ -340,11 +345,11 @@ function workloadStatusRank(status: WorkloadStatus): number {
   return 1;
 }
 
-export function personPrimaryReasons(person: PersonSummary, testingPrs: number): string[] {
+export function personPrimaryReasons(person: PersonSummary, testingWork: number): string[] {
   const reasons = [
     person.activeCriticalIssues > 0 ? `${person.activeCriticalIssues} active s-1/s0` : null,
     person.attentionPrs > 0 ? `${person.attentionPrs} PR attention` : null,
-    testingPrs > 0 ? `${testingPrs} linked to test issues` : null,
+    testingWork > 0 ? `${testingWork} testing work` : null,
     person.needsTriageIssues > 0 ? `${person.needsTriageIssues} needs triage` : null,
     person.pendingPrs > 0 ? `${person.pendingPrs} pending PRs` : null,
     person.deferredIssues > 0 ? `${person.deferredIssues} deferred` : null
@@ -492,6 +497,27 @@ export function personalGanttChart(
     };
   });
 
+  for (const issue of person.testingIssues) {
+    if (visibleIssueNumbers.has(issue.number)) {
+      continue;
+    }
+    const prs = issue.linkedPullRequests.map((pr) => testingIssuePrDraft(issue, pr)).sort(sortGanttPrDrafts);
+    for (const pr of prs) {
+      prNumbersShownInIssueRows.add(pr.number);
+    }
+    visibleIssueNumbers.add(issue.number);
+    drafts.push({
+      id: `issue:${issue.number}`,
+      kind: "issue",
+      title: `Issue #${issue.number}`,
+      priority: testingIssuePriority(issue),
+      tone: testingIssueGanttTone(issue),
+      issue: testingIssueDraft(issue),
+      prs,
+      linkedIssueNumbers: [issue.number]
+    });
+  }
+
   const otherPrs = Array.from(personalPrs.values())
     .filter((pr) => !prNumbersShownInIssueRows.has(pr.number))
     .map((pr) => prDraft(pr, nowIso, isSharedPullRequest(pr)))
@@ -625,6 +651,27 @@ function issueDraft(issue: CriticalIssueView | PersonalIssueView, nowIso: string
   };
 }
 
+function testingIssueDraft(issue: TestingIssueQueueView): PersonalGanttIssueDraft {
+  const durationHours = issue.queueAgeHours;
+  return {
+    number: issue.number,
+    title: issue.title,
+    htmlUrl: issue.htmlUrl,
+    tone: testingIssueGanttTone(issue),
+    severity: null,
+    lifecycleState: null,
+    aiEffortLabel: null,
+    durationHours,
+    durationKind: "testing_queue",
+    durationEvidence:
+      issue.queueAgeEvidence === "issue_assignment_event" ? "GitHub issue assignment event" : "Issue cache timestamp",
+    reasons: testingIssueReasons(issue),
+    isComplete: issue.isComplete,
+    startAgeHours: Math.max(durationHours ?? 0, 0),
+    endAgeHours: 0
+  };
+}
+
 function prDraft(pr: GanttPullRequestSource, nowIso: string, isShared: boolean): PersonalGanttPrDraft {
   const reasons = prReasons(pr);
   return {
@@ -647,6 +694,74 @@ function prDraft(pr: GanttPullRequestSource, nowIso: string, isShared: boolean):
     startAgeHours: prStartAgeHours(pr, nowIso),
     endAgeHours: prEndAgeHours(pr, nowIso)
   };
+}
+
+function testingIssuePrDraft(
+  issue: TestingIssueQueueView,
+  pr: TestingIssueQueueView["linkedPullRequests"][number]
+): PersonalGanttPrDraft {
+  const reasons = testingIssueLinkedPrReasons(pr);
+  return {
+    number: pr.number,
+    title: pr.title,
+    htmlUrl: pr.htmlUrl,
+    ownerLogin: pr.ownerLogin,
+    state: "open",
+    tone: reasons.length > 0 ? "attention" : "normal",
+    reviewDecision: pr.reviewDecision,
+    mergeStateStatus: pr.mergeStateStatus,
+    ciState: pr.ciState,
+    testingState: "testing",
+    testingQueueAgeHours: issue.queueAgeHours,
+    attentionFlags: pr.attentionFlags,
+    linkedIssueNumbers: [issue.number],
+    reasons,
+    isShared: false,
+    isComplete: pr.isComplete,
+    startAgeHours: Math.max(pr.ageHours, 0),
+    endAgeHours: 0
+  };
+}
+
+function testingIssuePriority(issue: TestingIssueQueueView): number {
+  return testingIssueGanttTone(issue) === "critical" ? 850 : 760;
+}
+
+function testingIssueGanttTone(issue: TestingIssueQueueView): PersonalGanttTone {
+  if ((issue.queueAgeHours ?? 0) >= 24 || issue.syncError !== null) {
+    return "critical";
+  }
+  if (!issue.isComplete || issue.linkedPullRequests.some((pr) => testingIssueLinkedPrReasons(pr).length > 0)) {
+    return "attention";
+  }
+  return "normal";
+}
+
+function testingIssueReasons(issue: TestingIssueQueueView): string[] {
+  return uniqueStrings(
+    [
+      "Testing handoff",
+      issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Test wait over 24h" : null,
+      issue.queueAgeEvidence === "issue_cache_timestamp" ? "Testing start from issue cache timestamp" : null,
+      issue.testers.length > 0 ? `${issue.testers.length} tester${issue.testers.length === 1 ? "" : "s"}` : null,
+      issue.testingSignals.some((signal) => signal.startsWith("issue_label:")) ? "Issue label handoff" : null,
+      issue.linkedPullRequests.length === 0 ? "No linked PR visible" : null,
+      issue.syncError ? "Issue sync error" : null,
+      !issue.isComplete ? "Incomplete cache evidence" : null
+    ].filter((reason): reason is string => reason !== null)
+  );
+}
+
+function testingIssueLinkedPrReasons(pr: TestingIssueQueueView["linkedPullRequests"][number]): string[] {
+  return uniqueStrings(
+    [
+      ...pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " ")),
+      pr.reviewDecision === "changes_requested" ? attentionFlagLabels.requested_changes : null,
+      pr.ciState && failedCiStates.has(pr.ciState) ? attentionFlagLabels.ci_failed : null,
+      pr.mergeStateStatus === "dirty" ? attentionFlagLabels.merge_conflict : null,
+      !pr.isComplete ? "PR detail sync pending" : null
+    ].filter((reason): reason is string => reason !== null)
+  );
 }
 
 function issuePriority(issue: CriticalIssueView | PersonalIssueView): number {
@@ -799,9 +914,12 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   for (const pr of person.attentionPrs) {
     add(activityFromPullRequest(pr, "PR attention", "attention", 900, prAttentionReasons(pr)));
   }
+  for (const issue of person.testingIssues) {
+    add(activityFromTestingIssue(issue));
+  }
   for (const pr of person.testingPrs) {
     add(
-      activityFromPullRequest(pr, "Linked issue in test", "attention", 780, [
+      activityFromPullRequest(pr, "Testing PR evidence", "attention", 780, [
         ...prAttentionReasons(pr),
         pr.testingQueueAgeHours !== null ? "Test wait visible" : "Issue test status visible"
       ])
@@ -838,7 +956,10 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
 
 export function personalActivityHasBlockingSignal(item: PersonalActivityItem): boolean {
   if (item.objectType === "issue") {
-    return item.tone === "critical" && (item.linkedPullRequestNumbers.length === 0 || !item.isComplete);
+    return (
+      (item.tone === "critical" && (item.linkedPullRequestNumbers.length === 0 || !item.isComplete)) ||
+      item.durationKind === "testing_queue"
+    );
   }
   const reasons = item.reasons.map((reason) => reason.toLowerCase());
   return (
@@ -860,7 +981,10 @@ export function personalActivityHasBlockingSignal(item: PersonalActivityItem): b
 
 export function personalActivityNeedsLink(item: PersonalActivityItem): boolean {
   if (item.objectType === "issue") {
-    return item.tone === "critical" && item.linkedPullRequestNumbers.length === 0;
+    return (
+      (item.tone === "critical" && item.linkedPullRequestNumbers.length === 0) ||
+      (item.durationKind === "testing_queue" && item.linkedPullRequestNumbers.length === 0)
+    );
   }
   return item.objectType === "pull_request" && item.linkedIssueNumbers.length === 0;
 }
@@ -879,7 +1003,7 @@ export function personalActionQueueItemsForFilter(
     return items.filter((item) => item.objectType === "issue");
   }
   if (filter === "testing") {
-    return items.filter((item) => item.testingQueueAgeHours !== null);
+    return items.filter((item) => item.durationKind === "testing_queue" || item.testingQueueAgeHours !== null);
   }
   if (filter === "prs") {
     return items.filter((item) => item.objectType === "pull_request");
@@ -904,6 +1028,15 @@ export function personalActionQueueCounts(items: PersonalActivityItem[]): Person
 
 export function personalActivityNextAction(item: PersonalActivityItem): string {
   if (item.objectType === "issue") {
+    if (item.durationKind === "testing_queue") {
+      if ((item.testingQueueAgeHours ?? 0) >= 24) {
+        return "Ask tester for issue status";
+      }
+      if (item.linkedPullRequestNumbers.length === 0) {
+        return "Link the tested PR";
+      }
+      return "Track issue test result";
+    }
     if (item.lifecycleState === "needs-triage") {
       return "Decide s-1/s0 or defer";
     }
@@ -943,7 +1076,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     item.testingQueueAgeHours !== null ||
     ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
   ) {
-    return "Get linked issue test result";
+    return "Get issue test result";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -992,6 +1125,9 @@ export function personalDurationText(input: {
   if (input.durationKind === "pr_age") {
     return `PR ${durationHoursText(input.durationHours)}`;
   }
+  if (input.durationKind === "testing_queue") {
+    return `test ${durationHoursText(input.durationHours)}`;
+  }
   return `issue ${durationHoursText(input.durationHours)}`;
 }
 
@@ -1002,6 +1138,15 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
   }
   if (row.issue.lifecycleState === "deferred") {
     return "Check defer reason";
+  }
+  if (row.issue.durationKind === "testing_queue") {
+    if ((row.issue.durationHours ?? 0) >= 24) {
+      return "Ask tester for issue status";
+    }
+    if (row.prs.length === 0) {
+      return "Link the tested PR";
+    }
+    return "Track issue test result";
   }
   if (row.kind === "issue" && row.prs.length === 0) {
     return "Link an execution PR";
@@ -1016,7 +1161,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Get linked issue test result";
+    return "Get issue test result";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";
@@ -1038,8 +1183,14 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
   if (row.prs.some((pr) => pr.startAgeHours >= 24 && pr.attentionFlags.includes("no_human_action_24h"))) {
     warnings.push("PR idle over 24h");
   }
-  if (row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)) {
+  if (
+    row.issue.durationKind !== "testing_queue" &&
+    row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)
+  ) {
     warnings.push("test wait over 24h");
+  }
+  if (row.issue.durationKind === "testing_queue" && (row.issue.durationHours ?? 0) >= 24) {
+    warnings.push("issue test wait over 24h");
   }
   if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
     warnings.push("unlinked PR");
@@ -1051,6 +1202,7 @@ export function flowThreadStatusCounts(row: PersonalGanttRow): FlowThreadStatusC
   return {
     prs: row.prs.length,
     blockedPrs: row.prs.filter((pr) => pr.tone === "attention" || pr.reasons.length > 0).length,
+    testingIssues: row.issue.durationKind === "testing_queue" ? 1 : 0,
     testingPrs: row.prs.filter((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready").length,
     sharedPrs: row.prs.filter((pr) => pr.isShared).length,
     unlinkedPrs: row.prs.filter((pr) => pr.linkedIssueNumbers.length === 0).length
@@ -1069,7 +1221,7 @@ export function personalFlowThreadMatchesFilter(row: PersonalGanttRow, filter: P
     return counts.blockedPrs > 0 || flowThreadDurationWarnings(row).length > 0;
   }
   if (filter === "testing") {
-    return counts.testingPrs > 0;
+    return counts.testingIssues > 0 || counts.testingPrs > 0;
   }
   if (filter === "needs_link") {
     return (row.kind === "issue" && row.prs.length === 0) || counts.unlinkedPrs > 0;
@@ -1121,6 +1273,39 @@ function activityFromIssue(
     testingState: null,
     linkedIssueNumbers: [],
     linkedPullRequestNumbers: criticalIssue ? issue.linkedPullRequests.map((pr) => pr.number) : [],
+    reasons,
+    isComplete: issue.isComplete
+  };
+}
+
+function activityFromTestingIssue(issue: TestingIssueQueueView): PersonalActivityItem {
+  const reasons = testingIssueReasons(issue);
+  const linkedPullRequestNumbers = issue.linkedPullRequests.map((pr) => pr.number);
+  return {
+    id: `testing_issue:${issue.number}`,
+    objectType: "issue",
+    number: issue.number,
+    title: issue.title,
+    htmlUrl: issue.htmlUrl,
+    ownerLogin: issue.testers[0] ?? null,
+    phase: "Issue in test",
+    tone: testingIssueGanttTone(issue) === "critical" ? "critical" : "attention",
+    priority: testingIssuePriority(issue),
+    ageHours: issue.queueAgeHours ?? 0,
+    durationHours: issue.queueAgeHours,
+    durationKind: "testing_queue",
+    durationEvidence:
+      issue.queueAgeEvidence === "issue_assignment_event" ? "GitHub issue assignment event" : "Issue cache timestamp",
+    lastHumanActionAt: null,
+    testingQueueAgeHours: issue.queueAgeHours,
+    severity: null,
+    lifecycleState: null,
+    reviewDecision: null,
+    ciState: null,
+    mergeStateStatus: null,
+    testingState: "testing",
+    linkedIssueNumbers: [],
+    linkedPullRequestNumbers,
     reasons,
     isComplete: issue.isComplete
   };

@@ -1390,6 +1390,10 @@ button.team-status-row:focus-visible {
   margin: 0 !important;
 }
 
+.subsection-heading-compact {
+  margin: 12px 0 8px;
+}
+
 .critical-board {
   border-bottom: 1px solid #e5e7eb;
   display: grid;
@@ -1762,6 +1766,11 @@ button.testing-board-stat:focus-visible {
   display: grid;
   min-width: 0;
   overflow: hidden;
+}
+
+.testing-linked-pr-evidence {
+  display: grid;
+  gap: 8px;
 }
 
 .testing-issue-panel-heading {
