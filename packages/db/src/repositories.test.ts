@@ -908,9 +908,25 @@ describe("pull request testing transition events", () => {
       pullRequestTestingTransitionForUpsert({
         repoId: 7,
         previousTestingState: "test_requested",
+        hasExistingTestingEvents: true,
         pr: pullRequest
       })
     ).toBeNull();
+  });
+
+  test("records first-observed testing states when existing cache predates event history", () => {
+    expect(
+      pullRequestTestingTransitionForUpsert({
+        repoId: 7,
+        previousTestingState: "test_requested",
+        hasExistingTestingEvents: false,
+        pr: pullRequest
+      })
+    ).toMatchObject({
+      fromState: "not_ready",
+      toState: "test_requested",
+      dedupeKey: "7:pr:101:testing:not_ready:test_requested:2026-07-02T08:00:00.000Z"
+    });
   });
 
   test("does not record initial not-ready state", () => {
@@ -919,6 +935,25 @@ describe("pull request testing transition events", () => {
         repoId: 7,
         previousTestingState: null,
         pr: { ...pullRequest, testingState: "not_ready", testingTesters: [], testingSignals: [] }
+      })
+    ).toBeNull();
+  });
+
+  test("does not record first-observed ordinary closed PRs without testing evidence", () => {
+    expect(
+      pullRequestTestingTransitionForUpsert({
+        repoId: 7,
+        previousTestingState: null,
+        pr: {
+          ...pullRequest,
+          state: "closed",
+          testingState: "closed_or_merged",
+          testingTesters: [],
+          testingSignals: ["closed_or_merged"],
+          closedAt: "2026-07-03T04:00:00.000Z",
+          mergedAt: "2026-07-03T04:00:00.000Z",
+          testingQueueAgeHours: null
+        }
       })
     ).toBeNull();
   });

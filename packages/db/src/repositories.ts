@@ -114,17 +114,30 @@ function testingTransitionOccurredAt(pr: NormalizedPullRequest): string {
   return pr.lastHumanActionAt || pr.updatedAt;
 }
 
+function hasConfirmedTestingEvidence(pr: NormalizedPullRequest): boolean {
+  return pr.testingTesters.length > 0 || pr.testingSignals.some((signal) => signal !== "closed_or_merged");
+}
+
 export function pullRequestTestingTransitionForUpsert(input: {
   repoId: number;
   previousTestingState: NormalizedPullRequest["testingState"] | null;
+  hasExistingTestingEvents?: boolean;
   pr: NormalizedPullRequest;
 }): PullRequestTestingTransitionEvent | null {
-  const fromState = input.previousTestingState ?? "not_ready";
+  const firstObservedTestingState =
+    input.previousTestingState === input.pr.testingState &&
+    !input.hasExistingTestingEvents &&
+    input.pr.testingState !== "not_ready" &&
+    hasConfirmedTestingEvidence(input.pr);
+  const fromState = firstObservedTestingState ? "not_ready" : input.previousTestingState ?? "not_ready";
   const toState = input.pr.testingState;
   if (fromState === toState) {
     return null;
   }
   if (!input.previousTestingState && toState === "not_ready") {
+    return null;
+  }
+  if (!input.previousTestingState && !hasConfirmedTestingEvidence(input.pr)) {
     return null;
   }
   const occurredAt = testingTransitionOccurredAt(input.pr);
@@ -980,6 +993,17 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
     [repoId, pr.number]
   );
   const previous = rows[0];
+  let hasExistingTestingEvents = false;
+  if (previous) {
+    const [testingEventRows] = await getPool().execute<RowData[]>(
+      `SELECT id
+       FROM pr_testing_events
+       WHERE repo_id = ? AND pr_number = ?
+       LIMIT 1`,
+      [repoId, pr.number]
+    );
+    hasExistingTestingEvents = testingEventRows.length > 0;
+  }
   if (pr.state === "open" && !pr.detailSyncedAt && !pr.detailError) {
     if (previous?.detail_synced_at) {
       next = {
@@ -1002,6 +1026,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
     previousTestingState: previous?.testing_state
       ? (asString(previous.testing_state) as NormalizedPullRequest["testingState"])
       : null,
+    hasExistingTestingEvents,
     pr: next
   });
   await getPool().execute("DELETE FROM pull_requests WHERE repo_id = ? AND number = ?", [repoId, pr.number]);
