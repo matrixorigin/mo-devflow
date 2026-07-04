@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once check test ci
+.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-clean dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -19,6 +19,7 @@ help:
 	@echo "  make dev-start          - Start API, worker, and web UI"
 	@echo "  make dev-ready          - Wait for local API, worker, and web readiness"
 	@echo "  make dev-stop           - Stop API, worker, and web UI"
+	@echo "  make dev-clean          - Stop services and remove local runtime artifacts"
 	@echo "  make dev-status         - Show service status"
 	@echo "  make db-create          - Create dedicated MatrixOne database"
 	@echo "  make db-migrate         - Run schema migrations"
@@ -128,6 +129,11 @@ dev-ready:
 	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_WEB_PORT:-5173}/" Web 30000
 
 dev-stop: dev-web-stop dev-worker-stop dev-api-stop
+
+dev-clean: dev-stop
+	@rm -f $(API_PID) $(WORKER_PID) $(WEB_PID) $(API_LOG) $(WORKER_LOG) $(WEB_LOG)
+	@rm -rf apps/web/dist
+	@echo "Removed local pid files, logs, and web build output"
 
 dev-status: dev-api-status dev-worker-status dev-web-status
 
