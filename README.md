@@ -26,6 +26,11 @@ Default local services:
 - Web: `http://localhost:5173`
 - MatrixOne database: `mo_devflow`
 
+Database connection failures should fail fast enough for dashboards and health
+checks to stay actionable. `MO_DEVFLOW_DB_CONNECT_TIMEOUT_MS` defaults to
+`3000`; increase it only for known slow MatrixOne networks. The database pool
+size defaults to `MO_DEVFLOW_DB_CONNECTION_LIMIT=10`.
+
 ## All-In-One Docker Deployment
 
 For a single-host deployment that connects to an existing MatrixOne instance:

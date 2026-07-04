@@ -37,6 +37,25 @@ const app = Fastify({
 });
 const dashboardCacheTtlMs = dashboardCacheTtlMsFromEnv();
 const dashboardCache = createDashboardSummaryCache({ ttlMs: dashboardCacheTtlMs });
+let startupMigrationError: string | null = null;
+
+async function runMigration(label: "startup" | "retry"): Promise<void> {
+  try {
+    await migrate();
+    startupMigrationError = null;
+  } catch (error) {
+    startupMigrationError = errorMessage(error);
+    app.log.error({ error, label }, "database migration failed");
+    throw error;
+  }
+}
+
+async function ensureMigrationReady(): Promise<void> {
+  if (!startupMigrationError) {
+    return;
+  }
+  await runMigration("retry");
+}
 
 app.removeContentTypeParser("application/json");
 app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
@@ -64,6 +83,7 @@ await registerWebhookRoutes(app);
 app.get("/health", async (_request, reply) => {
   try {
     await pingDatabase();
+    await ensureMigrationReady();
     const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
     const profile = loadRepoProfile();
     const repoId = await getRepoId(profile.key);
@@ -85,6 +105,10 @@ app.get("/health", async (_request, reply) => {
       jobQueue,
       operational,
       operationalError,
+      migration: {
+        status: startupMigrationError ? "failed" : "ok",
+        error: startupMigrationError
+      },
       generatedAt: new Date().toISOString()
     });
   } catch (error) {
@@ -92,15 +116,20 @@ app.get("/health", async (_request, reply) => {
     return reply.status(apiHealthHttpStatus("unhealthy")).send({
       status: "unhealthy",
       database: "disconnected",
+      migration: {
+        status: startupMigrationError ? "failed" : "unknown",
+        error: startupMigrationError
+      },
       generatedAt: new Date().toISOString()
     });
   }
 });
 
 app.get("/api/dashboard", async (request, reply) => {
-  const profile = loadRepoProfile();
-  const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
   try {
+    await ensureMigrationReady();
+    const profile = loadRepoProfile();
+    const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const session = await getSessionRecordFromRequest(request, reply);
     const viewer = {
       authenticated: Boolean(session),
@@ -154,9 +183,18 @@ app.get("/api/profile", async () => {
 });
 
 try {
-  await migrate();
+  await runMigration("startup");
+} catch {
+  app.log.warn("API is starting without a ready database; /health will report unhealthy until MatrixOne recovers.");
+}
+
+try {
   await app.listen({ host, port });
 } catch (error) {
   app.log.error(error);
   process.exitCode = 1;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

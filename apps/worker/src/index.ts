@@ -21,6 +21,25 @@ let heartbeatState: {
 };
 let tickRunning = false;
 let shuttingDown = false;
+let startupMigrationError: string | null = null;
+
+async function runMigration(label: "startup" | "retry"): Promise<void> {
+  try {
+    await migrate();
+    startupMigrationError = null;
+  } catch (error) {
+    startupMigrationError = errorMessage(error);
+    console.error(`[worker] database migration failed during ${label}`, error);
+    throw error;
+  }
+}
+
+async function ensureMigrationReady(): Promise<void> {
+  if (!startupMigrationError) {
+    return;
+  }
+  await runMigration("retry");
+}
 
 function setHeartbeatState(input: {
   phase?: WorkerHeartbeatPhase;
@@ -82,6 +101,7 @@ async function tick(): Promise<void> {
   });
   await flushHeartbeat();
   try {
+    await ensureMigrationReady();
     const result = await runDueJobsOnce();
     if (result.claimedJobs > 0) {
       for (const run of result.runs) {
@@ -149,7 +169,16 @@ process.on("SIGINT", () => {
   void shutdown("SIGINT");
 });
 
-await migrate();
+try {
+  await runMigration("startup");
+} catch {
+  setHeartbeatState({
+    phase: "failed",
+    lastError: startupMigrationError,
+    details: { migration: "failed" }
+  });
+  console.warn("[worker] continuing without a ready database; migration will be retried before each tick.");
+}
 await flushHeartbeat();
 setInterval(() => {
   void flushHeartbeat();
@@ -158,3 +187,7 @@ await tickIfIdle();
 setInterval(() => {
   void tickIfIdle();
 }, intervalSeconds * 1000);
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

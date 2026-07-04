@@ -6,17 +6,21 @@ export interface DbConfig {
   user: string;
   password: string;
   database: string;
+  connectTimeoutMs: number;
+  connectionLimit: number;
 }
 
 let pool: Pool | null = null;
 
-export function getDbConfig(): DbConfig {
+export function getDbConfig(env: Record<string, string | undefined> = process.env): DbConfig {
   return {
-    host: process.env.MO_DEVFLOW_DB_HOST ?? "127.0.0.1",
-    port: Number(process.env.MO_DEVFLOW_DB_PORT ?? "6001"),
-    user: process.env.MO_DEVFLOW_DB_USER ?? "root",
-    password: process.env.MO_DEVFLOW_DB_PASSWORD ?? "111",
-    database: process.env.MO_DEVFLOW_DB_NAME ?? "mo_devflow"
+    host: env.MO_DEVFLOW_DB_HOST ?? "127.0.0.1",
+    port: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_PORT, 6001, 1),
+    user: env.MO_DEVFLOW_DB_USER ?? "root",
+    password: env.MO_DEVFLOW_DB_PASSWORD ?? "111",
+    database: env.MO_DEVFLOW_DB_NAME ?? "mo_devflow",
+    connectTimeoutMs: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_CONNECT_TIMEOUT_MS, 3_000, 500),
+    connectionLimit: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_CONNECTION_LIMIT, 10, 1)
   };
 }
 
@@ -30,7 +34,8 @@ export function getPool(): Pool {
       password: config.password,
       database: config.database,
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: config.connectionLimit,
+      connectTimeout: config.connectTimeoutMs,
       namedPlaceholders: true,
       timezone: "Z",
       dateStrings: true
@@ -48,6 +53,14 @@ export async function closePool(): Promise<void> {
 
 export async function pingDatabase(): Promise<void> {
   await getPool().query("SELECT 1");
+}
+
+function positiveIntegerFromEnv(value: string | undefined, fallback: number, min: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    return fallback;
+  }
+  return parsed;
 }
 
 export function sqlDate(value: string | Date | null | undefined): string | null {

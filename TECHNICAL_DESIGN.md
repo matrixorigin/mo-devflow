@@ -87,6 +87,8 @@ MO_DEVFLOW_DB_PORT=6001
 MO_DEVFLOW_DB_USER=mo_devflow
 MO_DEVFLOW_DB_PASSWORD=
 MO_DEVFLOW_DB_NAME=mo_devflow
+MO_DEVFLOW_DB_CONNECT_TIMEOUT_MS=3000
+MO_DEVFLOW_DB_CONNECTION_LIMIT=10
 ```
 
 For local development, create a dedicated MatrixOne user once the schema is ready. The user should only have permissions on `mo_devflow`.
