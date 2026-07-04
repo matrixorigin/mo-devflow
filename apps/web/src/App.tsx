@@ -1567,6 +1567,7 @@ function TeamRotationOverview({
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
+  const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
 
   return (
     <div className="team-overview">
@@ -1676,7 +1677,7 @@ function TeamRotationOverview({
             }
           >
             {criticalIssues.slice(0, 6).map((issue) => (
-              <TeamCriticalIssueRow issue={issue} key={issue.number} />
+              <TeamCriticalIssueRow issue={issue} key={issue.number} onPreview={setWorkPreview} />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
@@ -1689,7 +1690,12 @@ function TeamRotationOverview({
             onAction={() => onOpenPrsFilter("attention")}
           >
             {prRisks.slice(0, 6).map((pr) => (
-              <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
+              <TeamPrRiskRow
+                activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+                pr={pr}
+                key={pr.number}
+                onPreview={setWorkPreview}
+              />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
@@ -1712,6 +1718,8 @@ function TeamRotationOverview({
           <TeamOpsStatus data={data} onNavigate={onNavigate} />
         </aside>
       </div>
+
+      <TeamWorkPreviewModal preview={workPreview} onClose={() => setWorkPreview(null)} />
 
       <section className="section team-flow-section">
         <div className="section-heading">
@@ -1959,6 +1967,10 @@ function TeamMonitorTile({
   );
 }
 
+type TeamWorkPreview =
+  | { objectType: "issue"; issue: CriticalIssueView }
+  | { objectType: "pull_request"; pr: PendingPrView; activeIssues: PrCriticalIssueContext[] };
+
 function TeamRotationLane({
   title,
   count,
@@ -2009,7 +2021,13 @@ function TeamRotationLane({
   );
 }
 
-function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
+function TeamCriticalIssueRow({
+  issue,
+  onPreview
+}: {
+  issue: CriticalIssueView;
+  onPreview: (preview: TeamWorkPreview) => void;
+}) {
   const riskTags = criticalIssueRiskTags(issue);
   const linkedPrs = issue.linkedPullRequests.slice(0, 4);
   return (
@@ -2021,6 +2039,15 @@ function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
           </WorkObjectLink>
           <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
           <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
+          <Tooltip title="Preview issue">
+            <Button
+              aria-label={`Preview issue ${issue.number}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview({ objectType: "issue", issue })}
+            />
+          </Tooltip>
         </div>
         <a className="team-work-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
           {issue.title}
@@ -2062,7 +2089,15 @@ function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
   );
 }
 
-function TeamPrRiskRow({ activeIssues = [], pr }: { activeIssues?: PrCriticalIssueContext[]; pr: PendingPrView }) {
+function TeamPrRiskRow({
+  activeIssues = [],
+  pr,
+  onPreview
+}: {
+  activeIssues?: PrCriticalIssueContext[];
+  pr: PendingPrView;
+  onPreview?: (preview: TeamWorkPreview) => void;
+}) {
   const reasons = prAttentionReasons(pr);
   const visibleReasons = reasons.slice(0, 4);
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
@@ -2091,6 +2126,17 @@ function TeamPrRiskRow({ activeIssues = [], pr }: { activeIssues?: PrCriticalIss
           ) : null}
           {pr.testingState !== "not_ready" ? (
             <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+          ) : null}
+          {onPreview ? (
+            <Tooltip title="Preview PR">
+              <Button
+                aria-label={`Preview PR ${pr.number}`}
+                icon={<Eye size={14} />}
+                size="small"
+                type="text"
+                onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
+              />
+            </Tooltip>
           ) : null}
         </div>
         <a className="team-work-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
@@ -2150,6 +2196,266 @@ function TeamPrRiskRow({ activeIssues = [], pr }: { activeIssues?: PrCriticalIss
         <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
       </div>
     </article>
+  );
+}
+
+function TeamWorkPreviewModal({ preview, onClose }: { preview: TeamWorkPreview | null; onClose: () => void }) {
+  if (!preview) {
+    return null;
+  }
+
+  if (preview.objectType === "issue") {
+    return <TeamIssuePreviewModal issue={preview.issue} onClose={onClose} />;
+  }
+  return <TeamPullRequestPreviewModal activeIssues={preview.activeIssues} pr={preview.pr} onClose={onClose} />;
+}
+
+function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; onClose: () => void }) {
+  const riskTags = criticalIssueRiskTags(issue);
+  const linkedPrs = issue.linkedPullRequests.slice(0, 8);
+
+  return (
+    <Modal
+      className="team-object-preview-modal"
+      open
+      width={820}
+      title={`Issue #${issue.number}`}
+      onCancel={onClose}
+      footer={[
+        <Button href={issue.htmlUrl} icon={<ExternalLink size={14} />} key="github" target="_blank">
+          Open GitHub
+        </Button>,
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div className="team-object-preview">
+        <a className="team-object-preview-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <Space size={[4, 4]} wrap>
+          <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown severity"}</Tag>
+          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
+          <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
+          {issue.workflowSkipped ? <Tag>skip automation</Tag> : null}
+        </Space>
+
+        <div className="team-object-preview-grid">
+          <div className="team-object-preview-metric">
+            <span>Active duration</span>
+            <strong>{criticalIssueDuration(issue)}</strong>
+            <small>
+              {issue.criticalStartedAt ? `since ${formatDate(issue.criticalStartedAt)}` : "timeline missing"}
+            </small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Linked PRs</span>
+            <strong>{issue.linkedPullRequests.length}</strong>
+            <small>{issue.linkedPullRequests.length > 0 ? "execution visible" : "needs PR link"}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Last action</span>
+            <strong>{formatDate(issue.lastHumanActionAt)}</strong>
+            <small>{issue.lastHumanActionAt ? "human activity" : "not visible in cache"}</small>
+          </div>
+        </div>
+
+        <section className="team-object-preview-section">
+          <Text strong>Next action</Text>
+          <Text>{criticalIssueNextAction(issue)}</Text>
+        </section>
+
+        {riskTags.length > 0 ? (
+          <section className="team-object-preview-section">
+            <Text strong>Why it needs attention</Text>
+            <Space size={[4, 4]} wrap>
+              {riskTags.map((tag) => (
+                <Tooltip title={tag.tooltip} key={tag.key}>
+                  <Tag color={tag.color}>{tag.label}</Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          </section>
+        ) : null}
+
+        <section className="team-object-preview-section">
+          <Text strong>Linked PRs</Text>
+          {linkedPrs.length > 0 ? (
+            <div className="team-object-preview-list">
+              {linkedPrs.map((pr) => (
+                <a
+                  className="team-object-preview-linked"
+                  href={pr.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={pr.number}
+                >
+                  <span>
+                    <GitPullRequest size={14} aria-hidden="true" />
+                    PR #{pr.number}
+                  </span>
+                  <strong>{pr.title}</strong>
+                  <small>
+                    owner {pr.ownerLogin} | age {hours(pr.ageHours)} | last {formatDate(pr.lastHumanActionAt)}
+                  </small>
+                  <Space size={[4, 4]} wrap>
+                    {pr.testingState !== "not_ready" ? (
+                      <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+                    ) : null}
+                    {pr.attentionFlags.slice(0, 4).map((flag) => (
+                      <Tag color={flagColor(flag)} key={flag}>
+                        {labelText(flag)}
+                      </Tag>
+                    ))}
+                  </Space>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <Text type="secondary">No linked PR is visible in cache.</Text>
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
+}
+
+function TeamPullRequestPreviewModal({
+  activeIssues,
+  pr,
+  onClose
+}: {
+  activeIssues: PrCriticalIssueContext[];
+  pr: PendingPrView;
+  onClose: () => void;
+}) {
+  const reasons = prAttentionReasons(pr);
+  const issueLinks = pr.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(pr.htmlUrl, "issues", number)
+  }));
+
+  return (
+    <Modal
+      className="team-object-preview-modal"
+      open
+      width={820}
+      title={`PR #${pr.number}`}
+      onCancel={onClose}
+      footer={[
+        <Button href={pr.htmlUrl} icon={<ExternalLink size={14} />} key="github" target="_blank">
+          Open GitHub
+        </Button>,
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div className="team-object-preview">
+        <a className="team-object-preview-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+          {pr.title}
+        </a>
+        <Space size={[4, 4]} wrap>
+          <Tag>{pr.ownerLogin}</Tag>
+          <Tag>{hours(pr.ageHours)}</Tag>
+          {pr.testingState !== "not_ready" ? (
+            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+          ) : null}
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {pr.reviewDecision ? (
+            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          ) : null}
+          {pr.mergeStateStatus ? (
+            <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
+          {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
+        </Space>
+
+        <div className="team-object-preview-grid">
+          <div className="team-object-preview-metric">
+            <span>PR age</span>
+            <strong>{hours(pr.ageHours)}</strong>
+            <small>current cached age</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Last human action</span>
+            <strong>{formatDate(pr.lastHumanActionAt)}</strong>
+            <small>{pr.lastHumanActionAt ? "cached activity" : "not visible in cache"}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Issue links</span>
+            <strong>{pr.linkedIssueNumbers.length}</strong>
+            <small>
+              {prIssueLinkUnknown(pr)
+                ? "sync pending"
+                : pr.linkedIssueNumbers.length > 0
+                  ? "linked"
+                  : "none after sync"}
+            </small>
+          </div>
+        </div>
+
+        <section className="team-object-preview-section">
+          <Text strong>Next action</Text>
+          <Text>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</Text>
+          <Text type="secondary">{teamPrNextAction(pr)}</Text>
+        </section>
+
+        {reasons.length > 0 ? (
+          <section className="team-object-preview-section">
+            <Text strong>Why it needs attention</Text>
+            <Space size={[4, 4]} wrap>
+              {reasons.map((reason) => (
+                <Tag color={activityReasonColor(reason)} key={reason}>
+                  {reason}
+                </Tag>
+              ))}
+            </Space>
+          </section>
+        ) : null}
+
+        <section className="team-object-preview-section">
+          <Text strong>Issue context</Text>
+          {activeIssues.length > 0 ? (
+            <div className="team-object-preview-list">
+              {activeIssues.map((issue) => (
+                <a
+                  className="team-object-preview-linked"
+                  href={issue.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={issue.number}
+                >
+                  <span>
+                    <ShieldAlert size={14} aria-hidden="true" />
+                    Issue #{issue.number}
+                  </span>
+                  <strong>{issue.title}</strong>
+                  <small>
+                    {severityShortLabel(issue.severity)} | owner {issue.ownerLogin ?? "unowned"} |{" "}
+                    {issue.criticalAgeHours === null ? "active duration unknown" : hours(issue.criticalAgeHours)}
+                  </small>
+                </a>
+              ))}
+            </div>
+          ) : issueLinks.length > 0 ? (
+            <Space size={[4, 4]} wrap>
+              {issueLinks.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                  issue #{link.number}
+                </a>
+              ))}
+            </Space>
+          ) : (
+            <Text type="secondary">
+              {prIssueLinkUnknown(pr) ? "Issue link sync is still pending." : "No linked issue found after sync."}
+            </Text>
+          )}
+        </section>
+      </div>
+    </Modal>
   );
 }
 

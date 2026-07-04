@@ -936,6 +936,106 @@ button.team-monitor-tile:hover,
   color: #b45309;
 }
 
+.team-object-preview {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.team-object-preview-title {
+  color: #111827;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.team-object-preview-title:hover {
+  text-decoration: underline;
+}
+
+.team-object-preview-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.team-object-preview-metric {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.team-object-preview-metric span,
+.team-object-preview-metric small {
+  color: #6b7280;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-object-preview-metric strong {
+  color: #111827;
+  font-size: 19px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-object-preview-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.team-object-preview-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.team-object-preview-linked {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #111827;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+.team-object-preview-linked:hover {
+  background: #f8fafc;
+  border-color: #93c5fd;
+}
+
+.team-object-preview-linked span {
+  align-items: center;
+  color: #1d4ed8;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.team-object-preview-linked strong {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.team-object-preview-linked small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .team-person-row {
   appearance: none;
   align-items: center;
@@ -3828,6 +3928,10 @@ button.critical-board-stat:hover {
   }
 
   .testing-issue-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .team-object-preview-grid {
     grid-template-columns: 1fr;
   }
 
