@@ -77,6 +77,8 @@ export function notificationDashboardUrl(
       return objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`;
     case "daily_digest":
       return `${baseUrl}/#analytics`;
+    case "weekly_digest":
+      return `${baseUrl}/#analytics`;
   }
 }
 
@@ -114,7 +116,7 @@ export function notificationRecipientScope(
 export function activeNotificationDeliverySourceWhereSql(deliveryAlias: "d" = "d"): string {
   return [
     "(",
-    `${deliveryAlias}.source_type = 'daily_digest'`,
+    `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest')`,
     `OR (${deliveryAlias}.source_type = 'attention_item' AND EXISTS (SELECT 1 FROM attention_items ai WHERE ai.repo_id = ${deliveryAlias}.repo_id AND ai.id = ${deliveryAlias}.source_id AND ai.resolved_at IS NULL))`,
     `OR (${deliveryAlias}.source_type = 'workflow_violation' AND EXISTS (SELECT 1 FROM workflow_violations wv WHERE wv.repo_id = ${deliveryAlias}.repo_id AND wv.id = ${deliveryAlias}.source_id AND wv.resolved_at IS NULL))`,
     `OR (${deliveryAlias}.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = ${deliveryAlias}.repo_id AND ad.id = ${deliveryAlias}.source_id AND ad.resolved_at IS NULL))`,
@@ -138,7 +140,7 @@ export function notificationDeliveryVisibilityWhereSql(
   return {
     sql: [
       "(",
-      `${deliveryAlias}.source_type = 'daily_digest'`,
+      `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest')`,
       `OR ${deliveryAlias}.object_number IS NULL`,
       `OR (${deliveryAlias}.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = ${deliveryAlias}.repo_id AND i.number = ${deliveryAlias}.object_number AND ${issueVisibility.sql}))`,
       `OR (${deliveryAlias}.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = ${deliveryAlias}.repo_id AND p.number = ${deliveryAlias}.object_number AND ${pullRequestVisibility.sql}))`,
@@ -181,8 +183,54 @@ export function excludedAttentionSourceWhereSql(
   };
 }
 
+export function notificationImmediateLimit(limit: number): number {
+  if (limit <= 1) {
+    return 1;
+  }
+  const digestSlots = limit >= 3 ? 2 : 1;
+  return Math.max(1, limit - digestSlots);
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
+}
+
+function emptyDigestTeamMetrics(): DailyDigestTeamMetrics {
+  return {
+    prsCreated: 0,
+    prsMerged: 0,
+    issuesOpened: 0,
+    issuesClosed: 0,
+    issuesDeferred: 0,
+    workflowViolationsDetected: 0,
+    sourceCompleteness: "complete_cache"
+  };
+}
+
+function addDigestMetrics(target: DailyDigestTeamMetrics, row: RowData): void {
+  target.prsCreated += asNumber(row.prs_created);
+  target.prsMerged += asNumber(row.prs_merged);
+  target.issuesOpened += asNumber(row.issues_opened);
+  target.issuesClosed += asNumber(row.issues_closed);
+  target.issuesDeferred += asNumber(row.issues_deferred);
+  target.workflowViolationsDetected += asNumber(row.workflow_violations_detected);
+  if (metricSourceCompleteness(row.source_completeness) === "partial_cache") {
+    target.sourceCompleteness = "partial_cache";
+  }
+}
+
+function latestGeneratedAt(rows: RowData[]): string {
+  let latest: string | null = null;
+  for (const row of rows) {
+    const generatedAt = fromSqlDate(row.generated_at);
+    if (!generatedAt) {
+      continue;
+    }
+    if (!latest || new Date(generatedAt).getTime() > new Date(latest).getTime()) {
+      latest = generatedAt;
+    }
+  }
+  return latest ?? new Date().toISOString();
 }
 
 export function dailyDigestMetricDate(timezone: string, now = new Date()): string {
@@ -191,6 +239,37 @@ export function dailyDigestMetricDate(timezone: string, now = new Date()): strin
     throw new Error(`Unable to derive daily digest date in timezone ${timezone}.`);
   }
   return addDaysToDateKey(today, -1);
+}
+
+function dateFromDateKey(dateKey: string): Date {
+  return new Date(`${dateKey}T00:00:00.000Z`);
+}
+
+function weekStartDateKey(dateKey: string, weekStart: RepoProfile["reporting"]["weekStart"]): string {
+  const date = dateFromDateKey(dateKey);
+  const day = date.getUTCDay();
+  const offset = weekStart === "Monday" ? (day === 0 ? 6 : day - 1) : day;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+export function weeklyDigestPeriod(
+  timezone: string,
+  weekStart: RepoProfile["reporting"]["weekStart"],
+  now = new Date()
+): { start: string; end: string; label: string } {
+  const today = dateKeyInTimezone(now, timezone);
+  if (!today) {
+    throw new Error(`Unable to derive weekly digest period in timezone ${timezone}.`);
+  }
+  const currentWeekStart = weekStartDateKey(today, weekStart);
+  const start = addDaysToDateKey(currentWeekStart, -7);
+  const end = currentWeekStart;
+  return {
+    start,
+    end,
+    label: `${start} to ${addDaysToDateKey(end, -1)}`
+  };
 }
 
 export interface DailyDigestTeamMetrics {
@@ -286,6 +365,45 @@ export function buildDailyDigestNotificationCandidate(input: {
   };
 }
 
+export function buildWeeklyDigestNotificationCandidate(input: {
+  profile: RepoProfile;
+  period: { start: string; end: string; label: string };
+  team: DailyDigestTeamMetrics;
+  people: DailyDigestPersonMetrics[];
+  generatedAt: string;
+}): NotificationCandidate {
+  const peopleSummary = input.people.length
+    ? `\nWatched users: ${input.people
+        .map(
+          (person) =>
+            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
+        )
+        .join("; ")}.`
+    : "";
+  return {
+    sourceType: "weekly_digest",
+    sourceId: 0,
+    ruleKey: "weekly_maintainer_digest",
+    severity: "info",
+    objectType: "digest",
+    objectNumber: null,
+    title: `Weekly digest for ${input.profile.key} on ${input.period.label}`,
+    htmlUrl: `https://github.com/${input.profile.repo.owner}/${input.profile.repo.name}`,
+    dashboardUrl: notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "weekly_digest", "digest"),
+    relatedLogin: null,
+    recipient: input.profile.notifications.routing.fallbackRecipient,
+    dedupeKey: `notification:weekly_digest:${input.profile.key}:${input.period.start}`,
+    evidenceSummary:
+      `Team: ${input.team.prsCreated} PRs created, ${input.team.prsMerged} merged, ` +
+      `${input.team.issuesOpened} issues opened, ${input.team.issuesClosed} closed, ${input.team.issuesDeferred} deferred.\n` +
+      `Workflow violations detected: ${input.team.workflowViolationsDetected}.` +
+      peopleSummary +
+      `\nCache completeness: ${input.team.sourceCompleteness}.`,
+    firstDetectedAt: input.generatedAt,
+    lastDetectedAt: input.generatedAt
+  };
+}
+
 async function getDailyDigestCandidate(
   repoId: number,
   profile: RepoProfile
@@ -329,6 +447,56 @@ async function getDailyDigestCandidate(
   });
 }
 
+async function getWeeklyDigestCandidate(
+  repoId: number,
+  profile: RepoProfile
+): Promise<NotificationCandidate | null> {
+  const period = weeklyDigestPeriod(profile.reporting.timezone, profile.reporting.weekStart);
+  const [metricRows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM daily_metrics
+     WHERE repo_id = ? AND metric_date >= ? AND metric_date < ?
+     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
+    [repoId, period.start, period.end]
+  );
+  const teamRows = metricRows.filter((row) => asString(row.scope_type) === "team" && asString(row.scope_key) === "all");
+  if (teamRows.length === 0) {
+    return null;
+  }
+
+  const team = emptyDigestTeamMetrics();
+  for (const row of teamRows) {
+    addDigestMetrics(team, row);
+  }
+
+  const watchedUsers = new Set(profile.people.watchedUsers);
+  const peopleByLogin = new Map<string, DailyDigestPersonMetrics>();
+  for (const row of metricRows) {
+    const login = asString(row.scope_key);
+    if (asString(row.scope_type) !== "person" || !watchedUsers.has(login)) {
+      continue;
+    }
+    const person = peopleByLogin.get(login) ?? {
+      login,
+      prsCreated: 0,
+      prsMerged: 0,
+      workflowViolationsDetected: 0
+    };
+    person.prsCreated += asNumber(row.prs_created);
+    person.prsMerged += asNumber(row.prs_merged);
+    person.workflowViolationsDetected += asNumber(row.workflow_violations_detected);
+    peopleByLogin.set(login, person);
+  }
+
+  return buildWeeklyDigestNotificationCandidate({
+    profile,
+    period,
+    team,
+    people: Array.from(peopleByLogin.values()).sort((left, right) => left.login.localeCompare(right.login)),
+    generatedAt: latestGeneratedAt(metricRows)
+  });
+}
+
 export async function listNotificationCandidates(
   repoId: number,
   profile: RepoProfile,
@@ -338,7 +506,7 @@ export async function listNotificationCandidates(
     return [];
   }
   const candidates: NotificationCandidate[] = [];
-  const immediateLimit = limit > 1 ? limit - 1 : 1;
+  const immediateLimit = notificationImmediateLimit(limit);
   const dashboardBaseUrl = notificationDashboardBaseUrlFromEnv();
   const escalationHours = profile.notifications.routing.escalateAfterHours;
   const escalationCutoff = sqlDate(new Date(Date.now() - escalationHours * 3_600_000));
@@ -508,6 +676,13 @@ export async function listNotificationCandidates(
 
   if (candidates.length < limit) {
     const digest = await getDailyDigestCandidate(repoId, profile);
+    if (digest) {
+      candidates.push(digest);
+    }
+  }
+
+  if (candidates.length < limit) {
+    const digest = await getWeeklyDigestCandidate(repoId, profile);
     if (digest) {
       candidates.push(digest);
     }

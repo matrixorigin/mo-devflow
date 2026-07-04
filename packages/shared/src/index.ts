@@ -539,7 +539,12 @@ export interface AnalyticsSummary {
   peopleMonthly: AggregatedMetricPoint[];
 }
 
-export type NotificationSourceType = "attention_item" | "workflow_violation" | "ai_drift_signal" | "daily_digest";
+export type NotificationSourceType =
+  | "attention_item"
+  | "workflow_violation"
+  | "ai_drift_signal"
+  | "daily_digest"
+  | "weekly_digest";
 export type NotificationStatus =
   | "sent"
   | "failed"

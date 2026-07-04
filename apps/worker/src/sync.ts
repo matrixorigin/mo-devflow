@@ -145,7 +145,7 @@ function notificationLimitFromEnv(): number {
 }
 
 function notificationCooldownHours(candidate: NotificationCandidate, defaultCooldownHours: number): number {
-  if (candidate.sourceType === "daily_digest") {
+  if (candidate.sourceType === "daily_digest" || candidate.sourceType === "weekly_digest") {
     return 24 * 365 * 10;
   }
   return defaultCooldownHours;

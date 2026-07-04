@@ -13,9 +13,10 @@ export function buildWeComMarkdown(profile: RepoProfile, candidate: Notification
   const target = candidate.htmlUrl ? `[${objectText}](${candidate.htmlUrl})` : objectText;
   const dashboardTarget = `[Open in mo-devflow](${candidate.dashboardUrl})`;
   const owner = candidate.relatedLogin ? `\n> Owner: ${candidate.relatedLogin}` : "";
-  if (candidate.sourceType === "daily_digest") {
+  if (candidate.sourceType === "daily_digest" || candidate.sourceType === "weekly_digest") {
+    const digestPeriod = candidate.sourceType === "weekly_digest" ? "weekly" : "daily";
     return [
-      "## mo-devflow daily digest",
+      `## mo-devflow ${digestPeriod} digest`,
       `> Repo: ${profile.key}`,
       `> Date: ${title}`,
       `> Dashboard: ${dashboardTarget}`,

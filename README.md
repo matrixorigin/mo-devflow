@@ -39,6 +39,9 @@ logout endpoints while keeping the session cookie HttpOnly.
 Enterprise WeChat notifications link back to the mo-devflow dashboard. Set
 `MO_DEVFLOW_DASHBOARD_URL` to the public web URL in deployed environments; local
 development uses `http://localhost:${MO_DEVFLOW_WEB_PORT}`.
+Notification candidates include immediate attention alerts, escalation alerts,
+daily maintainer digests, and weekly maintainer digests derived from cached
+repository metrics.
 
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.

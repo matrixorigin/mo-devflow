@@ -5,8 +5,11 @@ import {
   activeNotificationDeliverySourceWhereSql,
   buildCriticalNotificationEscalationCandidate,
   buildDailyDigestNotificationCandidate,
+  buildWeeklyDigestNotificationCandidate,
   dailyDigestMetricDate,
   excludedAttentionSourceWhereSql,
+  notificationImmediateLimit,
+  weeklyDigestPeriod,
   notificationDeliveryVisibilityWhereSql,
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
@@ -82,10 +85,27 @@ describe("daily digest notification candidates", () => {
     expect(notificationDashboardUrl("https://devflow.example.com", "daily_digest", "digest")).toBe(
       "https://devflow.example.com/#analytics"
     );
+    expect(notificationDashboardUrl("https://devflow.example.com", "weekly_digest", "digest")).toBe(
+      "https://devflow.example.com/#analytics"
+    );
+  });
+
+  test("reserves digest slots when listing notification candidates", () => {
+    expect(notificationImmediateLimit(1)).toBe(1);
+    expect(notificationImmediateLimit(2)).toBe(1);
+    expect(notificationImmediateLimit(20)).toBe(18);
   });
 
   test("uses the previous repo-local calendar day as the digest metric date", () => {
     expect(dailyDigestMetricDate("Asia/Shanghai", new Date("2026-07-04T01:00:00.000Z"))).toBe("2026-07-03");
+  });
+
+  test("uses the previous completed repo-local week for weekly digests", () => {
+    expect(weeklyDigestPeriod("Asia/Shanghai", "Monday", new Date("2026-07-04T01:00:00.000Z"))).toEqual({
+      start: "2026-06-22",
+      end: "2026-06-29",
+      label: "2026-06-22 to 2026-06-28"
+    });
   });
 
   test("builds a maintainer digest from cached daily metrics", () => {
@@ -123,6 +143,44 @@ describe("daily digest notification candidates", () => {
     expect(candidate.evidenceSummary).toContain("Team: 5 PRs created, 3 merged, 2 issues opened, 1 closed, 1 deferred.");
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 4.");
     expect(candidate.evidenceSummary).toContain("alice: 2 created, 1 merged, 3 violations");
+    expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
+  });
+
+  test("builds a weekly maintainer digest from cached weekly metrics", () => {
+    const candidate = buildWeeklyDigestNotificationCandidate({
+      profile,
+      period: { start: "2026-06-22", end: "2026-06-29", label: "2026-06-22 to 2026-06-28" },
+      team: {
+        prsCreated: 25,
+        prsMerged: 18,
+        issuesOpened: 12,
+        issuesClosed: 8,
+        issuesDeferred: 3,
+        workflowViolationsDetected: 9,
+        sourceCompleteness: "partial_cache"
+      },
+      people: [
+        { login: "alice", prsCreated: 8, prsMerged: 5, workflowViolationsDetected: 4 },
+        { login: "bob", prsCreated: 2, prsMerged: 7, workflowViolationsDetected: 1 }
+      ],
+      generatedAt: "2026-07-04T01:00:00.000Z"
+    });
+
+    expect(candidate).toMatchObject({
+      sourceType: "weekly_digest",
+      sourceId: 0,
+      ruleKey: "weekly_maintainer_digest",
+      severity: "info",
+      objectType: "digest",
+      objectNumber: null,
+      title: "Weekly digest for matrixorigin/matrixone on 2026-06-22 to 2026-06-28",
+      dashboardUrl: "http://localhost:5173/#analytics",
+      recipient: "maintainer_group",
+      dedupeKey: "notification:weekly_digest:matrixorigin/matrixone:2026-06-22"
+    });
+    expect(candidate.evidenceSummary).toContain("Team: 25 PRs created, 18 merged, 12 issues opened, 8 closed, 3 deferred.");
+    expect(candidate.evidenceSummary).toContain("Workflow violations detected: 9.");
+    expect(candidate.evidenceSummary).toContain("alice: 8 created, 5 merged, 4 violations");
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
   });
 });
@@ -183,7 +241,7 @@ describe("notification acknowledgement health", () => {
     expect(activeNotificationDeliverySourceWhereSql("d")).toBe(
       [
         "(",
-        "d.source_type = 'daily_digest'",
+        "d.source_type IN ('daily_digest', 'weekly_digest')",
         "OR (d.source_type = 'attention_item' AND EXISTS (SELECT 1 FROM attention_items ai WHERE ai.repo_id = d.repo_id AND ai.id = d.source_id AND ai.resolved_at IS NULL))",
         "OR (d.source_type = 'workflow_violation' AND EXISTS (SELECT 1 FROM workflow_violations wv WHERE wv.repo_id = d.repo_id AND wv.id = d.source_id AND wv.resolved_at IS NULL))",
         "OR (d.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = d.repo_id AND ad.id = d.source_id AND ad.resolved_at IS NULL))",
@@ -196,7 +254,7 @@ describe("notification acknowledgement health", () => {
     expect(notificationDeliveryVisibilityWhereSql("d", profile, { authenticated: false, userId: null })).toEqual({
       sql: [
         "(",
-        "d.source_type = 'daily_digest'",
+        "d.source_type IN ('daily_digest', 'weekly_digest')",
         "OR d.object_number IS NULL",
         "OR (d.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = d.repo_id AND i.number = d.object_number AND i.visibility_class IN ('anonymous_readable')))",
         "OR (d.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = d.repo_id AND p.number = d.object_number AND p.visibility_class IN ('anonymous_readable')))",
@@ -208,7 +266,7 @@ describe("notification acknowledgement health", () => {
     expect(notificationDeliveryVisibilityWhereSql("d", profile, { authenticated: true, userId: 42 })).toEqual({
       sql: [
         "(",
-        "d.source_type = 'daily_digest'",
+        "d.source_type IN ('daily_digest', 'weekly_digest')",
         "OR d.object_number IS NULL",
         "OR (d.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = d.repo_id AND i.number = d.object_number AND (i.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (i.visibility_class = 'token_owner_only' AND i.source_user_id = ?))))",
         "OR (d.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = d.repo_id AND p.number = d.object_number AND (p.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (p.visibility_class = 'token_owner_only' AND p.source_user_id = ?))))",
