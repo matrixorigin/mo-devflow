@@ -154,6 +154,26 @@ body {
   white-space: normal;
 }
 
+.evidence-alert-summary {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.evidence-alert-summary .ant-btn {
+  align-self: start;
+}
+
+.evidence-alert-compact {
+  margin-bottom: 12px;
+}
+
+.evidence-alert-compact .evidence-detail-list {
+  gap: 4px;
+}
+
 .evidence-detail-list {
   display: grid;
   gap: 6px;
@@ -1782,6 +1802,14 @@ body {
 
   .cache-evidence-row {
     grid-template-columns: 1fr;
+  }
+
+  .evidence-alert-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-alert-summary .ant-btn {
+    justify-self: start;
   }
 
   .topbar-actions {

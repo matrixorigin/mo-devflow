@@ -66,6 +66,8 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import {
   BellRing,
+  ChevronDown,
+  ChevronUp,
   CircleAlert,
   ClipboardCheck,
   ExternalLink,
@@ -79,7 +81,12 @@ import {
   TimerReset,
   UserRound
 } from "lucide-react";
-import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness } from "./freshness";
+import {
+  recommendCacheRepair,
+  summarizeCacheEvidence,
+  summarizeFreshness,
+  type CacheEvidenceSummary
+} from "./freshness";
 import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
@@ -1117,6 +1124,72 @@ function CacheRepairPlan({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function CacheEvidenceBanner({
+  cacheEvidence,
+  sync,
+  authenticated,
+  expanded,
+  onExpandedChange,
+  onPrepare
+}: {
+  cacheEvidence: CacheEvidenceSummary;
+  sync: DashboardSummary["sync"];
+  authenticated: boolean;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onPrepare: (layers: ManualRefreshLayer[]) => void;
+}) {
+  return (
+    <Alert
+      className={`band evidence-alert ${expanded ? "evidence-alert-expanded" : "evidence-alert-compact"}`}
+      type={cacheEvidence.alertType}
+      title={cacheEvidence.title}
+      description={
+        <Space orientation="vertical" size={expanded ? 8 : 6} className="full-width">
+          <div className="evidence-alert-summary">
+            <Text>{cacheEvidence.description}</Text>
+            <Button
+              size="small"
+              type="text"
+              icon={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              onClick={() => onExpandedChange(!expanded)}
+            >
+              {expanded ? "Hide evidence" : "Show evidence"}
+            </Button>
+          </div>
+          {cacheEvidence.facts.length > 0 ? (
+            <Space size={[4, 4]} wrap>
+              {cacheEvidence.facts.map((fact) => (
+                <Tag key={fact}>{fact}</Tag>
+              ))}
+            </Space>
+          ) : null}
+          {cacheEvidence.affectedConclusions.length > 0 ? (
+            <div className="evidence-detail-list">
+              <Text type="secondary">Affected conclusions</Text>
+              <Space size={[4, 4]} wrap>
+                {cacheEvidence.affectedConclusions.map((item) => (
+                  <Tag color={cacheEvidence.severity === "critical" ? "red" : "orange"} key={item}>
+                    {item}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          ) : null}
+          {expanded ? (
+            <>
+              <CacheEvidenceSamples sync={sync} />
+              <CacheRepairPlan sync={sync} authenticated={authenticated} onPrepare={onPrepare} />
+            </>
+          ) : null}
+          {cacheEvidence.recommendedAction ? <Text type="secondary">{cacheEvidence.recommendedAction}</Text> : null}
+        </Space>
+      }
+      showIcon
+    />
   );
 }
 
@@ -2559,6 +2632,7 @@ export default function App() {
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
+  const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(() => initialDashboardView() === "Overview");
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
@@ -2643,6 +2717,7 @@ export default function App() {
 
   function selectView(nextView: DashboardView) {
     setView(nextView);
+    setCacheEvidenceExpanded(nextView === "Overview");
     const nextHash = `#${dashboardHashForView(nextView)}`;
     if (window.location.hash !== nextHash) {
       window.history.replaceState(null, "", nextHash);
@@ -2818,7 +2893,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const syncViewFromHash = () => setView(dashboardViewFromHash(window.location.hash));
+    const syncViewFromHash = () => {
+      const nextView = dashboardViewFromHash(window.location.hash);
+      setView(nextView);
+      setCacheEvidenceExpanded(nextView === "Overview");
+    };
     window.addEventListener("hashchange", syncViewFromHash);
     return () => window.removeEventListener("hashchange", syncViewFromHash);
   }, []);
@@ -3759,44 +3838,13 @@ export default function App() {
             ) : null}
 
             {cacheEvidence && cacheEvidence.severity !== "ok" ? (
-              <Alert
-                className="band evidence-alert"
-                type={cacheEvidence.alertType}
-                title={cacheEvidence.title}
-                description={
-                  <Space orientation="vertical" size={8} className="full-width">
-                    <Text>{cacheEvidence.description}</Text>
-                    {cacheEvidence.facts.length > 0 ? (
-                      <Space size={[4, 4]} wrap>
-                        {cacheEvidence.facts.map((fact) => (
-                          <Tag key={fact}>{fact}</Tag>
-                        ))}
-                      </Space>
-                    ) : null}
-                    <CacheEvidenceSamples sync={data.sync} />
-                    <CacheRepairPlan
-                      sync={data.sync}
-                      authenticated={Boolean(session?.authenticated)}
-                      onPrepare={openManualRefreshModal}
-                    />
-                    {cacheEvidence.affectedConclusions.length > 0 ? (
-                      <div className="evidence-detail-list">
-                        <Text type="secondary">Affected conclusions</Text>
-                        <Space size={[4, 4]} wrap>
-                          {cacheEvidence.affectedConclusions.map((item) => (
-                            <Tag color={cacheEvidence.severity === "critical" ? "red" : "orange"} key={item}>
-                              {item}
-                            </Tag>
-                          ))}
-                        </Space>
-                      </div>
-                    ) : null}
-                    {cacheEvidence.recommendedAction ? (
-                      <Text type="secondary">{cacheEvidence.recommendedAction}</Text>
-                    ) : null}
-                  </Space>
-                }
-                showIcon
+              <CacheEvidenceBanner
+                cacheEvidence={cacheEvidence}
+                sync={data.sync}
+                authenticated={Boolean(session?.authenticated)}
+                expanded={cacheEvidenceExpanded}
+                onExpandedChange={setCacheEvidenceExpanded}
+                onPrepare={openManualRefreshModal}
               />
             ) : null}
 
