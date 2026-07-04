@@ -6304,10 +6304,15 @@ export default function App() {
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
   const dashboardRefreshInFlight = useRef(false);
   const latestDataRef = useRef<DashboardSummary | null>(null);
+  const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
 
   useEffect(() => {
     latestDataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    dashboardReadModelRef.current = dashboardReadModel;
+  }, [dashboardReadModel]);
 
   useEffect(() => {
     if (tokenRetryUntil === null) {
@@ -6341,7 +6346,10 @@ export default function App() {
       setError(null);
     }
     try {
-      const response = await fetch("/api/dashboard");
+      const cachedEtag = dashboardReadModelRef.current?.etag;
+      const response = await fetch("/api/dashboard", {
+        headers: latestDataRef.current && cachedEtag ? { "if-none-match": cachedEtag } : undefined
+      });
       const loadedAt = new Date().toISOString();
       if (response.status === 304) {
         setLastDashboardLoadedAt(loadedAt);
