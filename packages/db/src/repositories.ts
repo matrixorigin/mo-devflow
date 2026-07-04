@@ -1127,16 +1127,17 @@ export async function replaceIssueTimelineEvents(input: {
   for (const event of input.events) {
     await getPool().execute(
       `INSERT INTO issue_timeline_events(
-        repo_id, issue_number, github_id, event_type, label_name, actor_login,
+        repo_id, issue_number, github_id, event_type, label_name, assignee_login, actor_login,
         occurred_at, source_auth_type, source_user_id, visibility_class,
         raw_payload, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.repoId,
         input.issueNumber,
         event.githubId,
         event.eventType,
         event.labelName,
+        event.assigneeLogin,
         event.actorLogin,
         sqlDate(event.occurredAt),
         event.sourceAuthType,
@@ -1174,16 +1175,17 @@ export async function upsertIssueTimelineEvent(repoId: number, event: Normalized
   try {
     await getPool().execute(
       `INSERT INTO issue_timeline_events(
-        repo_id, issue_number, github_id, event_type, label_name, actor_login,
+        repo_id, issue_number, github_id, event_type, label_name, assignee_login, actor_login,
         occurred_at, source_auth_type, source_user_id, visibility_class,
         raw_payload, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         repoId,
         event.issueNumber,
         event.githubId,
         event.eventType,
         event.labelName,
+        event.assigneeLogin,
         event.actorLogin,
         sqlDate(event.occurredAt),
         event.sourceAuthType,
@@ -2111,6 +2113,7 @@ interface TestingIssueContext {
   testers: string[];
   signals: string[];
   queueAgeHours: number | null;
+  queueAgeEvidence: TestingIssueQueueView["queueAgeEvidence"];
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -2139,11 +2142,85 @@ function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Ma
       issueNumber,
       testers: uniqueValues(testers),
       signals: uniqueValues(testers.map((tester) => `issue_assignee:#${issueNumber}:${tester}`)),
-      queueAgeHours: hoursSince(fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at))
+      queueAgeHours: hoursSince(fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at)),
+      queueAgeEvidence: "issue_cache_timestamp"
     });
   }
 
   return contexts;
+}
+
+async function testingAssignmentStartedAtByIssueNumber(
+  repoId: number,
+  contexts: Map<number, TestingIssueContext>,
+  visibilitySql: string,
+  visibilityParams: number[]
+): Promise<Map<number, string>> {
+  if (contexts.size === 0) {
+    return new Map();
+  }
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT issue_number, event_type, assignee_login, occurred_at
+     FROM issue_timeline_events e
+     WHERE repo_id = ?
+       AND event_type IN ('assigned', 'unassigned')
+       AND ${visibilitySql}
+     ORDER BY occurred_at ASC, id ASC
+     LIMIT 10000`,
+    [repoId, ...visibilityParams]
+  );
+  const activeAssignments = new Map<number, Map<string, string>>();
+  for (const row of rows) {
+    const issueNumber = asNumber(row.issue_number);
+    const context = contexts.get(issueNumber);
+    if (!context) {
+      continue;
+    }
+    const assignee = row.assignee_login ? asString(row.assignee_login) : "";
+    if (!context.testers.some((tester) => normalizedLogin(tester) === normalizedLogin(assignee))) {
+      continue;
+    }
+    const occurredAt = fromSqlDate(row.occurred_at);
+    if (!occurredAt) {
+      continue;
+    }
+    const assignments = activeAssignments.get(issueNumber) ?? new Map<string, string>();
+    if (asString(row.event_type) === "assigned") {
+      assignments.set(normalizedLogin(assignee), occurredAt);
+    } else {
+      assignments.delete(normalizedLogin(assignee));
+    }
+    activeAssignments.set(issueNumber, assignments);
+  }
+  const startedAtByIssueNumber = new Map<number, string>();
+  for (const [issueNumber, assignments] of activeAssignments.entries()) {
+    const activeStarts = Array.from(assignments.values()).sort();
+    if (activeStarts.length > 0) {
+      startedAtByIssueNumber.set(issueNumber, activeStarts[0]);
+    }
+  }
+  return startedAtByIssueNumber;
+}
+
+function testingIssueContextsWithAssignmentEvidence(
+  contexts: Map<number, TestingIssueContext>,
+  assignmentStartedAtByIssueNumber: Map<number, string>
+): Map<number, TestingIssueContext> {
+  const next = new Map<number, TestingIssueContext>();
+  for (const [issueNumber, context] of contexts.entries()) {
+    const assignmentStartedAt = assignmentStartedAtByIssueNumber.get(issueNumber);
+    next.set(
+      issueNumber,
+      assignmentStartedAt
+        ? {
+            ...context,
+            queueAgeHours: hoursSince(assignmentStartedAt),
+            queueAgeEvidence: "issue_assignment_event"
+          }
+        : context
+    );
+  }
+  return next;
 }
 
 function testingIssueContextForLinkedIssues(
@@ -2163,7 +2240,10 @@ function testingIssueContextForLinkedIssues(
     issueNumber: matches[0].issueNumber,
     testers: uniqueValues(matches.flatMap((context) => context.testers)),
     signals: uniqueValues(matches.flatMap((context) => context.signals)),
-    queueAgeHours: queueAges.length === 0 ? null : Math.max(...queueAges)
+    queueAgeHours: queueAges.length === 0 ? null : Math.max(...queueAges),
+    queueAgeEvidence: matches.some((context) => context.queueAgeEvidence === "issue_assignment_event")
+      ? "issue_assignment_event"
+      : "issue_cache_timestamp"
   };
 }
 
@@ -2221,6 +2301,7 @@ function testingIssueQueueViews(
         htmlUrl: asString(row.html_url),
         testers: context.testers,
         queueAgeHours: context.queueAgeHours,
+        queueAgeEvidence: context.queueAgeEvidence,
         linkedPullRequests,
         isComplete: asBoolean(row.is_complete),
         syncError: row.sync_error ? asString(row.sync_error) : null,
@@ -3514,7 +3595,17 @@ export async function getDashboardSummary(
            LIMIT 500`,
           [repoId, ...linkedPrVisibility.params]
         );
-  const testingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
+  const baseTestingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
+  const testingAssignmentStartedAtMap = await testingAssignmentStartedAtByIssueNumber(
+    repoId,
+    baseTestingIssueContexts,
+    timelineEventVisibility.sql,
+    timelineEventVisibility.params
+  );
+  const testingIssueContexts = testingIssueContextsWithAssignmentEvidence(
+    baseTestingIssueContexts,
+    testingAssignmentStartedAtMap
+  );
   const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(
     linkedPrCandidateRows,
     criticalIssueNumbers,

@@ -161,8 +161,9 @@ export interface NormalizedIssueComment extends IssueCommentEvidenceItem {
 export interface NormalizedIssueTimelineEvent {
   githubId: string;
   issueNumber: number;
-  eventType: "labeled" | "unlabeled";
+  eventType: "labeled" | "unlabeled" | "assigned" | "unassigned";
   labelName: string | null;
+  assigneeLogin: string | null;
   actorLogin: string | null;
   occurredAt: string;
   sourceAuthType: SourceAuthType;
@@ -412,6 +413,7 @@ export interface TestingIssueQueueView {
   htmlUrl: string;
   testers: string[];
   queueAgeHours: number | null;
+  queueAgeEvidence: "issue_assignment_event" | "issue_cache_timestamp";
   linkedPullRequests: TestingIssueLinkedPullRequestView[];
   isComplete: boolean;
   syncError: string | null;

@@ -3401,6 +3401,9 @@ function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
             Issue #{issue.number}
           </WorkObjectLink>
           <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
+          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
+            {issue.queueAgeEvidence === "issue_assignment_event" ? "assignment event" : "cache timestamp"}
+          </Tag>
           {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
           {issue.syncError ? (
             <Tooltip title={issue.syncError}>

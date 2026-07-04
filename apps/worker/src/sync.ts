@@ -321,20 +321,22 @@ function normalizeIssueTimelineEvent(
     return null;
   }
   const eventType = typeof payload.event === "string" ? payload.event : "";
-  if (eventType !== "labeled" && eventType !== "unlabeled") {
+  if (!["labeled", "unlabeled", "assigned", "unassigned"].includes(eventType)) {
     return null;
   }
   const label = recordPayload(payload.label);
+  const assignee = recordPayload(payload.assignee);
   const actor = recordPayload(payload.actor);
   const occurredAt = typeof payload.created_at === "string" ? payload.created_at : null;
   if (!occurredAt) {
     return null;
   }
   return {
-    githubId: String(payload.id ?? `${issueNumber}:${eventType}:${occurredAt}:${label?.name ?? ""}`),
+    githubId: String(payload.id ?? `${issueNumber}:${eventType}:${occurredAt}:${label?.name ?? assignee?.login ?? ""}`),
     issueNumber,
-    eventType,
+    eventType: eventType as NormalizedIssueTimelineEvent["eventType"],
     labelName: typeof label?.name === "string" ? label.name : null,
+    assigneeLogin: typeof assignee?.login === "string" ? assignee.login : null,
     actorLogin: typeof actor?.login === "string" ? actor.login : null,
     occurredAt,
     sourceAuthType: source.authType,
@@ -1066,13 +1068,14 @@ export async function processWebhookPayload(input: {
     }
     await upsertIssue(input.repoId, issue);
     const action = typeof input.payload.action === "string" ? input.payload.action : "";
-    if (action === "labeled" || action === "unlabeled") {
+    if (["labeled", "unlabeled", "assigned", "unassigned"].includes(action)) {
       const timelineEvent = normalizeIssueTimelineEvent(
         issue.number,
         {
           id: input.payload.delivery_id,
           event: action,
           label: input.payload.label,
+          assignee: input.payload.assignee,
           actor: input.payload.sender,
           created_at: issue.updatedAt,
           source: "webhook"

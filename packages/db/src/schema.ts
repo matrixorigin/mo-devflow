@@ -298,6 +298,7 @@ const schemaStatements = [
     github_id VARCHAR(64) NOT NULL,
     event_type VARCHAR(64) NOT NULL,
     label_name VARCHAR(255),
+    assignee_login VARCHAR(255),
     actor_login VARCHAR(255),
     occurred_at DATETIME NOT NULL,
     source_auth_type VARCHAR(64) NOT NULL,
@@ -466,6 +467,7 @@ const indexStatements = [
   "CREATE INDEX idx_issue_comments_repo_visibility_source ON issue_comments(repo_id, visibility_class, source_user_id)",
   "CREATE INDEX idx_issue_timeline_events_repo_issue ON issue_timeline_events(repo_id, issue_number)",
   "CREATE INDEX idx_issue_timeline_events_repo_label ON issue_timeline_events(repo_id, label_name, occurred_at)",
+  "CREATE INDEX idx_issue_timeline_events_repo_assignee ON issue_timeline_events(repo_id, assignee_login, occurred_at)",
   "CREATE INDEX idx_issue_timeline_syncs_repo_issue ON issue_timeline_syncs(repo_id, issue_number)",
   "CREATE INDEX idx_issue_timeline_events_visibility_source ON issue_timeline_events(repo_id, visibility_class, source_user_id)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
@@ -560,6 +562,19 @@ const migrations: SchemaMigration[] = [
         );
         await connection.query("ALTER TABLE pull_requests MODIFY COLUMN linked_issue_numbers_json LONGTEXT NOT NULL");
       }
+    }
+  },
+  {
+    version: "0007",
+    name: "issue_timeline_assignee_cache",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("issue_timeline_events")) {
+        await connection.query("ALTER TABLE issue_timeline_events ADD COLUMN assignee_login VARCHAR(255)");
+      }
+      await executeIgnoringDuplicateIndex(
+        connection,
+        "CREATE INDEX idx_issue_timeline_events_repo_assignee ON issue_timeline_events(repo_id, assignee_login, occurred_at)"
+      );
     }
   }
 ];
