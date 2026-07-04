@@ -318,6 +318,12 @@ function maxIso(values: Array<string | null | undefined>): string | null {
   return latest;
 }
 
+function uniqueIssueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values.filter((value) => Number.isInteger(value) && value > 0))).sort(
+    (left, right) => left - right
+  );
+}
+
 export function normalizeIssue(
   profile: RepoProfile,
   issue: GitHubIssueLike,
@@ -395,6 +401,10 @@ export function normalizePullRequest(
   const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
   const ciState = normalizeState(insight?.ciState);
   const latestReviewState = normalizeState(insight?.latestReviewState);
+  const linkedIssueNumbers = uniqueIssueNumbers([
+    ...(insight?.linkedIssueNumbers ?? []),
+    ...extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`)
+  ]);
   const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight, commentEvidence);
   const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
   const lastHumanActionAt = insight
@@ -469,6 +479,7 @@ export function normalizePullRequest(
     testingSignals: testingFlow.signals,
     testingQueueAgeHours: testingFlow.queueAgeHours,
     attentionFlags,
+    linkedIssueNumbers,
     sourceAuthType: source.authType,
     sourceUserId: source.userId,
     visibilityClass: visibility(profile, source),

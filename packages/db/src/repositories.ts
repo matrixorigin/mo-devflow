@@ -128,6 +128,27 @@ function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
 }
 
+function uniqueIssueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values.filter((value) => Number.isInteger(value) && value > 0))).sort(
+    (left, right) => left - right
+  );
+}
+
+function parseJsonNumberArray(value: unknown): number[] {
+  if (typeof value !== "string" || value.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return uniqueIssueNumbers(parsed.map((item) => (typeof item === "number" ? item : Number(item))));
+  } catch {
+    return [];
+  }
+}
+
 export function pullRequestWithPreservedInsight(input: {
   current: NormalizedPullRequest;
   previous: Record<string, unknown> | null | undefined;
@@ -136,7 +157,7 @@ export function pullRequestWithPreservedInsight(input: {
     return input.current;
   }
   const previousDetailSyncedAt = fromSqlDate(input.previous?.detail_synced_at);
-  if (!previousDetailSyncedAt) {
+  if (!previousDetailSyncedAt || !asBoolean(input.previous?.is_complete)) {
     return input.current;
   }
   const previousDetailError = input.previous?.detail_error ? asString(input.previous.detail_error) : null;
@@ -155,6 +176,10 @@ export function pullRequestWithPreservedInsight(input: {
       input.current.attentionFlags,
       parseJsonArray(asString(input.previous?.attention_flags_json))
     ),
+    linkedIssueNumbers: uniqueIssueNumbers([
+      ...input.current.linkedIssueNumbers,
+      ...parseJsonNumberArray(input.previous?.linked_issue_numbers_json)
+    ]),
     isComplete: !previousDetailError
   };
 }
@@ -1310,6 +1335,7 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
         ? null
         : asNumber(row.testing_queue_age_hours),
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
@@ -1324,7 +1350,8 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT last_human_action_at, review_decision, merge_state_status, ci_state,
             latest_review_state, latest_review_submitted_at, latest_commit_at,
-            detail_synced_at, detail_error, attention_flags_json, testing_state
+            detail_synced_at, detail_error, attention_flags_json, linked_issue_numbers_json,
+            testing_state, is_complete
      FROM pull_requests
      WHERE repo_id = ? AND number = ?`,
     [repoId, pr.number]
@@ -1359,9 +1386,10 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       last_system_action_at, review_decision, merge_state_status, ci_state,
       latest_review_state, latest_review_submitted_at, latest_commit_at,
       detail_synced_at, detail_error, testing_state, testing_testers_json,
-      testing_signals_json, testing_queue_age_hours, attention_flags_json, source_auth_type,
-      source_user_id, visibility_class, is_complete, sync_error, raw_payload, last_synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      testing_signals_json, testing_queue_age_hours, attention_flags_json,
+      linked_issue_numbers_json, source_auth_type, source_user_id, visibility_class,
+      is_complete, sync_error, raw_payload, last_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repoId,
       String(next.githubId),
@@ -1397,6 +1425,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       stringify(next.testingSignals),
       next.testingQueueAgeHours,
       stringify(next.attentionFlags),
+      stringify(next.linkedIssueNumbers),
       next.sourceAuthType,
       next.sourceUserId,
       next.visibilityClass,
@@ -2070,7 +2099,10 @@ async function criticalStartedAtByIssueNumber(
 function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
   const rawPayload = parseJsonRecord<Record<string, unknown>>(asString(row.raw_payload), {});
   const body = typeof rawPayload.body === "string" ? rawPayload.body : "";
-  return extractLinkedIssueNumbers(`${asString(row.title)}\n${body}`);
+  return uniqueIssueNumbers([
+    ...parseJsonNumberArray(row.linked_issue_numbers_json),
+    ...extractLinkedIssueNumbers(`${asString(row.title)}\n${body}`)
+  ]);
 }
 
 interface TestingIssueContext {

@@ -178,6 +178,7 @@ describe("webhook review processing", () => {
           latestReviewState: "APPROVED",
           latestReviewSubmittedAt: now,
           latestCommitAt: now,
+          linkedIssueNumbers: [],
           detailSyncedAt: now,
           detailError: null
         },
@@ -317,6 +318,7 @@ describe("webhook review processing", () => {
         latestReviewState: "CHANGES_REQUESTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       },
@@ -417,6 +419,7 @@ describe("webhook review processing", () => {
         latestReviewState: "APPROVED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       },
@@ -521,6 +524,7 @@ describe("webhook review processing", () => {
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       },
@@ -593,6 +597,7 @@ describe("webhook review processing", () => {
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: null,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: "GitHub rate limit exceeded"
       },

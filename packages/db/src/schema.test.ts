@@ -15,6 +15,7 @@ describe("schema contract", () => {
 
     expect(expected.get("issues")).toContain("source_user_id");
     expect(expected.get("pull_requests")).toContain("testing_state");
+    expect(expected.get("pull_requests")).toContain("linked_issue_numbers_json");
     expect(expected.get("pr_testing_events")).toContain("from_state");
     expect(expected.get("pr_testing_events")).toContain("source_completeness");
     expect(expected.get("issue_comment_syncs")).toContain("is_complete");
@@ -52,6 +53,10 @@ describe("schema contract", () => {
     });
     expect(specs.get("daily_metrics")?.get("ci_failed_prs")).toEqual({
       columnType: "INT",
+      nullable: false
+    });
+    expect(specs.get("pull_requests")?.get("linked_issue_numbers_json")).toEqual({
+      columnType: "TEXT",
       nullable: false
     });
   });

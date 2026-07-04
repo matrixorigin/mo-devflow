@@ -234,6 +234,7 @@ const schemaStatements = [
     testing_signals_json LONGTEXT NOT NULL,
     testing_queue_age_hours DOUBLE,
     attention_flags_json LONGTEXT NOT NULL,
+    linked_issue_numbers_json LONGTEXT NOT NULL,
     source_auth_type VARCHAR(64) NOT NULL,
     source_user_id BIGINT,
     visibility_class VARCHAR(64) NOT NULL,
@@ -543,6 +544,22 @@ const migrations: SchemaMigration[] = [
     name: "issue_timeline_event_cache",
     async run() {
       // The CREATE TABLE/INDEX statements above are idempotent and create this cache for both fresh and existing DBs.
+    }
+  },
+  {
+    version: "0006",
+    name: "pull_request_linked_issue_cache",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("pull_requests")) {
+        await connection.query("ALTER TABLE pull_requests ADD COLUMN linked_issue_numbers_json LONGTEXT");
+        await connection.query(
+          "UPDATE pull_requests SET linked_issue_numbers_json = '[]', is_complete = 0 WHERE state = 'open'"
+        );
+        await connection.query(
+          "UPDATE pull_requests SET linked_issue_numbers_json = '[]' WHERE linked_issue_numbers_json IS NULL"
+        );
+        await connection.query("ALTER TABLE pull_requests MODIFY COLUMN linked_issue_numbers_json LONGTEXT NOT NULL");
+      }
     }
   }
 ];

@@ -219,6 +219,7 @@ export interface NormalizedPullRequest {
   testingSignals: string[];
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
+  linkedIssueNumbers: number[];
   sourceAuthType: SourceAuthType;
   sourceUserId: number | null;
   visibilityClass: VisibilityClass;
@@ -234,6 +235,7 @@ export interface PullRequestInsight {
   latestReviewState: string | null;
   latestReviewSubmittedAt: string | null;
   latestCommitAt: string | null;
+  linkedIssueNumbers: number[];
   detailSyncedAt: string;
   detailError: string | null;
 }
@@ -981,9 +983,16 @@ export function extractLinkedIssueNumbers(text: string): number[] {
   for (const match of text.matchAll(repoIssuePattern)) {
     linked.add(Number(match[1]));
   }
+  const parenthesizedIssuePattern = /\((?!\s*(?:cherry[-\s]?pick|backport)\b)([^)\n]*#\d+[^)\n]*)\)/gi;
+  for (const match of text.matchAll(parenthesizedIssuePattern)) {
+    const clause = match[1] ?? "";
+    for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
+      linked.add(Number(issueMatch[1]));
+    }
+  }
 
   const keywordPattern =
-    /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|references?|relates?\s+to|related\s+to|see(?:\s+also)?|issues?)\s*:?\s+([^\n.]+)/gi;
+    /\b(?:(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+|(?:refs?|references?|relates?\s+to|related\s+to|see(?:\s+also)?|issues?)\s*:?\s+)([^\n.]+)/gi;
   for (const match of text.matchAll(keywordPattern)) {
     const clause = match[1] ?? "";
     for (const issueMatch of clause.matchAll(/#(\d+)/g)) {

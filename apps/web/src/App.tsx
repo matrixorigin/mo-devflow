@@ -1012,7 +1012,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no issue found in cache";
+    return "no linked issue";
   }
   if (filter === "no_action_24h") {
     return "no action 24h";
@@ -1137,6 +1137,18 @@ function prHasConflict(pr: PendingPrView): boolean {
   return pr.mergeStateStatus === "dirty";
 }
 
+function prIssueRelationshipComplete(pr: PendingPrView): boolean {
+  return pr.isComplete && pr.detailSyncedAt !== null && pr.detailError === null;
+}
+
+function prHasNoLinkedIssue(pr: PendingPrView): boolean {
+  return pr.linkedIssueNumbers.length === 0 && prIssueRelationshipComplete(pr);
+}
+
+function prIssueLinkUnknown(pr: PendingPrView): boolean {
+  return pr.linkedIssueNumbers.length === 0 && !prIssueRelationshipComplete(pr);
+}
+
 function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean {
   if (scopeFilter === "attention") {
     return pr.attentionFlags.length > 0;
@@ -1163,7 +1175,7 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
     return prHasConflict(pr);
   }
   if (scopeFilter === "no_issue") {
-    return pr.linkedIssueNumbers.length === 0;
+    return prHasNoLinkedIssue(pr);
   }
   if (scopeFilter === "no_action_24h") {
     return pr.attentionFlags.includes("no_human_action_24h");
@@ -1303,7 +1315,7 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No issue found", value: "no_issue" },
+            { label: "No linked issue", value: "no_issue" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -1912,7 +1924,7 @@ function pendingPrRiskScore(pr: PendingPrView): number {
     (isTestingStalePr(pr) ? 150 : 0) +
     (pr.testingQueueAgeHours !== null ? 80 : 0) +
     (pr.ageHours >= 24 ? 60 : 0) +
-    (pr.linkedIssueNumbers.length === 0 ? 45 : 0) +
+    (prHasNoLinkedIssue(pr) ? 45 : 0) +
     (!pr.isComplete ? 30 : 0)
   );
 }
@@ -1926,7 +1938,7 @@ function prActionContext(pr: PendingPrView): string {
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
   }
-  return "no issue found in cache";
+  return prIssueLinkUnknown(pr) ? "issue link unknown" : "no linked issue";
 }
 
 function teamPrNextAction(pr: PendingPrView): string {
@@ -2663,7 +2675,7 @@ function PrBoardSummary({
   const ciFailedPrs = prs.filter(prHasFailedCi).length;
   const requestedChangePrs = prs.filter(prHasRequestChanges).length;
   const conflictPrs = prs.filter(prHasConflict).length;
-  const noIssuePrs = prs.filter((pr) => pr.linkedIssueNumbers.length === 0).length;
+  const noIssuePrs = prs.filter(prHasNoLinkedIssue).length;
   const noActionPrs = prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length;
 
   return (
@@ -2732,7 +2744,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("conflict")}
       />
       <CriticalBoardStat
-        label="no issue found"
+        label="no linked issue"
         value={noIssuePrs}
         tone={noIssuePrs > 0 ? "attention" : "good"}
         active={scopeFilter === "no_issue"}
@@ -6038,9 +6050,13 @@ export default function App() {
         title: "Linked issues",
         width: 220,
         render: (_, pr) =>
-          pr.linkedIssueNumbers.length === 0 ? (
-            <Tooltip title="No issue reference was found in cached PR title/body. This can still miss GitHub sidebar links until relationship backfill is added.">
-              <Tag color="gold">not found in cache</Tag>
+          prIssueLinkUnknown(pr) ? (
+            <Tooltip title="PR relationship sync has not completed. GitHub linked issues may still be missing from cache.">
+              <Tag color="gold">link unknown</Tag>
+            </Tooltip>
+          ) : pr.linkedIssueNumbers.length === 0 ? (
+            <Tooltip title="No linked issue was found after PR detail relationship sync.">
+              <Tag>none</Tag>
             </Tooltip>
           ) : (
             <Space size={[4, 4]} wrap>

@@ -9,12 +9,26 @@ import type {
   WorkflowFixPreview,
   WorkflowFixStateSnapshot
 } from "@mo-devflow/shared";
+import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 
 type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"]["data"][number];
 type PullRequestDetailItem = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
 type IssueListItem = RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"][number];
 type IssueCommentItem = RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"][number];
 type IssueEventItem = RestEndpointMethodTypes["issues"]["listEvents"]["response"]["data"][number];
+
+interface LinkedPullRequestIssuesResponse {
+  repository: {
+    pullRequest: {
+      closingIssuesReferences: {
+        nodes: Array<{ number: number } | null> | null;
+      } | null;
+    } | null;
+  } | null;
+  rateLimit?: {
+    remaining?: number | null;
+  } | null;
+}
 
 export interface GitHubSnapshot {
   issues: RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"];
@@ -734,6 +748,44 @@ function reviewInsight(
   };
 }
 
+function uniqueIssueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values.filter((value) => Number.isInteger(value) && value > 0))).sort(
+    (left, right) => left - right
+  );
+}
+
+async function fetchPullRequestLinkedIssueNumbers(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<{ linkedIssueNumbers: number[]; rateLimitRemaining: number | null }> {
+  const response = await octokit.graphql<LinkedPullRequestIssuesResponse>(
+    `query PullRequestLinkedIssues($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          closingIssuesReferences(first: 50) {
+            nodes {
+              number
+            }
+          }
+        }
+      }
+      rateLimit {
+        remaining
+      }
+    }`,
+    { owner, repo, number: pullNumber }
+  );
+  const linkedIssueNumbers = uniqueIssueNumbers(
+    response.repository?.pullRequest?.closingIssuesReferences?.nodes?.map((node) => node?.number ?? 0) ?? []
+  );
+  return {
+    linkedIssueNumbers,
+    rateLimitRemaining: response.rateLimit?.remaining ?? null
+  };
+}
+
 async function fetchPullRequestInsight(
   octokit: Octokit,
   owner: string,
@@ -750,6 +802,8 @@ async function fetchPullRequestInsight(
     const detail = await octokit.rest.pulls.get({ owner, repo, pull_number: pr.number });
     rateLimitRemaining = readRateLimit(detail.headers) ?? rateLimitRemaining;
     const detailData = detail.data as typeof detail.data & { mergeable_state?: string | null; commits?: number | null };
+    let linkedIssueNumbers = extractLinkedIssueNumbers(`${detail.data.title ?? ""}\n${detail.data.body ?? ""}`);
+    let linkedIssueError: string | null = null;
 
     const reviewsResponse = await octokit.rest.pulls.listReviews({
       owner,
@@ -798,6 +852,14 @@ async function fetchPullRequestInsight(
         commitResponse.data[0]?.commit.committer?.date ?? commitResponse.data[0]?.commit.author?.date ?? null;
     }
 
+    try {
+      const linkedResult = await fetchPullRequestLinkedIssueNumbers(octokit, owner, repo, pr.number);
+      linkedIssueNumbers = uniqueIssueNumbers([...linkedIssueNumbers, ...linkedResult.linkedIssueNumbers]);
+      rateLimitRemaining = linkedResult.rateLimitRemaining ?? rateLimitRemaining;
+    } catch (error) {
+      linkedIssueError = `linked issue sync failed: ${errorMessage(error)}`;
+    }
+
     return {
       insight: {
         number: pr.number,
@@ -807,8 +869,9 @@ async function fetchPullRequestInsight(
         latestReviewState: review.latestReviewState,
         latestReviewSubmittedAt: review.latestReviewSubmittedAt,
         latestCommitAt,
+        linkedIssueNumbers,
         detailSyncedAt,
-        detailError: null
+        detailError: linkedIssueError
       },
       rateLimitRemaining,
       pullRequest: detail.data
@@ -823,8 +886,9 @@ async function fetchPullRequestInsight(
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: null,
+        linkedIssueNumbers: extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`),
         detailSyncedAt,
-        detailError: error instanceof Error ? error.message : String(error)
+        detailError: errorMessage(error)
       },
       rateLimitRemaining,
       pullRequest: null

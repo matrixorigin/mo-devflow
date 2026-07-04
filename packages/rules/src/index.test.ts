@@ -237,6 +237,7 @@ describe("rules", () => {
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: staleHumanAction,
+        linkedIssueNumbers: [],
         detailSyncedAt: freshSystemUpdate,
         detailError: null
       }
@@ -272,6 +273,7 @@ describe("rules", () => {
         latestReviewState: "CHANGES_REQUESTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -308,6 +310,7 @@ describe("rules", () => {
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: staleUpdate,
+        linkedIssueNumbers: [],
         detailSyncedAt: new Date().toISOString(),
         detailError: null
       }
@@ -343,6 +346,7 @@ describe("rules", () => {
         latestReviewState: "COMMENTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: staleUpdate,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -376,6 +380,7 @@ describe("rules", () => {
         latestReviewState: "CHANGES_REQUESTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -403,6 +408,7 @@ describe("rules", () => {
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: null,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: "GitHub API failed"
       }
@@ -592,6 +598,7 @@ describe("rules", () => {
         latestReviewState: "APPROVED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -712,6 +719,7 @@ describe("rules", () => {
         latestReviewState: "CHANGES_REQUESTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -746,6 +754,7 @@ describe("rules", () => {
         latestReviewState: "CHANGES_REQUESTED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -783,6 +792,7 @@ describe("rules", () => {
         latestReviewState: "APPROVED",
         latestReviewSubmittedAt: now,
         latestCommitAt: now,
+        linkedIssueNumbers: [],
         detailSyncedAt: now,
         detailError: null
       }
@@ -820,6 +830,7 @@ describe("rules", () => {
       latestReviewState: "CHANGES_REQUESTED",
       latestReviewSubmittedAt: now,
       latestCommitAt: now,
+      linkedIssueNumbers: [],
       detailSyncedAt: now,
       detailError: null
     });
@@ -831,6 +842,7 @@ describe("rules", () => {
       latestReviewState: "APPROVED",
       latestReviewSubmittedAt: now,
       latestCommitAt: now,
+      linkedIssueNumbers: [],
       detailSyncedAt: now,
       detailError: null
     });
