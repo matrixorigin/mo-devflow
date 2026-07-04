@@ -171,6 +171,10 @@ export interface FlowThreadStatusCounts {
   unlinkedPrs: number;
 }
 
+export type PersonalFlowThreadFilter = "all" | "critical" | "blocked" | "testing" | "needs_link" | "shared";
+
+export type PersonalFlowThreadCounts = Record<PersonalFlowThreadFilter, number>;
+
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
@@ -1024,6 +1028,37 @@ export function flowThreadStatusCounts(row: PersonalGanttRow): FlowThreadStatusC
     testingPrs: row.prs.filter((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready").length,
     sharedPrs: row.prs.filter((pr) => pr.isShared).length,
     unlinkedPrs: row.prs.filter((pr) => pr.linkedIssueNumbers.length === 0).length
+  };
+}
+
+export function personalFlowThreadMatchesFilter(row: PersonalGanttRow, filter: PersonalFlowThreadFilter): boolean {
+  if (filter === "all") {
+    return true;
+  }
+  const counts = flowThreadStatusCounts(row);
+  if (filter === "critical") {
+    return row.tone === "critical";
+  }
+  if (filter === "blocked") {
+    return counts.blockedPrs > 0 || flowThreadDurationWarnings(row).length > 0;
+  }
+  if (filter === "testing") {
+    return counts.testingPrs > 0;
+  }
+  if (filter === "needs_link") {
+    return (row.kind === "issue" && row.prs.length === 0) || counts.unlinkedPrs > 0;
+  }
+  return counts.sharedPrs > 0;
+}
+
+export function personalFlowThreadCounts(rows: PersonalGanttRow[]): PersonalFlowThreadCounts {
+  return {
+    all: rows.length,
+    critical: rows.filter((row) => personalFlowThreadMatchesFilter(row, "critical")).length,
+    blocked: rows.filter((row) => personalFlowThreadMatchesFilter(row, "blocked")).length,
+    testing: rows.filter((row) => personalFlowThreadMatchesFilter(row, "testing")).length,
+    needs_link: rows.filter((row) => personalFlowThreadMatchesFilter(row, "needs_link")).length,
+    shared: rows.filter((row) => personalFlowThreadMatchesFilter(row, "shared")).length
   };
 }
 

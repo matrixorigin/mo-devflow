@@ -2833,14 +2833,44 @@ button.critical-board-stat:hover {
   gap: 8px;
 }
 
-.flow-map-summary span {
+.flow-map-summary-button,
+.flow-map-summary-static {
+  appearance: none;
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
+  color: #374151;
   display: inline-flex;
   gap: 4px;
+  font: inherit;
   line-height: 1.2;
   padding: 5px 8px;
+}
+
+.flow-map-summary-button {
+  cursor: pointer;
+}
+
+.flow-map-summary-button:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.flow-map-summary-button:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.flow-map-summary-active {
+  background: #eff6ff;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+.flow-map-filter-status {
+  margin-top: -2px;
+  min-width: 0;
 }
 
 .flow-thread-sections {
@@ -2895,6 +2925,12 @@ button.critical-board-stat:hover {
   display: grid;
   gap: 0;
   min-width: 0;
+}
+
+.flow-thread-empty {
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .flow-thread {

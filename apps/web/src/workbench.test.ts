@@ -16,6 +16,8 @@ import {
   flowThreadStatusCounts,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
+  personalFlowThreadCounts,
+  personalFlowThreadMatchesFilter,
   personalGanttChart,
   personalActivityItems,
   personalDurationText,
@@ -456,6 +458,16 @@ describe("personal gantt chart", () => {
       sharedPrs: 0,
       unlinkedPrs: 1
     });
+    expect(personalFlowThreadCounts(chart.rows)).toMatchObject({
+      all: 3,
+      critical: 2,
+      blocked: 3,
+      testing: 0,
+      needs_link: 1,
+      shared: 2
+    });
+    expect(personalFlowThreadMatchesFilter(issue10!, "shared")).toBe(true);
+    expect(personalFlowThreadMatchesFilter(otherPrs!, "needs_link")).toBe(true);
   });
 
   it("does not use issue created age as active severity duration when timeline evidence is missing", () => {
@@ -477,6 +489,46 @@ describe("personal gantt chart", () => {
     expect(issue?.durationHours).toBeNull();
     expect(issue?.startAgeHours).toBe(0);
     expect(flowThreadDurationWarnings(chart.rows[0]!)).toContain("missing severity timeline");
+    expect(personalFlowThreadMatchesFilter(chart.rows[0]!, "blocked")).toBe(true);
+    expect(personalFlowThreadMatchesFilter(chart.rows[0]!, "needs_link")).toBe(true);
+  });
+
+  it("filters personal work threads by linked issue testing state", () => {
+    const person = personalView({
+      activeCriticalIssues: [
+        criticalIssue({
+          number: 10,
+          linkedPullRequests: [
+            {
+              ...linkedPullRequest(),
+              number: 20,
+              testingState: "testing",
+              testingQueueAgeHours: 30,
+              attentionFlags: ["testing_stalled"]
+            }
+          ]
+        })
+      ],
+      testingPrs: [
+        pullRequest({
+          number: 20,
+          linkedIssueNumbers: [10],
+          testingState: "testing",
+          testingQueueAgeHours: 30,
+          attentionFlags: ["testing_stalled"]
+        })
+      ]
+    });
+
+    const row = personalGanttChart(person, "2026-07-04T00:00:00.000Z").rows[0]!;
+
+    expect(personalFlowThreadMatchesFilter(row, "testing")).toBe(true);
+    expect(personalFlowThreadMatchesFilter(row, "blocked")).toBe(true);
+    expect(personalFlowThreadCounts([row])).toMatchObject({
+      all: 1,
+      testing: 1,
+      blocked: 1
+    });
   });
 });
 

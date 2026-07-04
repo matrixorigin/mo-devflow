@@ -111,6 +111,8 @@ import {
   personalActivityNextAction,
   personalActivityPrimarySignal,
   personalDurationText,
+  personalFlowThreadCounts,
+  personalFlowThreadMatchesFilter,
   personPrimaryReasons,
   personWorkloadStatus,
   personalIssueReasons,
@@ -122,6 +124,7 @@ import {
   type FlowEfficiencySummary,
   type PersonalActionQueueFilter,
   type PersonalActivityItem,
+  type PersonalFlowThreadFilter,
   type PersonalGanttChart,
   type PersonalGanttPrBar,
   type PersonalGanttRow,
@@ -6030,28 +6033,72 @@ function maxTestingAge(items: Array<Pick<PersonalActivityItem, "testingQueueAgeH
 }
 
 function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
+  const [threadFilter, setThreadFilter] = useState<PersonalFlowThreadFilter>("all");
+  const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
+
   if (chart.rows.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR flow data" />;
   }
-  const criticalRows = chart.rows.filter((row) => row.tone === "critical");
-  const attentionRows = chart.rows.filter((row) => row.tone === "attention");
-  const routineRows = chart.rows.filter((row) => row.tone !== "critical" && row.tone !== "attention");
+  const counts = personalFlowThreadCounts(chart.rows);
+  const filteredRows = chart.rows.filter((row) => personalFlowThreadMatchesFilter(row, threadFilter));
+  const criticalRows = filteredRows.filter((row) => row.tone === "critical");
+  const attentionRows = filteredRows.filter((row) => row.tone === "attention");
+  const routineRows = filteredRows.filter((row) => row.tone !== "critical" && row.tone !== "attention");
 
   return (
     <div className="flow-map">
       <div className="flow-map-summary">
-        <span>
-          <strong>{chart.rows.length}</strong> threads
-        </span>
-        <span>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "all" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("all")}
+        >
+          <strong>{counts.all}</strong> all threads
+        </button>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "critical" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("critical")}
+        >
+          <strong>{counts.critical}</strong> critical
+        </button>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "blocked" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("blocked")}
+        >
+          <strong>{counts.blocked}</strong> blocked PR
+        </button>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "testing" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("testing")}
+        >
+          <strong>{counts.testing}</strong> in test
+        </button>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "needs_link" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("needs_link")}
+        >
+          <strong>{counts.needs_link}</strong> needs link
+        </button>
+        <button
+          type="button"
+          className={`flow-map-summary-button ${threadFilter === "shared" ? "flow-map-summary-active" : ""}`}
+          onClick={() => setThreadFilter("shared")}
+        >
+          <strong>{counts.shared}</strong> shared PR
+        </button>
+        <span className="flow-map-summary-static">
           <strong>{hours(chart.maxAgeHours)}</strong> oldest visible work
         </span>
-        <span>
-          <strong>{chart.sharedPrCount}</strong> shared PR
-        </span>
-        <span>
-          <strong>{chart.unlinkedPrCount}</strong> unlinked PR
-        </span>
+      </div>
+      <div className="flow-map-filter-status">
+        <Text type="secondary">
+          Showing {filteredRows.length} of {chart.rows.length} threads for {personalFlowThreadFilterLabel(threadFilter)}
+          .
+        </Text>
       </div>
       <div className="flow-thread-sections" role="list" aria-label="Personal work threads">
         <FlowThreadSection
@@ -6060,6 +6107,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           rows={criticalRows}
           tone="critical"
           visibleLimit={6}
+          onPreview={setPreviewThread}
         />
         <FlowThreadSection
           title="Attention threads"
@@ -6067,6 +6115,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           rows={attentionRows}
           tone="attention"
           visibleLimit={6}
+          onPreview={setPreviewThread}
         />
         <FlowThreadSection
           title="Routine threads"
@@ -6074,10 +6123,36 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           rows={routineRows}
           tone="normal"
           visibleLimit={8}
+          onPreview={setPreviewThread}
         />
       </div>
+      {filteredRows.length === 0 ? (
+        <div className="flow-thread-empty">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No work threads match this filter" />
+        </div>
+      ) : null}
+      <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
     </div>
   );
+}
+
+function personalFlowThreadFilterLabel(filter: PersonalFlowThreadFilter): string {
+  if (filter === "critical") {
+    return "critical issue work";
+  }
+  if (filter === "blocked") {
+    return "blocked PR or duration-risk work";
+  }
+  if (filter === "testing") {
+    return "issues currently in test";
+  }
+  if (filter === "needs_link") {
+    return "issue-PR linking gaps";
+  }
+  if (filter === "shared") {
+    return "PRs linked to multiple issues";
+  }
+  return "all visible work";
 }
 
 function FlowThreadSection({
@@ -6085,13 +6160,15 @@ function FlowThreadSection({
   description,
   rows,
   tone,
-  visibleLimit
+  visibleLimit,
+  onPreview
 }: {
   title: string;
   description: string;
   rows: PersonalGanttRow[];
   tone: "critical" | "attention" | "normal";
   visibleLimit?: number;
+  onPreview: (row: PersonalGanttRow) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasOverflow = visibleLimit !== undefined && rows.length > visibleLimit;
@@ -6114,13 +6191,13 @@ function FlowThreadSection({
       {visibleRows.length > 0 ? (
         <div className="flow-thread-list" role="list">
           {visibleRows.map((row) => (
-            <PersonalFlowThread row={row} key={row.id} />
+            <PersonalFlowThread row={row} key={row.id} onPreview={onPreview} />
           ))}
         </div>
       ) : null}
       {hiddenCount > 0 ? (
         <button type="button" className="flow-thread-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} more threads hidden. Show all
+          {hiddenCount} more {title.toLowerCase()}. Show all
         </button>
       ) : hasOverflow && expanded ? (
         <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={() => setExpanded(false)}>
@@ -6131,7 +6208,7 @@ function FlowThreadSection({
   );
 }
 
-function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
+function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPreview: (row: PersonalGanttRow) => void }) {
   const reasons = flowThreadReasons(row);
   const nextAction = flowThreadNextAction(row);
   const durationWarnings = flowThreadDurationWarnings(row);
@@ -6157,6 +6234,15 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
             <span>{row.title}</span>
           )}
           <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue" : "PR group"}</Tag>
+          <Tooltip title="Preview thread">
+            <Button
+              aria-label={`Preview ${row.title}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview(row)}
+            />
+          </Tooltip>
         </div>
         <div className="flow-thread-next">
           <TimerReset size={14} aria-hidden="true" />
@@ -6263,6 +6349,162 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
         </div>
       ) : null}
     </article>
+  );
+}
+
+function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null; onClose: () => void }) {
+  if (!row) {
+    return null;
+  }
+
+  const reasons = flowThreadReasons(row);
+  const warnings = flowThreadDurationWarnings(row);
+  const statusCounts = flowThreadStatusCounts(row);
+  const nextAction = flowThreadNextAction(row);
+  const sourceUrl = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
+  const linkedIssueUrls = sourceUrl
+    ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
+    : [];
+
+  return (
+    <Modal
+      className="team-object-preview-modal"
+      open
+      width={840}
+      title={row.title}
+      onCancel={onClose}
+      footer={[
+        row.issue.htmlUrl ? (
+          <Button href={row.issue.htmlUrl} icon={<ExternalLink size={14} />} key="issue" target="_blank">
+            Open Issue
+          </Button>
+        ) : null,
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div className="team-object-preview">
+        <div>
+          {row.issue.htmlUrl ? (
+            <a className="team-object-preview-title" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
+              {row.issue.title}
+            </a>
+          ) : (
+            <Text className="team-object-preview-title">{row.issue.title}</Text>
+          )}
+        </div>
+        <Space size={[4, 4]} wrap>
+          <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue thread" : "PR group"}</Tag>
+          {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
+          {row.issue.lifecycleState ? <Tag>{labelText(row.issue.lifecycleState)}</Tag> : null}
+          {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
+          <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{personalDurationText(row.issue)}</Tag>
+          {statusCounts.sharedPrs > 0 ? <Tag color="purple">{statusCounts.sharedPrs} shared PR</Tag> : null}
+        </Space>
+
+        <div className="team-object-preview-grid">
+          <div className="team-object-preview-metric">
+            <span>Current lane</span>
+            <strong>{row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}</strong>
+            <small>{labelText(row.issue.durationEvidence)}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Linked PRs</span>
+            <strong>{statusCounts.prs}</strong>
+            <small>{statusCounts.blockedPrs > 0 ? `${statusCounts.blockedPrs} blocked` : "no PR blocker"}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Test flow</span>
+            <strong>{statusCounts.testingPrs}</strong>
+            <small>{statusCounts.testingPrs > 0 ? "linked issue in test" : "not in test"}</small>
+          </div>
+        </div>
+
+        <section className="team-object-preview-section">
+          <Text strong>Next action</Text>
+          <Text>{nextAction}</Text>
+        </section>
+
+        {warnings.length > 0 || reasons.length > 0 ? (
+          <section className="team-object-preview-section">
+            <Text strong>Signals</Text>
+            <Space size={[4, 4]} wrap>
+              {warnings.map((warning) => (
+                <Tag color="red" key={warning}>
+                  {warning}
+                </Tag>
+              ))}
+              {reasons.map((reason) => (
+                <Tag color={activityReasonColor(reason)} key={reason}>
+                  {reason}
+                </Tag>
+              ))}
+            </Space>
+          </section>
+        ) : null}
+
+        <section className="team-object-preview-section">
+          <Text strong>PR rotation</Text>
+          {row.prs.length === 0 ? (
+            <Text type="secondary">No linked PR is visible in cache.</Text>
+          ) : (
+            <div className="team-object-preview-list">
+              {row.prs.slice(0, 10).map((pr) => (
+                <a
+                  className="team-object-preview-linked"
+                  href={pr.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={pr.number}
+                >
+                  <span>
+                    <GitPullRequest size={14} aria-hidden="true" />
+                    PR #{pr.number}
+                  </span>
+                  <strong>{pr.title}</strong>
+                  <small>
+                    owner {pr.ownerLogin} | age {hours(pr.startAgeHours)}
+                    {pr.testingQueueAgeHours !== null ? ` | test wait ${hours(pr.testingQueueAgeHours)}` : ""}
+                  </small>
+                  <Space size={[4, 4]} wrap>
+                    {pr.isShared ? <Tag color="purple">shared</Tag> : null}
+                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+                    {pr.reviewDecision ? (
+                      <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
+                        {labelText(pr.reviewDecision)}
+                      </Tag>
+                    ) : null}
+                    {pr.mergeStateStatus ? (
+                      <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+                    ) : null}
+                    {pr.testingState !== "not_ready" ? (
+                      <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+                    ) : null}
+                  </Space>
+                </a>
+              ))}
+              {row.prs.length > 10 ? (
+                <Text type="secondary">+{row.prs.length - 10} more PRs in this thread.</Text>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
+          <section className="team-object-preview-section">
+            <Text strong>Linked issues</Text>
+            <Space size={[6, 6]} wrap>
+              {linkedIssueUrls.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                  issue #{link.number}
+                </a>
+              ))}
+            </Space>
+          </section>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 
@@ -6487,6 +6729,7 @@ function PersonalRotationOverview({
     () => criticalIssueContextsByPullRequest(person.activeCriticalIssues),
     [person.activeCriticalIssues]
   );
+  const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
 
   return (
     <div className="personal-rotation-overview">
@@ -6575,7 +6818,13 @@ function PersonalRotationOverview({
           <div className="team-rotation-lane-heading">
             <Space size={[6, 6]} wrap>
               <Text strong>Issue-PR Threads</Text>
-              <Tag color="red">{filteredRows.length}</Tag>
+              <button
+                type="button"
+                className="team-lane-count team-lane-count-critical"
+                onClick={() => onDrilldownChange("threads")}
+              >
+                {filteredRows.length}
+              </button>
             </Space>
             <div className="board-filter-group board-filter-group-inline">
               <Text type="secondary">AI</Text>
@@ -6591,7 +6840,7 @@ function PersonalRotationOverview({
             {focusRows.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible personal work threads" />
             ) : (
-              focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} />)
+              focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} onPreview={setPreviewThread} />)
             )}
           </div>
         </section>
@@ -6638,11 +6887,18 @@ function PersonalRotationOverview({
           </div>
         </section>
       </div>
+      <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
     </div>
   );
 }
 
-function PersonalRotationThreadRow({ row }: { row: PersonalGanttRow }) {
+function PersonalRotationThreadRow({
+  row,
+  onPreview
+}: {
+  row: PersonalGanttRow;
+  onPreview: (row: PersonalGanttRow) => void;
+}) {
   const nextAction = flowThreadNextAction(row);
   const warnings = flowThreadDurationWarnings(row);
   const reasons = flowThreadReasons(row);
@@ -6661,6 +6917,15 @@ function PersonalRotationThreadRow({ row }: { row: PersonalGanttRow }) {
           <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue" : "PR group"}</Tag>
           {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
           <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{personalDurationText(row.issue)}</Tag>
+          <Tooltip title="Preview thread">
+            <Button
+              aria-label={`Preview ${row.title}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview(row)}
+            />
+          </Tooltip>
         </div>
         <div className="personal-thread-title">{row.issue.title}</div>
         <div className="team-work-tags">
