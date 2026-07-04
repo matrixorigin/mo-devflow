@@ -455,6 +455,41 @@ describe("personal activity feed", () => {
       "pull_request:22"
     ]);
   });
+
+  it("shows issue label timeline evidence for issue-level testing activity", () => {
+    const items = personalActivityItems(
+      personalView({
+        testingIssues: [
+          testingIssue({
+            number: 77,
+            testingSignals: ["issue_label:#77:testing"],
+            testers: [],
+            queueAgeEvidence: "issue_label_event"
+          })
+        ]
+      })
+    );
+
+    expect(items[0]?.id).toBe("testing_issue:77");
+    expect(items[0]?.durationEvidence).toBe("GitHub issue label event");
+    expect(personalActivityNextAction(items[0]!)).toBe("Link the tested PR");
+  });
+
+  it("asks for issue test status after a linked testing issue waits too long", () => {
+    const items = personalActivityItems(
+      personalView({
+        testingIssues: [
+          testingIssue({
+            number: 78,
+            queueAgeHours: 30,
+            linkedPullRequests: [linkedPullRequest()]
+          })
+        ]
+      })
+    );
+
+    expect(personalActivityNextAction(items[0]!)).toBe("Check issue test status");
+  });
 });
 
 describe("personal gantt chart", () => {
@@ -629,6 +664,24 @@ describe("personal gantt chart", () => {
     });
     expect(flowThreadDurationWarnings(row)).toContain("issue test wait over 24h");
     expect(personalFlowThreadMatchesFilter(row, "testing")).toBe(true);
+  });
+
+  it("keeps issue label timeline evidence visible in testing gantt rows", () => {
+    const person = personalView({
+      testingIssues: [
+        testingIssue({
+          number: 77,
+          testingSignals: ["issue_label:#77:testing"],
+          testers: [],
+          queueAgeEvidence: "issue_label_event"
+        })
+      ]
+    });
+
+    const row = personalGanttChart(person, "2026-07-04T00:00:00.000Z").rows[0]!;
+
+    expect(row.issue.durationEvidence).toBe("GitHub issue label event");
+    expect(row.issue.reasons).toContain("Issue label handoff");
   });
 });
 

@@ -252,7 +252,7 @@ function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
     return "Repair PR review, CI, mergeability, and linked-issue evidence.";
   }
   if (layer === "issue_timeline_backfill") {
-    return "Repair severity promotion and tester assignment timelines.";
+    return "Repair severity promotion and issue handoff timelines.";
   }
   if (layer === "comment_backfill") {
     return "Repair comment evidence for deferred reasons and handoff signals.";
@@ -709,6 +709,46 @@ function testingSignalTagColor(signal: string): string {
     return "gold";
   }
   return "default";
+}
+
+function testingIssueQueueAgeEvidenceColor(evidence: TestingIssueQueueView["queueAgeEvidence"]): string {
+  if (evidence === "issue_cache_timestamp") {
+    return "gold";
+  }
+  if (evidence === "issue_label_event") {
+    return "purple";
+  }
+  return "green";
+}
+
+function testingIssueQueueAgeEvidenceShortLabel(evidence: TestingIssueQueueView["queueAgeEvidence"]): string {
+  if (evidence === "issue_assignment_event") {
+    return "tester assignment";
+  }
+  if (evidence === "issue_label_event") {
+    return "issue label";
+  }
+  return "issue update time";
+}
+
+function testingIssueQueueAgeEvidenceSourceLabel(evidence: TestingIssueQueueView["queueAgeEvidence"]): string {
+  if (evidence === "issue_assignment_event") {
+    return "from tester assignment";
+  }
+  if (evidence === "issue_label_event") {
+    return "from issue label";
+  }
+  return "from issue update time";
+}
+
+function testingIssueQueueAgeEvidenceMetricLabel(evidence: TestingIssueQueueView["queueAgeEvidence"]): string {
+  if (evidence === "issue_assignment_event") {
+    return "assignment time";
+  }
+  if (evidence === "issue_label_event") {
+    return "label time";
+  }
+  return "issue update time";
 }
 
 function testingIssueHandoffSummary(issue: TestingIssueQueueView): string {
@@ -2653,8 +2693,8 @@ function TeamTestingIssueRow({
             Issue #{issue.number}
           </WorkObjectLink>
           <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
-          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
-            {issue.queueAgeEvidence === "issue_assignment_event" ? "tester assignment" : "issue update time"}
+          <Tag color={testingIssueQueueAgeEvidenceColor(issue.queueAgeEvidence)}>
+            {testingIssueQueueAgeEvidenceShortLabel(issue.queueAgeEvidence)}
           </Tag>
           {!issue.isComplete ? <Tag color="gold">issue sync pending</Tag> : null}
           <Tooltip title="Preview issue">
@@ -2711,7 +2751,7 @@ function TeamTestingIssueRow({
       <div className="team-work-action">
         <Text type="secondary">Next</Text>
         <Text strong>{teamTestingIssueNextAction(issue, blockerCount)}</Text>
-        <small>{issue.testers.length} tester assignment</small>
+        <small>{testingIssueHandoffSummary(issue)}</small>
       </div>
     </article>
   );
@@ -3245,13 +3285,13 @@ function teamTestingIssueNextAction(issue: TestingIssueQueueView, blockerCount: 
     return "Clear linked PR blockers";
   }
   if (issue.linkedPullRequests.length === 0) {
-    return "Link execution PR";
+    return "Link tested PR";
   }
   if (isTestingIssueStale(issue)) {
-    return "Ask tester for update";
+    return "Check issue test status";
   }
   if (issue.queueAgeEvidence === "issue_cache_timestamp") {
-    return "Backfill assignment time";
+    return "Backfill handoff time";
   }
   return "Track test result";
 }
@@ -4464,10 +4504,10 @@ function testingQueueNextAction(pr: PendingPrView): string {
     return "Resolve merge conflict";
   }
   if (isTestingStalePr(pr)) {
-    return "Ask tester for status";
+    return "Check issue test status";
   }
   if (pr.testingState === "testing") {
-    return "Get issue test result";
+    return "Check issue test status";
   }
   return "Confirm issue test status";
 }
@@ -4836,8 +4876,8 @@ function TestingIssueQueueRow({
             Issue #{issue.number}
           </WorkObjectLink>
           <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
-          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
-            {issue.queueAgeEvidence === "issue_assignment_event" ? "from tester assignment" : "from issue update time"}
+          <Tag color={testingIssueQueueAgeEvidenceColor(issue.queueAgeEvidence)}>
+            {testingIssueQueueAgeEvidenceSourceLabel(issue.queueAgeEvidence)}
           </Tag>
           {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
           {issue.syncError ? (
@@ -4922,8 +4962,8 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
         </a>
         <Space size={[4, 4]} wrap>
           <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
-          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
-            {issue.queueAgeEvidence === "issue_assignment_event" ? "assignment time" : "issue update time"}
+          <Tag color={testingIssueQueueAgeEvidenceColor(issue.queueAgeEvidence)}>
+            {testingIssueQueueAgeEvidenceMetricLabel(issue.queueAgeEvidence)}
           </Tag>
           {linkedBlockers > 0 ? <Tag color="orange">{linkedBlockers} linked PR blockers</Tag> : null}
           {testingIssueHasDataGap(issue) ? <Tag color="gold">data gap</Tag> : null}
@@ -5188,7 +5228,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           {pr.testingTesters.length > 0 ? (
             <span>testers {pr.testingTesters.slice(0, 3).join(", ")}</span>
           ) : (
-            <span>tester assignment is on the linked issue</span>
+            <span>issue handoff evidence is on the linked issue</span>
           )}
         </div>
       </div>
@@ -10133,7 +10173,7 @@ export default function App() {
                 className="band"
                 type="warning"
                 title={`${data.testing.staleQueueIssues} issues have waited on test too long`}
-                description="Test wait currently uses cached issue update time until issue assignment timeline is backfilled."
+                description="Some test waits still use cached issue update time until GitHub issue timeline handoff evidence is backfilled."
                 showIcon
               />
             ) : null}

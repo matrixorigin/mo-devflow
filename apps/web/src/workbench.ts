@@ -663,13 +663,22 @@ function testingIssueDraft(issue: TestingIssueQueueView): PersonalGanttIssueDraf
     aiEffortLabel: null,
     durationHours,
     durationKind: "testing_queue",
-    durationEvidence:
-      issue.queueAgeEvidence === "issue_assignment_event" ? "GitHub issue assignment event" : "Issue cache timestamp",
+    durationEvidence: testingIssueQueueAgeEvidenceText(issue.queueAgeEvidence),
     reasons: testingIssueReasons(issue),
     isComplete: issue.isComplete,
     startAgeHours: Math.max(durationHours ?? 0, 0),
     endAgeHours: 0
   };
+}
+
+function testingIssueQueueAgeEvidenceText(evidence: TestingIssueQueueView["queueAgeEvidence"]): string {
+  if (evidence === "issue_assignment_event") {
+    return "GitHub issue assignment event";
+  }
+  if (evidence === "issue_label_event") {
+    return "GitHub issue label event";
+  }
+  return "Issue cache timestamp";
 }
 
 function prDraft(pr: GanttPullRequestSource, nowIso: string, isShared: boolean): PersonalGanttPrDraft {
@@ -1029,11 +1038,11 @@ export function personalActionQueueCounts(items: PersonalActivityItem[]): Person
 export function personalActivityNextAction(item: PersonalActivityItem): string {
   if (item.objectType === "issue") {
     if (item.durationKind === "testing_queue") {
-      if ((item.testingQueueAgeHours ?? 0) >= 24) {
-        return "Ask tester for issue status";
-      }
       if (item.linkedPullRequestNumbers.length === 0) {
         return "Link the tested PR";
+      }
+      if ((item.testingQueueAgeHours ?? 0) >= 24) {
+        return "Check issue test status";
       }
       return "Track issue test result";
     }
@@ -1076,7 +1085,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     item.testingQueueAgeHours !== null ||
     ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
   ) {
-    return "Get issue test result";
+    return "Check issue test status";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -1140,11 +1149,11 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Check defer reason";
   }
   if (row.issue.durationKind === "testing_queue") {
-    if ((row.issue.durationHours ?? 0) >= 24) {
-      return "Ask tester for issue status";
-    }
     if (row.prs.length === 0) {
       return "Link the tested PR";
+    }
+    if ((row.issue.durationHours ?? 0) >= 24) {
+      return "Check issue test status";
     }
     return "Track issue test result";
   }
@@ -1161,7 +1170,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Get issue test result";
+    return "Check issue test status";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";
@@ -1294,8 +1303,7 @@ function activityFromTestingIssue(issue: TestingIssueQueueView): PersonalActivit
     ageHours: issue.queueAgeHours ?? 0,
     durationHours: issue.queueAgeHours,
     durationKind: "testing_queue",
-    durationEvidence:
-      issue.queueAgeEvidence === "issue_assignment_event" ? "GitHub issue assignment event" : "Issue cache timestamp",
+    durationEvidence: testingIssueQueueAgeEvidenceText(issue.queueAgeEvidence),
     lastHumanActionAt: null,
     testingQueueAgeHours: issue.queueAgeHours,
     severity: null,

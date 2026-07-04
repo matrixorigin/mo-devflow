@@ -1184,7 +1184,7 @@ describe("pull request testing transition events", () => {
         testingSignals: ["issue_label:#44:testing"],
         queueAgeHours: 3,
         queueStartedAt: "2026-07-03T09:00:00.000Z",
-        queueAgeEvidence: "issue_cache_timestamp",
+        queueAgeEvidence: "issue_label_event",
         linkedPullRequests: [],
         isComplete: true,
         syncError: null,
@@ -1201,7 +1201,7 @@ describe("pull request testing transition events", () => {
         testingTesters: [],
         testingSignals: ["issue_label:#44:testing"],
         occurredAt: "2026-07-03T09:00:00.000Z",
-        sourceCompleteness: "partial_cache"
+        sourceCompleteness: "complete_cache"
       }
     ]);
   });

@@ -440,7 +440,7 @@ export interface TestingIssueQueueView {
   testingSignals: string[];
   queueAgeHours: number | null;
   queueStartedAt: string | null;
-  queueAgeEvidence: "issue_assignment_event" | "issue_cache_timestamp";
+  queueAgeEvidence: "issue_assignment_event" | "issue_label_event" | "issue_cache_timestamp";
   linkedPullRequests: TestingIssueLinkedPullRequestView[];
   isComplete: boolean;
   syncError: string | null;

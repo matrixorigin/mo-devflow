@@ -302,7 +302,7 @@ export function testingIssueTransitionsFromQueueIssues(
             : testers.map((tester) => `issue_assignee:#${issue.number}:${tester}`),
         occurredAt: issue.queueStartedAt ?? issue.lastSyncedAt,
         sourceCompleteness:
-          issue.queueAgeEvidence === "issue_assignment_event" ? ("complete_cache" as const) : ("partial_cache" as const)
+          issue.queueAgeEvidence === "issue_cache_timestamp" ? ("partial_cache" as const) : ("complete_cache" as const)
       };
     })
     .sort((left, right) => {
@@ -1256,9 +1256,9 @@ export async function listCachedIssuesForRules(repoId: number, profile: RepoProf
     []
   );
   const baseTestingContexts = testingIssueContextsByNumber(profile, rows);
-  const testingContexts = testingIssueContextsWithAssignmentEvidence(
+  const testingContexts = testingIssueContextsWithHandoffEvidence(
     baseTestingContexts,
-    await testingAssignmentStartedAtByIssueNumber(repoId, baseTestingContexts, "1 = 1", [])
+    await testingHandoffStartedAtByIssueNumber(repoId, baseTestingContexts, "1 = 1", [])
   );
 
   return rows.map((row) => ({
@@ -2228,10 +2228,16 @@ function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
 interface TestingIssueContext {
   issueNumber: number;
   testers: string[];
+  testingLabels: string[];
   signals: string[];
   queueAgeHours: number | null;
   queueStartedAt: string | null;
   queueAgeEvidence: TestingIssueQueueView["queueAgeEvidence"];
+}
+
+interface TestingHandoffStartEvidence {
+  startedAt: string;
+  queueAgeEvidence: Exclude<TestingIssueQueueView["queueAgeEvidence"], "issue_cache_timestamp">;
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -2268,6 +2274,7 @@ function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Ma
     contexts.set(issueNumber, {
       issueNumber,
       testers: uniqueValues(testers),
+      testingLabels: uniqueValues(matchedLabels),
       signals: uniqueValues(signals),
       queueAgeHours: hoursSince(queueStartedAt),
       queueStartedAt,
@@ -2278,26 +2285,27 @@ function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Ma
   return contexts;
 }
 
-async function testingAssignmentStartedAtByIssueNumber(
+async function testingHandoffStartedAtByIssueNumber(
   repoId: number,
   contexts: Map<number, TestingIssueContext>,
   visibilitySql: string,
   visibilityParams: number[]
-): Promise<Map<number, string>> {
+): Promise<Map<number, TestingHandoffStartEvidence>> {
   if (contexts.size === 0) {
     return new Map();
   }
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT issue_number, event_type, assignee_login, occurred_at
+    `SELECT issue_number, event_type, assignee_login, label_name, occurred_at
      FROM issue_timeline_events e
      WHERE repo_id = ?
-       AND event_type IN ('assigned', 'unassigned')
+       AND event_type IN ('assigned', 'unassigned', 'labeled', 'unlabeled')
        AND ${visibilitySql}
      ORDER BY occurred_at ASC, id ASC
      LIMIT 10000`,
     [repoId, ...visibilityParams]
   );
   const activeAssignments = new Map<number, Map<string, string>>();
+  const activeLabels = new Map<number, Map<string, string>>();
   for (const row of rows) {
     const issueNumber = asNumber(row.issue_number);
     const context = contexts.get(issueNumber);
@@ -2305,24 +2313,49 @@ async function testingAssignmentStartedAtByIssueNumber(
       continue;
     }
     const assignee = row.assignee_login ? asString(row.assignee_login) : "";
-    if (!context.testers.some((tester) => normalizedLogin(tester) === normalizedLogin(assignee))) {
-      continue;
-    }
     const occurredAt = fromSqlDate(row.occurred_at);
     if (!occurredAt) {
       continue;
     }
-    const assignments = activeAssignments.get(issueNumber) ?? new Map<string, string>();
-    if (asString(row.event_type) === "assigned") {
-      assignments.set(normalizedLogin(assignee), occurredAt);
-    } else {
-      assignments.delete(normalizedLogin(assignee));
+    const eventType = asString(row.event_type);
+    if (eventType === "assigned" || eventType === "unassigned") {
+      if (!context.testers.some((tester) => normalizedLogin(tester) === normalizedLogin(assignee))) {
+        continue;
+      }
+      const assignments = activeAssignments.get(issueNumber) ?? new Map<string, string>();
+      if (eventType === "assigned") {
+        assignments.set(normalizedLogin(assignee), occurredAt);
+      } else {
+        assignments.delete(normalizedLogin(assignee));
+      }
+      activeAssignments.set(issueNumber, assignments);
+      continue;
     }
-    activeAssignments.set(issueNumber, assignments);
+
+    const labelName = row.label_name ? asString(row.label_name) : "";
+    if (!context.testingLabels.some((label) => normalizedLabel(label) === normalizedLabel(labelName))) {
+      continue;
+    }
+    const labels = activeLabels.get(issueNumber) ?? new Map<string, string>();
+    if (eventType === "labeled") {
+      labels.set(normalizedLabel(labelName), occurredAt);
+    } else {
+      labels.delete(normalizedLabel(labelName));
+    }
+    activeLabels.set(issueNumber, labels);
   }
-  const startedAtByIssueNumber = new Map<number, string>();
-  for (const [issueNumber, assignments] of activeAssignments.entries()) {
-    const activeStarts = Array.from(assignments.values()).sort();
+  const startedAtByIssueNumber = new Map<number, TestingHandoffStartEvidence>();
+  for (const issueNumber of contexts.keys()) {
+    const activeStarts = [
+      ...Array.from(activeAssignments.get(issueNumber)?.values() ?? []).map((startedAt) => ({
+        startedAt,
+        queueAgeEvidence: "issue_assignment_event" as const
+      })),
+      ...Array.from(activeLabels.get(issueNumber)?.values() ?? []).map((startedAt) => ({
+        startedAt,
+        queueAgeEvidence: "issue_label_event" as const
+      }))
+    ].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
     if (activeStarts.length > 0) {
       startedAtByIssueNumber.set(issueNumber, activeStarts[0]);
     }
@@ -2330,21 +2363,21 @@ async function testingAssignmentStartedAtByIssueNumber(
   return startedAtByIssueNumber;
 }
 
-function testingIssueContextsWithAssignmentEvidence(
+function testingIssueContextsWithHandoffEvidence(
   contexts: Map<number, TestingIssueContext>,
-  assignmentStartedAtByIssueNumber: Map<number, string>
+  handoffStartedAtByIssueNumber: Map<number, TestingHandoffStartEvidence>
 ): Map<number, TestingIssueContext> {
   const next = new Map<number, TestingIssueContext>();
   for (const [issueNumber, context] of contexts.entries()) {
-    const assignmentStartedAt = assignmentStartedAtByIssueNumber.get(issueNumber);
+    const handoffStartedAt = handoffStartedAtByIssueNumber.get(issueNumber);
     next.set(
       issueNumber,
-      assignmentStartedAt
+      handoffStartedAt
         ? {
             ...context,
-            queueAgeHours: hoursSince(assignmentStartedAt),
-            queueStartedAt: assignmentStartedAt,
-            queueAgeEvidence: "issue_assignment_event"
+            queueAgeHours: hoursSince(handoffStartedAt.startedAt),
+            queueStartedAt: handoffStartedAt.startedAt,
+            queueAgeEvidence: handoffStartedAt.queueAgeEvidence
           }
         : context
     );
@@ -2368,15 +2401,17 @@ function testingIssueContextForLinkedIssues(
   const queueStartedAtValues = matches
     .map((context) => context.queueStartedAt)
     .filter((value): value is string => value !== null);
+  const contextWithEarliestStart = matches
+    .filter((context) => context.queueStartedAt !== null)
+    .sort((left, right) => left.queueStartedAt!.localeCompare(right.queueStartedAt!))[0];
   return {
     issueNumber: matches[0].issueNumber,
     testers: uniqueValues(matches.flatMap((context) => context.testers)),
+    testingLabels: uniqueValues(matches.flatMap((context) => context.testingLabels)),
     signals: uniqueValues(matches.flatMap((context) => context.signals)),
     queueAgeHours: queueAges.length === 0 ? null : Math.max(...queueAges),
     queueStartedAt: queueStartedAtValues.length === 0 ? null : queueStartedAtValues.sort()[0],
-    queueAgeEvidence: matches.some((context) => context.queueAgeEvidence === "issue_assignment_event")
-      ? "issue_assignment_event"
-      : "issue_cache_timestamp"
+    queueAgeEvidence: contextWithEarliestStart?.queueAgeEvidence ?? "issue_cache_timestamp"
   };
 }
 
@@ -3836,15 +3871,15 @@ export async function getDashboardSummary(
           [repoId, ...linkedPrVisibility.params]
         );
   const baseTestingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
-  const testingAssignmentStartedAtMap = await testingAssignmentStartedAtByIssueNumber(
+  const testingHandoffStartedAtMap = await testingHandoffStartedAtByIssueNumber(
     repoId,
     baseTestingIssueContexts,
     timelineEventVisibility.sql,
     timelineEventVisibility.params
   );
-  const testingIssueContexts = testingIssueContextsWithAssignmentEvidence(
+  const testingIssueContexts = testingIssueContextsWithHandoffEvidence(
     baseTestingIssueContexts,
-    testingAssignmentStartedAtMap
+    testingHandoffStartedAtMap
   );
   const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(
     linkedPrCandidateRows,
