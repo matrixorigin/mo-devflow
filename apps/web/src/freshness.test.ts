@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import type { CacheObjectEvidenceView, DashboardSummary, SyncHealth } from "@mo-devflow/shared";
-import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness, summarizeUpdatePipeline } from "./freshness";
+import {
+  recommendCacheRepair,
+  summarizeCacheEvidence,
+  summarizeFreshness,
+  summarizeUpdatePipeline,
+  summarizeWebhookReadiness
+} from "./freshness";
 
 function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHealth {
   return {
@@ -72,6 +78,18 @@ function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardS
     recentDeliveries: [],
     ...input
   };
+}
+
+function webhookWarning(): DashboardSummary["profileWarnings"] {
+  return [
+    {
+      key: "webhook:secret_unconfigured",
+      severity: "warning",
+      title: "GitHub webhook secret is not configured",
+      description: "GitHub webhook delivery ingest is disabled.",
+      action: "Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET."
+    }
+  ];
 }
 
 function sample(input: Partial<CacheObjectEvidenceView> & Pick<CacheObjectEvidenceView, "objectType">) {
@@ -188,6 +206,87 @@ describe("update pipeline summary", () => {
       value: "receiving",
       tone: "good"
     });
+  });
+});
+
+describe("webhook readiness summary", () => {
+  test("reports polling-only mode when the webhook secret is missing", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: webhookWarning(),
+      webhooks: webhooks()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      mode: "polling_only",
+      title: "Webhook ingest is not enabled"
+    });
+    expect(summary.description).toContain("polling");
+    expect(summary.facts).toContain("endpoint /api/webhooks/github");
+  });
+
+  test("reports waiting state when the secret is configured but no delivery has arrived", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      mode: "waiting_for_delivery",
+      title: "Waiting for the first GitHub delivery"
+    });
+    expect(summary.nextActions.join(" ")).toContain("GitHub webhook URL");
+  });
+
+  test("prioritizes failed deliveries over setup state", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({ failedDeliveries: 1, normalizationFailedDeliveries: 2, latestFailure: "bad payload" })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "critical",
+      mode: "failed",
+      title: "Webhook deliveries need attention"
+    });
+    expect(summary.facts).toContain("3 failed");
+    expect(summary.facts).toContain("latest: bad payload");
+  });
+
+  test("reports queued deliveries before healthy receiving state", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({
+        pendingDeliveries: 2,
+        processedDeliveries: 4,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      mode: "queued",
+      title: "Webhook deliveries are queued"
+    });
+    expect(summary.facts).toContain("2 pending");
+  });
+
+  test("reports healthy receiving when deliveries are processed without failures", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({
+        processedDeliveries: 9,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "good",
+      mode: "receiving",
+      title: "Webhook ingest is receiving deliveries"
+    });
+    expect(summary.facts).toContain("9 processed");
   });
 });
 

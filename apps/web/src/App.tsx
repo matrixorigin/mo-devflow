@@ -87,9 +87,11 @@ import {
   summarizeCacheEvidence,
   summarizeFreshness,
   summarizeUpdatePipeline,
+  summarizeWebhookReadiness,
   type CacheEvidenceSummary,
   type UpdatePipelineSummary,
-  type UpdatePipelineTile
+  type UpdatePipelineTile,
+  type WebhookReadinessSummary
 } from "./freshness";
 import {
   criticalIssueContextsByPullRequest,
@@ -6362,6 +6364,7 @@ function WebhookIngestionBoard({
   onRefreshWebhooks: () => void;
 }) {
   const secretConfigured = !data.profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
+  const readiness = summarizeWebhookReadiness(data);
   const recentDeliveries = data.webhooks.recentDeliveries.filter((delivery) =>
     webhookDeliveryMatchesScope(delivery, scopeFilter)
   );
@@ -6453,15 +6456,7 @@ function WebhookIngestionBoard({
         </Space>
       </div>
 
-      {!secretConfigured ? (
-        <Alert
-          className="band"
-          type="warning"
-          title="GitHub webhook secret is not configured"
-          description="Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET before relying on near-real-time GitHub updates."
-          showIcon
-        />
-      ) : null}
+      <WebhookReadinessPanel readiness={readiness} />
 
       {failedDeliveries > 0 ? (
         <Alert
@@ -6554,6 +6549,54 @@ function WebhookIngestionBoard({
       />
     </section>
   );
+}
+
+function WebhookReadinessPanel({ readiness }: { readiness: WebhookReadinessSummary }) {
+  return (
+    <section className={`webhook-readiness webhook-readiness-${readiness.tone}`} aria-label="Webhook readiness">
+      <div className="webhook-readiness-main">
+        <Tag color={updatePipelineToneColor(readiness.tone)}>{webhookReadinessModeLabel(readiness.mode)}</Tag>
+        <div>
+          <Text strong>{readiness.title}</Text>
+          <span>{readiness.description}</span>
+        </div>
+      </div>
+      <div className="webhook-readiness-grid">
+        <div>
+          <Text type="secondary">Current facts</Text>
+          <div className="webhook-readiness-tags">
+            {readiness.facts.map((fact) => (
+              <Tag key={fact}>{fact}</Tag>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Text type="secondary">Next action</Text>
+          <ul className="webhook-readiness-actions">
+            {readiness.nextActions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function webhookReadinessModeLabel(mode: WebhookReadinessSummary["mode"]): string {
+  if (mode === "polling_only") {
+    return "polling only";
+  }
+  if (mode === "waiting_for_delivery") {
+    return "waiting";
+  }
+  if (mode === "queued") {
+    return "queued";
+  }
+  if (mode === "failed") {
+    return "failed";
+  }
+  return "receiving";
 }
 
 function WriteAuditBoard({

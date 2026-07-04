@@ -984,6 +984,87 @@ button.team-status-row:focus-visible {
   margin-bottom: 0;
 }
 
+.webhook-readiness {
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #94a3b8;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.webhook-readiness-critical {
+  border-left-color: #dc2626;
+}
+
+.webhook-readiness-attention {
+  border-left-color: #d97706;
+}
+
+.webhook-readiness-good {
+  border-left-color: #16a34a;
+}
+
+.webhook-readiness-main {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.webhook-readiness-main > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.webhook-readiness-main span:last-child {
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.webhook-readiness-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.45fr);
+  min-width: 0;
+}
+
+.webhook-readiness-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.webhook-readiness-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.webhook-readiness-tags .ant-tag {
+  margin-inline-end: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.webhook-readiness-actions {
+  color: #374151;
+  display: grid;
+  font-size: 13px;
+  gap: 4px;
+  line-height: 1.4;
+  margin: 0;
+  padding-left: 18px;
+}
+
 .write-audit-summary {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   margin-bottom: 14px;
@@ -3443,6 +3524,10 @@ button.critical-board-stat:hover {
   }
 
   .webhook-command-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .webhook-readiness-grid {
     grid-template-columns: 1fr;
   }
 

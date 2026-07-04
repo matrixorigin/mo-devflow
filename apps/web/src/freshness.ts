@@ -46,6 +46,17 @@ export interface UpdatePipelineSummary {
   tiles: UpdatePipelineTile[];
 }
 
+export type WebhookReadinessMode = "polling_only" | "waiting_for_delivery" | "receiving" | "queued" | "failed";
+
+export interface WebhookReadinessSummary {
+  tone: UpdatePipelineTone;
+  mode: WebhookReadinessMode;
+  title: string;
+  description: string;
+  facts: string[];
+  nextActions: string[];
+}
+
 const derivedRepairLayers: ManualRefreshLayer[] = ["rules", "metrics", "ai_drift"];
 
 function addLayer(layers: ManualRefreshLayer[], layer: ManualRefreshLayer): void {
@@ -95,6 +106,104 @@ function evidenceHours(value: number | null): string {
 
 function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number {
   return webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
+}
+
+function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
+  return profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
+}
+
+export function summarizeWebhookReadiness(
+  input: Pick<DashboardSummary, "profileWarnings" | "webhooks">
+): WebhookReadinessSummary {
+  const secretMissing = hasWebhookSecretWarning(input.profileWarnings);
+  const webhooks = input.webhooks;
+  const failures = failedWebhookDeliveries(webhooks);
+  const processed = webhooks.processedDeliveries;
+
+  if (failures > 0) {
+    return {
+      tone: "critical",
+      mode: "failed",
+      title: "Webhook deliveries need attention",
+      description: "GitHub deliveries are reaching the cache, but some failed before producing fresh dashboard facts.",
+      facts: [
+        `${failures} failed`,
+        `${webhooks.pendingDeliveries} pending`,
+        webhooks.latestFailure ? `latest: ${webhooks.latestFailure}` : "failure details retained in delivery rows"
+      ],
+      nextActions: [
+        "Retry failed deliveries after the underlying GitHub or normalization error is fixed.",
+        "Review failed rows below before relying on near-real-time freshness."
+      ]
+    };
+  }
+
+  if (secretMissing) {
+    return {
+      tone: "attention",
+      mode: "polling_only",
+      title: "Webhook ingest is not enabled",
+      description:
+        "Dashboards are still repaired by worker polling and manual refresh, but GitHub changes will not arrive near real time.",
+      facts: [
+        "secret env missing",
+        "endpoint /api/webhooks/github",
+        `${processed} processed deliveries`,
+        webhooks.lastReceivedAt ? `last ${webhooks.lastReceivedAt}` : "no delivery observed"
+      ],
+      nextActions: [
+        "Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET to the same value configured in GitHub.",
+        "Create a GitHub webhook that posts to /api/webhooks/github with the accepted events below."
+      ]
+    };
+  }
+
+  if (webhooks.pendingDeliveries > 0) {
+    return {
+      tone: "attention",
+      mode: "queued",
+      title: "Webhook deliveries are queued",
+      description: "GitHub deliveries have been accepted and are waiting for the worker to process cache updates.",
+      facts: [
+        `${webhooks.pendingDeliveries} pending`,
+        `${processed} processed`,
+        webhooks.lastReceivedAt ? `last ${webhooks.lastReceivedAt}` : "no processed delivery yet"
+      ],
+      nextActions: [
+        "Confirm the worker and queue stay healthy until pending deliveries drain.",
+        "Use Refresh webhooks if the queue does not move."
+      ]
+    };
+  }
+
+  if (!webhooks.lastReceivedAt) {
+    return {
+      tone: "attention",
+      mode: "waiting_for_delivery",
+      title: "Waiting for the first GitHub delivery",
+      description:
+        "The webhook secret is configured, but this cache has not observed a GitHub delivery yet. Polling remains the repair path until the first event arrives.",
+      facts: ["secret configured", "endpoint /api/webhooks/github", "no delivery observed"],
+      nextActions: [
+        "Verify the GitHub webhook URL, secret, content type, and selected events.",
+        "Trigger a harmless issue or PR update and confirm a delivery row appears."
+      ]
+    };
+  }
+
+  return {
+    tone: "good",
+    mode: "receiving",
+    title: "Webhook ingest is receiving deliveries",
+    description: "GitHub deliveries are reaching the cache; worker repair jobs keep derived dashboard facts current.",
+    facts: [
+      `last ${webhooks.lastReceivedAt}`,
+      `${processed} processed`,
+      `${webhooks.ignoredDeliveries} ignored`,
+      `${webhooks.duplicateDeliveries} duplicates`
+    ],
+    nextActions: ["Monitor failed and pending counts; no setup action is required."]
+  };
 }
 
 export function summarizeUpdatePipeline(input: Pick<DashboardSummary, "sync" | "webhooks">): UpdatePipelineSummary {
