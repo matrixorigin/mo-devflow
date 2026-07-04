@@ -7958,6 +7958,12 @@ function WebhookIngestionBoard({
       </div>
 
       <WebhookReadinessPanel readiness={readiness} />
+      <WebhookSetupPanel
+        data={data}
+        secretConfigured={secretConfigured}
+        authenticated={authenticated}
+        onRefreshWebhooks={onRefreshWebhooks}
+      />
 
       {failedDeliveries > 0 ? (
         <Alert
@@ -8070,6 +8076,91 @@ function WebhookIngestionBoard({
       />
     </section>
   );
+}
+
+function WebhookSetupPanel({
+  data,
+  secretConfigured,
+  authenticated,
+  onRefreshWebhooks
+}: {
+  data: DashboardSummary;
+  secretConfigured: boolean;
+  authenticated: boolean;
+  onRefreshWebhooks: () => void;
+}) {
+  const endpoint = githubWebhookEndpoint();
+  const eventList = supportedGitHubWebhookEvents.join(", ");
+  const workerHealthy = data.sync.worker.status === "active";
+  const queueHealthy = data.sync.jobQueue.status === "healthy";
+  const repoFullName = `${data.repo.owner}/${data.repo.name}`;
+
+  return (
+    <section className="webhook-setup-panel" aria-label="GitHub webhook setup">
+      <div className="webhook-setup-heading">
+        <div>
+          <Text strong>GitHub Hook Setup</Text>
+          <Text type="secondary">{repoFullName}</Text>
+        </div>
+        <Button size="small" disabled={!authenticated} onClick={onRefreshWebhooks}>
+          Process queued deliveries
+        </Button>
+      </div>
+      <div className="webhook-setup-grid">
+        <WebhookSetupCard label="Payload URL">
+          <Text code copyable={{ text: endpoint.copyText }}>
+            {endpoint.displayText}
+          </Text>
+        </WebhookSetupCard>
+        <WebhookSetupCard label="Content type">
+          <Tag color="blue">application/json</Tag>
+        </WebhookSetupCard>
+        <WebhookSetupCard label="Secret">
+          <Tag color={secretConfigured ? "green" : "orange"}>{secretConfigured ? "configured" : "missing env"}</Tag>
+        </WebhookSetupCard>
+        <WebhookSetupCard label="Events">
+          <Space size={[4, 4]} wrap>
+            <Text code copyable={{ text: eventList }}>
+              copy list
+            </Text>
+            {supportedGitHubWebhookEvents.map((eventName) => (
+              <Tag key={eventName}>{eventName}</Tag>
+            ))}
+          </Space>
+        </WebhookSetupCard>
+        <WebhookSetupCard label="Runtime">
+          <Space size={[4, 4]} wrap>
+            <Tag color={workerHealthy ? "green" : "orange"}>worker {labelText(data.sync.worker.status)}</Tag>
+            <Tag color={queueHealthy ? "green" : "orange"}>queue {labelText(data.sync.jobQueue.status)}</Tag>
+            <Tag color={data.webhooks.lastReceivedAt ? "green" : "default"}>
+              last {formatDate(data.webhooks.lastReceivedAt)}
+            </Tag>
+          </Space>
+        </WebhookSetupCard>
+      </div>
+    </section>
+  );
+}
+
+function WebhookSetupCard({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="webhook-setup-card">
+      <span>{label}</span>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function githubWebhookEndpoint(): { displayText: string; copyText: string } {
+  const path = "/api/webhooks/github";
+  if (typeof window === "undefined" || !window.location?.origin) {
+    return { displayText: path, copyText: path };
+  }
+  if (["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) {
+    return { displayText: `<public API origin>${path}`, copyText: path };
+  }
+  const url = `${window.location.origin}${path}`;
+  return { displayText: url, copyText: url };
 }
 
 function WebhookReadinessPanel({ readiness }: { readiness: WebhookReadinessSummary }) {
