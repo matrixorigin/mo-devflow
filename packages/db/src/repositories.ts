@@ -41,6 +41,7 @@ import type {
 } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthLayers } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import { createHash } from "node:crypto";
 import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
@@ -249,6 +250,33 @@ export function testingTransitionViewFromRow(row: Record<string, unknown>): Test
     occurredAt: fromSqlDate(row.occurred_at) ?? new Date().toISOString(),
     sourceCompleteness: asString(row.source_completeness) === "complete_cache" ? "complete_cache" : "partial_cache"
   };
+}
+
+export function testingTransitionBelongsToProfile(profile: RepoProfile, transition: TestingTransitionView): boolean {
+  return transition.testingSignals.some((signal) => testingSignalBelongsToProfile(profile, signal));
+}
+
+function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
+  if ((profile.testing.handoffScope ?? "issue") === "issue") {
+    const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
+    return Boolean(issueAssignee && normalizedLoginSet(profile.people.testers).has(normalizedLogin(issueAssignee[1])));
+  }
+
+  if (signal.startsWith("label:")) {
+    return profile.testing.handoffSignals.labels.includes(signal.slice("label:".length));
+  }
+  if (signal.startsWith("reviewer:")) {
+    const reviewers = normalizedLoginSet(profile.testing.handoffSignals.reviewerUsers);
+    return reviewers.has(normalizedLogin(signal.slice("reviewer:".length)));
+  }
+  if (signal.startsWith("assignee:")) {
+    const assignees = normalizedLoginSet(profile.testing.handoffSignals.assigneeUsers);
+    return assignees.has(normalizedLogin(signal.slice("assignee:".length)));
+  }
+  if (signal.startsWith("comment:")) {
+    return profile.testing.handoffSignals.comments.includes(signal.slice("comment:".length));
+  }
+  return false;
 }
 
 type TestingTurnoverMetrics = Pick<
@@ -2990,6 +3018,10 @@ function latestIso(left: string, right: string): string {
   return new Date(left).getTime() >= new Date(right).getTime() ? left : right;
 }
 
+function latestIsoOrNull(values: string[]): string | null {
+  return values.reduce<string | null>((latest, value) => (latest ? latestIso(latest, value) : value), null);
+}
+
 export function aggregateMetricPoints(
   points: DailyMetricPoint[],
   period: AggregatedMetricPoint["period"],
@@ -3168,6 +3200,92 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   return metrics.size;
 }
 
+export async function getDashboardDataVersion(repoId: number): Promise<string> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT source_name, row_count, max_id, max_event_at, max_aux_at
+     FROM (
+       SELECT 'issues' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM issues WHERE repo_id = ?
+       UNION ALL
+       SELECT 'pull_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM pull_requests WHERE repo_id = ?
+       UNION ALL
+       SELECT 'pr_testing_events' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(occurred_at) AS max_event_at, MAX(created_at) AS max_aux_at
+       FROM pr_testing_events WHERE repo_id = ?
+       UNION ALL
+       SELECT 'issue_comment_syncs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(last_synced_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM issue_comment_syncs WHERE repo_id = ?
+       UNION ALL
+       SELECT 'issue_comments' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM issue_comments WHERE repo_id = ?
+       UNION ALL
+       SELECT 'issue_timeline_events' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(occurred_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM issue_timeline_events WHERE repo_id = ?
+       UNION ALL
+       SELECT 'issue_timeline_syncs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(last_synced_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+       FROM issue_timeline_syncs WHERE repo_id = ?
+       UNION ALL
+       SELECT 'sync_runs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
+       FROM sync_runs WHERE repo_id = ?
+       UNION ALL
+       SELECT 'workflow_violations' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
+       FROM workflow_violations WHERE repo_id = ?
+       UNION ALL
+       SELECT 'ai_drift_signals' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
+       FROM ai_drift_signals WHERE repo_id = ?
+       UNION ALL
+       SELECT 'daily_metrics' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(generated_at) AS max_event_at, MAX(generated_at) AS max_aux_at
+       FROM daily_metrics WHERE repo_id = ?
+       UNION ALL
+       SELECT 'notification_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(attempted_at) AS max_event_at, MAX(attempted_at) AS max_aux_at
+       FROM notification_deliveries WHERE repo_id = ?
+       UNION ALL
+       SELECT 'notification_acknowledgements' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(acknowledged_at) AS max_event_at, MAX(acknowledged_at) AS max_aux_at
+       FROM notification_acknowledgements WHERE repo_id = ?
+       UNION ALL
+       SELECT 'github_webhook_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+       FROM github_webhook_deliveries WHERE repo_id = ?
+       UNION ALL
+       SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
+       FROM write_action_executions WHERE repo_id = ?
+       UNION ALL
+       SELECT 'manual_refresh_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(created_at) AS max_event_at, MAX(created_at) AS max_aux_at
+       FROM manual_refresh_requests WHERE repo_id = ?
+       UNION ALL
+       SELECT 'attention_items' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
+       FROM attention_items WHERE repo_id = ?
+     ) version_sources
+     ORDER BY source_name`,
+    Array.from({ length: 17 }, () => repoId)
+  );
+
+  const normalized = rows.map((row) => ({
+    source: asString(row.source_name),
+    count: asNumber(row.row_count),
+    maxId: asNumber(row.max_id),
+    maxEventAt: fromSqlDate(row.max_event_at) ?? "",
+    maxAuxAt: fromSqlDate(row.max_aux_at) ?? ""
+  }));
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+}
+
 export async function getDashboardSummary(
   profile: RepoProfile,
   repoId: number,
@@ -3235,12 +3353,6 @@ export async function getDashboardSummary(
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
     [repoId, ...allPrVisibility.params]
-  );
-  const [testingEventRows] = await pool.execute<RowData[]>(
-    `SELECT COUNT(*) AS transition_events, MAX(occurred_at) AS last_transition_at
-     FROM pr_testing_events e
-     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}`,
-    [repoId, ...testingEventVisibility.params]
   );
   const [recentTestingEventRows] = await pool.execute<RowData[]>(
     `SELECT *
@@ -3847,7 +3959,12 @@ export async function getDashboardSummary(
     ...testingIssueViews.flatMap((issue) => issue.testers),
     ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
   ]);
-  const testingTurnoverTransitions = testingTurnoverRows.map(testingTransitionViewFromRow);
+  const testingTurnoverTransitions = testingTurnoverRows
+    .map(testingTransitionViewFromRow)
+    .filter((transition) => testingTransitionBelongsToProfile(profile, transition));
+  const recentTestingTransitions = recentTestingEventRows
+    .map(testingTransitionViewFromRow)
+    .filter((transition) => testingTransitionBelongsToProfile(profile, transition));
   const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
   const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
@@ -3861,11 +3978,11 @@ export async function getDashboardSummary(
     ).length,
     averageIssueQueueAgeHours: averageHours(issueQueueAges),
     averageQueueAgeHours: averageHours(queueAges),
-    transitionEvents: asNumber(testingEventRows[0]?.transition_events),
-    lastTransitionAt: fromSqlDate(testingEventRows[0]?.last_transition_at),
+    transitionEvents: testingTurnoverTransitions.length,
+    lastTransitionAt: latestIsoOrNull(testingTurnoverTransitions.map((transition) => transition.occurredAt)),
     ...testingTurnover,
     issues: testingIssueViews,
-    recentTransitions: recentTestingEventRows.map(testingTransitionViewFromRow),
+    recentTransitions: recentTestingTransitions,
     testers: Array.from(testerKeys).map((login) => {
       const issues = testingIssueViews.filter((issue) => issue.testers.includes(login));
       const prs = testingQueuePrs.filter((pr) => pr.testingTesters.includes(login));

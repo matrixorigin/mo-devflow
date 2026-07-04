@@ -29,6 +29,7 @@ import {
   pullRequestTestingTransitionForUpsert,
   testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
+  testingTransitionBelongsToProfile,
   testingTransitionViewFromRow,
   testingReviewerCoverage,
   visibleClassesForDashboard
@@ -1137,6 +1138,50 @@ describe("pull request testing transition events", () => {
       occurredAt: "2026-07-03T02:00:00Z",
       sourceCompleteness: "complete_cache"
     });
+  });
+
+  test("matches testing transitions to the configured handoff workflow", () => {
+    const reviewerTransition: TestingTransitionView = {
+      id: 1,
+      prNumber: 101,
+      fromState: "not_ready",
+      toState: "test_requested",
+      testingTesters: ["tester-a"],
+      testingSignals: ["reviewer:tester-a"],
+      occurredAt: "2026-07-01T00:00:00.000Z",
+      sourceCompleteness: "complete_cache"
+    };
+    const issueAssigneeTransition: TestingTransitionView = {
+      ...reviewerTransition,
+      testingSignals: ["issue_assignee:#42:tester-a"]
+    };
+    const issueScopedProfile: RepoProfile = {
+      ...baseProfile,
+      people: { ...baseProfile.people, testers: ["tester-a"] }
+    };
+    const pullRequestScopedProfile: RepoProfile = {
+      ...issueScopedProfile,
+      testing: {
+        ...baseProfile.testing,
+        handoffScope: "pull_request",
+        handoffSignals: baseProfile.testing.handoffSignals
+      }
+    };
+    const explicitReviewerProfile: RepoProfile = {
+      ...pullRequestScopedProfile,
+      testing: {
+        ...pullRequestScopedProfile.testing,
+        handoffSignals: {
+          ...pullRequestScopedProfile.testing.handoffSignals,
+          reviewerUsers: ["tester-a"]
+        }
+      }
+    };
+
+    expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
+    expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
+    expect(testingTransitionBelongsToProfile(pullRequestScopedProfile, reviewerTransition)).toBe(false);
+    expect(testingTransitionBelongsToProfile(explicitReviewerProfile, reviewerTransition)).toBe(true);
   });
 
   test("summarizes testing turnover only from completed transition pairs", () => {

@@ -237,11 +237,8 @@ function deriveTestingFlow(
     };
   }
 
-  const configuredTesters = new Set([
-    ...profile.people.testers,
-    ...profile.testing.handoffSignals.reviewerUsers,
-    ...profile.testing.handoffSignals.assigneeUsers
-  ]);
+  const configuredReviewerHandoffUsers = new Set(profile.testing.handoffSignals.reviewerUsers.map(normalizedLogin));
+  const configuredAssigneeHandoffUsers = new Set(profile.testing.handoffSignals.assigneeUsers.map(normalizedLogin));
   const signals: string[] = [];
   const testers: string[] = [];
 
@@ -251,13 +248,13 @@ function deriveTestingFlow(
     }
   }
   for (const reviewer of requestedReviewers) {
-    if (configuredTesters.has(reviewer)) {
+    if (configuredReviewerHandoffUsers.has(normalizedLogin(reviewer))) {
       signals.push(`reviewer:${reviewer}`);
       testers.push(reviewer);
     }
   }
   for (const assignee of assignees) {
-    if (configuredTesters.has(assignee)) {
+    if (configuredAssigneeHandoffUsers.has(normalizedLogin(assignee))) {
       signals.push(`assignee:${assignee}`);
       testers.push(assignee);
     }

@@ -95,6 +95,10 @@ webhook ingestion failures so external monitors can detect degraded cached-data
 quality without scraping the dashboard. If that summary query fails, `/health`
 keeps returning database, worker, and job queue status with `status: degraded`
 and an `operationalError` field instead of hiding the remaining health signals.
+The dashboard API uses a short read-model cache keyed by repo profile, viewer,
+and an incremental database version across issues, PRs, sync runs, webhook
+deliveries, notifications, metrics, and write audit state. Set
+`MO_DEVFLOW_DASHBOARD_CACHE_SECONDS=0` to disable it during debugging.
 Logged-in users can queue layer-scoped refresh jobs from the dashboard instead
 of spending GitHub rate limit on every sync layer.
 GitHub rate-limit failures are retried after the advertised reset window, while

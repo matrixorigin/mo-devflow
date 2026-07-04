@@ -487,7 +487,14 @@ describe("rules", () => {
       {
         ...profile,
         people: { ...profile.people, testers: ["tester-a"] },
-        testing: { ...profile.testing, handoffScope: "pull_request" }
+        testing: {
+          ...profile.testing,
+          handoffScope: "pull_request",
+          handoffSignals: {
+            ...profile.testing.handoffSignals,
+            reviewerUsers: ["tester-a"]
+          }
+        }
       },
       {
         id: 12,
@@ -509,6 +516,35 @@ describe("rules", () => {
     expect(pr.testingTesters).toEqual(["tester-a"]);
     expect(pr.testingSignals).toContain("reviewer:tester-a");
     expect(pr.testingQueueAgeHours).not.toBeNull();
+  });
+
+  test("pull-request scoped testing does not treat every configured tester review request as handoff", () => {
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        people: { ...profile.people, testers: ["tester-a"] },
+        testing: { ...profile.testing, handoffScope: "pull_request" }
+      },
+      {
+        id: 12,
+        number: 18,
+        title: "ordinary tester review",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/18",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        head: { ref: "fix" },
+        base: { ref: "main" },
+        requested_reviewers: [{ login: "tester-a" }]
+      },
+      anonymousSource
+    );
+
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingTesters).toEqual([]);
+    expect(pr.testingSignals).toEqual([]);
+    expect(pr.testingQueueAgeHours).toBeNull();
   });
 
   test("default issue-scoped testing ignores PR reviewer handoff", () => {
@@ -544,7 +580,14 @@ describe("rules", () => {
       {
         ...profile,
         people: { ...profile.people, testers: ["tester-a"] },
-        testing: { ...profile.testing, handoffScope: "pull_request" }
+        testing: {
+          ...profile.testing,
+          handoffScope: "pull_request",
+          handoffSignals: {
+            ...profile.testing.handoffSignals,
+            reviewerUsers: ["tester-a"]
+          }
+        }
       },
       {
         id: 16,
@@ -574,7 +617,14 @@ describe("rules", () => {
       {
         ...profile,
         people: { ...profile.people, testers: ["tester-a"] },
-        testing: { ...profile.testing, handoffScope: "pull_request" }
+        testing: {
+          ...profile.testing,
+          handoffScope: "pull_request",
+          handoffSignals: {
+            ...profile.testing.handoffSignals,
+            reviewerUsers: ["tester-a"]
+          }
+        }
       },
       {
         id: 17,
@@ -805,7 +855,14 @@ describe("rules", () => {
     const testProfile = {
       ...profile,
       people: { ...profile.people, testers: ["tester-a"] },
-      testing: { ...profile.testing, handoffScope: "pull_request" as const }
+      testing: {
+        ...profile.testing,
+        handoffScope: "pull_request" as const,
+        handoffSignals: {
+          ...profile.testing.handoffSignals,
+          reviewerUsers: ["tester-a"]
+        }
+      }
     };
     const basePr = {
       id: 14,

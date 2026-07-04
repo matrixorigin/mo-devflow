@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
+  getDashboardDataVersion,
   getDashboardSummary,
   getJobQueueHealth,
   getOperationalHealth,
@@ -17,6 +18,7 @@ import { apiHealthHttpStatus, apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
+import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashboardCache";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -33,6 +35,8 @@ const app = Fastify({
     level: process.env.MO_DEVFLOW_LOG_LEVEL ?? "info"
   }
 });
+const dashboardCacheTtlMs = dashboardCacheTtlMsFromEnv();
+const dashboardCache = createDashboardSummaryCache({ ttlMs: dashboardCacheTtlMs });
 
 app.removeContentTypeParser("application/json");
 app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
@@ -98,10 +102,34 @@ app.get("/api/dashboard", async (request, reply) => {
   const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
   try {
     const session = await getSessionRecordFromRequest(request, reply);
-    return await getDashboardSummary(profile, repoId, {
+    const viewer = {
       authenticated: Boolean(session),
       userId: session?.userId ?? null
+    };
+    const ifNoneMatchHeader = request.headers["if-none-match"];
+    const ifNoneMatch = Array.isArray(ifNoneMatchHeader) ? ifNoneMatchHeader.join(",") : ifNoneMatchHeader;
+    const result = await dashboardCache.get({
+      profile,
+      viewer,
+      ifNoneMatch,
+      loadVersion: async () => {
+        try {
+          return await getDashboardDataVersion(repoId);
+        } catch (error) {
+          app.log.warn({ error, repoKey: profile.key }, "dashboard data version query failed");
+          throw error;
+        }
+      },
+      buildSummary: () => getDashboardSummary(profile, repoId, viewer)
     });
+    reply.header("Cache-Control", `private, max-age=${Math.floor(dashboardCacheTtlMs / 1000)}, must-revalidate`);
+    reply.header("ETag", result.etag);
+    reply.header("X-MO-Devflow-Dashboard-Cache", result.status);
+    reply.header("X-MO-Devflow-Dashboard-Version", result.version);
+    if (result.status === "not-modified") {
+      return reply.status(304).send();
+    }
+    return result.summary;
   } catch (error) {
     app.log.error({ error }, "dashboard query failed");
     return reply.status(500).send({

@@ -571,6 +571,26 @@ function testingStateBusinessLabel(state: TestingFlowState): string {
   return "not in test";
 }
 
+function testingSignalBusinessLabel(signal: string): string {
+  const issueAssignee = signal.match(/^issue_assignee:#(\d+):(.+)$/);
+  if (issueAssignee) {
+    return `issue #${issueAssignee[1]} assigned to ${issueAssignee[2]}`;
+  }
+  if (signal.startsWith("reviewer:")) {
+    return `PR review request: ${signal.slice("reviewer:".length)}`;
+  }
+  if (signal.startsWith("assignee:")) {
+    return `PR assigned to ${signal.slice("assignee:".length)}`;
+  }
+  if (signal.startsWith("label:")) {
+    return `label ${signal.slice("label:".length)}`;
+  }
+  if (signal.startsWith("comment:")) {
+    return `comment signal: ${signal.slice("comment:".length)}`;
+  }
+  return labelText(signal);
+}
+
 function ciColor(value: string): string {
   if (["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(value)) {
     return "red";
@@ -6183,6 +6203,11 @@ export default function App() {
     }
     try {
       const response = await fetch("/api/dashboard");
+      if (response.status === 304) {
+        setLastDashboardLoadedAt(new Date().toISOString());
+        setAutoRefreshError(null);
+        return;
+      }
       if (!response.ok) {
         throw new Error(`API returned ${response.status}`);
       }
@@ -7334,14 +7359,14 @@ export default function App() {
         width: 260,
         render: (_, transition) => (
           <Space size={4} wrap>
-            <Tag>{labelText(transition.fromState)}</Tag>
+            <Tag>{testingStateBusinessLabel(transition.fromState)}</Tag>
             <Text type="secondary">-&gt;</Text>
-            <Tag color="blue">{labelText(transition.toState)}</Tag>
+            <Tag color={testingStateColor(transition.toState)}>{testingStateBusinessLabel(transition.toState)}</Tag>
           </Space>
         )
       },
       {
-        title: "Testers",
+        title: "Matched people",
         dataIndex: "testingTesters",
         width: 220,
         render: (testers: string[]) =>
@@ -7366,7 +7391,7 @@ export default function App() {
             <Space size={[4, 4]} wrap>
               {signals.slice(0, 4).map((signal) => (
                 <Tooltip key={signal} title={signal}>
-                  <Tag>{signal}</Tag>
+                  <Tag>{testingSignalBusinessLabel(signal)}</Tag>
                 </Tooltip>
               ))}
               {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
