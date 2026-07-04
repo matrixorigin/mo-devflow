@@ -474,6 +474,7 @@ describe("profile configuration guidance", () => {
     const actions = profileActionSuggestions(
       {
         ...baseProfile,
+        testing: { ...baseProfile.testing, handoffScope: "pull_request" },
         notifications: {
           ...baseProfile.notifications,
           wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
@@ -559,6 +560,7 @@ describe("profile configuration guidance", () => {
   test("excludes workflow skip users from configuration suggestions", () => {
     const profile = {
       ...baseProfile,
+      testing: { ...baseProfile.testing, handoffScope: "pull_request" as const },
       workflow: { skipUsers: ["skip-me", "qa-skip"] },
       notifications: {
         ...baseProfile.notifications,
@@ -644,7 +646,7 @@ describe("profile configuration guidance", () => {
   test("suggests testing reviewers when testing handoff is unconfigured", () => {
     expect(
       profileActionSuggestions(
-        baseProfile,
+        { ...baseProfile, testing: { ...baseProfile.testing, handoffScope: "pull_request" } },
         [],
         [
           { login: "qa-a", openPrs: 8 },
@@ -673,6 +675,7 @@ describe("profile configuration guidance", () => {
           ...baseProfile,
           people: { watchedUsers: [], testers: ["qa-a"] },
           testing: {
+            handoffScope: "pull_request",
             handoffSignals: {
               labels: [],
               reviewerUsers: ["qa-b"],
@@ -796,15 +799,15 @@ describe("linked PR issue references", () => {
       extractLinkedIssueNumbers(
         "Fixes #123 and resolves https://github.com/matrixorigin/matrixone/issues/456\nSee also #789"
       )
-    ).toEqual([123, 456]);
+    ).toEqual([123, 456, 789]);
   });
 
   test("does not treat ordinary hash mentions as linked issues", () => {
-    expect(extractLinkedIssueNumbers("Related discussion in #123 but not a closing reference")).toEqual([]);
+    expect(extractLinkedIssueNumbers("Build output includes #123 but not an issue reference")).toEqual([]);
   });
 
   test("deduplicates repeated issue references", () => {
-    expect(extractLinkedIssueNumbers("Closes #42. Fixes #42")).toEqual([42]);
+    expect(extractLinkedIssueNumbers("Closes #42. Fixes #42. Refs matrixorigin/matrixone#42")).toEqual([42]);
   });
 });
 

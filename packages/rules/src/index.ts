@@ -228,6 +228,15 @@ function deriveTestingFlow(
     };
   }
 
+  if ((profile.testing.handoffScope ?? "issue") !== "pull_request") {
+    return {
+      state: "not_ready",
+      testers: [],
+      signals: [],
+      queueAgeHours: null
+    };
+  }
+
   const configuredTesters = new Set([
     ...profile.people.testers,
     ...profile.testing.handoffSignals.reviewerUsers,

@@ -82,6 +82,7 @@ notifications:
 `);
 
     const profile = loadRepoProfile(profilePath);
+    expect(profile.testing.handoffScope).toBe("issue");
     expect(profile.notifications.routing.cooldownHours).toBe(6);
     expect(profile.notifications.routing.fallbackRecipient).toBe("maintainers");
     expect(profile.notifications.routing.escalateAfterHours).toBe(18);

@@ -78,7 +78,7 @@ describe("person workload summaries", () => {
         },
         2
       )
-    ).toEqual(["4 PR attention", "2 in testing", "3 needs triage", "2 pending PRs", "1 deferred"]);
+    ).toEqual(["4 PR attention", "2 linked to test issues", "3 needs triage", "2 pending PRs", "1 deferred"]);
   });
 });
 
@@ -101,7 +101,7 @@ describe("work item attention reasons", () => {
       "Changes requested",
       "CI failed",
       "Merge conflict",
-      "Testing changes requested"
+      "Test changes requested"
     ]);
   });
 

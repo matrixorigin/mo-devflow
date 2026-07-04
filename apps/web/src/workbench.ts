@@ -255,7 +255,7 @@ export function personPrimaryReasons(person: PersonSummary, testingPrs: number):
   const reasons = [
     person.activeCriticalIssues > 0 ? `${person.activeCriticalIssues} active s-1/s0` : null,
     person.attentionPrs > 0 ? `${person.attentionPrs} PR attention` : null,
-    testingPrs > 0 ? `${testingPrs} in testing` : null,
+    testingPrs > 0 ? `${testingPrs} linked to test issues` : null,
     person.needsTriageIssues > 0 ? `${person.needsTriageIssues} needs triage` : null,
     person.pendingPrs > 0 ? `${person.pendingPrs} pending PRs` : null,
     person.deferredIssues > 0 ? `${person.deferredIssues} deferred` : null
@@ -272,7 +272,7 @@ const attentionFlagLabels: Record<string, string> = {
   ci_failed: "CI failed",
   merge_conflict: "Merge conflict",
   no_human_action_24h: "No human action over 24h",
-  testing_stalled: "Testing stalled",
+  testing_stalled: "Test wait over 24h",
   review_requested_no_response: "Review waiting"
 };
 
@@ -296,7 +296,7 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Testing changes requested");
+    reasons.push("Test changes requested");
   }
 
   return [...new Set(reasons)];
@@ -595,10 +595,10 @@ function prReasons(pr: GanttPullRequestSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Testing changes requested");
+    reasons.push("Test changes requested");
   }
   if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
-    reasons.push("Testing queue aging");
+    reasons.push("Test wait over 24h");
   }
   return uniqueStrings(reasons);
 }
@@ -699,9 +699,9 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   }
   for (const pr of person.testingPrs) {
     add(
-      activityFromPullRequest(pr, "Testing handoff", "attention", 780, [
+      activityFromPullRequest(pr, "Linked issue in test", "attention", 780, [
         ...prAttentionReasons(pr),
-        pr.testingQueueAgeHours !== null ? "Testing queue aging" : "Testing flow active"
+        pr.testingQueueAgeHours !== null ? "Test wait visible" : "Issue test status visible"
       ])
     );
   }
@@ -762,13 +762,13 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     return "Resolve merge conflict";
   }
   if (item.testingState === "test_changes_requested") {
-    return "Respond to testing feedback";
+    return "Respond to test feedback";
   }
   if (
     item.testingQueueAgeHours !== null ||
     ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
   ) {
-    return "Push testing closure";
+    return "Get test result";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -835,7 +835,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Push testing closure";
+    return "Get test result";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";
@@ -858,7 +858,7 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     warnings.push("PR idle over 24h");
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)) {
-    warnings.push("testing over 24h");
+    warnings.push("test wait over 24h");
   }
   if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
     warnings.push("unlinked PR");

@@ -480,7 +480,8 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] }
+        people: { ...profile.people, testers: ["tester-a"] },
+        testing: { ...profile.testing, handoffScope: "pull_request" }
       },
       {
         id: 12,
@@ -504,12 +505,40 @@ describe("rules", () => {
     expect(pr.testingQueueAgeHours).not.toBeNull();
   });
 
+  test("default issue-scoped testing ignores PR reviewer handoff", () => {
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        people: { ...profile.people, testers: ["tester-a"] }
+      },
+      {
+        id: 12,
+        number: 18,
+        title: "ordinary review",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/18",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        head: { ref: "fix" },
+        base: { ref: "main" },
+        requested_reviewers: [{ login: "tester-a" }]
+      },
+      anonymousSource
+    );
+
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingTesters).toEqual([]);
+    expect(pr.testingQueueAgeHours).toBeNull();
+  });
+
   test("testing handoff that exceeds attention threshold is flagged as stalled", () => {
     const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] }
+        people: { ...profile.people, testers: ["tester-a"] },
+        testing: { ...profile.testing, handoffScope: "pull_request" }
       },
       {
         id: 16,
@@ -538,7 +567,8 @@ describe("rules", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
-        people: { ...profile.people, testers: ["tester-a"] }
+        people: { ...profile.people, testers: ["tester-a"] },
+        testing: { ...profile.testing, handoffScope: "pull_request" }
       },
       {
         id: 17,
@@ -577,6 +607,7 @@ describe("rules", () => {
       {
         ...profile,
         testing: {
+          handoffScope: "pull_request",
           handoffSignals: {
             labels: ["testing/requested"],
             reviewerUsers: [],
@@ -612,6 +643,7 @@ describe("rules", () => {
       {
         ...profile,
         testing: {
+          handoffScope: "pull_request",
           handoffSignals: {
             labels: [],
             reviewerUsers: [],
@@ -760,7 +792,11 @@ describe("rules", () => {
   });
 
   test("testing flow reflects requested changes, approval, and close states", () => {
-    const testProfile = { ...profile, people: { ...profile.people, testers: ["tester-a"] } };
+    const testProfile = {
+      ...profile,
+      people: { ...profile.people, testers: ["tester-a"] },
+      testing: { ...profile.testing, handoffScope: "pull_request" as const }
+    };
     const basePr = {
       id: 14,
       number: 20,

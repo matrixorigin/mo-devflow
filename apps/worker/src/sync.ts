@@ -378,7 +378,10 @@ function cacheSourceForWebhook(): CacheSource {
 }
 
 function hasTestingCommentHandoffSignals(profile: ReturnType<typeof loadRepoProfile>): boolean {
-  return profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0);
+  return (
+    (profile.testing.handoffScope ?? "issue") === "pull_request" &&
+    profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0)
+  );
 }
 
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {

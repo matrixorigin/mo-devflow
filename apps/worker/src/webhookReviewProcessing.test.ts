@@ -121,6 +121,7 @@ const profile: RepoProfile = {
     aiEasyCriticalCriticalDays: 14
   },
   testing: {
+    handoffScope: "pull_request",
     handoffSignals: { labels: [], reviewerUsers: ["tester-a"], assigneeUsers: [], comments: [] }
   },
   workflow: {
@@ -472,6 +473,7 @@ describe("webhook review processing", () => {
     const commentProfile: RepoProfile = {
       ...profile,
       testing: {
+        handoffScope: "pull_request",
         handoffSignals: {
           labels: [],
           reviewerUsers: [],

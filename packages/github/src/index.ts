@@ -870,9 +870,9 @@ function issueCommentFetchLimit(sourceAuthType: SourceAuthType): number {
 }
 
 function issueCommentBackfillCandidates(profile: RepoProfile, issues: IssueListItem[]): IssueListItem[] {
-  const testingCommentSignalsConfigured = profile.testing.handoffSignals.comments.some(
-    (signal) => signal.trim().length > 0
-  );
+  const testingCommentSignalsConfigured =
+    (profile.testing.handoffScope ?? "issue") === "pull_request" &&
+    profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0);
   return issues.filter((issue) => {
     if (issue.pull_request) {
       return testingCommentSignalsConfigured;

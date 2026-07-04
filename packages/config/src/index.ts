@@ -75,6 +75,7 @@ const profileSchema = z.object({
     }),
   testing: z
     .object({
+      handoff_scope: z.enum(["issue", "pull_request"]).default("issue"),
       handoff_signals: z
         .object({
           labels: z.array(z.string()).default([]),
@@ -86,6 +87,7 @@ const profileSchema = z.object({
       states: z.record(z.string(), z.unknown()).optional()
     })
     .default({
+      handoff_scope: "issue",
       handoff_signals: { labels: [], reviewer_users: [], assignee_users: [], comments: [] }
     }),
   workflow: z.object({
@@ -169,6 +171,7 @@ export function loadRepoProfile(
       aiEasyCriticalCriticalDays: parsed.thresholds.ai_easy_critical_critical_days
     },
     testing: {
+      handoffScope: parsed.testing.handoff_scope,
       handoffSignals: {
         labels: parsed.testing.handoff_signals.labels,
         reviewerUsers: parsed.testing.handoff_signals.reviewer_users,

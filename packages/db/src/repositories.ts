@@ -598,6 +598,9 @@ export function testingReviewerCoverage(
 }
 
 function hasTestingHandoffSignal(profile: RepoProfile): boolean {
+  if ((profile.testing.handoffScope ?? "issue") === "issue") {
+    return profile.people.testers.length > 0;
+  }
   const handoffSignals = profile.testing.handoffSignals;
   return (
     handoffSignals.labels.length > 0 ||
@@ -723,7 +726,11 @@ export function profileActionSuggestions(
     )
     .map((candidate) => candidate.login)
     .slice(0, 12);
-  if (!hasTestingHandoffSignal(profile) && testingReviewerLogins.length > 0) {
+  if (
+    (profile.testing.handoffScope ?? "issue") === "pull_request" &&
+    !hasTestingHandoffSignal(profile) &&
+    testingReviewerLogins.length > 0
+  ) {
     suggestions.push({
       key: "profile:testing_reviewer_candidates",
       severity: "warning",
@@ -847,13 +854,17 @@ export function profileConfigurationWarnings(input: {
   }
 
   if (!hasTestingHandoffSignal(profile)) {
+    const issueScoped = (profile.testing.handoffScope ?? "issue") === "issue";
     warnings.push({
       key: "profile:testing_handoff_unconfigured",
       severity: "warning",
       title: "Testing handoff rules are not configured",
-      description:
-        "Testing queue and tester turnover views cannot reflect the real workflow until a handoff label, reviewer, assignee, or comment signal is configured.",
-      action: "Configure testing.handoff_signals and people.testers for the repo workflow."
+      description: issueScoped
+        ? "Testing queue and tester turnover views cannot reflect the real workflow until people.testers is configured. Issue assignees matching those testers are treated as sent to test."
+        : "Testing queue and tester turnover views cannot reflect the real workflow until a PR handoff label, reviewer, assignee, or comment signal is configured.",
+      action: issueScoped
+        ? "Configure people.testers for the repo workflow."
+        : "Configure testing.handoff_signals and people.testers for the repo workflow."
     });
   }
 
@@ -2062,6 +2073,148 @@ function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
   return extractLinkedIssueNumbers(`${asString(row.title)}\n${body}`);
 }
 
+interface TestingIssueContext {
+  issueNumber: number;
+  testers: string[];
+  signals: string[];
+  queueAgeHours: number | null;
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.length > 0)));
+}
+
+function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Map<number, TestingIssueContext> {
+  const testerLogins = normalizedLoginSet(profile.people.testers);
+  const contexts = new Map<number, TestingIssueContext>();
+  if (testerLogins.size === 0) {
+    return contexts;
+  }
+
+  for (const row of rows) {
+    if (asString(row.state) !== "open" || asNumber(row.is_pull_request) === 1) {
+      continue;
+    }
+    const testers = parseJsonArray(asString(row.assignees_json)).filter((login) =>
+      testerLogins.has(normalizedLogin(login))
+    );
+    if (testers.length === 0) {
+      continue;
+    }
+    const issueNumber = asNumber(row.number);
+    contexts.set(issueNumber, {
+      issueNumber,
+      testers: uniqueValues(testers),
+      signals: uniqueValues(testers.map((tester) => `issue_assignee:#${issueNumber}:${tester}`)),
+      queueAgeHours: hoursSince(fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at))
+    });
+  }
+
+  return contexts;
+}
+
+function testingIssueContextForLinkedIssues(
+  linkedIssueNumbers: number[],
+  contexts: Map<number, TestingIssueContext>
+): TestingIssueContext | null {
+  const matches = linkedIssueNumbers
+    .map((issueNumber) => contexts.get(issueNumber))
+    .filter(Boolean) as TestingIssueContext[];
+  if (matches.length === 0) {
+    return null;
+  }
+  const queueAges = matches
+    .map((context) => context.queueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return {
+    issueNumber: matches[0].issueNumber,
+    testers: uniqueValues(matches.flatMap((context) => context.testers)),
+    signals: uniqueValues(matches.flatMap((context) => context.signals)),
+    queueAgeHours: queueAges.length === 0 ? null : Math.max(...queueAges)
+  };
+}
+
+function testingAttentionFlags(flags: string[], context: TestingIssueContext | null, thresholdHours: number): string[] {
+  const next = flags.filter((flag) => flag !== "testing_stalled");
+  if (
+    context?.queueAgeHours !== null &&
+    context?.queueAgeHours !== undefined &&
+    context.queueAgeHours >= thresholdHours
+  ) {
+    next.push("testing_stalled");
+  }
+  return uniqueValues(next);
+}
+
+function applyIssueTestingContextToPendingPrView<T extends PendingPrView | PersonalPullRequestView>(
+  profile: RepoProfile,
+  pr: T,
+  contexts: Map<number, TestingIssueContext>
+): T {
+  if ("state" in pr && pr.state === "closed") {
+    return {
+      ...pr,
+      testingState: "closed_or_merged",
+      testingTesters: [],
+      testingSignals: [],
+      testingQueueAgeHours: null,
+      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+    };
+  }
+  const context = testingIssueContextForLinkedIssues(pr.linkedIssueNumbers, contexts);
+  if (!context) {
+    return {
+      ...pr,
+      testingState: "not_ready",
+      testingTesters: [],
+      testingSignals: [],
+      testingQueueAgeHours: null,
+      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+    };
+  }
+  return {
+    ...pr,
+    testingState: "test_requested",
+    testingTesters: context.testers,
+    testingSignals: context.signals,
+    testingQueueAgeHours: context.queueAgeHours,
+    attentionFlags: testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours)
+  };
+}
+
+function applyIssueTestingContextToLinkedPrView(
+  profile: RepoProfile,
+  pr: CriticalIssueLinkedPullRequestView,
+  contexts: Map<number, TestingIssueContext>
+): CriticalIssueLinkedPullRequestView {
+  if (pr.state === "closed") {
+    return {
+      ...pr,
+      testingState: "closed_or_merged",
+      testingTesters: [],
+      testingQueueAgeHours: null,
+      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+    };
+  }
+  const context = testingIssueContextForLinkedIssues(pr.linkedIssueNumbers, contexts);
+  if (!context) {
+    return {
+      ...pr,
+      testingState: "not_ready",
+      testingTesters: [],
+      testingQueueAgeHours: null,
+      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+    };
+  }
+  return {
+    ...pr,
+    testingState: "test_requested",
+    testingTesters: context.testers,
+    testingQueueAgeHours: context.queueAgeHours,
+    attentionFlags: testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours)
+  };
+}
+
 function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinkedPullRequestView {
   return {
     number: asNumber(row.number),
@@ -2090,7 +2243,9 @@ function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinked
 
 function linkedPullRequestsByIssueNumber(
   rows: RowData[],
-  issueNumbers: Set<number>
+  issueNumbers: Set<number>,
+  profile: RepoProfile,
+  testingIssueContexts: Map<number, TestingIssueContext>
 ): Map<number, CriticalIssueLinkedPullRequestView[]> {
   const linked = new Map<number, CriticalIssueLinkedPullRequestView[]>();
   for (const row of rows) {
@@ -2098,7 +2253,11 @@ function linkedPullRequestsByIssueNumber(
     if (matchedNumbers.length === 0) {
       continue;
     }
-    const view = toCriticalIssueLinkedPullRequestView(row);
+    const view = applyIssueTestingContextToLinkedPrView(
+      profile,
+      toCriticalIssueLinkedPullRequestView(row),
+      testingIssueContexts
+    );
     for (const issueNumber of matchedNumbers) {
       const existing = linked.get(issueNumber) ?? [];
       if (!existing.some((pr) => pr.number === view.number)) {
@@ -2887,14 +3046,14 @@ export async function getDashboardSummary(
     [repoId, ...prVisibility.params]
   );
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT i.owner_login, i.lifecycle_state, i.severity, i.state
+    `SELECT i.number, i.owner_login, i.lifecycle_state, i.severity, i.state, i.is_pull_request,
+            i.assignees_json, i.created_at, i.updated_at
      FROM issues i
      WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
     [repoId, ...issueListVisibility.params]
   );
   const [allPrRows] = await pool.execute<RowData[]>(
-    `SELECT p.owner_login, p.created_at, p.merged_at, p.state, p.attention_flags_json,
-            p.requested_reviewers_json, p.testing_state, p.testing_testers_json, p.testing_queue_age_hours
+    `SELECT *
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
     [repoId, ...allPrVisibility.params]
@@ -3258,7 +3417,13 @@ export async function getDashboardSummary(
            LIMIT 500`,
           [repoId, ...linkedPrVisibility.params]
         );
-  const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(linkedPrCandidateRows, criticalIssueNumbers);
+  const testingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
+  const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(
+    linkedPrCandidateRows,
+    criticalIssueNumbers,
+    profile,
+    testingIssueContexts
+  );
   const criticalIssueCommentEvidence = await issueCommentEvidenceByIssueNumber(
     repoId,
     Array.from(criticalIssueNumbers)
@@ -3273,7 +3438,12 @@ export async function getDashboardSummary(
       criticalStartedAtMap.get(asNumber(row.number)) ?? null
     )
   );
-  const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
+  const pendingPrs: PendingPrView[] = prRows.map((row) =>
+    applyIssueTestingContextToPendingPrView(profile, toPendingPrView(row), testingIssueContexts)
+  );
+  const allPrViews = allPrRows.map((row) =>
+    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
+  );
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
@@ -3313,7 +3483,7 @@ export async function getDashboardSummary(
 
   const people: PersonSummary[] = profile.people.watchedUsers.map((login) => {
     const ownedIssues = issueRows.filter((row) => row.owner_login === login && row.state === "open");
-    const ownedPrs = allPrRows.filter((row) => row.owner_login === login);
+    const ownedPrs = allPrViews.filter((pr) => pr.ownerLogin === login);
     return {
       login,
       activeCriticalIssues: ownedIssues.filter((row) => profile.labels.critical.includes(asString(row.severity)))
@@ -3328,10 +3498,10 @@ export async function getDashboardSummary(
         )
       ).length,
       deferredIssues: ownedIssues.filter((row) => row.lifecycle_state === "deferred").length,
-      prsCreatedYesterday: ownedPrs.filter((row) => inRange(row.created_at, start, end)).length,
-      prsMergedYesterday: ownedPrs.filter((row) => inRange(row.merged_at, start, end)).length,
-      pendingPrs: ownedPrs.filter((row) => row.state === "open").length,
-      attentionPrs: ownedPrs.filter((row) => parseJsonArray(asString(row.attention_flags_json)).length > 0).length
+      prsCreatedYesterday: ownedPrs.filter((pr) => inRange(pr.createdAt, start, end)).length,
+      prsMergedYesterday: ownedPrs.filter((pr) => inRange(pr.mergedAt, start, end)).length,
+      pendingPrs: ownedPrs.filter((pr) => pr.state === "open").length,
+      attentionPrs: ownedPrs.filter((pr) => pr.attentionFlags.length > 0).length
     };
   });
 
@@ -3387,7 +3557,9 @@ export async function getDashboardSummary(
   const hiddenObjects = hiddenIssues + hiddenPullRequests;
   const analyticsLimitedByVisibility = hiddenObjects > 0;
   const peopleByLogin = new Map(people.map((person) => [person.login, person]));
-  const personalPrs = personalPrRows.map(toPersonalPullRequestView);
+  const personalPrs = personalPrRows.map((row) =>
+    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
+  );
   const personalViews: PersonalActionView[] = profile.people.watchedUsers.map((login) => {
     const ownedIssues = personalIssueRows.filter((row) => asString(row.owner_login) === login);
     const ownedPrs = personalPrs.filter((pr) => pr.ownerLogin === login);
@@ -3472,23 +3644,20 @@ export async function getDashboardSummary(
     peopleWeekly: analyticsLimitedByVisibility ? [] : weeklyMetrics.filter((point) => point.scopeType === "person"),
     peopleMonthly: analyticsLimitedByVisibility ? [] : monthlyMetrics.filter((point) => point.scopeType === "person")
   };
-  const testingQueueRows = allPrRows.filter((row) =>
-    ["test_requested", "testing", "test_changes_requested"].includes(asString(row.testing_state))
+  const testingQueuePrs = allPrViews.filter(
+    (pr) => pr.state === "open" && ["test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
   );
-  const queueAges = testingQueueRows
-    .map((row) => asNumber(row.testing_queue_age_hours))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const testerKeys = new Set([
-    ...profile.people.testers,
-    ...testingQueueRows.flatMap((row) => parseJsonArray(asString(row.testing_testers_json)))
-  ]);
+  const queueAges = testingQueuePrs
+    .map((pr) => pr.testingQueueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
+  const testerKeys = new Set([...profile.people.testers, ...testingQueuePrs.flatMap((pr) => pr.testingTesters)]);
   const testingTurnoverTransitions = testingTurnoverRows.map(testingTransitionViewFromRow);
   const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
   const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
-    queuePrs: testingQueueRows.length,
-    staleQueuePrs: testingQueueRows.filter(
-      (row) => asNumber(row.testing_queue_age_hours) >= profile.thresholds.prNoActionAttentionHours
+    queuePrs: testingQueuePrs.length,
+    staleQueuePrs: testingQueuePrs.filter(
+      (pr) => (pr.testingQueueAgeHours ?? 0) >= profile.thresholds.prNoActionAttentionHours
     ).length,
     averageQueueAgeHours:
       queueAges.length === 0
@@ -3499,14 +3668,14 @@ export async function getDashboardSummary(
     ...testingTurnover,
     recentTransitions: recentTestingEventRows.map(testingTransitionViewFromRow),
     testers: Array.from(testerKeys).map((login) => {
-      const rows = testingQueueRows.filter((row) => parseJsonArray(asString(row.testing_testers_json)).includes(login));
-      const ages = rows
-        .map((row) => asNumber(row.testing_queue_age_hours))
-        .filter((value) => Number.isFinite(value) && value > 0);
+      const prs = testingQueuePrs.filter((pr) => pr.testingTesters.includes(login));
+      const ages = prs
+        .map((pr) => pr.testingQueueAgeHours)
+        .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
       const turnover = testingTurnoverByTester.get(login) ?? emptyTestingTurnoverMetrics();
       return {
         login,
-        queuePrs: rows.length,
+        queuePrs: prs.length,
         averageQueueAgeHours:
           ages.length === 0 ? null : Math.round((ages.reduce((sum, value) => sum + value, 0) / ages.length) * 10) / 10,
         ...turnover

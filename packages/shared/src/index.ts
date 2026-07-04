@@ -5,6 +5,7 @@ export type VisibilityClass = "anonymous_readable" | "logged_in_readable" | "tok
 export type LifecycleState = "needs-triage" | "deferred" | "active" | "other";
 
 export type AttentionSeverity = "info" | "warning" | "critical";
+export type TestingHandoffScope = "issue" | "pull_request";
 
 export const supportedGitHubWebhookEvents = [
   "issues",
@@ -63,6 +64,7 @@ export interface RepoProfile {
     aiEasyCriticalCriticalDays: number;
   };
   testing: {
+    handoffScope?: TestingHandoffScope;
     handoffSignals: {
       labels: string[];
       reviewerUsers: string[];
@@ -975,8 +977,13 @@ export function extractLinkedIssueNumbers(text: string): number[] {
   for (const match of text.matchAll(issueUrlPattern)) {
     linked.add(Number(match[1]));
   }
+  const repoIssuePattern = /(?:^|[\s([<])[\w.-]+\/[\w.-]+#(\d+)\b/gi;
+  for (const match of text.matchAll(repoIssuePattern)) {
+    linked.add(Number(match[1]));
+  }
 
-  const keywordPattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+([^\n.]+)/gi;
+  const keywordPattern =
+    /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|references?|relates?\s+to|related\s+to|see(?:\s+also)?|issues?)\s*:?\s+([^\n.]+)/gi;
   for (const match of text.matchAll(keywordPattern)) {
     const clause = match[1] ?? "";
     for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
