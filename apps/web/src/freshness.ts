@@ -1,4 +1,10 @@
-import { syncHealthLayers, type DashboardSummary, type ManualRefreshLayer, type SyncHealth } from "@mo-devflow/shared";
+import {
+  syncHealthLayers,
+  type DashboardSummary,
+  type ManualRefreshLayer,
+  type SessionView,
+  type SyncHealth
+} from "@mo-devflow/shared";
 
 export type FreshnessSeverity = "ok" | "warning" | "critical";
 export type CacheEvidenceSeverity = FreshnessSeverity | "info";
@@ -54,6 +60,34 @@ export interface WebhookReadinessSummary {
   title: string;
   description: string;
   facts: string[];
+  nextActions: string[];
+}
+
+export type ProductionReadinessStatus = "ready" | "needs_action" | "waiting" | "disabled";
+export type ProductionReadinessGateKey =
+  "cache" | "worker" | "webhook" | "token" | "write_back" | "notifications" | "audit";
+export type ProductionReadinessTarget = "health" | "webhooks" | "notifications" | "audit" | "connect_token";
+
+export interface ProductionReadinessGate {
+  key: ProductionReadinessGateKey;
+  label: string;
+  status: ProductionReadinessStatus;
+  tone: UpdatePipelineTone;
+  value: string;
+  detail: string;
+  action: string;
+  target: ProductionReadinessTarget;
+}
+
+export interface ProductionReadinessSummary {
+  tone: UpdatePipelineTone;
+  score: number;
+  label: string;
+  title: string;
+  detail: string;
+  gates: ProductionReadinessGate[];
+  blockers: ProductionReadinessGate[];
+  waiting: ProductionReadinessGate[];
   nextActions: string[];
 }
 
@@ -310,6 +344,227 @@ export function summarizeUpdatePipeline(
       ? "Worker, queue, webhook processing, and active cache freshness are clear."
       : "Worker and polling repair are healthy; no GitHub webhook delivery has been observed in cache.",
     tiles
+  };
+}
+
+export function summarizeProductionReadiness(input: {
+  data: DashboardSummary;
+  session: SessionView | null;
+}): ProductionReadinessSummary {
+  const data = input.data;
+  const session = input.session;
+  const webhookReadiness = summarizeWebhookReadiness(data);
+  const tokenEncryptionMissing = session?.tokenEncryptionConfigured === false;
+  const authenticated = Boolean(session?.authenticated && session.user);
+  const writeCapability = session?.user?.writeCapabilities.issueLabels ?? null;
+  const writeActionFailures = data.writeActions.filter((action) =>
+    ["failed", "stale_preview", "token_unavailable", "blocked"].includes(action.status)
+  ).length;
+
+  const gates: ProductionReadinessGate[] = [
+    {
+      key: "cache",
+      label: "Cache evidence",
+      status: data.sync.staleObjects > 0 ? "needs_action" : data.sync.partialObjects > 0 ? "waiting" : "ready",
+      tone: data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good",
+      value:
+        data.sync.staleObjects > 0
+          ? `${data.sync.staleObjects} stale`
+          : data.sync.partialObjects > 0
+            ? `${data.sync.partialObjects} partial`
+            : "current",
+      detail:
+        data.sync.staleObjects > 0 || data.sync.partialObjects > 0
+          ? "Workflow conclusions may change after backfill or refresh."
+          : "Visible cached objects are fresh and complete.",
+      action: data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "Repair cache" : "Inspect health",
+      target: "health"
+    },
+    {
+      key: "worker",
+      label: "Worker and jobs",
+      status:
+        data.sync.worker.status === "active" && data.sync.jobQueue.status === "healthy" ? "ready" : "needs_action",
+      tone: data.sync.worker.status === "active" && data.sync.jobQueue.status === "healthy" ? "good" : "critical",
+      value: data.sync.worker.status === "active" ? `${data.sync.jobQueue.queueDepth} queued` : data.sync.worker.status,
+      detail:
+        data.sync.worker.status === "active" && data.sync.jobQueue.status === "healthy"
+          ? "Polling, repair jobs, and derived metrics can run."
+          : (data.sync.worker.recommendedAction ??
+            data.sync.jobQueue.recommendedAction ??
+            "Worker or queue state is not healthy."),
+      action: "Open health",
+      target: "health"
+    },
+    {
+      key: "webhook",
+      label: "Near real-time updates",
+      status:
+        webhookReadiness.mode === "receiving"
+          ? "ready"
+          : webhookReadiness.mode === "failed" || webhookReadiness.mode === "polling_only"
+            ? "needs_action"
+            : "waiting",
+      tone: webhookReadiness.tone,
+      value: webhookReadiness.mode === "receiving" ? "receiving" : webhookReadiness.mode.replaceAll("_", " "),
+      detail: webhookReadiness.description,
+      action: webhookReadiness.mode === "failed" ? "Retry or inspect" : "Open webhooks",
+      target: "webhooks"
+    },
+    {
+      key: "token",
+      label: "User token",
+      status: tokenEncryptionMissing ? "needs_action" : authenticated ? "ready" : "waiting",
+      tone: tokenEncryptionMissing ? "critical" : authenticated ? "good" : "attention",
+      value: tokenEncryptionMissing
+        ? "server setup"
+        : authenticated
+          ? (session?.user?.githubLogin ?? "connected")
+          : "observer",
+      detail: tokenEncryptionMissing
+        ? "Token encryption is missing, so users cannot connect GitHub tokens."
+        : authenticated
+          ? "GitHub operations use the connected user's identity."
+          : "Anonymous viewers can inspect cached data only.",
+      action: authenticated ? "Reconnect token" : "Connect token",
+      target: "connect_token"
+    },
+    {
+      key: "write_back",
+      label: "Workflow fixes",
+      status: !data.profileConfiguration.writeBackEnabled
+        ? "disabled"
+        : writeCapability?.enabled
+          ? "ready"
+          : authenticated
+            ? "needs_action"
+            : "waiting",
+      tone: !data.profileConfiguration.writeBackEnabled
+        ? "normal"
+        : writeCapability?.enabled
+          ? "good"
+          : authenticated
+            ? "attention"
+            : "attention",
+      value: !data.profileConfiguration.writeBackEnabled
+        ? "read-only"
+        : writeCapability?.enabled
+          ? "ready"
+          : (writeCapability?.status.replaceAll("_", " ") ?? "token needed"),
+      detail: !data.profileConfiguration.writeBackEnabled
+        ? "Repository profile keeps GitHub write-back disabled."
+        : (writeCapability?.message ?? "Connect a token with issue label/comment permissions before confirmed writes."),
+      action: writeCapability?.enabled ? "Open audit" : "Connect token",
+      target: writeCapability?.enabled ? "audit" : "connect_token"
+    },
+    {
+      key: "notifications",
+      label: "Notifications",
+      status:
+        data.notifications.readiness.status === "ready"
+          ? "ready"
+          : data.notifications.readiness.status === "disabled"
+            ? "disabled"
+            : "needs_action",
+      tone:
+        data.notifications.readiness.status === "ready"
+          ? "good"
+          : data.notifications.readiness.status === "disabled"
+            ? "normal"
+            : data.notifications.readiness.status === "degraded"
+              ? "attention"
+              : "critical",
+      value: data.notifications.readiness.status.replaceAll("_", " "),
+      detail:
+        data.notifications.readiness.blockers[0] ??
+        data.notifications.readiness.warnings[0] ??
+        `${data.notifications.readiness.mappedEmployees} mapped employees, ${data.notifications.failedDeliveries} failed deliveries.`,
+      action: "Open notifications",
+      target: "notifications"
+    },
+    {
+      key: "audit",
+      label: "Write audit",
+      status: writeActionFailures > 0 ? "needs_action" : data.writeActions.length > 0 ? "ready" : "waiting",
+      tone: writeActionFailures > 0 ? "attention" : data.writeActions.length > 0 ? "good" : "normal",
+      value: writeActionFailures > 0 ? `${writeActionFailures} failed` : `${data.writeActions.length} records`,
+      detail:
+        writeActionFailures > 0
+          ? "Some confirmed write attempts failed or became stale."
+          : data.writeActions.length > 0
+            ? "Confirmed write operations are visible in the audit trail."
+            : "No confirmed workflow write has been executed yet.",
+      action: "Open audit",
+      target: "audit"
+    }
+  ];
+
+  const blockers = gates.filter((gate) => gate.status === "needs_action");
+  const waiting = gates.filter((gate) => gate.status === "waiting");
+  const weightedScore = gates.reduce((total, gate) => {
+    if (gate.status === "ready") {
+      return total + 2;
+    }
+    if (gate.status === "waiting" || gate.status === "disabled") {
+      return total + 1;
+    }
+    return total;
+  }, 0);
+  const score = Math.round((weightedScore / (gates.length * 2)) * 100);
+  const nextActions = blockers.length > 0 ? blockers.slice(0, 3).map((gate) => `${gate.label}: ${gate.action}`) : [];
+
+  if (blockers.some((gate) => gate.tone === "critical")) {
+    return {
+      tone: "critical",
+      score,
+      label: "action required",
+      title: "Production readiness has blocking gaps",
+      detail: `${blockers.length} capability gates need action before this can be treated as a production control loop.`,
+      gates,
+      blockers,
+      waiting,
+      nextActions
+    };
+  }
+
+  if (blockers.length > 0) {
+    return {
+      tone: "attention",
+      score,
+      label: "needs action",
+      title: "Production readiness needs attention",
+      detail: `${blockers.length} capability gates need action; cached observation remains available.`,
+      gates,
+      blockers,
+      waiting,
+      nextActions
+    };
+  }
+
+  if (waiting.length > 0) {
+    return {
+      tone: "attention",
+      score,
+      label: "waiting for evidence",
+      title: "Production readiness is waiting for live evidence",
+      detail: `${waiting.length} gates are configured or safe, but still need a real token, delivery, write, or audit event to prove the loop.`,
+      gates,
+      blockers,
+      waiting,
+      nextActions: waiting.slice(0, 3).map((gate) => `${gate.label}: ${gate.action}`)
+    };
+  }
+
+  return {
+    tone: "good",
+    score,
+    label: "ready",
+    title: "Production readiness is clear",
+    detail: "Cache, worker, webhook, token, write-back, notifications, and audit evidence are in a usable state.",
+    gates,
+    blockers,
+    waiting,
+    nextActions: []
   };
 }
 

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest";
-import type { CacheObjectEvidenceView, DashboardSummary, SyncHealth } from "@mo-devflow/shared";
+import type { CacheObjectEvidenceView, DashboardSummary, SessionView, SyncHealth } from "@mo-devflow/shared";
 import {
   recommendCacheRepair,
   summarizeCacheEvidence,
   summarizeFreshness,
+  summarizeProductionReadiness,
   summarizeUpdatePipeline,
   summarizeWebhookReadiness
 } from "./freshness";
@@ -112,6 +113,158 @@ function sample(input: Partial<CacheObjectEvidenceView> & Pick<CacheObjectEviden
     syncError: input.syncError ?? null,
     reason: input.reason ?? "partial"
   } satisfies CacheObjectEvidenceView;
+}
+
+function dashboard(input: Partial<DashboardSummary> = {}): DashboardSummary {
+  return {
+    repo: {
+      key: "matrixone",
+      owner: "matrixorigin",
+      name: "matrixone",
+      timezone: "Asia/Shanghai"
+    },
+    profileConfiguration: {
+      localCheckoutConfigured: true,
+      writeBackEnabled: true,
+      watchedUsersConfigured: true,
+      watchedUserCount: 2,
+      testersConfigured: true,
+      testerCount: 1,
+      testingHandoffConfigured: true,
+      workflowSkipUsersConfigured: false,
+      workflowSkipUserCount: 0,
+      notificationEmployeesConfigured: true,
+      notificationEmployeeCount: 2,
+      webhookSecretConfigured: true
+    },
+    profileWarnings: [],
+    profileActions: [],
+    profileSetup: {
+      status: "complete",
+      missingCapabilities: [],
+      candidateLogins: [],
+      yamlPatch: null
+    },
+    visibility: {
+      scope: "anonymous",
+      visibleClasses: ["anonymous_readable"],
+      hiddenIssues: 0,
+      hiddenPullRequests: 0,
+      hiddenObjects: 0,
+      note: null
+    },
+    sync: sync({}),
+    counts: {
+      criticalIssues: 0,
+      unownedCriticalIssues: 0,
+      nonWatchedCriticalIssues: 0,
+      skippedCriticalIssues: 0,
+      pendingPrs: 0,
+      attentionPrs: 0,
+      workflowViolations: 0,
+      criticalWorkflowViolations: 0,
+      aiDriftSignals: 0,
+      criticalAiDriftSignals: 0
+    },
+    criticalIssues: [],
+    criticalOwnerCoverage: [],
+    people: [],
+    personalViews: [],
+    pendingPrs: [],
+    workflowViolations: [],
+    aiDriftSignals: [],
+    writeActions: [],
+    analytics: {
+      periodDays: 30,
+      sourceNote: "test",
+      teamDaily: [],
+      teamWeekly: [],
+      teamMonthly: [],
+      peopleDaily: [],
+      peopleWeekly: [],
+      peopleMonthly: []
+    },
+    testing: {
+      queueIssues: 0,
+      queuePrs: 0,
+      staleQueueIssues: 0,
+      staleQueuePrs: 0,
+      averageIssueQueueAgeHours: null,
+      averageQueueAgeHours: null,
+      issueTransitionEvents: 0,
+      lastIssueTransitionAt: null,
+      transitionEvents: 0,
+      lastTransitionAt: null,
+      requestToPassSamples: 0,
+      passToCloseSamples: 0,
+      closedWithoutPassSignalSamples: 0,
+      averageRequestToPassHours: null,
+      averagePassToCloseHours: null,
+      issues: [],
+      recentIssueTransitions: [],
+      recentTransitions: [],
+      testers: []
+    },
+    notifications: {
+      enabled: false,
+      channel: "wecom",
+      webhookConfigured: false,
+      readiness: {
+        status: "disabled",
+        blockers: [],
+        warnings: [],
+        webhookEnvVar: "MO_DEVFLOW_WECOM_WEBHOOK_URL",
+        mappedEmployees: 2,
+        missingEmployeeMappings: 0,
+        fallbackRecipient: "maintainers"
+      },
+      cooldownHours: 12,
+      escalateAfterHours: 24,
+      failedDeliveries: 0,
+      unacknowledgedDeliveries: 0,
+      escalationPendingDeliveries: 0,
+      lastDeliveries: []
+    },
+    webhooks: webhooks(),
+    ...input
+  } as DashboardSummary;
+}
+
+function anonymousSession(input: Partial<SessionView> = {}): SessionView {
+  return {
+    authenticated: false,
+    user: null,
+    tokenEncryptionConfigured: true,
+    ...input
+  };
+}
+
+function authenticatedSession(input: Partial<SessionView["user"]> = {}): SessionView {
+  return {
+    authenticated: true,
+    tokenEncryptionConfigured: true,
+    user: {
+      githubLogin: "alice",
+      githubId: "1",
+      avatarUrl: null,
+      tokenScopes: ["repo"],
+      tokenRepoPermission: "write",
+      tokenLastValidatedAt: "2026-07-04T01:00:00.000Z",
+      sessionExpiresAt: "2026-07-05T01:00:00.000Z",
+      writeCapabilities: {
+        issueLabels: {
+          enabled: true,
+          status: "ready",
+          message: "ready",
+          requiredScopes: ["repo", "public_repo"],
+          currentScopes: ["repo"],
+          requiredRepoPermissions: ["admin", "maintain", "write", "triage"],
+          repoPermission: "write"
+        }
+      },
+      ...input
+    }
+  };
 }
 
 describe("freshness summary", () => {
@@ -430,6 +583,104 @@ describe("cache evidence summary", () => {
     });
     expect(summary.description).toContain("anonymous");
     expect(summary.facts).toContain("3 cached GitHub objects are hidden");
+  });
+});
+
+describe("production readiness summary", () => {
+  test("shows anonymous mode as waiting for live token and webhook evidence", () => {
+    const summary = summarizeProductionReadiness({
+      data: dashboard(),
+      session: anonymousSession()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      label: "waiting for evidence"
+    });
+    expect(summary.gates.find((gate) => gate.key === "token")).toMatchObject({
+      status: "waiting",
+      value: "observer",
+      target: "connect_token"
+    });
+    expect(summary.gates.find((gate) => gate.key === "webhook")).toMatchObject({
+      status: "waiting",
+      value: "waiting for delivery",
+      target: "webhooks"
+    });
+    expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({
+      status: "waiting",
+      value: "token needed"
+    });
+  });
+
+  test("prioritizes blocking production gaps from stale cache, failed webhook, and notification setup", () => {
+    const summary = summarizeProductionReadiness({
+      data: dashboard({
+        sync: sync({ staleObjects: 4 }),
+        webhooks: webhooks({ failedDeliveries: 2, latestFailure: "signature mismatch" }),
+        notifications: {
+          ...dashboard().notifications,
+          readiness: {
+            ...dashboard().notifications.readiness,
+            status: "action_required",
+            blockers: ["WeCom webhook URL is missing"]
+          }
+        }
+      }),
+      session: anonymousSession({ tokenEncryptionConfigured: false })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "critical",
+      label: "action required"
+    });
+    expect(summary.blockers.map((gate) => gate.key)).toEqual(
+      expect.arrayContaining(["cache", "webhook", "token", "notifications"])
+    );
+    expect(summary.nextActions.join(" ")).toContain("Cache evidence");
+  });
+
+  test("marks token and workflow fixes ready when a validated write-capable token is connected", () => {
+    const summary = summarizeProductionReadiness({
+      data: dashboard({
+        webhooks: webhooks({ processedDeliveries: 3, lastReceivedAt: "2026-07-04T02:00:00.000Z" }),
+        notifications: {
+          ...dashboard().notifications,
+          enabled: true,
+          webhookConfigured: true,
+          readiness: {
+            ...dashboard().notifications.readiness,
+            status: "ready"
+          }
+        },
+        writeActions: [
+          {
+            id: 1,
+            previewId: "preview",
+            githubLogin: "alice",
+            actionKey: "add_needs_triage",
+            objectType: "issue",
+            objectNumber: 42,
+            title: "issue",
+            htmlUrl: "https://github.com/example/repo/issues/42",
+            status: "success",
+            executedOperations: [],
+            errorMessage: null,
+            startedAt: "2026-07-04T02:00:00.000Z",
+            finishedAt: "2026-07-04T02:00:00.000Z"
+          }
+        ]
+      }),
+      session: authenticatedSession()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "good",
+      label: "ready"
+    });
+    expect(summary.gates.find((gate) => gate.key === "token")).toMatchObject({ status: "ready" });
+    expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({ status: "ready" });
+    expect(summary.gates.find((gate) => gate.key === "audit")).toMatchObject({ status: "ready", value: "1 records" });
   });
 });
 

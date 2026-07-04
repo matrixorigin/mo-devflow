@@ -89,10 +89,14 @@ import {
   recommendCacheRepair,
   summarizeCacheEvidence,
   summarizeFreshness,
+  summarizeProductionReadiness,
   summarizeUpdatePipeline,
   summarizeWebhookReadiness,
   type CacheEvidenceSummary,
   type FreshnessSummary,
+  type ProductionReadinessGate,
+  type ProductionReadinessSummary,
+  type ProductionReadinessTarget,
   type UpdatePipelineSummary,
   type UpdatePipelineTile,
   type WebhookReadinessSummary
@@ -1980,11 +1984,13 @@ function PeopleFilterBar({
 
 function TeamRotationOverview({
   data,
+  session,
   flowSummary,
   trendPoints,
   analyticsPeriod,
   onAnalyticsPeriodChange,
   onNavigate,
+  onConnectToken,
   onPersonSelect,
   criticalAiFilter,
   criticalScopeFilter,
@@ -1995,11 +2001,13 @@ function TeamRotationOverview({
   onOpenPeopleFilter
 }: {
   data: DashboardSummary;
+  session: SessionView | null;
   flowSummary: FlowEfficiencySummary | null;
   trendPoints: TrendMetricPoint[];
   analyticsPeriod: MetricPeriod;
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
   onNavigate: (view: DashboardView) => void;
+  onConnectToken: () => void;
   onPersonSelect: (login: string) => void;
   criticalAiFilter: CriticalIssueAiFilter;
   criticalScopeFilter: CriticalIssueScopeFilter;
@@ -2036,6 +2044,7 @@ function TeamRotationOverview({
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
+  const productionReadiness = summarizeProductionReadiness({ data, session });
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
 
@@ -2087,6 +2096,12 @@ function TeamRotationOverview({
           onOpenPrsFilter={onOpenPrsFilter}
         />
         <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
+        <ProductionReadinessStrip
+          summary={productionReadiness}
+          compact
+          onNavigate={onNavigate}
+          onConnectToken={onConnectToken}
+        />
       </section>
 
       <TeamCriticalFlowPanel
@@ -2327,6 +2342,87 @@ function TeamUpdatePipelineStrip({
   );
 }
 
+function ProductionReadinessStrip({
+  summary,
+  compact = false,
+  onNavigate,
+  onConnectToken
+}: {
+  summary: ProductionReadinessSummary;
+  compact?: boolean;
+  onNavigate: (view: DashboardView) => void;
+  onConnectToken: () => void;
+}) {
+  const visibleGates = compact
+    ? [...summary.blockers, ...summary.waiting, ...summary.gates.filter((gate) => gate.status === "ready")].slice(0, 5)
+    : summary.gates;
+
+  return (
+    <section
+      className={`production-readiness production-readiness-${summary.tone} ${
+        compact ? "production-readiness-compact" : ""
+      }`}
+      aria-label="Production readiness"
+    >
+      <div className="production-readiness-heading">
+        <div className="production-readiness-score">
+          <strong>{summary.score}</strong>
+          <span>/100</span>
+        </div>
+        <div>
+          <Space size={[6, 6]} wrap>
+            <Tag color={updatePipelineToneColor(summary.tone)}>{summary.label}</Tag>
+            <Text strong>{summary.title}</Text>
+          </Space>
+          <span>{summary.detail}</span>
+        </div>
+      </div>
+      <div className="production-readiness-gates">
+        {visibleGates.map((gate) => (
+          <ProductionReadinessGateButton
+            gate={gate}
+            onNavigate={onNavigate}
+            onConnectToken={onConnectToken}
+            key={gate.key}
+          />
+        ))}
+      </div>
+      {!compact && summary.nextActions.length > 0 ? (
+        <div className="production-readiness-actions">
+          {summary.nextActions.map((action) => (
+            <Tag color="orange" key={action}>
+              {action}
+            </Tag>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ProductionReadinessGateButton({
+  gate,
+  onNavigate,
+  onConnectToken
+}: {
+  gate: ProductionReadinessGate;
+  onNavigate: (view: DashboardView) => void;
+  onConnectToken: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`production-readiness-gate production-readiness-gate-${gate.tone}`}
+      title={`${gate.detail} ${gate.action}.`}
+      onClick={() => openProductionReadinessTarget(gate.target, onNavigate, onConnectToken)}
+    >
+      <span>{gate.label}</span>
+      <strong>{gate.value}</strong>
+      <small>{gate.action}</small>
+    </button>
+  );
+}
+
 function TeamCriticalFlowPanel({
   rows,
   onOpenIssues,
@@ -2548,6 +2644,31 @@ function teamCriticalFlowPrTooltip(pr: ObservedThreadPullRequest, reasons: strin
 
 function updatePipelineTargetView(tile: UpdatePipelineTile): DashboardView {
   return tile.target === "webhooks" ? "Webhooks" : "Health";
+}
+
+function openProductionReadinessTarget(
+  target: ProductionReadinessTarget,
+  onNavigate: (view: DashboardView) => void,
+  onConnectToken: () => void
+): void {
+  if (target === "connect_token") {
+    onConnectToken();
+    return;
+  }
+  onNavigate(productionReadinessTargetView(target));
+}
+
+function productionReadinessTargetView(target: Exclude<ProductionReadinessTarget, "connect_token">): DashboardView {
+  if (target === "webhooks") {
+    return "Webhooks";
+  }
+  if (target === "notifications") {
+    return "Notifications";
+  }
+  if (target === "audit") {
+    return "Audit";
+  }
+  return "Health";
 }
 
 function updatePipelineToneColor(tone: UpdatePipelineSummary["tone"]): string {
@@ -3539,6 +3660,7 @@ function HealthLayerRow({
 
 function HealthBoard({
   data,
+  session,
   authenticated,
   manualRefreshSaving,
   webhookRetrySaving,
@@ -3550,6 +3672,7 @@ function HealthBoard({
   onRetryFailedWebhooks
 }: {
   data: DashboardSummary;
+  session: SessionView | null;
   authenticated: boolean;
   manualRefreshSaving: boolean;
   webhookRetrySaving: boolean;
@@ -3568,6 +3691,7 @@ function HealthBoard({
   const repairRecommendation = recommendCacheRepair(data.sync);
   const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
   const webhookReadiness = summarizeWebhookReadiness(data);
+  const productionReadiness = summarizeProductionReadiness({ data, session });
   const refreshDisabledReason = authenticated
     ? undefined
     : "Anonymous users can inspect cached health only. Connect a GitHub token to queue worker refresh jobs.";
@@ -3598,6 +3722,8 @@ function HealthBoard({
           }
         />
       ) : null}
+
+      <ProductionReadinessStrip summary={productionReadiness} onNavigate={onOpenView} onConnectToken={onConnectToken} />
 
       <div className="health-command-grid">
         <HealthMetricCard
@@ -11570,11 +11696,13 @@ export default function App() {
             {view === "Overview" ? (
               <TeamRotationOverview
                 data={data}
+                session={session}
                 flowSummary={teamFlowSummary}
                 trendPoints={teamTrendPoints}
                 analyticsPeriod={analyticsPeriod}
                 onAnalyticsPeriodChange={setAnalyticsPeriod}
                 onNavigate={selectView}
+                onConnectToken={openTokenReconnect}
                 onPersonSelect={openPersonWorkbench}
                 criticalAiFilter={criticalIssueAiFilter}
                 criticalScopeFilter={criticalIssueScopeFilter}
@@ -11703,6 +11831,7 @@ export default function App() {
             {view === "Health" ? (
               <HealthBoard
                 data={data}
+                session={session}
                 authenticated={Boolean(session?.authenticated)}
                 manualRefreshSaving={manualRefreshSaving}
                 webhookRetrySaving={webhookRetrySaving}
