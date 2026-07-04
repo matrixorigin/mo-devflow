@@ -2444,8 +2444,147 @@ button.critical-board-stat:hover {
   align-content: start;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(210px, 0.34fr) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 0.46fr) minmax(0, 1fr);
   min-width: 0;
+}
+
+.flow-thread-timeline {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.flow-timeline-axis,
+.flow-timeline-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.flow-timeline-axis {
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.flow-timeline-axis span:last-child {
+  justify-self: end;
+}
+
+.flow-timeline-row {
+  align-items: center;
+}
+
+.flow-timeline-label {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-timeline-label-link {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.flow-timeline-label-link:hover {
+  text-decoration: underline;
+}
+
+.flow-timeline-track {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  height: 18px;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.flow-timeline-row-issue .flow-timeline-track {
+  height: 22px;
+}
+
+.flow-timeline-link {
+  color: inherit;
+  display: contents;
+  text-decoration: none;
+}
+
+.flow-timeline-bar {
+  align-items: center;
+  border-radius: 999px;
+  bottom: 3px;
+  color: #ffffff;
+  display: flex;
+  font-size: 11px;
+  font-weight: 750;
+  left: 0;
+  line-height: 1;
+  min-width: 8px;
+  overflow: hidden;
+  padding: 0 6px;
+  position: absolute;
+  text-decoration: none;
+  top: 3px;
+}
+
+.flow-timeline-row-issue .flow-timeline-bar {
+  bottom: 4px;
+  top: 4px;
+}
+
+.flow-timeline-bar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-timeline-bar-critical {
+  background: #dc2626;
+}
+
+.flow-timeline-bar-attention {
+  background: #d97706;
+}
+
+.flow-timeline-bar-normal {
+  background: #2563eb;
+}
+
+.flow-timeline-bar-muted {
+  background: #94a3b8;
+}
+
+.flow-timeline-empty {
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 999px;
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-timeline-overflow {
+  color: #6b7280;
+  font-size: 11px;
+  grid-column: 2;
+  line-height: 1.2;
 }
 
 .flow-thread-next {

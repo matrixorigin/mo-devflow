@@ -5044,20 +5044,7 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
       </div>
 
       <div className="flow-thread-body">
-        <div className="flow-age-row">
-          <span className="flow-age-label">
-            {row.issue.durationKind === "critical_active" ? "s0/s-1 active" : "issue age"}
-          </span>
-          <div className="flow-age-track" aria-label={`${row.issue.title} elapsed ${personalDurationText(row.issue)}`}>
-            <span
-              className={`flow-age-fill flow-tone-${row.issue.tone}`}
-              style={{ width: `${Math.max(4, row.issue.widthPercent)}%` }}
-            />
-          </div>
-          <span className="flow-age-value">
-            {row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}
-          </span>
-        </div>
+        <FlowThreadTimeline row={row} />
         <div className="flow-pr-stack">
           {row.prs.length === 0 ? (
             <div className="flow-pr-empty">No linked PR visible</div>
@@ -5121,6 +5108,93 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
       </div>
     </article>
   );
+}
+
+function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
+  const visiblePrs = row.prs.slice(0, 4);
+  const hiddenPrs = Math.max(0, row.prs.length - visiblePrs.length);
+  const issueLabel = row.issue.number === null ? "PR group" : `Issue #${row.issue.number}`;
+  const issueDuration = row.issue.durationHours === null ? "unknown duration" : hours(row.issue.durationHours);
+  const issueBarTitle = `${issueLabel} | ${row.issue.title} | ${issueDuration} | ${row.issue.durationEvidence}`;
+  const issueBar = (
+    <span
+      className={`flow-timeline-bar flow-timeline-bar-${row.issue.tone}`}
+      style={flowTimelineStyle(row.issue)}
+      title={issueBarTitle}
+    >
+      <span>{row.issue.durationKind === "critical_active" ? `s0/s-1 ${issueDuration}` : issueDuration}</span>
+    </span>
+  );
+
+  return (
+    <div className="flow-thread-timeline" aria-label={`${row.title} issue and PR timeline`}>
+      <div className="flow-timeline-axis" aria-hidden="true">
+        <span>oldest</span>
+        <span>now</span>
+      </div>
+      <div className="flow-timeline-row flow-timeline-row-issue">
+        <span className="flow-timeline-label">{issueLabel}</span>
+        <div className="flow-timeline-track">
+          {row.issue.htmlUrl ? (
+            <a href={row.issue.htmlUrl} target="_blank" rel="noreferrer" className="flow-timeline-link">
+              {issueBar}
+            </a>
+          ) : (
+            issueBar
+          )}
+        </div>
+      </div>
+      {visiblePrs.length === 0 ? (
+        <div className="flow-timeline-row">
+          <span className="flow-timeline-label">PR</span>
+          <div className="flow-timeline-empty">No execution PR linked in cache</div>
+        </div>
+      ) : (
+        visiblePrs.map((pr) => <FlowTimelinePrRow pr={pr} key={pr.number} />)
+      )}
+      {hiddenPrs > 0 ? <span className="flow-timeline-overflow">+{hiddenPrs} more PRs in the list</span> : null}
+    </div>
+  );
+}
+
+function FlowTimelinePrRow({ pr }: { pr: PersonalGanttPrBar }) {
+  const title = [
+    `PR #${pr.number}`,
+    pr.title,
+    `owner ${pr.ownerLogin}`,
+    `age ${hours(pr.startAgeHours)}`,
+    pr.testingQueueAgeHours !== null ? `test wait ${hours(pr.testingQueueAgeHours)}` : null,
+    pr.reasons.length > 0 ? pr.reasons.join(", ") : null
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" | ");
+
+  return (
+    <div className="flow-timeline-row">
+      <a className="flow-timeline-label flow-timeline-label-link" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+        PR #{pr.number}
+      </a>
+      <div className="flow-timeline-track">
+        <a
+          className={`flow-timeline-bar flow-timeline-bar-${pr.tone}`}
+          href={pr.htmlUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={flowTimelineStyle(pr)}
+          title={title}
+        >
+          <span>{hours(pr.startAgeHours)}</span>
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function flowTimelineStyle(bar: { offsetPercent: number; widthPercent: number }) {
+  return {
+    left: `${bar.offsetPercent}%`,
+    width: `${bar.widthPercent}%`
+  };
 }
 
 function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
