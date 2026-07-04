@@ -380,6 +380,10 @@ export interface TestingSummary {
   averageQueueAgeHours: number | null;
   transitionEvents: number;
   lastTransitionAt: string | null;
+  requestToPassSamples: number;
+  passToCloseSamples: number;
+  averageRequestToPassHours: number | null;
+  averagePassToCloseHours: number | null;
   recentTransitions: TestingTransitionView[];
   testers: Array<{
     login: string;

@@ -170,6 +170,78 @@ export function testingTransitionViewFromRow(row: Record<string, unknown>): Test
   };
 }
 
+function transitionHoursBetween(start: string | null, end: string | null): number | null {
+  if (!start || !end) {
+    return null;
+  }
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+    return null;
+  }
+  return Math.round(((endTime - startTime) / 3_600_000) * 10) / 10;
+}
+
+function roundedAverage(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+}
+
+export function testingTurnoverMetricsFromTransitions(
+  transitions: TestingTransitionView[]
+): Pick<
+  TestingSummary,
+  "requestToPassSamples" | "passToCloseSamples" | "averageRequestToPassHours" | "averagePassToCloseHours"
+> {
+  const byPullRequest = new Map<number, TestingTransitionView[]>();
+  for (const transition of transitions) {
+    const entries = byPullRequest.get(transition.prNumber) ?? [];
+    entries.push(transition);
+    byPullRequest.set(transition.prNumber, entries);
+  }
+
+  const requestToPassHours: number[] = [];
+  const passToCloseHours: number[] = [];
+  for (const entries of byPullRequest.values()) {
+    const ordered = [...entries].sort((left, right) => {
+      const timeOrder = new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime();
+      return timeOrder === 0 ? left.id - right.id : timeOrder;
+    });
+    let requestedAt: string | null = null;
+    let passedAt: string | null = null;
+    for (const transition of ordered) {
+      if (
+        !requestedAt &&
+        ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)
+      ) {
+        requestedAt = transition.occurredAt;
+      }
+      if (!passedAt && transition.toState === "test_passed") {
+        passedAt = transition.occurredAt;
+      }
+      if (transition.toState === "closed_or_merged") {
+        const passToClose = transitionHoursBetween(passedAt, transition.occurredAt);
+        if (passToClose !== null) {
+          passToCloseHours.push(passToClose);
+        }
+      }
+    }
+    const requestToPass = transitionHoursBetween(requestedAt, passedAt);
+    if (requestToPass !== null) {
+      requestToPassHours.push(requestToPass);
+    }
+  }
+
+  return {
+    requestToPassSamples: requestToPassHours.length,
+    passToCloseSamples: passToCloseHours.length,
+    averageRequestToPassHours: roundedAverage(requestToPassHours),
+    averagePassToCloseHours: roundedAverage(passToCloseHours)
+  };
+}
+
 function isDuplicateError(error: unknown): boolean {
   const err = error as { code?: string; errno?: number; message?: string };
   return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
@@ -2144,6 +2216,14 @@ export async function getDashboardSummary(
      LIMIT 12`,
     [repoId, ...testingEventVisibility.params]
   );
+  const [testingTurnoverRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM pr_testing_events e
+     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}
+     ORDER BY e.pr_number ASC, e.occurred_at ASC, e.id ASC
+     LIMIT 5000`,
+    [repoId, ...testingEventVisibility.params]
+  );
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
             latest.status,
@@ -2543,6 +2623,7 @@ export async function getDashboardSummary(
     ...profile.people.testers,
     ...testingQueueRows.flatMap((row) => parseJsonArray(asString(row.testing_testers_json)))
   ]);
+  const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverRows.map(testingTransitionViewFromRow));
   const testing: TestingSummary = {
     queuePrs: testingQueueRows.length,
     staleQueuePrs: testingQueueRows.filter(
@@ -2554,6 +2635,7 @@ export async function getDashboardSummary(
         : Math.round((queueAges.reduce((sum, value) => sum + value, 0) / queueAges.length) * 10) / 10,
     transitionEvents: asNumber(testingEventRows[0]?.transition_events),
     lastTransitionAt: fromSqlDate(testingEventRows[0]?.last_transition_at),
+    ...testingTurnover,
     recentTransitions: recentTestingEventRows.map(testingTransitionViewFromRow),
     testers: Array.from(testerKeys).map((login) => {
       const rows = testingQueueRows.filter((row) => parseJsonArray(asString(row.testing_testers_json)).includes(login));

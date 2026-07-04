@@ -2125,6 +2125,8 @@ export default function App() {
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
                   <Statistic title="Testing Queue" value={data.testing.queuePrs} />
                   <Statistic title="Avg Testing Age" value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)} />
+                  <Statistic title="Req To Pass" value={data.testing.averageRequestToPassHours === null ? "-" : hours(data.testing.averageRequestToPassHours)} />
+                  <Statistic title="Pass To Close" value={data.testing.averagePassToCloseHours === null ? "-" : hours(data.testing.averagePassToCloseHours)} />
                   <Statistic title="Testing Events" value={data.testing.transitionEvents} />
                   <Statistic title="Last Testing Event" value={formatDate(data.testing.lastTransitionAt)} />
                 </div>
@@ -2213,7 +2215,6 @@ export default function App() {
                   />
                 ) : null}
                 <Table
-                  className="testing-transition-table"
                   rowKey="id"
                   size="middle"
                   columns={notificationColumns}
@@ -2264,6 +2265,8 @@ export default function App() {
                     <Tag color={data.testing.queuePrs > 0 ? "blue" : "default"}>{data.testing.queuePrs} queued</Tag>
                     <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>{data.testing.staleQueuePrs} stale</Tag>
                     <Tag>{data.testing.transitionEvents} transitions</Tag>
+                    <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
+                    <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag>
                     <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
                   </Space>
                 </div>
@@ -2276,6 +2279,7 @@ export default function App() {
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />
                 <Table
+                  className="testing-transition-table"
                   rowKey="id"
                   size="middle"
                   columns={testingTransitionColumns}

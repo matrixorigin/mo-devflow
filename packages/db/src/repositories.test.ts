@@ -20,6 +20,7 @@ import {
   profileConfigurationWarnings,
   profileSetupPlan,
   pullRequestTestingTransitionForUpsert,
+  testingTurnoverMetricsFromTransitions,
   testingTransitionViewFromRow,
   testingReviewerCoverage,
   visibleClassesForDashboard
@@ -999,6 +1000,58 @@ describe("pull request testing transition events", () => {
       testingSignals: ["review:APPROVED", "reviewer:tester-a"],
       occurredAt: "2026-07-03T02:00:00Z",
       sourceCompleteness: "complete_cache"
+    });
+  });
+
+  test("summarizes testing turnover only from completed transition pairs", () => {
+    expect(
+      testingTurnoverMetricsFromTransitions([
+        {
+          id: 1,
+          prNumber: 101,
+          fromState: "not_ready",
+          toState: "test_requested",
+          testingTesters: ["tester-a"],
+          testingSignals: ["reviewer:tester-a"],
+          occurredAt: "2026-07-01T00:00:00.000Z",
+          sourceCompleteness: "complete_cache"
+        },
+        {
+          id: 2,
+          prNumber: 101,
+          fromState: "test_requested",
+          toState: "test_passed",
+          testingTesters: ["tester-a"],
+          testingSignals: ["review:APPROVED"],
+          occurredAt: "2026-07-02T12:00:00.000Z",
+          sourceCompleteness: "complete_cache"
+        },
+        {
+          id: 3,
+          prNumber: 101,
+          fromState: "test_passed",
+          toState: "closed_or_merged",
+          testingTesters: [],
+          testingSignals: ["closed_or_merged"],
+          occurredAt: "2026-07-03T00:00:00.000Z",
+          sourceCompleteness: "complete_cache"
+        },
+        {
+          id: 4,
+          prNumber: 102,
+          fromState: "not_ready",
+          toState: "test_requested",
+          testingTesters: ["tester-b"],
+          testingSignals: ["reviewer:tester-b"],
+          occurredAt: "2026-07-01T00:00:00.000Z",
+          sourceCompleteness: "partial_cache"
+        }
+      ])
+    ).toEqual({
+      requestToPassSamples: 1,
+      passToCloseSamples: 1,
+      averageRequestToPassHours: 36,
+      averagePassToCloseHours: 12
     });
   });
 });
