@@ -16,6 +16,7 @@ import {
   previousCalendarDayRange,
   profileActionSuggestions,
   profileConfigurationWarnings,
+  testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
 
@@ -214,15 +215,32 @@ describe("critical issue ownership counts", () => {
   });
 });
 
-describe("profile configuration warnings", () => {
+describe("profile configuration guidance", () => {
+  test("summarizes testing reviewer candidates from open pull requests", () => {
+    expect(
+      testingReviewerCoverage([
+        { requestedReviewers: ["qa-a", "qa-b", "QA-A"] },
+        { requestedReviewers: ["qa-b"] },
+        { requestedReviewers: [""] }
+      ])
+    ).toEqual([
+      { login: "qa-b", openPrs: 2 },
+      { login: "qa-a", openPrs: 1 }
+    ]);
+  });
+
   test("suggests watched users from non-watched critical owners", () => {
     expect(
-      profileActionSuggestions(baseProfile, [
-        { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
-        { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
-        { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 },
-        { ownerLogin: "carol", ownerScope: "watched", criticalIssues: 4, averageAgeHours: 6 }
-      ])
+      profileActionSuggestions(
+        baseProfile,
+        [
+          { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
+          { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
+          { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 },
+          { ownerLogin: "carol", ownerScope: "watched", criticalIssues: 4, averageAgeHours: 6 }
+        ],
+        []
+      )
     ).toEqual([
       {
         key: "profile:watched_users_candidates",
@@ -238,10 +256,62 @@ describe("profile configuration warnings", () => {
 
   test("does not suggest watched users when coverage has no non-watched owners", () => {
     expect(
-      profileActionSuggestions(baseProfile, [
-        { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
-        { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 5, averageAgeHours: 8 }
-      ])
+      profileActionSuggestions(
+        baseProfile,
+        [
+          { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
+          { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 5, averageAgeHours: 8 }
+        ],
+        []
+      )
+    ).toEqual([]);
+  });
+
+  test("suggests testing reviewers when testing handoff is unconfigured", () => {
+    expect(
+      profileActionSuggestions(
+        baseProfile,
+        [],
+        [
+          { login: "qa-a", openPrs: 8 },
+          { login: "qa-b", openPrs: 4 }
+        ]
+      )
+    ).toEqual([
+      {
+        key: "profile:testing_reviewer_candidates",
+        severity: "warning",
+        title: "Testing reviewer candidates found",
+        description: "2 requested reviewers appear on open PRs while testing handoff is not configured.",
+        action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
+        relatedLogins: ["qa-a", "qa-b"],
+        yamlSnippet:
+          "people:\n  testers:\n    - qa-a\n    - qa-b\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a\n      - qa-b"
+      }
+    ]);
+  });
+
+  test("does not suggest already configured testing reviewers", () => {
+    expect(
+      profileActionSuggestions(
+        {
+          ...baseProfile,
+          people: { watchedUsers: [], testers: ["qa-a"] },
+          testing: {
+            handoffSignals: {
+              labels: [],
+              reviewerUsers: ["qa-b"],
+              assigneeUsers: [],
+              comments: []
+            }
+          }
+        },
+        [],
+        [
+          { login: "qa-a", openPrs: 8 },
+          { login: "qa-b", openPrs: 4 }
+        ]
+      )
     ).toEqual([]);
   });
 

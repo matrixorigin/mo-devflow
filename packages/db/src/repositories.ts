@@ -162,6 +162,11 @@ const criticalOwnerScopeRank: Record<CriticalIssueOwnerScope, number> = {
   watched: 2
 };
 
+export interface TestingReviewerCandidate {
+  login: string;
+  openPrs: number;
+}
+
 export function criticalIssueOwnerCoverage(
   criticalIssues: Array<{ ownerLogin: string | null; ownerScope: CriticalIssueOwnerScope; ageHours: number }>
 ): CriticalOwnerCoverageView[] {
@@ -216,10 +221,52 @@ export function criticalIssueOwnerCoverage(
     });
 }
 
+export function testingReviewerCoverage(
+  pullRequests: Array<{ requestedReviewers: string[] }>
+): TestingReviewerCandidate[] {
+  const reviewers = new Map<string, { login: string; openPrs: number }>();
+
+  for (const pullRequest of pullRequests) {
+    const seenInPullRequest = new Set<string>();
+    for (const reviewer of pullRequest.requestedReviewers) {
+      const key = normalizedLogin(reviewer);
+      if (!key || seenInPullRequest.has(key)) {
+        continue;
+      }
+      seenInPullRequest.add(key);
+      const existing = reviewers.get(key);
+      if (existing) {
+        existing.openPrs += 1;
+      } else {
+        reviewers.set(key, { login: reviewer, openPrs: 1 });
+      }
+    }
+  }
+
+  return Array.from(reviewers.values()).sort((left, right) => {
+    if (right.openPrs !== left.openPrs) {
+      return right.openPrs - left.openPrs;
+    }
+    return left.login.localeCompare(right.login);
+  });
+}
+
+function hasTestingHandoffSignal(profile: RepoProfile): boolean {
+  const handoffSignals = profile.testing.handoffSignals;
+  return (
+    handoffSignals.labels.length > 0 ||
+    handoffSignals.reviewerUsers.length > 0 ||
+    handoffSignals.assigneeUsers.length > 0 ||
+    handoffSignals.comments.length > 0
+  );
+}
+
 export function profileActionSuggestions(
   profile: RepoProfile,
-  criticalOwnerCoverage: CriticalOwnerCoverageView[]
+  criticalOwnerCoverage: CriticalOwnerCoverageView[],
+  testingReviewerCandidates: TestingReviewerCandidate[]
 ): ProfileActionSuggestion[] {
+  const suggestions: ProfileActionSuggestion[] = [];
   const watched = normalizedLoginSet(profile.people.watchedUsers);
   const candidateLogins = criticalOwnerCoverage
     .filter((owner) => owner.ownerScope === "non_watched" && owner.ownerLogin)
@@ -227,12 +274,8 @@ export function profileActionSuggestions(
     .filter((login) => !watched.has(normalizedLogin(login)))
     .slice(0, 12);
 
-  if (candidateLogins.length === 0) {
-    return [];
-  }
-
-  return [
-    {
+  if (candidateLogins.length > 0) {
+    suggestions.push({
       key: "profile:watched_users_candidates",
       severity: "warning",
       title: "Watched user candidates found",
@@ -240,8 +283,33 @@ export function profileActionSuggestions(
       action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
       relatedLogins: candidateLogins,
       yamlSnippet: `people:\n  watched_users:\n${candidateLogins.map((login) => `    - ${login}`).join("\n")}`
-    }
-  ];
+    });
+  }
+
+  const configuredTestingLogins = normalizedLoginSet([
+    ...profile.people.testers,
+    ...profile.testing.handoffSignals.reviewerUsers,
+    ...profile.testing.handoffSignals.assigneeUsers
+  ]);
+  const testingReviewerLogins = testingReviewerCandidates
+    .filter((candidate) => !configuredTestingLogins.has(normalizedLogin(candidate.login)))
+    .map((candidate) => candidate.login)
+    .slice(0, 12);
+  if (!hasTestingHandoffSignal(profile) && testingReviewerLogins.length > 0) {
+    suggestions.push({
+      key: "profile:testing_reviewer_candidates",
+      severity: "warning",
+      title: "Testing reviewer candidates found",
+      description: `${testingReviewerLogins.length} requested reviewers appear on open PRs while testing handoff is not configured.`,
+      action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
+      relatedLogins: testingReviewerLogins,
+      yamlSnippet: `people:\n  testers:\n${testingReviewerLogins.map((login) => `    - ${login}`).join(
+        "\n"
+      )}\ntesting:\n  handoff_signals:\n    reviewer_users:\n${testingReviewerLogins.map((login) => `      - ${login}`).join("\n")}`
+    });
+  }
+
+  return suggestions;
 }
 
 export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
@@ -257,13 +325,7 @@ export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfi
     });
   }
 
-  const handoffSignals = profile.testing.handoffSignals;
-  const hasTestingSignal =
-    handoffSignals.labels.length > 0 ||
-    handoffSignals.reviewerUsers.length > 0 ||
-    handoffSignals.assigneeUsers.length > 0 ||
-    handoffSignals.comments.length > 0;
-  if (!hasTestingSignal) {
+  if (!hasTestingHandoffSignal(profile)) {
     warnings.push({
       key: "profile:testing_handoff_unconfigured",
       severity: "warning",
@@ -1514,7 +1576,7 @@ export async function getDashboardSummary(
   );
   const [allPrRows] = await pool.execute<RowData[]>(
     `SELECT p.owner_login, p.created_at, p.merged_at, p.state, p.attention_flags_json,
-            p.testing_state, p.testing_testers_json, p.testing_queue_age_hours
+            p.requested_reviewers_json, p.testing_state, p.testing_testers_json, p.testing_queue_age_hours
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
     [repoId, ...allPrVisibility.params]
@@ -1885,6 +1947,11 @@ export async function getDashboardSummary(
   const webhooks = await getWebhookIngestionHealth(repoId);
   const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
   const criticalOwnerCoverage = criticalIssueOwnerCoverage(criticalIssues);
+  const testingReviewerCandidates = testingReviewerCoverage(
+    allPrRows.map((row) => ({
+      requestedReviewers: parseJsonArray(asString(row.requested_reviewers_json))
+    }))
+  );
   const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
@@ -1898,7 +1965,7 @@ export async function getDashboardSummary(
       timezone: profile.reporting.timezone
     },
     profileWarnings: profileConfigurationWarnings(profile),
-    profileActions: profileActionSuggestions(profile, criticalOwnerCoverage),
+    profileActions: profileActionSuggestions(profile, criticalOwnerCoverage, testingReviewerCandidates),
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),
