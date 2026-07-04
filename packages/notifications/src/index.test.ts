@@ -57,6 +57,7 @@ const candidate: NotificationCandidate = {
   objectNumber: 42,
   title: "needs triage issue that has waited too long",
   htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+  dashboardUrl: "https://devflow.example.com/#violations",
   relatedLogin: "alice",
   recipient: "alice-wecom",
   dedupeKey: "notification:workflow_violation:7:stale_needs_triage",
@@ -71,6 +72,7 @@ describe("notifications", () => {
 
     expect(markdown).toContain("mo-devflow WARNING alert");
     expect(markdown).toContain("Repo: matrixorigin/matrixone");
+    expect(markdown).toContain("[Open in mo-devflow](https://devflow.example.com/#violations)");
     expect(markdown).toContain("[issue #42](https://github.com/matrixorigin/matrixone/issues/42)");
     expect(markdown).toContain("Owner: alice");
     expect(markdown).not.toContain("webhook");
@@ -86,11 +88,13 @@ describe("notifications", () => {
       objectNumber: null,
       title: "Daily digest for matrixorigin/matrixone on 2026-07-03",
       htmlUrl: "https://github.com/matrixorigin/matrixone",
+      dashboardUrl: "https://devflow.example.com/#analytics",
       relatedLogin: null,
       evidenceSummary: "Team: 5 PRs created, 3 merged."
     });
 
     expect(markdown).toContain("mo-devflow daily digest");
+    expect(markdown).toContain("[Open in mo-devflow](https://devflow.example.com/#analytics)");
     expect(markdown).toContain("Daily digest for matrixorigin/matrixone on 2026-07-03");
     expect(markdown).not.toContain("INFO alert");
   });

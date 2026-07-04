@@ -6,6 +6,8 @@ import {
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
   notificationDeliveryVisibilityWhereSql,
+  notificationDashboardBaseUrlFromEnv,
+  notificationDashboardUrl,
   notificationSourceObjectVisibilityWhereSql,
   notificationRecipient,
   notificationRecipientScope
@@ -58,6 +60,28 @@ const profile: RepoProfile = {
 };
 
 describe("daily digest notification candidates", () => {
+  test("derives dashboard base URLs from deployment environment", () => {
+    expect(notificationDashboardBaseUrlFromEnv({ MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com/app/" })).toBe(
+      "https://devflow.example.com/app"
+    );
+    expect(notificationDashboardBaseUrlFromEnv({ MO_DEVFLOW_WEB_PORT: "5179" })).toBe("http://localhost:5179");
+  });
+
+  test("builds dashboard deep links for notification candidates", () => {
+    expect(notificationDashboardUrl("https://devflow.example.com", "workflow_violation", "issue")).toBe(
+      "https://devflow.example.com/#violations"
+    );
+    expect(notificationDashboardUrl("https://devflow.example.com", "ai_drift_signal", "pull_request")).toBe(
+      "https://devflow.example.com/#drift"
+    );
+    expect(notificationDashboardUrl("https://devflow.example.com", "attention_item", "pull_request")).toBe(
+      "https://devflow.example.com/#prs"
+    );
+    expect(notificationDashboardUrl("https://devflow.example.com", "daily_digest", "digest")).toBe(
+      "https://devflow.example.com/#analytics"
+    );
+  });
+
   test("uses the previous repo-local calendar day as the digest metric date", () => {
     expect(dailyDigestMetricDate("Asia/Shanghai", new Date("2026-07-04T01:00:00.000Z"))).toBe("2026-07-03");
   });
@@ -90,6 +114,7 @@ describe("daily digest notification candidates", () => {
       objectType: "digest",
       objectNumber: null,
       title: "Daily digest for matrixorigin/matrixone on 2026-07-03",
+      dashboardUrl: "http://localhost:5173/#analytics",
       recipient: "maintainer_group",
       dedupeKey: "notification:daily_digest:matrixorigin/matrixone:2026-07-03"
     });

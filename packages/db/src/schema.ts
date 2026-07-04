@@ -286,7 +286,7 @@ const schemaStatements = [
     last_detected_at DATETIME NOT NULL,
     resolved_at DATETIME,
     evidence_summary TEXT NOT NULL,
-    dashboard_url TEXT,
+    dashboard_url TEXT NOT NULL,
     notification_state VARCHAR(64) NOT NULL,
     UNIQUE KEY uniq_attention_dedupe (dedupe_key)
   )`,
@@ -430,19 +430,25 @@ async function executeIgnoringDuplicateIndex(connection: mysql.Connection, state
 interface SchemaColumnRow extends RowDataPacket {
   table_name: string;
   column_name: string;
+  is_nullable: string;
+}
+
+export interface ExpectedSchemaColumn {
+  nullable: boolean;
 }
 
 export interface SchemaDrift {
   missingColumns: string[];
   unexpectedColumns: string[];
+  nullabilityMismatches: string[];
 }
 
 const tableConstraintTokens = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK"]);
 
-export function expectedSchemaColumnsFromStatements(
+export function expectedSchemaColumnSpecsFromStatements(
   statements: readonly string[] = schemaStatements
-): Map<string, Set<string>> {
-  const expected = new Map<string, Set<string>>();
+): Map<string, Map<string, ExpectedSchemaColumn>> {
+  const expected = new Map<string, Map<string, ExpectedSchemaColumn>>();
 
   for (const statement of statements) {
     const tableMatch = statement.match(/CREATE TABLE IF NOT EXISTS\s+`?([a-z_][a-z0-9_]*)`?\s*\(/i);
@@ -452,7 +458,7 @@ export function expectedSchemaColumnsFromStatements(
     const tableName = tableMatch[1]!;
     const bodyStart = statement.indexOf("(");
     const bodyEnd = statement.lastIndexOf(")");
-    const columns = new Set<string>();
+    const columns = new Map<string, ExpectedSchemaColumn>();
     for (const rawLine of statement.slice(bodyStart + 1, bodyEnd).split("\n")) {
       const line = rawLine.trim().replace(/,$/, "");
       const columnMatch = line.match(/^`?([a-z_][a-z0-9_]*)`?\s+/i);
@@ -460,7 +466,9 @@ export function expectedSchemaColumnsFromStatements(
       if (!token || tableConstraintTokens.has(token.toUpperCase())) {
         continue;
       }
-      columns.add(token);
+      columns.set(token, {
+        nullable: !/\bNOT\s+NULL\b/i.test(line) && !/\bPRIMARY\s+KEY\b/i.test(line)
+      });
     }
     expected.set(tableName, columns);
   }
@@ -468,29 +476,46 @@ export function expectedSchemaColumnsFromStatements(
   return expected;
 }
 
+export function expectedSchemaColumnsFromStatements(
+  statements: readonly string[] = schemaStatements
+): Map<string, Set<string>> {
+  const specs = expectedSchemaColumnSpecsFromStatements(statements);
+  return new Map(Array.from(specs.entries()).map(([tableName, columns]) => [tableName, new Set(columns.keys())]));
+}
+
 export function detectSchemaDrift(
-  expected: Map<string, Set<string>>,
-  actualRows: Array<{ table_name: string; column_name: string }>
+  expected: Map<string, Map<string, ExpectedSchemaColumn>>,
+  actualRows: Array<{ table_name: string; column_name: string; is_nullable: string }>
 ): SchemaDrift {
-  const actual = new Map<string, Set<string>>();
+  const actual = new Map<string, Map<string, ExpectedSchemaColumn>>();
   for (const row of actualRows) {
     const tableName = row.table_name;
     const columnName = row.column_name;
-    const existing = actual.get(tableName) ?? new Set<string>();
-    existing.add(columnName);
+    const existing = actual.get(tableName) ?? new Map<string, ExpectedSchemaColumn>();
+    existing.set(columnName, { nullable: row.is_nullable.toUpperCase() === "YES" });
     actual.set(tableName, existing);
   }
 
   const missingColumns: string[] = [];
   const unexpectedColumns: string[] = [];
+  const nullabilityMismatches: string[] = [];
   for (const [tableName, expectedColumns] of expected.entries()) {
-    const actualColumns = actual.get(tableName) ?? new Set<string>();
-    for (const expectedColumn of expectedColumns) {
-      if (!actualColumns.has(expectedColumn)) {
+    const actualColumns = actual.get(tableName) ?? new Map<string, ExpectedSchemaColumn>();
+    for (const [expectedColumn, expectedSpec] of expectedColumns.entries()) {
+      const actualSpec = actualColumns.get(expectedColumn);
+      if (!actualSpec) {
         missingColumns.push(`${tableName}.${expectedColumn}`);
+        continue;
+      }
+      if (actualSpec.nullable !== expectedSpec.nullable) {
+        nullabilityMismatches.push(
+          `${tableName}.${expectedColumn} expected ${expectedSpec.nullable ? "NULL" : "NOT NULL"} but found ${
+            actualSpec.nullable ? "NULL" : "NOT NULL"
+          }`
+        );
       }
     }
-    for (const actualColumn of actualColumns) {
+    for (const actualColumn of actualColumns.keys()) {
       if (!expectedColumns.has(actualColumn)) {
         unexpectedColumns.push(`${tableName}.${actualColumn}`);
       }
@@ -499,21 +524,26 @@ export function detectSchemaDrift(
 
   return {
     missingColumns: missingColumns.sort(),
-    unexpectedColumns: unexpectedColumns.sort()
+    unexpectedColumns: unexpectedColumns.sort(),
+    nullabilityMismatches: nullabilityMismatches.sort()
   };
 }
 
 async function assertCurrentSchema(connection: mysql.Connection, database: string): Promise<void> {
-  const expected = expectedSchemaColumnsFromStatements();
+  const expected = expectedSchemaColumnSpecsFromStatements();
   const tableNames = Array.from(expected.keys());
   const [rows] = await connection.query<SchemaColumnRow[]>(
-    `SELECT table_name, column_name
+    `SELECT table_name, column_name, is_nullable
      FROM information_schema.columns
      WHERE table_schema = ? AND table_name IN (${tableNames.map(() => "?").join(", ")})`,
     [database, ...tableNames]
   );
   const drift = detectSchemaDrift(expected, rows);
-  if (drift.missingColumns.length === 0 && drift.unexpectedColumns.length === 0) {
+  if (
+    drift.missingColumns.length === 0 &&
+    drift.unexpectedColumns.length === 0 &&
+    drift.nullabilityMismatches.length === 0
+  ) {
     return;
   }
 
@@ -523,7 +553,8 @@ async function assertCurrentSchema(connection: mysql.Connection, database: strin
       "This early-development migration refuses to repair existing tables implicitly.",
       "Reset the development database or add an explicit schema migration.",
       `Missing columns: ${drift.missingColumns.join(", ") || "none"}.`,
-      `Unexpected columns: ${drift.unexpectedColumns.join(", ") || "none"}.`
+      `Unexpected columns: ${drift.unexpectedColumns.join(", ") || "none"}.`,
+      `Nullability mismatches: ${drift.nullabilityMismatches.join(", ") || "none"}.`
     ].join(" ")
   );
 }

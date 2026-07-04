@@ -3,6 +3,7 @@ import type {
   NotificationCandidate,
   NotificationDeliveryView,
   NotificationHealth,
+  NotificationSourceType,
   NotificationStatus,
   RepoProfile
 } from "@mo-devflow/shared";
@@ -48,6 +49,31 @@ function githubObjectUrl(profile: RepoProfile, objectType: string, objectNumber:
   }
   const segment = objectType === "pull_request" ? "pull" : "issues";
   return `https://github.com/${profile.repo.owner}/${profile.repo.name}/${segment}/${objectNumber}`;
+}
+
+export function notificationDashboardBaseUrlFromEnv(env: Record<string, string | undefined> = process.env): string {
+  const rawUrl = env.MO_DEVFLOW_DASHBOARD_URL?.trim() || `http://localhost:${env.MO_DEVFLOW_WEB_PORT ?? "5173"}`;
+  const url = new URL(rawUrl);
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
+export function notificationDashboardUrl(
+  baseUrl: string,
+  sourceType: NotificationSourceType,
+  objectType: string
+): string {
+  switch (sourceType) {
+    case "workflow_violation":
+      return `${baseUrl}/#violations`;
+    case "ai_drift_signal":
+      return `${baseUrl}/#drift`;
+    case "attention_item":
+      return objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`;
+    case "daily_digest":
+      return `${baseUrl}/#analytics`;
+  }
 }
 
 function notificationSeverity(value: unknown): NotificationCandidate["severity"] {
@@ -191,6 +217,7 @@ export function buildDailyDigestNotificationCandidate(input: {
     objectNumber: null,
     title: `Daily digest for ${input.profile.key} on ${input.metricDate}`,
     htmlUrl: `https://github.com/${input.profile.repo.owner}/${input.profile.repo.name}`,
+    dashboardUrl: notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "daily_digest", "digest"),
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:daily_digest:${input.profile.key}:${input.metricDate}`,
@@ -258,6 +285,7 @@ export async function listNotificationCandidates(
   }
   const candidates: NotificationCandidate[] = [];
   const immediateLimit = limit > 1 ? limit - 1 : 1;
+  const dashboardBaseUrl = notificationDashboardBaseUrlFromEnv();
   const attentionVisibility = notificationSourceObjectVisibilityWhereSql("a", profile);
   const [attentionRows] = await getPool().execute<RowData[]>(
     `SELECT *
@@ -281,6 +309,7 @@ export async function listNotificationCandidates(
       objectNumber,
       title: `${asString(row.object_type)} ${objectNumber ?? ""}`.trim(),
       htmlUrl: githubObjectUrl(profile, asString(row.object_type), objectNumber),
+      dashboardUrl: asString(row.dashboard_url),
       relatedLogin,
       recipient: notificationRecipient(profile, relatedLogin),
       dedupeKey: `notification:attention_item:${asNumber(row.id)}:${asString(row.rule_key)}`,
@@ -315,6 +344,7 @@ export async function listNotificationCandidates(
         objectNumber,
         title: asString(row.title),
         htmlUrl: asString(row.html_url),
+        dashboardUrl: notificationDashboardUrl(dashboardBaseUrl, "workflow_violation", asString(row.object_type)),
         relatedLogin,
         recipient: notificationRecipient(profile, relatedLogin),
         dedupeKey: `notification:workflow_violation:${asNumber(row.id)}:${asString(row.rule_key)}`,
@@ -351,6 +381,7 @@ export async function listNotificationCandidates(
         objectNumber,
         title: asString(row.title),
         htmlUrl: asString(row.html_url),
+        dashboardUrl: notificationDashboardUrl(dashboardBaseUrl, "ai_drift_signal", asString(row.object_type)),
         relatedLogin: ownerLogin,
         recipient: notificationRecipient(profile, ownerLogin),
         dedupeKey: `notification:ai_drift_signal:${asNumber(row.id)}:${asString(row.rule_key)}`,

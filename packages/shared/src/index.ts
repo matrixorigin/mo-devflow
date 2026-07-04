@@ -576,6 +576,7 @@ export interface NotificationCandidate {
   objectNumber: number | null;
   title: string;
   htmlUrl: string | null;
+  dashboardUrl: string;
   relatedLogin: string | null;
   recipient: string;
   dedupeKey: string;

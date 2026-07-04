@@ -5,6 +5,8 @@ import {
   listCachedPullRequestsForRules,
   listNotificationCandidates,
   isNotificationInCooldown,
+  notificationDashboardBaseUrlFromEnv,
+  notificationDashboardUrl,
   pullRequestAttentionRuleKeys,
   claimNextGitHubWebhookDelivery,
   completeGitHubWebhookDelivery,
@@ -147,6 +149,10 @@ function notificationCooldownHours(candidate: NotificationCandidate, defaultCool
     return 24 * 365 * 10;
   }
   return defaultCooldownHours;
+}
+
+function attentionDashboardUrl(objectType: "issue" | "pull_request"): string {
+  return notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "attention_item", objectType);
 }
 
 function webhookLimitFromEnv(): number {
@@ -438,7 +444,8 @@ async function upsertPullRequestFromWebhook(input: {
       relatedLogin: cachedPr.ownerLogin,
       targetRecipient: cachedPr.ownerLogin,
       dedupeKey,
-      evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
+      evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete),
+      dashboardUrl: attentionDashboardUrl("pull_request")
     });
   }
   await resolveStaleAttentionItems({
@@ -509,7 +516,8 @@ export async function processWebhookPayload(input: {
         relatedLogin: issue.ownerLogin,
         targetRecipient: issue.ownerLogin,
         dedupeKey,
-        evidenceSummary: `Critical issue #${issue.number} has no recent human action.`
+        evidenceSummary: `Critical issue #${issue.number} has no recent human action.`,
+        dashboardUrl: attentionDashboardUrl("issue")
       });
     }
     await resolveStaleAttentionItems({
@@ -728,7 +736,8 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           relatedLogin: issue.ownerLogin,
           targetRecipient: issue.ownerLogin,
           dedupeKey,
-          evidenceSummary: `Critical issue #${issue.number} has no recent human action.`
+          evidenceSummary: `Critical issue #${issue.number} has no recent human action.`,
+          dashboardUrl: attentionDashboardUrl("issue")
         });
       }
       resolvedAttentionItems += await resolveStaleAttentionItems({
@@ -802,7 +811,8 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           relatedLogin: cachedPr.ownerLogin,
           targetRecipient: cachedPr.ownerLogin,
           dedupeKey,
-          evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
+          evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete),
+          dashboardUrl: attentionDashboardUrl("pull_request")
         });
       }
       resolvedAttentionItems += await resolveStaleAttentionItems({

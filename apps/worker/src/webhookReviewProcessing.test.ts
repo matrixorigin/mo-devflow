@@ -3,6 +3,10 @@ import type { RepoProfile } from "@mo-devflow/shared";
 
 const mocks = vi.hoisted(() => ({
   fetchPullRequestInsightForNumber: vi.fn(),
+  notificationDashboardBaseUrlFromEnv: vi.fn(() => "http://localhost:5173"),
+  notificationDashboardUrl: vi.fn((baseUrl: string, _sourceType: string, objectType: string) =>
+    objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`
+  ),
   resolveStaleAttentionItems: vi.fn(),
   upsertAttentionItem: vi.fn(),
   upsertPullRequest: vi.fn()
@@ -33,6 +37,8 @@ vi.mock("@mo-devflow/db", () => ({
   isNotificationInCooldown: vi.fn(),
   listCachedIssuesForRules: vi.fn(),
   listNotificationCandidates: vi.fn(),
+  notificationDashboardBaseUrlFromEnv: mocks.notificationDashboardBaseUrlFromEnv,
+  notificationDashboardUrl: mocks.notificationDashboardUrl,
   recordNotificationDelivery: vi.fn(),
   recordSyncRun: vi.fn(),
   recomputeDailyMetricsFromCache: vi.fn(),
@@ -193,7 +199,8 @@ describe("webhook review processing", () => {
         relatedLogin: "alice",
         targetRecipient: "alice",
         dedupeKey: "matrixorigin/matrixone:pr:42:requested_changes",
-        evidenceSummary: "PR #42 has unresolved requested changes."
+        evidenceSummary: "PR #42 has unresolved requested changes.",
+        dashboardUrl: "http://localhost:5173/#prs"
       })
     );
     expect(mocks.resolveStaleAttentionItems).toHaveBeenCalledWith(
@@ -283,7 +290,8 @@ describe("webhook review processing", () => {
         relatedLogin: "bob",
         targetRecipient: "bob",
         dedupeKey: "matrixorigin/matrixone:pr:43:ci_failed",
-        evidenceSummary: "PR #43 has failing CI checks."
+        evidenceSummary: "PR #43 has failing CI checks.",
+        dashboardUrl: "http://localhost:5173/#prs"
       })
     );
   });

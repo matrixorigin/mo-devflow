@@ -992,7 +992,7 @@ export async function upsertAttentionItem(input: {
   targetRecipient?: string | null;
   dedupeKey: string;
   evidenceSummary: string;
-  dashboardUrl?: string | null;
+  dashboardUrl: string;
 }): Promise<void> {
   const now = nowSql();
   try {
@@ -1014,7 +1014,7 @@ export async function upsertAttentionItem(input: {
         now,
         now,
         input.evidenceSummary,
-        input.dashboardUrl ?? null
+        input.dashboardUrl
       ]
     );
   } catch (error) {
@@ -1037,7 +1037,7 @@ export async function upsertAttentionItem(input: {
         input.targetRecipient ?? null,
         now,
         input.evidenceSummary,
-        input.dashboardUrl ?? null,
+        input.dashboardUrl,
         input.dedupeKey
       ]
     );

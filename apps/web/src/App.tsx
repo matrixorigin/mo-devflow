@@ -66,6 +66,43 @@ const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
+const viewOptions = [
+  "Overview",
+  "Personal",
+  "Analytics",
+  "People",
+  "PRs",
+  "Violations",
+  "Drift",
+  "Notifications",
+  "Audit"
+] as const;
+type DashboardView = (typeof viewOptions)[number];
+
+const hashViewMap: Record<string, DashboardView> = {
+  overview: "Overview",
+  personal: "Personal",
+  analytics: "Analytics",
+  people: "People",
+  prs: "PRs",
+  violations: "Violations",
+  drift: "Drift",
+  notifications: "Notifications",
+  audit: "Audit"
+};
+
+function dashboardViewFromHash(hash: string): DashboardView {
+  const key = hash.replace(/^#/, "").split("?")[0].toLowerCase();
+  return hashViewMap[key] ?? "Overview";
+}
+
+function dashboardHashForView(view: DashboardView): string {
+  return view.toLowerCase();
+}
+
+function initialDashboardView(): DashboardView {
+  return typeof window === "undefined" ? "Overview" : dashboardViewFromHash(window.location.hash);
+}
 
 function hours(value: number): string {
   if (value < 24) {
@@ -566,7 +603,7 @@ export default function App() {
   const [session, setSession] = useState<SessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState("Overview");
+  const [view, setView] = useState<DashboardView>(initialDashboardView);
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
@@ -660,6 +697,14 @@ export default function App() {
       setSession((await response.json()) as SessionView);
     } catch (err) {
       setTokenError(displayError(err));
+    }
+  }
+
+  function selectView(nextView: DashboardView) {
+    setView(nextView);
+    const nextHash = `#${dashboardHashForView(nextView)}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
     }
   }
 
@@ -783,6 +828,12 @@ export default function App() {
   useEffect(() => {
     void load();
     void loadSession();
+  }, []);
+
+  useEffect(() => {
+    const syncViewFromHash = () => setView(dashboardViewFromHash(window.location.hash));
+    window.addEventListener("hashchange", syncViewFromHash);
+    return () => window.removeEventListener("hashchange", syncViewFromHash);
   }, []);
 
   useEffect(() => {
@@ -1555,8 +1606,8 @@ export default function App() {
             <Segmented
               className="view-tabs"
               value={view}
-              onChange={(value) => setView(String(value))}
-              options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications", "Audit"]}
+              onChange={(value) => selectView(String(value) as DashboardView)}
+              options={[...viewOptions]}
             />
           </div>
           {authenticatedUser && headerIssueLabelCapability ? (

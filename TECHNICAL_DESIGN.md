@@ -533,6 +533,11 @@ Notification pipeline:
 6. Delivery result is written to notification logs.
 7. Dashboard shows notification and acknowledgement state.
 
+Each notification candidate must include a dashboard URL derived from
+`MO_DEVFLOW_DASHBOARD_URL` or the local web port. Channel adapters should show
+that dashboard link as the primary action, with GitHub object links kept as
+secondary context.
+
 Suggested tables:
 
 - `attention_items`: stable rule output requiring user or team attention.
