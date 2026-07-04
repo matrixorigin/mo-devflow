@@ -5211,6 +5211,10 @@ function isCriticalIssueView(issue: CriticalIssueView | PersonalIssueView): issu
   return "linkedPullRequests" in issue;
 }
 
+type IssueListSort = "priority" | "duration" | "number";
+type PullRequestListFilter = "all" | "attention" | "ci" | "review" | "merge" | "testing";
+type PullRequestListSort = "age" | "last_action" | "number";
+
 function issueCommentEvidenceDisplay(issue: CriticalIssueView | PersonalIssueView): {
   label: string;
   color: string;
@@ -5246,7 +5250,92 @@ function issueCommentEvidenceDisplay(issue: CriticalIssueView | PersonalIssueVie
   };
 }
 
-function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView }) {
+function issueAiFilterLabel(issue: CriticalIssueView | PersonalIssueView): string {
+  if (isCriticalIssueView(issue)) {
+    return effectiveAiEffortLabel(issue.aiEffortLabel);
+  }
+  return issue.labels.find((label) => label.startsWith("ai-")) ?? "ai-easy";
+}
+
+function issueListPriority(issue: CriticalIssueView | PersonalIssueView): number {
+  if (isCriticalIssueView(issue)) {
+    if (issue.severity === "severity/s-1") {
+      return 50;
+    }
+    if (issue.severity === "severity/s0") {
+      return 40;
+    }
+    return 30;
+  }
+  if (issue.lifecycleState === "needs-triage") {
+    return 20;
+  }
+  if (issue.lifecycleState === "deferred") {
+    return 5;
+  }
+  return 10;
+}
+
+function issueListDuration(issue: CriticalIssueView | PersonalIssueView): number {
+  if (isCriticalIssueView(issue)) {
+    return issue.criticalAgeHours ?? issue.ageHours;
+  }
+  return issue.ageHours;
+}
+
+function sortIssueList(
+  issues: Array<CriticalIssueView | PersonalIssueView>,
+  sort: IssueListSort
+): Array<CriticalIssueView | PersonalIssueView> {
+  return [...issues].sort((left, right) => {
+    if (sort === "duration") {
+      return issueListDuration(right) - issueListDuration(left) || right.number - left.number;
+    }
+    if (sort === "number") {
+      return right.number - left.number;
+    }
+    return issueListPriority(right) - issueListPriority(left) || issueListDuration(right) - issueListDuration(left);
+  });
+}
+
+function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullRequestListFilter): boolean {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "attention") {
+    return prAttentionReasons(pr).length > 0 || isTestingQueuePr(pr);
+  }
+  if (filter === "ci") {
+    return pr.ciState !== null && ["failure", "failed", "error", "timed_out", "action_required"].includes(pr.ciState);
+  }
+  if (filter === "review") {
+    return pr.reviewDecision === "changes_requested";
+  }
+  if (filter === "merge") {
+    return pr.mergeStateStatus === "dirty";
+  }
+  return isTestingQueuePr(pr);
+}
+
+function sortPullRequestList(prs: PersonalPullRequestView[], sort: PullRequestListSort): PersonalPullRequestView[] {
+  return [...prs].sort((left, right) => {
+    if (sort === "last_action") {
+      return Date.parse(left.lastHumanActionAt) - Date.parse(right.lastHumanActionAt) || right.number - left.number;
+    }
+    if (sort === "number") {
+      return right.number - left.number;
+    }
+    return right.ageHours - left.ageHours || right.number - left.number;
+  });
+}
+
+function IssueWorkCard({
+  issue,
+  onPreview
+}: {
+  issue: CriticalIssueView | PersonalIssueView;
+  onPreview?: (issue: CriticalIssueView | PersonalIssueView) => void;
+}) {
   const critical = isCriticalIssueView(issue);
   const reasons = critical ? criticalIssueReasons(issue) : personalIssueReasons(issue);
   const commentEvidence = issueCommentEvidenceDisplay(issue);
@@ -5260,7 +5349,20 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
         <WorkObjectLink href={issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
           Issue #{issue.number}
         </WorkObjectLink>
-        <Tag color={critical && issue.criticalAgeHours === null ? "gold" : undefined}>{durationText}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag color={critical && issue.criticalAgeHours === null ? "gold" : undefined}>{durationText}</Tag>
+          {onPreview ? (
+            <Tooltip title={`Preview issue ${issue.number}`}>
+              <Button
+                aria-label={`Preview issue ${issue.number}`}
+                icon={<Eye size={14} />}
+                size="small"
+                type="text"
+                onClick={() => onPreview(issue)}
+              />
+            </Tooltip>
+          ) : null}
+        </Space>
       </div>
       <a className="work-item-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
         {issue.title}
@@ -5314,7 +5416,15 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
   );
 }
 
-function PullRequestWorkCard({ pr, emphasized = false }: { pr: PersonalPullRequestView; emphasized?: boolean }) {
+function PullRequestWorkCard({
+  pr,
+  emphasized = false,
+  onPreview
+}: {
+  pr: PersonalPullRequestView;
+  emphasized?: boolean;
+  onPreview?: (pr: PersonalPullRequestView) => void;
+}) {
   const attentionReasons = prAttentionReasons(pr);
 
   return (
@@ -5323,7 +5433,20 @@ function PullRequestWorkCard({ pr, emphasized = false }: { pr: PersonalPullReque
         <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
           PR #{pr.number}
         </WorkObjectLink>
-        <Tag>{hours(pr.ageHours)}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{hours(pr.ageHours)}</Tag>
+          {onPreview ? (
+            <Tooltip title={`Preview PR ${pr.number}`}>
+              <Button
+                aria-label={`Preview PR ${pr.number}`}
+                icon={<Eye size={14} />}
+                size="small"
+                type="text"
+                onClick={() => onPreview(pr)}
+              />
+            </Tooltip>
+          ) : null}
+        </Space>
       </div>
       <a className="work-item-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
         {pr.title}
@@ -5417,43 +5540,129 @@ function WorkLane({
 
 function IssueCardList({
   issues,
-  emptyText
+  emptyText,
+  onPreview
 }: {
   issues: Array<CriticalIssueView | PersonalIssueView>;
   emptyText: string;
+  onPreview?: (issue: CriticalIssueView | PersonalIssueView) => void;
 }) {
+  const [aiFilter, setAiFilter] = useState("all");
+  const [sort, setSort] = useState<IssueListSort>("priority");
+  const aiOptions = Array.from(new Set(issues.map(issueAiFilterLabel))).sort();
+  const filteredIssues = aiFilter === "all" ? issues : issues.filter((issue) => issueAiFilterLabel(issue) === aiFilter);
+  const visibleIssues = sortIssueList(filteredIssues, sort);
+
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
   }
 
   return (
-    <div className="work-item-list">
-      {issues.map((issue) => (
-        <IssueWorkCard issue={issue} key={issue.number} />
-      ))}
-    </div>
+    <>
+      {issues.length > 1 || aiOptions.length > 1 ? (
+        <div className="work-list-toolbar">
+          <Segmented
+            size="small"
+            value={aiFilter}
+            onChange={(value) => setAiFilter(String(value))}
+            options={[
+              { label: `All ${issues.length}`, value: "all" },
+              ...aiOptions.map((label) => ({
+                label,
+                value: label
+              }))
+            ]}
+          />
+          <Segmented
+            size="small"
+            value={sort}
+            onChange={(value) => setSort(value as IssueListSort)}
+            options={[
+              { label: "Priority", value: "priority" },
+              { label: "Duration", value: "duration" },
+              { label: "#", value: "number" }
+            ]}
+          />
+        </div>
+      ) : null}
+      {visibleIssues.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues for this filter" />
+      ) : (
+        <div className="work-item-list">
+          {visibleIssues.map((issue) => (
+            <IssueWorkCard issue={issue} key={issue.number} onPreview={onPreview} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
 function PullRequestCardList({
   prs,
   emptyText,
-  emphasized = false
+  emphasized = false,
+  onPreview
 }: {
   prs: PersonalPullRequestView[];
   emptyText: string;
   emphasized?: boolean;
+  onPreview?: (pr: PersonalPullRequestView) => void;
 }) {
+  const [filter, setFilter] = useState<PullRequestListFilter>("all");
+  const [sort, setSort] = useState<PullRequestListSort>("age");
+  const baseFilterOptions: Array<{ label: string; value: PullRequestListFilter }> = [
+    { label: `All ${prs.length}`, value: "all" },
+    { label: "Attention", value: "attention" },
+    { label: "CI", value: "ci" },
+    { label: "Review", value: "review" },
+    { label: "Merge", value: "merge" },
+    { label: "Testing", value: "testing" }
+  ];
+  const filterOptions = baseFilterOptions.filter(
+    (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
+  );
+  const visiblePrs = sortPullRequestList(
+    prs.filter((pr) => pullRequestMatchesListFilter(pr, filter)),
+    sort
+  );
+
   if (prs.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
   }
 
   return (
-    <div className="work-item-list">
-      {prs.map((pr) => (
-        <PullRequestWorkCard emphasized={emphasized} pr={pr} key={pr.number} />
-      ))}
-    </div>
+    <>
+      {prs.length > 1 || filterOptions.length > 1 ? (
+        <div className="work-list-toolbar">
+          <Segmented
+            size="small"
+            value={filter}
+            onChange={(value) => setFilter(value as PullRequestListFilter)}
+            options={filterOptions}
+          />
+          <Segmented
+            size="small"
+            value={sort}
+            onChange={(value) => setSort(value as PullRequestListSort)}
+            options={[
+              { label: "Age", value: "age" },
+              { label: "Last action", value: "last_action" },
+              { label: "#", value: "number" }
+            ]}
+          />
+        </div>
+      ) : null}
+      {visiblePrs.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PRs for this filter" />
+      ) : (
+        <div className="work-item-list">
+          {visiblePrs.map((pr) => (
+            <PullRequestWorkCard emphasized={emphasized} pr={pr} key={pr.number} onPreview={onPreview} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -7096,11 +7305,15 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
 function PersonalDrilldownBoard({
   person,
   chart,
-  filter
+  filter,
+  onIssuePreview,
+  onPullRequestPreview
 }: {
   person: PersonalActionView;
   chart: PersonalGanttChart;
   filter: PersonalDrilldownFilter;
+  onIssuePreview: (issue: CriticalIssueView | PersonalIssueView) => void;
+  onPullRequestPreview: (pr: PersonalPullRequestView) => void;
 }) {
   const title = personalDrilldownLabel(filter);
 
@@ -7132,10 +7345,18 @@ function PersonalDrilldownBoard({
         </div>
         <div className="work-lane-grid work-lane-grid-secondary">
           <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
-            <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
+            <PullRequestCardList
+              prs={person.prsCreatedYesterday}
+              emptyText="No PRs created yesterday"
+              onPreview={onPullRequestPreview}
+            />
           </WorkLane>
           <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
-            <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
+            <PullRequestCardList
+              prs={person.prsMergedYesterday}
+              emptyText="No PRs merged yesterday"
+              onPreview={onPullRequestPreview}
+            />
           </WorkLane>
         </div>
       </section>
@@ -7151,7 +7372,11 @@ function PersonalDrilldownBoard({
             {person.activeCriticalIssues.length} active
           </Tag>
         </div>
-        <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
+        <IssueCardList
+          issues={person.activeCriticalIssues}
+          emptyText="No active s-1/s0 issues"
+          onPreview={onIssuePreview}
+        />
       </section>
     );
   }
@@ -7163,7 +7388,12 @@ function PersonalDrilldownBoard({
           <Title level={5}>{title}</Title>
           <Tag color={person.attentionPrs.length > 0 ? "orange" : "default"}>{person.attentionPrs.length} PR</Tag>
         </div>
-        <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
+        <PullRequestCardList
+          emphasized
+          prs={person.attentionPrs}
+          emptyText="No PR attention items"
+          onPreview={onPullRequestPreview}
+        />
       </section>
     );
   }
@@ -7175,7 +7405,7 @@ function PersonalDrilldownBoard({
           <Title level={5}>{title}</Title>
           <Tag>{person.pendingPrs.length} PR</Tag>
         </div>
-        <PullRequestCardList prs={person.pendingPrs} emptyText="No pending PRs" />
+        <PullRequestCardList prs={person.pendingPrs} emptyText="No pending PRs" onPreview={onPullRequestPreview} />
       </section>
     );
   }
@@ -7187,7 +7417,11 @@ function PersonalDrilldownBoard({
           <Title level={5}>{title}</Title>
           <Tag color={person.testingPrs.some(isTestingStalePr) ? "red" : "blue"}>{person.testingPrs.length} PR</Tag>
         </div>
-        <PullRequestCardList prs={sortTestingQueuePrs(person.testingPrs)} emptyText="No PRs linked to issues in test" />
+        <PullRequestCardList
+          prs={sortTestingQueuePrs(person.testingPrs)}
+          emptyText="No PRs linked to issues in test"
+          onPreview={onPullRequestPreview}
+        />
       </section>
     );
   }
@@ -7200,7 +7434,7 @@ function PersonalDrilldownBoard({
           {person.needsTriageIssues.length} issue
         </Tag>
       </div>
-      <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
+      <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" onPreview={onIssuePreview} />
     </section>
   );
 }
@@ -7223,6 +7457,8 @@ function SelectedPersonWorkbench({
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
   const activityItems = personalActivityItems(person);
+  const activityItemById = new Map(activityItems.map((item) => [item.id, item]));
+  const [objectPreviewItem, setObjectPreviewItem] = useState<PersonalActivityItem | null>(null);
   const gantt = personalGanttChart(person);
   const flowSummary = flowEfficiencySummary({
     points: trendPoints,
@@ -7230,6 +7466,18 @@ function SelectedPersonWorkbench({
     activeIssues: person.activeCriticalIssues,
     testingPrs: person.testingPrs
   });
+  const previewIssue = (issue: CriticalIssueView | PersonalIssueView): void => {
+    const item = activityItemById.get(`issue:${issue.number}`);
+    if (item) {
+      setObjectPreviewItem(item);
+    }
+  };
+  const previewPullRequest = (pr: PersonalPullRequestView): void => {
+    const item = activityItemById.get(`pull_request:${pr.number}`);
+    if (item) {
+      setObjectPreviewItem(item);
+    }
+  };
 
   return (
     <div className="selected-person-workbench">
@@ -7283,7 +7531,13 @@ function SelectedPersonWorkbench({
         <PersonalActionQueue items={activityItems} />
       </section>
 
-      <PersonalDrilldownBoard person={person} chart={gantt} filter={drilldownFilter} />
+      <PersonalDrilldownBoard
+        person={person}
+        chart={gantt}
+        filter={drilldownFilter}
+        onIssuePreview={previewIssue}
+        onPullRequestPreview={previewPullRequest}
+      />
 
       <details className="secondary-disclosure personal-detail-disclosure">
         <summary>
@@ -7299,38 +7553,68 @@ function SelectedPersonWorkbench({
         <div className="secondary-disclosure-body">
           <div className="work-lane-grid work-lane-grid-priority">
             <WorkLane title="Active s-1/s0 Issues" count={person.activeCriticalIssues.length} tone="critical">
-              <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
+              <IssueCardList
+                issues={person.activeCriticalIssues}
+                emptyText="No active s-1/s0 issues"
+                onPreview={previewIssue}
+              />
             </WorkLane>
             <WorkLane title="PR Attention" count={person.attentionPrs.length} tone="attention">
-              <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
+              <PullRequestCardList
+                emphasized
+                prs={person.attentionPrs}
+                emptyText="No PR attention items"
+                onPreview={previewPullRequest}
+              />
             </WorkLane>
             <WorkLane title="Needs Triage" count={person.needsTriageIssues.length} tone="attention">
-              <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
+              <IssueCardList
+                issues={person.needsTriageIssues}
+                emptyText="No needs-triage issues"
+                onPreview={previewIssue}
+              />
             </WorkLane>
           </div>
 
           <div className="work-lane-grid">
             <WorkLane title="Pending PRs" count={routinePendingPrs.length} tone="normal">
-              <PullRequestCardList prs={routinePendingPrs} emptyText="No routine pending PRs" />
+              <PullRequestCardList
+                prs={routinePendingPrs}
+                emptyText="No routine pending PRs"
+                onPreview={previewPullRequest}
+              />
             </WorkLane>
             <WorkLane title="Issues In Test" count={person.testingPrs.length} tone="normal">
-              <PullRequestCardList prs={person.testingPrs} emptyText="No PRs linked to issues in test" />
+              <PullRequestCardList
+                prs={person.testingPrs}
+                emptyText="No PRs linked to issues in test"
+                onPreview={previewPullRequest}
+              />
             </WorkLane>
             <WorkLane title="Deferred Issues" count={person.deferredIssues.length} tone="normal">
-              <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" />
+              <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" onPreview={previewIssue} />
             </WorkLane>
           </div>
 
           <div className="work-lane-grid work-lane-grid-secondary">
             <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
-              <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
+              <PullRequestCardList
+                prs={person.prsCreatedYesterday}
+                emptyText="No PRs created yesterday"
+                onPreview={previewPullRequest}
+              />
             </WorkLane>
             <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
-              <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
+              <PullRequestCardList
+                prs={person.prsMergedYesterday}
+                emptyText="No PRs merged yesterday"
+                onPreview={previewPullRequest}
+              />
             </WorkLane>
           </div>
         </div>
       </details>
+      <PersonalActivityPreviewModal item={objectPreviewItem} onClose={() => setObjectPreviewItem(null)} />
 
       <section className="trend-panel">
         <div className="subsection-heading">

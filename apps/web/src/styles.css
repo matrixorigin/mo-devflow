@@ -3397,6 +3397,21 @@ button.critical-board-stat:hover {
   border-left: 3px solid #d97706;
 }
 
+.work-list-toolbar {
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.work-list-toolbar .ant-segmented {
+  max-width: 100%;
+}
+
 .work-item-header,
 .work-meta-row,
 .work-tag-row,
