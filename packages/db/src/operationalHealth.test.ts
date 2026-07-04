@@ -12,7 +12,9 @@ function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHeal
     lastFailedAt: input.lastFailedAt ?? null,
     lastFailureMessage: input.lastFailureMessage ?? null,
     errorMessage: input.errorMessage ?? null,
-    rateLimitRemaining: input.rateLimitRemaining ?? null
+    rateLimitRemaining: input.rateLimitRemaining ?? null,
+    skipped: input.skipped ?? false,
+    skipReason: input.skipReason ?? null
   };
 }
 

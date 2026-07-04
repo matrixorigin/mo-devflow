@@ -386,6 +386,7 @@ export function summarizeCacheEvidence(input: {
   const incompleteLayers = input.sync.health.filter(
     (item) => item.status === "partial" || item.status === "not_started"
   );
+  const skippedLayers = input.sync.health.filter((item) => item.skipped);
   const facts: string[] = [];
   if (input.sync.staleObjects > 0) {
     facts.push(`${input.sync.staleObjects} active visible GitHub objects are stale`);
@@ -401,6 +402,13 @@ export function summarizeCacheEvidence(input: {
   }
   if (incompleteLayers.length > 0) {
     facts.push(`Incomplete sync layers: ${incompleteLayers.map((item) => item.layer).join(", ")}`);
+  }
+  if (skippedLayers.length > 0) {
+    facts.push(
+      `Skipped sync layers: ${skippedLayers
+        .map((item) => (item.skipReason ? `${item.layer} (${item.skipReason})` : item.layer))
+        .join(", ")}`
+    );
   }
 
   if (brokenLayers.length > 0) {
@@ -454,7 +462,9 @@ export function summarizeCacheEvidence(input: {
         "AI effort drift duration checks"
       ],
       recommendedAction:
-        "Run authenticated or service-token backfill for PR detail, comments, reviews, and timeline data."
+        skippedLayers.length > 0
+          ? "Enable the skipped backfill layers with a service/user token or non-zero backfill limit, then queue the targeted repair."
+          : "Run authenticated or service-token backfill for PR detail, comments, reviews, and timeline data."
     };
   }
 

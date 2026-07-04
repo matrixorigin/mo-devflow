@@ -803,6 +803,8 @@ export interface SyncHealth {
   lastFailureMessage: string | null;
   errorMessage: string | null;
   rateLimitRemaining: number | null;
+  skipped: boolean;
+  skipReason: string | null;
 }
 
 export type JobQueueHealthStatus = "healthy" | "attention";

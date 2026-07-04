@@ -502,9 +502,14 @@ export function buildSyncHealthSummary(input: {
         lastFailedAt: null,
         lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
-        rateLimitRemaining: null
+        rateLimitRemaining: null,
+        skipped: false,
+        skipReason: null
       };
     }
+    const raw = parseJsonRecord<Record<string, unknown>>(asString(row.raw_json), {});
+    const skipped = raw.skipped === true;
+    const skipReason = typeof raw.reason === "string" ? raw.reason : null;
 
     return {
       layer,
@@ -517,7 +522,9 @@ export function buildSyncHealthSummary(input: {
       rateLimitRemaining:
         row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
           ? null
-          : asNumber(row.rate_limit_remaining)
+          : asNumber(row.rate_limit_remaining),
+      skipped,
+      skipReason
     };
   });
 }
@@ -3397,6 +3404,7 @@ export async function getDashboardSummary(
             latest.started_at,
             latest.error_message,
             latest.rate_limit_remaining,
+            latest.raw_json,
             summary.last_successful_at,
             failure.last_failed_at,
             failure.last_failure_message

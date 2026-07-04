@@ -342,6 +342,7 @@ function syncHealthTooltip(item: DashboardSummary["sync"]["health"][number]) {
     <div>
       <div>Last attempt: {formatDate(item.lastAttemptedAt)}</div>
       <div>Last success: {formatDate(item.lastSuccessfulAt)}</div>
+      {item.skipped ? <div>Latest run skipped: {item.skipReason ?? "no reason recorded"}</div> : null}
       {item.lastFailedAt ? <div>Last failure: {formatDate(item.lastFailedAt)}</div> : null}
       {item.lastFailureMessage ? <div>Failure reason: {item.lastFailureMessage}</div> : null}
       {item.errorMessage ? <div>Latest error: {item.errorMessage}</div> : null}
@@ -2762,6 +2763,7 @@ function HealthLayerRow({
       <div className="health-layer-main">
         <Space size={6} wrap>
           <Tag color={syncHealthTagColor(item.status)}>{labelText(item.status)}</Tag>
+          {item.skipped ? <Tag color="gold">skipped</Tag> : null}
           <Text strong>{labelText(item.layer)}</Text>
         </Space>
         <Text type="secondary">{manualRefreshLayerDescription(item.layer)}</Text>
@@ -2770,6 +2772,7 @@ function HealthLayerRow({
         <span>success {formatDate(item.lastSuccessfulAt)}</span>
         <span>attempt {formatDate(item.lastAttemptedAt)}</span>
         {item.rateLimitRemaining !== null ? <span>rate {item.rateLimitRemaining}</span> : null}
+        {item.skipped ? <span>skipped {item.skipReason ?? "no reason recorded"}</span> : null}
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
       <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>

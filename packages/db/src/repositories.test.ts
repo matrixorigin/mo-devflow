@@ -262,6 +262,7 @@ describe("sync health summary", () => {
             finished_at: "2026-07-04 10:01:00",
             error_message: "rate limited",
             rate_limit_remaining: 0,
+            raw_json: null,
             last_successful_at: "2026-07-04 08:01:00",
             last_failed_at: "2026-07-04 10:01:00",
             last_failure_message: "rate limited"
@@ -273,6 +274,7 @@ describe("sync health summary", () => {
             finished_at: "2026-07-04 09:00:05",
             error_message: null,
             rate_limit_remaining: null,
+            raw_json: JSON.stringify({ skipped: true, reason: "backfill disabled" }),
             last_successful_at: "2026-07-04 09:00:05",
             last_failed_at: "2026-07-03 11:10:00",
             last_failure_message: "network timeout"
@@ -288,7 +290,9 @@ describe("sync health summary", () => {
         lastFailedAt: "2026-07-04T10:01:00Z",
         lastFailureMessage: "rate limited",
         errorMessage: "rate limited",
-        rateLimitRemaining: 0
+        rateLimitRemaining: 0,
+        skipped: false,
+        skipReason: null
       },
       {
         layer: "metrics",
@@ -298,7 +302,9 @@ describe("sync health summary", () => {
         lastFailedAt: "2026-07-03T11:10:00Z",
         lastFailureMessage: "network timeout",
         errorMessage: null,
-        rateLimitRemaining: null
+        rateLimitRemaining: null,
+        skipped: true,
+        skipReason: "backfill disabled"
       }
     ]);
   });
@@ -329,7 +335,9 @@ describe("sync health summary", () => {
         lastFailedAt: null,
         lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
-        rateLimitRemaining: null
+        rateLimitRemaining: null,
+        skipped: false,
+        skipReason: null
       },
       {
         layer: "rules",
@@ -339,7 +347,9 @@ describe("sync health summary", () => {
         lastFailedAt: null,
         lastFailureMessage: null,
         errorMessage: null,
-        rateLimitRemaining: null
+        rateLimitRemaining: null,
+        skipped: false,
+        skipReason: null
       },
       {
         layer: "metrics",
@@ -349,7 +359,9 @@ describe("sync health summary", () => {
         lastFailedAt: null,
         lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
-        rateLimitRemaining: null
+        rateLimitRemaining: null,
+        skipped: false,
+        skipReason: null
       }
     ]);
   });

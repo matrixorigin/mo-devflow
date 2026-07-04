@@ -17,7 +17,9 @@ function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHeal
     lastFailedAt: input.lastFailedAt ?? null,
     lastFailureMessage: input.lastFailureMessage ?? null,
     errorMessage: input.errorMessage ?? null,
-    rateLimitRemaining: input.rateLimitRemaining ?? null
+    rateLimitRemaining: input.rateLimitRemaining ?? null,
+    skipped: input.skipped ?? false,
+    skipReason: input.skipReason ?? null
   };
 }
 
@@ -358,6 +360,34 @@ describe("cache evidence summary", () => {
     expect(summary.description).toContain("not confirmed conclusions");
     expect(summary.affectedConclusions).toContain("deferred explanation checks");
     expect(summary.affectedConclusions).toContain("review, CI, mergeability, and testing handoff rules");
+  });
+
+  test("explains skipped successful backfill layers when evidence remains partial", () => {
+    const summary = summarizeCacheEvidence({
+      sync: sync({
+        partialObjects: 12,
+        health: [
+          layer({
+            layer: "issue_timeline_backfill",
+            skipped: true,
+            skipReason: "MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS is 0"
+          })
+        ]
+      }),
+      visibility: {
+        scope: "anonymous",
+        visibleClasses: ["anonymous_readable"],
+        hiddenIssues: 0,
+        hiddenPullRequests: 0,
+        hiddenObjects: 0,
+        note: null
+      }
+    });
+
+    expect(summary.facts).toContain(
+      "Skipped sync layers: issue_timeline_backfill (MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS is 0)"
+    );
+    expect(summary.recommendedAction).toContain("Enable the skipped backfill layers");
   });
 
   test("surfaces visibility filtering as access-scope evidence", () => {
