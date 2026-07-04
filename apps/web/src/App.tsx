@@ -86,7 +86,10 @@ import {
   recommendCacheRepair,
   summarizeCacheEvidence,
   summarizeFreshness,
-  type CacheEvidenceSummary
+  summarizeUpdatePipeline,
+  type CacheEvidenceSummary,
+  type UpdatePipelineSummary,
+  type UpdatePipelineTile
 } from "./freshness";
 import {
   criticalIssueContextsByPullRequest,
@@ -1553,6 +1556,7 @@ function TeamRotationOverview({
   const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
+  const updatePipeline = summarizeUpdatePipeline(data);
 
   return (
     <div className="team-overview">
@@ -1601,6 +1605,7 @@ function TeamRotationOverview({
           onOpenIssuesFilter={onOpenIssuesFilter}
           onOpenPrsFilter={onOpenPrsFilter}
         />
+        <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
         <div className="team-monitor-grid" aria-label="Team flow monitor">
           <TeamMonitorTile
             label="Critical issues"
@@ -1809,6 +1814,84 @@ function TeamFlowRiskCard({
       <span className="team-flow-risk-action">{action}</span>
     </button>
   );
+}
+
+function TeamUpdatePipelineStrip({
+  summary,
+  onNavigate
+}: {
+  summary: UpdatePipelineSummary;
+  onNavigate: (view: DashboardView) => void;
+}) {
+  return (
+    <section className={`update-pipeline-strip update-pipeline-${summary.tone}`} aria-label="Update pipeline status">
+      <div className="update-pipeline-heading">
+        <Tag color={updatePipelineToneColor(summary.tone)}>{updatePipelineToneLabel(summary.tone)}</Tag>
+        <div>
+          <Text strong>{summary.title}</Text>
+          <span>{summary.detail}</span>
+        </div>
+      </div>
+      <div className="update-pipeline-tiles">
+        {summary.tiles.map((tile) => (
+          <UpdatePipelineTileButton key={tile.key} tile={tile} onNavigate={onNavigate} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UpdatePipelineTileButton({
+  tile,
+  onNavigate
+}: {
+  tile: UpdatePipelineTile;
+  onNavigate: (view: DashboardView) => void;
+}) {
+  const targetView: DashboardView = tile.target === "webhooks" ? "Webhooks" : "Health";
+  return (
+    <button
+      type="button"
+      className={`update-pipeline-tile update-pipeline-tile-${tile.tone}`}
+      onClick={() => onNavigate(targetView)}
+    >
+      <span>{tile.label}</span>
+      <strong>{tile.value}</strong>
+      <small>{formatPipelineDetail(tile.detail)}</small>
+    </button>
+  );
+}
+
+function updatePipelineToneColor(tone: UpdatePipelineSummary["tone"]): string {
+  if (tone === "critical") {
+    return "red";
+  }
+  if (tone === "attention") {
+    return "orange";
+  }
+  if (tone === "good") {
+    return "green";
+  }
+  return "default";
+}
+
+function updatePipelineToneLabel(tone: UpdatePipelineSummary["tone"]): string {
+  if (tone === "critical") {
+    return "needs attention";
+  }
+  if (tone === "attention") {
+    return "evidence gaps";
+  }
+  if (tone === "good") {
+    return "flowing";
+  }
+  return "observed";
+}
+
+function formatPipelineDetail(detail: string): string {
+  return detail.replace(/\b(next|last) (\d{4}-\d{2}-\d{2}T[^\s;]+)/g, (_match, prefix: string, iso: string) => {
+    return `${prefix} ${formatDate(iso)}`;
+  });
 }
 
 function maxCriticalActiveAge(issues: CriticalIssueView[]): number | null {

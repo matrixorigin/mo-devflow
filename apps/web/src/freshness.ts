@@ -27,6 +27,25 @@ export interface CacheRepairRecommendation {
   reasons: string[];
 }
 
+export type UpdatePipelineTone = "critical" | "attention" | "good" | "normal";
+export type UpdatePipelineTarget = "health" | "webhooks";
+
+export interface UpdatePipelineTile {
+  key: "worker" | "queue" | "webhooks" | "cache";
+  label: string;
+  value: string;
+  detail: string;
+  tone: UpdatePipelineTone;
+  target: UpdatePipelineTarget;
+}
+
+export interface UpdatePipelineSummary {
+  tone: UpdatePipelineTone;
+  title: string;
+  detail: string;
+  tiles: UpdatePipelineTile[];
+}
+
 const derivedRepairLayers: ManualRefreshLayer[] = ["rules", "metrics", "ai_drift"];
 
 function addLayer(layers: ManualRefreshLayer[], layer: ManualRefreshLayer): void {
@@ -72,6 +91,102 @@ function evidenceHours(value: number | null): string {
     return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
   }
   return `${(value / 24).toFixed(1)}d`;
+}
+
+function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number {
+  return webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
+}
+
+export function summarizeUpdatePipeline(input: Pick<DashboardSummary, "sync" | "webhooks">): UpdatePipelineSummary {
+  const worker = input.sync.worker;
+  const queue = input.sync.jobQueue;
+  const webhooks = input.webhooks;
+  const webhookFailures = failedWebhookDeliveries(webhooks);
+  const workerRisk = worker.status !== "active";
+  const queueRisk = queue.status !== "healthy";
+  const webhookRisk = webhookFailures > 0;
+  const staleRisk = input.sync.staleObjects > 0;
+  const partialRisk = input.sync.partialObjects > 0;
+  const pendingWebhookRisk = webhooks.pendingDeliveries > 0;
+
+  const tiles: UpdatePipelineTile[] = [
+    {
+      key: "worker",
+      label: "Worker",
+      value: worker.status === "active" ? (worker.phase ?? "active") : worker.status,
+      detail:
+        worker.secondsSinceHeartbeat === null
+          ? "heartbeat unknown"
+          : `heartbeat ${Math.round(worker.secondsSinceHeartbeat)}s ago`,
+      tone: workerRisk ? "critical" : "good",
+      target: "health"
+    },
+    {
+      key: "queue",
+      label: "Queue",
+      value: `${queue.queueDepth} queued`,
+      detail:
+        queue.failedJobs + queue.blockedJobs + queue.staleLeases > 0
+          ? `${queue.failedJobs} failed, ${queue.blockedJobs} blocked, ${queue.staleLeases} stale leases`
+          : queue.nextRunAt
+            ? `next ${queue.nextRunAt}`
+            : "no scheduled job in cache",
+      tone: queueRisk ? "critical" : queue.queueDepth > 0 || queue.runningJobs > 0 ? "attention" : "good",
+      target: "health"
+    },
+    {
+      key: "webhooks",
+      label: "Webhooks",
+      value:
+        webhookFailures > 0
+          ? `${webhookFailures} failed`
+          : webhooks.pendingDeliveries > 0
+            ? `${webhooks.pendingDeliveries} pending`
+            : webhooks.lastReceivedAt
+              ? "receiving"
+              : "no deliveries",
+      detail: webhooks.lastReceivedAt
+        ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed`
+        : "polling repair is the only observed update path",
+      tone: webhookRisk ? "critical" : pendingWebhookRisk ? "attention" : webhooks.lastReceivedAt ? "good" : "normal",
+      target: "webhooks"
+    },
+    {
+      key: "cache",
+      label: "Cache",
+      value: staleRisk ? `${input.sync.staleObjects} stale` : `${input.sync.partialObjects} incomplete`,
+      detail: `oldest ${evidenceHours(input.sync.oldestCacheAgeHours)}; threshold ${evidenceHours(
+        input.sync.staleThresholdHours
+      )}`,
+      tone: staleRisk ? "critical" : partialRisk ? "attention" : "good",
+      target: "health"
+    }
+  ];
+
+  if (workerRisk || queueRisk || webhookRisk) {
+    return {
+      tone: "critical",
+      title: "Update pipeline needs operator attention",
+      detail: "Worker, queue, or webhook delivery failures can delay issue and PR changes from reaching dashboards.",
+      tiles
+    };
+  }
+  if (staleRisk || partialRisk || pendingWebhookRisk) {
+    return {
+      tone: "attention",
+      title: "Updates are flowing with evidence gaps",
+      detail: "Cached facts remain visible, but some current workflow conclusions depend on refresh or backfill.",
+      tiles
+    };
+  }
+  return {
+    tone: "good",
+    title: "Updates are flowing from cache",
+    detail: webhooks.lastReceivedAt
+      ? "Worker, queue, webhook processing, and active cache freshness are clear."
+      : "Worker and polling repair are healthy; no GitHub webhook delivery has been observed in cache.",
+    tiles
+  };
 }
 
 export function recommendCacheRepair(sync: DashboardSummary["sync"]): CacheRepairRecommendation {

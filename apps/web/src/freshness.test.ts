@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CacheObjectEvidenceView, DashboardSummary, SyncHealth } from "@mo-devflow/shared";
-import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness } from "./freshness";
+import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness, summarizeUpdatePipeline } from "./freshness";
 
 function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHealth {
   return {
@@ -59,6 +59,21 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
   };
 }
 
+function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardSummary["webhooks"] {
+  return {
+    pendingDeliveries: 0,
+    processedDeliveries: 0,
+    failedDeliveries: 0,
+    normalizationFailedDeliveries: 0,
+    ignoredDeliveries: 0,
+    duplicateDeliveries: 0,
+    lastReceivedAt: null,
+    latestFailure: null,
+    recentDeliveries: [],
+    ...input
+  };
+}
+
 function sample(input: Partial<CacheObjectEvidenceView> & Pick<CacheObjectEvidenceView, "objectType">) {
   return {
     objectType: input.objectType,
@@ -113,6 +128,66 @@ describe("freshness summary", () => {
       tagColor: "red"
     });
     expect(summary.unhealthyLayers.map((item) => item.layer)).toEqual(["webhooks"]);
+  });
+});
+
+describe("update pipeline summary", () => {
+  test("reports healthy polling when worker and queue are clear but no webhook delivery was observed", () => {
+    const summary = summarizeUpdatePipeline({
+      sync: sync({ partialObjects: 0 }),
+      webhooks: webhooks()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "good",
+      title: "Updates are flowing from cache"
+    });
+    expect(summary.detail).toContain("no GitHub webhook delivery");
+    expect(summary.tiles.find((tile) => tile.key === "webhooks")).toMatchObject({
+      value: "no deliveries",
+      tone: "normal"
+    });
+  });
+
+  test("prioritizes operator attention for worker, queue, or webhook failures", () => {
+    const summary = summarizeUpdatePipeline({
+      sync: sync({
+        worker: { ...sync({}).worker, status: "stale" },
+        jobQueue: { ...sync({}).jobQueue, status: "attention", failedJobs: 1 }
+      }),
+      webhooks: webhooks({ failedDeliveries: 2, normalizationFailedDeliveries: 1 })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "critical",
+      title: "Update pipeline needs operator attention"
+    });
+    expect(summary.tiles.find((tile) => tile.key === "worker")?.tone).toBe("critical");
+    expect(summary.tiles.find((tile) => tile.key === "queue")?.tone).toBe("critical");
+    expect(summary.tiles.find((tile) => tile.key === "webhooks")).toMatchObject({
+      value: "3 failed",
+      tone: "critical"
+    });
+  });
+
+  test("reports flowing updates with evidence gaps for stale or partial cache", () => {
+    const summary = summarizeUpdatePipeline({
+      sync: sync({ staleObjects: 4, partialObjects: 453, oldestCacheAgeHours: 12.2 }),
+      webhooks: webhooks({ lastReceivedAt: "2026-07-04T01:00:00.000Z", processedDeliveries: 10 })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      title: "Updates are flowing with evidence gaps"
+    });
+    expect(summary.tiles.find((tile) => tile.key === "cache")).toMatchObject({
+      value: "4 stale",
+      tone: "critical"
+    });
+    expect(summary.tiles.find((tile) => tile.key === "webhooks")).toMatchObject({
+      value: "receiving",
+      tone: "good"
+    });
   });
 });
 
