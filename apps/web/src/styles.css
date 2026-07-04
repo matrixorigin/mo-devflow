@@ -4577,6 +4577,84 @@ button.testing-board-stat:focus-visible {
 }
 
 @media (max-width: 560px) {
+  .topbar {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    padding: 8px 10px 10px;
+  }
+
+  .brand-lockup {
+    gap: 8px;
+  }
+
+  .brand-mark {
+    border-radius: 8px;
+    font-size: 11px;
+    height: 32px;
+    width: 32px;
+  }
+
+  .eyebrow,
+  .brand-subtitle {
+    display: none;
+  }
+
+  .page-title {
+    font-size: 18px !important;
+    line-height: 1.15 !important;
+    max-width: calc(100vw - 64px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-actions {
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 6px !important;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .topbar-actions > .ant-space-item:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) {
+    flex: 0 0 auto;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) .ant-btn {
+    height: 32px;
+    padding-inline: 9px;
+    width: 36px;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) .ant-btn > span:not(.ant-btn-icon) {
+    display: none;
+  }
+
+  .view-tabs-scroll {
+    gap: 6px;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .view-tabs {
+    font-size: 13px;
+  }
+
+  .view-tabs .ant-segmented-item-label {
+    min-height: 30px;
+    padding-inline: 10px;
+  }
+
+  .system-view-menu-trigger {
+    height: 30px;
+  }
+
   .kpi-grid {
     grid-template-columns: 1fr;
   }
