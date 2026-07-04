@@ -18,6 +18,7 @@ import type {
   PersonalIssueView,
   PersonalPullRequestView,
   PersonSummary,
+  ProfileActionSuggestion,
   ProfileConfigurationWarning,
   RepoProfile,
   SyncHealth,
@@ -213,6 +214,34 @@ export function criticalIssueOwnerCoverage(
       }
       return (left.ownerLogin ?? "").localeCompare(right.ownerLogin ?? "");
     });
+}
+
+export function profileActionSuggestions(
+  profile: RepoProfile,
+  criticalOwnerCoverage: CriticalOwnerCoverageView[]
+): ProfileActionSuggestion[] {
+  const watched = normalizedLoginSet(profile.people.watchedUsers);
+  const candidateLogins = criticalOwnerCoverage
+    .filter((owner) => owner.ownerScope === "non_watched" && owner.ownerLogin)
+    .map((owner) => owner.ownerLogin as string)
+    .filter((login) => !watched.has(normalizedLogin(login)))
+    .slice(0, 12);
+
+  if (candidateLogins.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      key: "profile:watched_users_candidates",
+      severity: "warning",
+      title: "Watched user candidates found",
+      description: `${candidateLogins.length} owners outside people.watched_users currently own active critical issues.`,
+      action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
+      relatedLogins: candidateLogins,
+      yamlSnippet: `people:\n  watched_users:\n${candidateLogins.map((login) => `    - ${login}`).join("\n")}`
+    }
+  ];
 }
 
 export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
@@ -1855,6 +1884,7 @@ export async function getDashboardSummary(
   const notifications = await getNotificationHealth(repoId, profile);
   const webhooks = await getWebhookIngestionHealth(repoId);
   const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
+  const criticalOwnerCoverage = criticalIssueOwnerCoverage(criticalIssues);
   const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
@@ -1868,6 +1898,7 @@ export async function getDashboardSummary(
       timezone: profile.reporting.timezone
     },
     profileWarnings: profileConfigurationWarnings(profile),
+    profileActions: profileActionSuggestions(profile, criticalOwnerCoverage),
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),
@@ -1891,7 +1922,7 @@ export async function getDashboardSummary(
       criticalAiDriftSignals: aiDriftSignals.filter((signal) => signal.severity === "critical").length
     },
     criticalIssues,
-    criticalOwnerCoverage: criticalIssueOwnerCoverage(criticalIssues),
+    criticalOwnerCoverage,
     people,
     personalViews,
     pendingPrs,

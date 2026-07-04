@@ -30,7 +30,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
 
 const { Header, Content } = Layout;
-const { Text, Title } = Typography;
+const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 type TestingFlowState =
@@ -354,6 +354,16 @@ interface ProfileConfigurationWarning {
   action: string;
 }
 
+interface ProfileActionSuggestion {
+  key: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  description: string;
+  action: string;
+  relatedLogins: string[];
+  yamlSnippet: string | null;
+}
+
 interface CriticalOwnerCoverageView {
   ownerLogin: string | null;
   ownerScope: CriticalIssueOwnerScope;
@@ -369,6 +379,7 @@ interface DashboardSummary {
     timezone: string;
   };
   profileWarnings: ProfileConfigurationWarning[];
+  profileActions: ProfileActionSuggestion[];
   visibility: {
     scope: "anonymous" | "logged_in";
     visibleClasses: Array<"anonymous_readable" | "logged_in_readable" | "token_owner_only" | "admin_only">;
@@ -544,6 +555,16 @@ function profileWarningAlertType(severity: ProfileConfigurationWarning["severity
     return "warning";
   }
   return "info";
+}
+
+function attentionSeverityColor(severity: "info" | "warning" | "critical"): string {
+  if (severity === "critical") {
+    return "red";
+  }
+  if (severity === "warning") {
+    return "orange";
+  }
+  return "blue";
 }
 
 function flagColor(flag: string): string {
@@ -1935,6 +1956,46 @@ export default function App() {
                 showIcon
               />
             ))}
+
+            {(data.profileActions ?? []).length > 0 ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Profile Actions</Title>
+                  <Tag color="orange">{data.profileActions.length}</Tag>
+                </div>
+                <Space direction="vertical" size={12} className="full-width">
+                  {(data.profileActions ?? []).map((suggestion) => (
+                    <Alert
+                      key={suggestion.key}
+                      type={profileWarningAlertType(suggestion.severity)}
+                      message={suggestion.title}
+                      description={
+                        <Space direction="vertical" size={8} className="full-width">
+                          <Text>
+                            {suggestion.description} {suggestion.action}
+                          </Text>
+                          {suggestion.relatedLogins.length > 0 ? (
+                            <Space size={[4, 4]} wrap>
+                              {suggestion.relatedLogins.map((login) => (
+                                <Tag color={attentionSeverityColor(suggestion.severity)} key={login}>
+                                  {login}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {suggestion.yamlSnippet ? (
+                            <Paragraph className="config-snippet" copyable={{ text: suggestion.yamlSnippet }}>
+                              {suggestion.yamlSnippet}
+                            </Paragraph>
+                          ) : null}
+                        </Space>
+                      }
+                      showIcon
+                    />
+                  ))}
+                </Space>
+              </section>
+            ) : null}
 
             {criticalOwnerCoverageRows.length > 0 ? (
               <section className="section">

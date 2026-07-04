@@ -90,6 +90,16 @@ export interface ProfileConfigurationWarning {
   action: string;
 }
 
+export interface ProfileActionSuggestion {
+  key: string;
+  severity: AttentionSeverity;
+  title: string;
+  description: string;
+  action: string;
+  relatedLogins: string[];
+  yamlSnippet: string | null;
+}
+
 export interface NormalizedIssue {
   githubId: number;
   number: number;
@@ -629,6 +639,7 @@ export interface DashboardSummary {
     timezone: string;
   };
   profileWarnings: ProfileConfigurationWarning[];
+  profileActions: ProfileActionSuggestion[];
   visibility: DashboardVisibility;
   sync: {
     generatedAt: string;

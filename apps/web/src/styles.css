@@ -57,6 +57,21 @@ body {
   margin-bottom: 18px;
 }
 
+.full-width {
+  width: 100%;
+}
+
+.config-snippet {
+  background: #111827;
+  border-radius: 8px;
+  color: #f9fafb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  margin: 0 !important;
+  overflow-x: auto;
+  padding: 12px;
+  white-space: pre;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

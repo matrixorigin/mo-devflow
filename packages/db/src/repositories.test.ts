@@ -14,6 +14,7 @@ import {
   dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
   previousCalendarDayRange,
+  profileActionSuggestions,
   profileConfigurationWarnings,
   visibleClassesForDashboard
 } from "./repositories";
@@ -214,6 +215,36 @@ describe("critical issue ownership counts", () => {
 });
 
 describe("profile configuration warnings", () => {
+  test("suggests watched users from non-watched critical owners", () => {
+    expect(
+      profileActionSuggestions(baseProfile, [
+        { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
+        { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
+        { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 },
+        { ownerLogin: "carol", ownerScope: "watched", criticalIssues: 4, averageAgeHours: 6 }
+      ])
+    ).toEqual([
+      {
+        key: "profile:watched_users_candidates",
+        severity: "warning",
+        title: "Watched user candidates found",
+        description: "2 owners outside people.watched_users currently own active critical issues.",
+        action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
+        relatedLogins: ["alice", "bob"],
+        yamlSnippet: "people:\n  watched_users:\n    - alice\n    - bob"
+      }
+    ]);
+  });
+
+  test("does not suggest watched users when coverage has no non-watched owners", () => {
+    expect(
+      profileActionSuggestions(baseProfile, [
+        { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
+        { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 5, averageAgeHours: 8 }
+      ])
+    ).toEqual([]);
+  });
+
   test("surfaces missing watched users and testing handoff configuration", () => {
     expect(profileConfigurationWarnings(baseProfile).map((warning) => warning.key)).toEqual([
       "profile:watched_users_empty",
