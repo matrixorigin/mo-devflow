@@ -466,6 +466,118 @@ describe("webhook review processing", () => {
     );
   });
 
+  test("refreshes PR comments from issue_comment webhooks before deriving testing handoff", async () => {
+    const { processWebhookPayload } = await import("./sync");
+    const now = "2026-07-04T00:00:00.000Z";
+    const commentProfile: RepoProfile = {
+      ...profile,
+      testing: {
+        handoffSignals: {
+          labels: [],
+          reviewerUsers: [],
+          assigneeUsers: [],
+          comments: ["ready for testing"]
+        }
+      }
+    };
+    mocks.fetchIssueCommentsForNumber.mockResolvedValue({
+      comments: [
+        {
+          id: 9001,
+          body: "ready for testing",
+          user: { login: "alice" },
+          html_url: "https://github.com/matrixorigin/matrixone/pull/45#issuecomment-9001",
+          created_at: now,
+          updated_at: now
+        }
+      ],
+      isComplete: true,
+      syncError: null,
+      syncedAt: now,
+      rateLimitRemaining: 40,
+      sourceAuthType: "service_read_token"
+    });
+    mocks.fetchPullRequestInsightForNumber.mockResolvedValue({
+      pullRequest: {
+        id: 4545,
+        number: 45,
+        title: "comment handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://github.com/matrixorigin/matrixone/pull/45",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        requested_reviewers: [],
+        head: { ref: "comment-handoff", sha: "abc123" },
+        base: { ref: "main" }
+      },
+      insight: {
+        number: 45,
+        reviewDecision: null,
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      },
+      rateLimitRemaining: 39,
+      sourceAuthType: "service_read_token"
+    });
+    mocks.upsertPullRequest.mockImplementation(async (_repoId: number, pr: unknown) => pr);
+
+    const result = await processWebhookPayload({
+      repoId: 10,
+      profile: commentProfile,
+      eventName: "issue_comment",
+      payload: {
+        action: "created",
+        issue: {
+          id: 4545,
+          number: 45,
+          title: "comment handoff",
+          state: "open",
+          user: { login: "alice" },
+          html_url: "https://github.com/matrixorigin/matrixone/pull/45",
+          created_at: "2026-07-01T00:00:00Z",
+          updated_at: now,
+          labels: [],
+          assignees: [],
+          pull_request: {}
+        },
+        comment: {
+          id: 9001,
+          body: "ready for testing"
+        }
+      }
+    });
+
+    expect(result).toEqual({ processed: true, skipped: false, message: "updated PR #45 comments" });
+    expect(mocks.fetchIssueCommentsForNumber).toHaveBeenCalledWith({ profile: commentProfile, issueNumber: 45 });
+    expect(mocks.replaceIssueComments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        issueNumber: 45,
+        isComplete: true,
+        raw: expect.objectContaining({
+          trigger: "issue_comment_webhook",
+          objectType: "pull_request",
+          comments: 1
+        })
+      })
+    );
+    expect(mocks.fetchPullRequestInsightForNumber).toHaveBeenCalledWith({ profile: commentProfile, pullNumber: 45 });
+    expect(mocks.upsertPullRequest).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        number: 45,
+        testingState: "test_requested",
+        testingSignals: ["comment:ready for testing"]
+      })
+    );
+  });
+
   test("fails CI webhook processing when linked PR detail cannot be refreshed", async () => {
     const { processWebhookPayload } = await import("./sync");
     const now = new Date().toISOString();

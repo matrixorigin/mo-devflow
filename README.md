@@ -108,10 +108,11 @@ GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
 `X-Hub-Signature-256` against `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET`; deliveries
 are rejected until that secret is configured. Payloads must include
 `repository.full_name`, and deliveries for other repositories are ignored.
-Only implemented cache-ingestion events are accepted: `issues`, `pull_request`,
-`pull_request_review`, `workflow_run`, and `check_run`. Review and CI webhooks
-trigger a fresh PR insight read before updating request-change, CI, and testing
-attention, instead of trusting a single webhook payload as the final PR state.
+Only implemented cache-ingestion events are accepted: `issues`,
+`issue_comment`, `pull_request`, `pull_request_review`, `workflow_run`, and
+`check_run`. Comment, review, and CI webhooks trigger a focused fresh read
+before updating handoff, request-change, CI, and testing attention, instead of
+trusting a single webhook payload as the final workflow state.
 Other signed events are acknowledged as ignored before they enter the queue, and
 ignored deliveries are still counted for operational visibility. Accepted
 deliveries store the delivery ID and raw payload before acknowledgement.

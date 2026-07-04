@@ -253,6 +253,71 @@ describe("webhook routes", () => {
     }
   });
 
+  test("stores signed issue comment webhooks for issue and PR comment refresh", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "created",
+      repository: { full_name: "matrixorigin/matrixone" },
+      issue: { number: 45, pull_request: {} },
+      comment: { id: 9001, body: "ready for testing" }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-comment",
+          "x-github-event": "issue_comment",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        accepted: true,
+        duplicate: false,
+        deliveryId: "delivery-comment",
+        eventName: "issue_comment",
+        status: "received",
+        refreshQueued: true
+      });
+      expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-comment",
+          eventName: "issue_comment",
+          action: "created",
+          rawPayload: rawBody
+        })
+      );
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            jobKey: "webhooks:matrixorigin/matrixone",
+            jobType: "webhooks",
+            payload: expect.objectContaining({
+              trigger: "github_webhook_delivery",
+              deliveryId: "delivery-comment",
+              eventName: "issue_comment",
+              action: "created"
+            })
+          }),
+          expect.objectContaining({ jobKey: "rules:matrixorigin/matrixone", jobType: "rules" }),
+          expect.objectContaining({ jobKey: "metrics:matrixorigin/matrixone", jobType: "metrics" }),
+          expect.objectContaining({ jobKey: "ai-drift:matrixorigin/matrixone", jobType: "ai_drift" }),
+          expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
+        ])
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   test("stores signed workflow run webhooks for CI insight refresh", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({

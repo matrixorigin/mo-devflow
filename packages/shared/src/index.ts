@@ -8,6 +8,7 @@ export type AttentionSeverity = "info" | "warning" | "critical";
 
 export const supportedGitHubWebhookEvents = [
   "issues",
+  "issue_comment",
   "pull_request",
   "pull_request_review",
   "workflow_run",

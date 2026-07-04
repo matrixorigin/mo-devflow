@@ -56,6 +56,7 @@ import {
 import {
   isSupportedGitHubWebhookEvent,
   type AiDriftSignal,
+  type IssueCommentEvidence,
   type NormalizedIssue,
   type NormalizedIssueTimelineEvent,
   type NotificationCandidate,
@@ -590,12 +591,14 @@ async function upsertPullRequestFromWebhook(input: {
   profile: ReturnType<typeof loadRepoProfile>;
   rawPullRequest: Record<string, unknown>;
   insight?: PullRequestInsight;
+  commentEvidence?: IssueCommentEvidence;
 }): Promise<number> {
   const pr = normalizePullRequest(
     input.profile,
     ensureGitHubObjectWithNumber(input.rawPullRequest, "pull_request"),
     cacheSourceForWebhook(),
-    input.insight
+    input.insight,
+    input.commentEvidence
   );
   const cachedPr = await upsertPullRequest(input.repoId, pr);
   const activeAttentionDedupeKeys = new Set<string>();
@@ -625,10 +628,61 @@ async function upsertPullRequestFromWebhook(input: {
   return cachedPr.number;
 }
 
+async function refreshIssueCommentsForWebhook(input: {
+  repoId: number;
+  profile: ReturnType<typeof loadRepoProfile>;
+  issueNumber: number;
+  objectType: "issue" | "pull_request";
+  visibilityClass: NormalizedIssue["visibilityClass"];
+}): Promise<IssueCommentEvidence> {
+  const result = await fetchIssueCommentsForNumber({
+    profile: input.profile,
+    issueNumber: input.issueNumber
+  });
+  const comments = result.comments.map((comment) =>
+    normalizeIssueComment(input.profile, input.issueNumber, comment, {
+      authType: result.sourceAuthType,
+      userId: null
+    })
+  );
+  await replaceIssueComments({
+    repoId: input.repoId,
+    issueNumber: input.issueNumber,
+    comments,
+    sourceAuthType: result.sourceAuthType,
+    sourceUserId: null,
+    visibilityClass: input.visibilityClass,
+    isComplete: result.isComplete,
+    syncError: result.syncError,
+    raw: {
+      issueNumber: input.issueNumber,
+      objectType: input.objectType,
+      trigger: "issue_comment_webhook",
+      comments: comments.length,
+      isComplete: result.isComplete,
+      syncError: result.syncError
+    },
+    syncedAt: result.syncedAt
+  });
+
+  return {
+    isComplete: result.isComplete,
+    lastSyncedAt: result.syncedAt,
+    syncError: result.syncError,
+    comments: comments.map((comment) => ({
+      authorLogin: comment.authorLogin,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt
+    }))
+  };
+}
+
 async function refreshPullRequestInsightFromGitHub(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
   pullNumber: number;
+  commentEvidence?: IssueCommentEvidence;
 }): Promise<{
   prNumber: number;
   rateLimitRemaining: number | null;
@@ -650,7 +704,8 @@ async function refreshPullRequestInsightFromGitHub(input: {
     repoId: input.repoId,
     profile: input.profile,
     rawPullRequest,
-    insight: result.insight
+    insight: result.insight,
+    commentEvidence: input.commentEvidence
   });
   return {
     prNumber,
@@ -1053,6 +1108,68 @@ export async function processWebhookPayload(input: {
     await recomputeWorkflowViolationsFromCache();
     await recomputeAiDriftFromCache();
     return { processed: true, skipped: false, message: `updated issue #${issue.number}` };
+  }
+
+  if (input.eventName === "issue_comment") {
+    const rawIssue = recordPayload(input.payload.issue);
+    if (!rawIssue) {
+      throw new WebhookNormalizationError("issue_comment payload missing issue object");
+    }
+    const issue = normalizeIssue(
+      input.profile,
+      ensureGitHubObjectWithNumber(rawIssue, "issue"),
+      cacheSourceForWebhook()
+    );
+    const commentEvidence = await refreshIssueCommentsForWebhook({
+      repoId: input.repoId,
+      profile: input.profile,
+      issueNumber: issue.number,
+      objectType: issue.isPullRequest ? "pull_request" : "issue",
+      visibilityClass: issue.visibilityClass
+    });
+
+    if (issue.isPullRequest) {
+      const refreshed = await refreshPullRequestInsightFromGitHub({
+        repoId: input.repoId,
+        profile: input.profile,
+        pullNumber: issue.number,
+        commentEvidence
+      });
+      return { processed: true, skipped: false, message: `updated PR #${refreshed.prNumber} comments` };
+    }
+
+    await upsertIssue(input.repoId, issue);
+    const issueWithComments: NormalizedIssue = {
+      ...issue,
+      commentEvidence
+    };
+    const activeAttentionDedupeKeys = new Set<string>();
+    for (const flag of criticalAttentionForIssue(input.profile, issueWithComments)) {
+      const dedupeKey = issueAttentionDedupeKey(input.profile.key, issue.number, flag);
+      activeAttentionDedupeKeys.add(dedupeKey);
+      await upsertAttentionItem({
+        repoId: input.repoId,
+        objectType: "issue",
+        objectNumber: issue.number,
+        ruleKey: flag,
+        severity: "critical",
+        relatedLogin: issue.ownerLogin,
+        targetRecipient: issue.ownerLogin,
+        dedupeKey,
+        evidenceSummary: issueEvidence(flag, issueWithComments),
+        dashboardUrl: attentionDashboardUrl("issue")
+      });
+    }
+    await resolveStaleAttentionItems({
+      repoId: input.repoId,
+      activeDedupeKeys: activeAttentionDedupeKeys,
+      managedRuleKeys: issueAttentionRuleKeys,
+      objectType: "issue",
+      objectNumber: issue.number
+    });
+    await recomputeWorkflowViolationsFromCache();
+    await recomputeAiDriftFromCache();
+    return { processed: true, skipped: false, message: `updated issue #${issue.number} comments` };
   }
 
   if (input.eventName === "pull_request") {
