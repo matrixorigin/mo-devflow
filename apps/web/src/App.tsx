@@ -82,12 +82,15 @@ import {
 import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 import {
   criticalIssueReasons,
+  effectiveAiEffortLabel,
+  flowEfficiencySummary,
   personalActivityItems,
   personPrimaryReasons,
   personWorkloadStatus,
   personalIssueReasons,
   prAttentionReasons,
   sortPeopleByWorkload,
+  type FlowEfficiencySummary,
   type PersonalActivityItem,
   type WorkloadStatus
 } from "./workbench";
@@ -144,6 +147,18 @@ function hours(value: number): string {
     return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
   }
   return `${(value / 24).toFixed(1)}d`;
+}
+
+function optionalHours(value: number | null): string {
+  return value === null ? "-" : hours(value);
+}
+
+function percentText(value: number | null): string {
+  return value === null ? "-" : `${value}%`;
+}
+
+function signedNumber(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -682,7 +697,7 @@ function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: W
         <Space size={[4, 4]} wrap>
           {snapshot.lifecycleState ? <Tag>{labelText(snapshot.lifecycleState)}</Tag> : null}
           {snapshot.severity ? <Tag color={severityColor(snapshot.severity)}>{snapshot.severity}</Tag> : null}
-          {snapshot.aiEffortLabel ? <Tag color="blue">{snapshot.aiEffortLabel}</Tag> : null}
+          <Tag color="blue">{effectiveAiEffortLabel(snapshot.aiEffortLabel)}</Tag>
           {snapshot.updatedAt ? <Text type="secondary">{formatDate(snapshot.updatedAt)}</Text> : null}
         </Space>
       </Space>
@@ -695,6 +710,75 @@ interface MetricSeriesConfig {
   type: "line" | "bar";
   color: string;
   data: (point: TrendMetricPoint) => number;
+}
+
+function FlowEfficiencyStrip({ summary }: { summary: FlowEfficiencySummary }) {
+  return (
+    <div className="flow-efficiency-strip" aria-label="Flow efficiency summary">
+      <FlowEfficiencyItem
+        label="PR flow"
+        value={`${summary.prsMerged}/${summary.prsCreated}`}
+        detail={`${percentText(summary.prMergeRatePercent)} merged | open delta ${signedNumber(summary.prOpenDelta)}`}
+        tone={summary.prOpenDelta > 0 ? "attention" : "good"}
+      />
+      <FlowEfficiencyItem
+        label="Issue drain"
+        value={`${summary.issuesResolved}/${summary.issuesOpened}`}
+        detail={`${percentText(summary.issueDrainRatePercent)} resolved | open delta ${signedNumber(
+          summary.issueOpenDelta
+        )}`}
+        tone={summary.issueOpenDelta > 0 ? "attention" : "good"}
+      />
+      <FlowEfficiencyItem
+        label="Pending PR age"
+        value={String(summary.pendingPrs)}
+        detail={`avg ${optionalHours(summary.averagePendingPrAgeHours)} | ${summary.attentionPrs} need attention`}
+        tone={
+          summary.averagePendingPrAgeHours !== null && summary.averagePendingPrAgeHours >= 24 ? "attention" : "normal"
+        }
+      />
+      <FlowEfficiencyItem
+        label="PR attention"
+        value={percentText(summary.prAttentionRatePercent)}
+        detail={`${summary.attentionPrs}/${summary.pendingPrs} pending PRs`}
+        tone={summary.attentionPrs > 0 ? "attention" : "good"}
+      />
+      <FlowEfficiencyItem
+        label="Active s-1/s0 age"
+        value={String(summary.activeCriticalIssues)}
+        detail={`avg ${optionalHours(summary.averageActiveIssueAgeHours)} | highest priority`}
+        tone={summary.activeCriticalIssues > 0 ? "critical" : "good"}
+      />
+      <FlowEfficiencyItem
+        label="Testing queue"
+        value={String(summary.testingQueuePrs)}
+        detail={`avg ${optionalHours(summary.averageTestingQueueAgeHours)} | workflow violations ${
+          summary.workflowViolations
+        }`}
+        tone={summary.testingQueuePrs > 0 ? "attention" : "normal"}
+      />
+    </div>
+  );
+}
+
+function FlowEfficiencyItem({
+  label,
+  value,
+  detail,
+  tone
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+}) {
+  return (
+    <div className={`flow-efficiency-item flow-efficiency-${tone}`}>
+      <Text type="secondary">{label}</Text>
+      <strong>{value}</strong>
+      <span>{detail}</span>
+    </div>
+  );
 }
 
 function TrendChart({ points }: { points: TrendMetricPoint[] }) {
@@ -922,7 +1006,7 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
       <div className="work-tag-row">
         <Tag>{labelText(issue.lifecycleState)}</Tag>
         {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
-        {critical && issue.aiEffortLabel ? <Tag color="blue">{issue.aiEffortLabel}</Tag> : null}
+        {critical ? <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag> : null}
         {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
         {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
       </div>
@@ -1241,6 +1325,12 @@ function SelectedPersonWorkbench({
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
   const activityItems = personalActivityItems(person);
+  const flowSummary = flowEfficiencySummary({
+    points: trendPoints,
+    pendingPrs: person.pendingPrs,
+    activeIssues: person.activeCriticalIssues,
+    testingPrs: person.testingPrs
+  });
 
   return (
     <div className="selected-person-workbench">
@@ -1329,6 +1419,7 @@ function SelectedPersonWorkbench({
             options={metricPeriodOptions}
           />
         </div>
+        <FlowEfficiencyStrip summary={flowSummary} />
         <TrendChart points={trendPoints} />
       </section>
     </div>
@@ -1690,7 +1781,7 @@ export default function App() {
           <Space size={[4, 4]} wrap>
             <Tag>{labelText(issue.lifecycleState)}</Tag>
             <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
-            {issue.aiEffortLabel ? <Tag color="blue">{issue.aiEffortLabel}</Tag> : <Tag>ai unknown</Tag>}
+            <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
             {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
             {issue.syncError ? (
               <Tooltip title={issue.syncError}>
@@ -2020,7 +2111,7 @@ export default function App() {
         title: "AI label",
         dataIndex: "aiEffortLabel",
         width: 128,
-        render: (label) => (label ? <Tag color="blue">{label}</Tag> : <Tag color="orange">missing</Tag>)
+        render: (label) => <Tag color="blue">{effectiveAiEffortLabel(label)}</Tag>
       },
       {
         title: "Notification",
@@ -2368,6 +2459,15 @@ export default function App() {
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
+  const teamFlowSummary = data
+    ? flowEfficiencySummary({
+        points: teamTrendPoints,
+        pendingPrs: data.pendingPrs,
+        activeIssues: data.criticalIssues,
+        testingQueuePrs: data.testing.queuePrs,
+        averageTestingQueueAgeHours: data.testing.averageQueueAgeHours
+      })
+    : null;
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const criticalOwnerCoverageRows = data
@@ -3127,6 +3227,7 @@ export default function App() {
                   />
                 </div>
                 <Alert className="band" type="info" title={data.analytics.sourceNote} showIcon />
+                {teamFlowSummary ? <FlowEfficiencyStrip summary={teamFlowSummary} /> : null}
                 <TrendChart points={teamTrendPoints} />
               </section>
             ) : null}

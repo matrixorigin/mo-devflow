@@ -34,6 +34,92 @@ export interface PersonalActivityItem {
   isComplete: boolean;
 }
 
+export interface FlowEfficiencyMetricPoint {
+  prsCreated: number;
+  prsMerged: number;
+  issuesOpened: number;
+  issuesClosed: number;
+  issuesDeferred: number;
+  workflowViolationsDetected: number;
+}
+
+export interface FlowEfficiencyPullRequest {
+  ageHours: number;
+  attentionFlags: string[];
+  testingState: string;
+  testingQueueAgeHours: number | null;
+}
+
+export interface FlowEfficiencyIssue {
+  ageHours: number;
+}
+
+export interface FlowEfficiencySummary {
+  prsCreated: number;
+  prsMerged: number;
+  prOpenDelta: number;
+  prMergeRatePercent: number | null;
+  issuesOpened: number;
+  issuesResolved: number;
+  issueOpenDelta: number;
+  issueDrainRatePercent: number | null;
+  workflowViolations: number;
+  pendingPrs: number;
+  averagePendingPrAgeHours: number | null;
+  attentionPrs: number;
+  prAttentionRatePercent: number | null;
+  activeCriticalIssues: number;
+  averageActiveIssueAgeHours: number | null;
+  testingQueuePrs: number;
+  averageTestingQueueAgeHours: number | null;
+}
+
+export function effectiveAiEffortLabel(label: string | null): string {
+  return label ?? "ai-easy";
+}
+
+export function flowEfficiencySummary(input: {
+  points: FlowEfficiencyMetricPoint[];
+  pendingPrs: FlowEfficiencyPullRequest[];
+  activeIssues: FlowEfficiencyIssue[];
+  testingPrs?: Array<Pick<FlowEfficiencyPullRequest, "testingQueueAgeHours">>;
+  testingQueuePrs?: number;
+  averageTestingQueueAgeHours?: number | null;
+}): FlowEfficiencySummary {
+  const prsCreated = sumBy(input.points, (point) => point.prsCreated);
+  const prsMerged = sumBy(input.points, (point) => point.prsMerged);
+  const issuesOpened = sumBy(input.points, (point) => point.issuesOpened);
+  const issuesResolved =
+    sumBy(input.points, (point) => point.issuesClosed) + sumBy(input.points, (point) => point.issuesDeferred);
+  const testingPrs = input.testingPrs ?? input.pendingPrs.filter(isTestingQueuePullRequest);
+
+  return {
+    prsCreated,
+    prsMerged,
+    prOpenDelta: prsCreated - prsMerged,
+    prMergeRatePercent: percentage(prsMerged, prsCreated),
+    issuesOpened,
+    issuesResolved,
+    issueOpenDelta: issuesOpened - issuesResolved,
+    issueDrainRatePercent: percentage(issuesResolved, issuesOpened),
+    workflowViolations: sumBy(input.points, (point) => point.workflowViolationsDetected),
+    pendingPrs: input.pendingPrs.length,
+    averagePendingPrAgeHours: average(input.pendingPrs.map((pr) => pr.ageHours)),
+    attentionPrs: input.pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
+    prAttentionRatePercent: percentage(
+      input.pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
+      input.pendingPrs.length
+    ),
+    activeCriticalIssues: input.activeIssues.length,
+    averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.ageHours)),
+    testingQueuePrs: input.testingQueuePrs ?? testingPrs.length,
+    averageTestingQueueAgeHours:
+      input.averageTestingQueueAgeHours !== undefined
+        ? input.averageTestingQueueAgeHours
+        : average(testingPrs.map((pr) => pr.testingQueueAgeHours).filter((age): age is number => age !== null))
+  };
+}
+
 export function personWorkloadScore(person: PersonSummary): number {
   return (
     person.activeCriticalIssues * 100 +
@@ -144,7 +230,7 @@ export function criticalIssueReasons(issue: CriticalIssueView): string[] {
   const evidence = [
     issue.linkedPullRequests.length === 0 ? "No linked PR visible" : null,
     !issue.isComplete ? "Partial cache evidence" : null,
-    issue.aiEffortLabel ? issue.aiEffortLabel : "AI effort unknown"
+    effectiveAiEffortLabel(issue.aiEffortLabel)
   ].filter((reason): reason is string => reason !== null);
 
   return [...blockers, ...evidence];
@@ -295,4 +381,31 @@ function severityPriority(severity: string | null): number {
     return 20;
   }
   return 0;
+}
+
+function isTestingQueuePullRequest(pr: FlowEfficiencyPullRequest): boolean {
+  return (
+    pr.testingQueueAgeHours !== null ||
+    ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
+  );
+}
+
+function sumBy<T>(items: T[], value: (item: T) => number): number {
+  return items.reduce((total, item) => total + value(item), 0);
+}
+
+function percentage(numerator: number, denominator: number): number | null {
+  if (denominator === 0) {
+    return null;
+  }
+  return Math.round((numerator / denominator) * 100);
+}
+
+function average(values: number[]): number | null {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (finiteValues.length === 0) {
+    return null;
+  }
+  const total = finiteValues.reduce((sum, value) => sum + value, 0);
+  return Math.round((total / finiteValues.length) * 10) / 10;
 }

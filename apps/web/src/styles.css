@@ -658,6 +658,51 @@ body {
   padding: 12px;
 }
 
+.flow-efficiency-strip {
+  border-block: 1px solid #e5e7eb;
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 10px 0 14px;
+}
+
+.flow-efficiency-item {
+  border-left: 3px solid #94a3b8;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.flow-efficiency-item strong {
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.flow-efficiency-item span {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.flow-efficiency-critical {
+  border-left-color: #dc2626;
+}
+
+.flow-efficiency-attention {
+  border-left-color: #d97706;
+}
+
+.flow-efficiency-normal {
+  border-left-color: #2563eb;
+}
+
+.flow-efficiency-good {
+  border-left-color: #16a34a;
+}
+
 .flow-chart-grid {
   display: grid;
   gap: 14px;
@@ -783,6 +828,12 @@ body {
   padding: 8px 10px;
 }
 
+@media (max-width: 1180px) {
+  .flow-efficiency-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 920px) {
   .topbar {
     align-items: flex-start;
@@ -831,6 +882,7 @@ body {
   .work-lane-grid,
   .work-lane-grid-priority,
   .work-lane-grid-secondary,
+  .flow-efficiency-strip,
   .flow-chart-grid {
     grid-template-columns: 1fr;
   }
@@ -864,5 +916,9 @@ body {
 
   .person-focus-title {
     align-items: flex-start;
+  }
+
+  .flow-efficiency-item {
+    padding-inline: 8px;
   }
 }

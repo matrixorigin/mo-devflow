@@ -155,8 +155,12 @@ function chooseLifecycle(
   return { lifecycle: "other", severity: null };
 }
 
-function chooseAiEffortLabel(profile: RepoProfile, labels: string[]): string | null {
-  return profile.labels.aiEffort.find((label) => labels.includes(label)) ?? null;
+function chooseAiEffortLabel(profile: RepoProfile, labels: string[]): string {
+  return profile.labels.aiEffort.find((label) => labels.includes(label)) ?? "ai-easy";
+}
+
+function hasExplicitAiEffortLabel(profile: RepoProfile, labels: string[]): boolean {
+  return profile.labels.aiEffort.some((label) => labels.includes(label));
 }
 
 function visibility(profile: RepoProfile, source: CacheSource): VisibilityClass {
@@ -683,28 +687,13 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
   const signals: AiDriftSignal[] = [];
   const ageHours = hoursBetween(issue.createdAt);
 
-  if (!issue.aiEffortLabel) {
-    signals.push({
-      objectType: "issue",
-      objectNumber: issue.number,
-      title: issue.title,
-      htmlUrl: issue.htmlUrl,
-      ruleKey: "critical_missing_ai_effort",
-      severity: "warning",
-      ownerLogin: issue.ownerLogin,
-      aiEffortLabel: null,
-      expectedHours: null,
-      actualHours: ageHours,
-      evidenceSummary: `Active s-1/s0 issue #${issue.number} has no AI effort label in the cache.`,
-      suggestedAction: "Add an ai-* effort label or confirm this issue should be excluded from AI effort analysis.",
-      sourceCompleteness: "partial_cache"
-    });
-  }
-
   if (issue.aiEffortLabel === "ai-easy") {
     const warningHours = profile.thresholds.aiEasyS0ToTestAttentionDays * 24;
     const criticalHours = profile.thresholds.aiEasyCriticalCriticalDays * 24;
     if (ageHours >= warningHours) {
+      const effortEvidence = hasExplicitAiEffortLabel(profile, issue.labels)
+        ? "is labeled ai-easy"
+        : "has no ai-* label and is treated as ai-easy";
       signals.push({
         objectType: "issue",
         objectNumber: issue.number,
@@ -716,9 +705,9 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
         aiEffortLabel: issue.aiEffortLabel,
         expectedHours: warningHours,
         actualHours: ageHours,
-        evidenceSummary: `Active s-1/s0 ai-easy issue #${issue.number} is ${ageHours}h old; threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
+        evidenceSummary: `Active s-1/s0 issue #${issue.number} ${effortEvidence}; it is ${ageHours}h old and the threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
         suggestedAction:
-          "Review whether ai-easy is still accurate, split blockers, or update the effort label before close.",
+          "Review whether ai-easy is still accurate, split blockers, or change the effort label before close.",
         sourceCompleteness: "partial_cache"
       });
     }
@@ -744,6 +733,9 @@ export function aiDriftSignalsForPullRequest(profile: RepoProfile, pr: Normalize
   }
 
   const ageHours = hoursBetween(pr.createdAt);
+  const effortEvidence = hasExplicitAiEffortLabel(profile, pr.labels)
+    ? "is labeled ai-easy"
+    : "has no ai-* label and is treated as ai-easy";
   return [
     {
       objectType: "pull_request",
@@ -756,7 +748,7 @@ export function aiDriftSignalsForPullRequest(profile: RepoProfile, pr: Normalize
       aiEffortLabel,
       expectedHours: profile.thresholds.aiEasyS0ToTestAttentionDays * 24,
       actualHours: ageHours,
-      evidenceSummary: `PR #${pr.number} is labeled ai-easy but has blocker attention flags: ${blockerFlags.join(", ")}.`,
+      evidenceSummary: `PR #${pr.number} ${effortEvidence} and has blocker attention flags: ${blockerFlags.join(", ")}.`,
       suggestedAction:
         "Re-evaluate the AI effort label before close, split blockers, or document why ai-easy is still accurate.",
       sourceCompleteness: pr.isComplete ? "complete_cache" : "partial_cache"

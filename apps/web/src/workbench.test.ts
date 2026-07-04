@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type {
   CriticalIssueView,
+  DailyMetricPoint,
   PersonalActionView,
   PersonalIssueView,
   PersonalPullRequestView
 } from "@mo-devflow/shared";
 import {
   criticalIssueReasons,
+  effectiveAiEffortLabel,
+  flowEfficiencySummary,
   personalActivityItems,
   personPrimaryReasons,
   personWorkloadStatus,
@@ -77,6 +80,11 @@ describe("person workload summaries", () => {
 });
 
 describe("work item attention reasons", () => {
+  it("treats missing AI effort labels as ai-easy", () => {
+    expect(effectiveAiEffortLabel(null)).toBe("ai-easy");
+    expect(effectiveAiEffortLabel("ai-manual")).toBe("ai-manual");
+  });
+
   it("deduplicates PR attention reasons from flags and current state", () => {
     const pr = {
       attentionFlags: ["requested_changes", "ci_failed"],
@@ -132,6 +140,61 @@ describe("work item attention reasons", () => {
   });
 });
 
+describe("flow efficiency summary", () => {
+  it("summarizes PR and issue rotation efficiency from cached metrics and queues", () => {
+    const summary = flowEfficiencySummary({
+      points: [
+        metricPoint({
+          prsCreated: 4,
+          prsMerged: 3,
+          issuesOpened: 5,
+          issuesClosed: 2,
+          issuesDeferred: 1,
+          workflowViolationsDetected: 2
+        }),
+        metricPoint({
+          prsCreated: 2,
+          prsMerged: 1,
+          issuesOpened: 1,
+          issuesClosed: 2,
+          issuesDeferred: 0,
+          workflowViolationsDetected: 1
+        })
+      ],
+      pendingPrs: [
+        pullRequest({
+          ageHours: 24,
+          attentionFlags: ["ci_failed"],
+          testingState: "test_requested",
+          testingQueueAgeHours: 30
+        }),
+        pullRequest({ ageHours: 12, attentionFlags: [], testingState: "not_ready", testingQueueAgeHours: null })
+      ],
+      activeIssues: [criticalIssue({ ageHours: 48 }), criticalIssue({ ageHours: 24 })]
+    });
+
+    expect(summary).toMatchObject({
+      prsCreated: 6,
+      prsMerged: 4,
+      prOpenDelta: 2,
+      prMergeRatePercent: 67,
+      issuesOpened: 6,
+      issuesResolved: 5,
+      issueOpenDelta: 1,
+      issueDrainRatePercent: 83,
+      workflowViolations: 3,
+      pendingPrs: 2,
+      averagePendingPrAgeHours: 18,
+      attentionPrs: 1,
+      prAttentionRatePercent: 50,
+      activeCriticalIssues: 2,
+      averageActiveIssueAgeHours: 36,
+      testingQueuePrs: 1,
+      averageTestingQueueAgeHours: 30
+    });
+  });
+});
+
 describe("personal activity feed", () => {
   it("prioritizes current issue and PR work with linked issue context", () => {
     const activeIssue = criticalIssue({
@@ -172,6 +235,22 @@ describe("personal activity feed", () => {
     expect(items[1]?.reasons).toContain("CI failed");
   });
 });
+
+function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
+  return {
+    date: input.date ?? "2026-07-04",
+    scopeType: input.scopeType ?? "team",
+    scopeKey: input.scopeKey ?? "team",
+    prsCreated: input.prsCreated ?? 0,
+    prsMerged: input.prsMerged ?? 0,
+    issuesOpened: input.issuesOpened ?? 0,
+    issuesClosed: input.issuesClosed ?? 0,
+    issuesDeferred: input.issuesDeferred ?? 0,
+    workflowViolationsDetected: input.workflowViolationsDetected ?? 0,
+    sourceCompleteness: input.sourceCompleteness ?? "complete_cache",
+    generatedAt: input.generatedAt ?? "2026-07-04T00:00:00Z"
+  };
+}
 
 function personalView(input: Partial<PersonalActionView>): PersonalActionView {
   return {

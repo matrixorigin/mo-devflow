@@ -650,6 +650,43 @@ describe("rules", () => {
     expect(aiDriftSignalsForPullRequest(profile, pr).map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
   });
 
+  test("AI drift treats missing effort labels as ai-easy on PRs with blockers", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 503,
+        number: 503,
+        title: "unlabeled fix with blockers",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/503",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        labels: [{ name: "kind/bug" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 503,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState: "failure",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    const signals = aiDriftSignalsForPullRequest(profile, pr);
+    expect(signals.map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
+    expect(signals[0]?.aiEffortLabel).toBe("ai-easy");
+    expect(signals[0]?.evidenceSummary).toContain("has no ai-* label and is treated as ai-easy");
+  });
+
   test("AI drift ignores ai-easy PRs without blocker evidence", () => {
     const now = new Date().toISOString();
     const pr = normalizePullRequest(
@@ -941,7 +978,7 @@ describe("rules", () => {
     );
   });
 
-  test("AI drift detects missing effort labels on critical issues", () => {
+  test("AI drift treats missing effort labels as ai-easy on critical issues", () => {
     const issue = normalizeIssue(
       profile,
       {
@@ -951,15 +988,20 @@ describe("rules", () => {
         state: "open",
         user: { login: "reporter" },
         html_url: "https://example.test/16",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
       },
       anonymousSource
     );
 
-    expect(aiDriftSignalsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("critical_missing_ai_effort");
+    const signals = aiDriftSignalsForIssue(profile, issue);
+    const signal = signals.find((item) => item.ruleKey === "ai_easy_critical_too_old");
+    expect(issue.aiEffortLabel).toBe("ai-easy");
+    expect(signals.map((item) => item.ruleKey)).not.toContain("critical_missing_ai_effort");
+    expect(signal?.aiEffortLabel).toBe("ai-easy");
+    expect(signal?.evidenceSummary).toContain("has no ai-* label and is treated as ai-easy");
   });
 
   test("AI drift detects old ai-easy active s-1/s0 issues with partial-cache evidence", () => {

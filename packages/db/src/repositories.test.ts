@@ -794,13 +794,7 @@ describe("critical issue cache blockers", () => {
         syncError: null,
         linkedPullRequests: [linkedPr]
       }).map((blocker) => blocker.key)
-    ).toEqual([
-      "issue:unowned",
-      "issue:missing_ai_effort",
-      "issue:partial_cache",
-      "pr:101:requested_changes",
-      "pr:101:ci_failed"
-    ]);
+    ).toEqual(["issue:unowned", "issue:partial_cache", "pr:101:requested_changes", "pr:101:ci_failed"]);
   });
 
   test("surfaces stalled testing handoff as a linked PR blocker", () => {

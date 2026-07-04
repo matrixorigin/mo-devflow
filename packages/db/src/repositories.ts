@@ -1042,7 +1042,7 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
     ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
     lifecycleState: asString(row.lifecycle_state) as NormalizedIssue["lifecycleState"],
     severity: row.severity ? asString(row.severity) : null,
-    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy",
     isPullRequest: false,
     sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
@@ -1917,14 +1917,6 @@ export function criticalIssueBlockersFromCache(input: {
       relatedPrNumber: null
     });
   }
-  if (!input.aiEffortLabel) {
-    blockers.push({
-      key: "issue:missing_ai_effort",
-      severity: "warning",
-      message: "Active s-1/s0 issue has no AI effort label.",
-      relatedPrNumber: null
-    });
-  }
   if (input.syncError) {
     blockers.push({
       key: "issue:sync_error",
@@ -1963,7 +1955,7 @@ function toCriticalIssueView(
   watchedUsers: string[] = []
 ): CriticalIssueView {
   const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
-  const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : null;
+  const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy";
   const syncError = row.sync_error ? asString(row.sync_error) : null;
   const isComplete = asNumber(row.is_complete) === 1;
   return {
@@ -2655,7 +2647,7 @@ export async function getDashboardSummary(
     ruleKey: asString(row.rule_key),
     severity: asString(row.severity) as AiDriftSignalView["severity"],
     ownerLogin: row.owner_login ? asString(row.owner_login) : null,
-    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy",
     expectedHours:
       row.expected_hours === null || row.expected_hours === undefined ? null : asNumber(row.expected_hours),
     actualHours: row.actual_hours === null || row.actual_hours === undefined ? null : asNumber(row.actual_hours),
