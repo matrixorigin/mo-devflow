@@ -72,6 +72,8 @@ sync, rule, metric, AI drift, and notification jobs use leases, retry backoff,
 and queue health surfaced on the dashboard. Worker processes also write
 heartbeats so the dashboard and `/health` can distinguish an empty queue from a
 stopped or stale background process.
+Logged-in users can queue layer-scoped refresh jobs from the dashboard instead
+of spending GitHub rate limit on every sync layer.
 GitHub rate-limit failures are retried after the advertised reset window, while
 non-retriable permission failures are marked as blocked until credentials or a
 manual refresh changes the job state.

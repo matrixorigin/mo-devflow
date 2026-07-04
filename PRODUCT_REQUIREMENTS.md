@@ -189,6 +189,7 @@ Supported data ingestion modes:
 
 - Webhook ingestion for near-real-time updates, enabled only when the GitHub webhook secret is configured.
 - Active polling for initial sync, periodic refresh, missed-event repair, and manual refresh.
+- Manual refresh should allow logged-in users to queue only the sync layers they need, instead of forcing a full refresh every time.
 
 Cached objects should cover at least:
 

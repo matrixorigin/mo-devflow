@@ -278,6 +278,7 @@ Backfill:
 - Backfill jobs should mark partial objects until all required pages are fetched.
 - Dashboards should avoid treating partial objects as complete evidence.
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
+- Manual refresh should enqueue selected sync layers through the same MatrixOne-backed job lease system as scheduled refreshes, so users can repair a stale layer without consuming rate limit across unrelated layers.
 - Metrics evaluation should also be runnable from cached normalized data. Until full historical backfill exists, generated trend points must carry partial-cache completeness metadata and the UI must explain the limitation.
 - AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on critical issues, `ai-easy` critical issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
 

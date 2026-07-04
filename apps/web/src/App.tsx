@@ -4,6 +4,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Checkbox,
   Empty,
   Input,
   Layout,
@@ -30,6 +31,7 @@ import type {
   CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardSummary,
+  ManualRefreshLayer,
   ManualRefreshResult,
   MetricPeriod,
   NotificationDeliveryView,
@@ -54,7 +56,8 @@ import {
   csrfCookieName,
   csrfHeaderName,
   notificationStatusAllowsRetry,
-  notificationStatusRequiresAcknowledgement
+  notificationStatusRequiresAcknowledgement,
+  syncHealthLayers
 } from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
 import {
@@ -108,6 +111,10 @@ function dashboardHashForView(view: DashboardView): string {
 
 function initialDashboardView(): DashboardView {
   return typeof window === "undefined" ? "Overview" : dashboardViewFromHash(window.location.hash);
+}
+
+function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
+  return (syncHealthLayers as readonly string[]).includes(value);
 }
 
 function hours(value: number): string {
@@ -638,6 +645,8 @@ export default function App() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
   const [executionSaving, setExecutionSaving] = useState(false);
+  const [manualRefreshModalOpen, setManualRefreshModalOpen] = useState(false);
+  const [manualRefreshLayers, setManualRefreshLayers] = useState<ManualRefreshLayer[]>([...syncHealthLayers]);
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
@@ -731,7 +740,16 @@ export default function App() {
     }
   }
 
+  function openManualRefreshModal() {
+    setManualRefreshError(null);
+    setManualRefreshModalOpen(true);
+  }
+
   async function queueManualRefresh() {
+    if (manualRefreshLayers.length === 0) {
+      setManualRefreshError("Select at least one refresh layer.");
+      return;
+    }
     setManualRefreshSaving(true);
     setManualRefreshError(null);
     setManualRefreshResult(null);
@@ -740,12 +758,13 @@ export default function App() {
         method: "POST",
         headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
-        body: JSON.stringify({})
+        body: JSON.stringify({ layers: manualRefreshLayers })
       });
       if (!response.ok) {
         throw new Error(await responseError(response));
       }
       setManualRefreshResult((await response.json()) as ManualRefreshResult);
+      setManualRefreshModalOpen(false);
       void load();
     } catch (err) {
       setManualRefreshError(displayError(err));
@@ -1833,7 +1852,7 @@ export default function App() {
               icon={<RefreshCcw size={16} />}
               disabled={!session?.authenticated}
               loading={manualRefreshSaving}
-              onClick={() => void queueManualRefresh()}
+              onClick={openManualRefreshModal}
             />
           </Tooltip>
         </Space>
@@ -2667,6 +2686,47 @@ export default function App() {
             onChange={(event) => setTokenInput(event.target.value)}
           />
           {tokenError ? <Alert type="error" title={tokenError} showIcon /> : null}
+        </Space>
+      </Modal>
+      <Modal
+        title="Queue Worker Refresh"
+        open={manualRefreshModalOpen}
+        okText="Queue"
+        confirmLoading={manualRefreshSaving}
+        okButtonProps={{ disabled: manualRefreshLayers.length === 0 || !session?.authenticated }}
+        onOk={() => void queueManualRefresh()}
+        onCancel={() => {
+          setManualRefreshModalOpen(false);
+          setManualRefreshError(null);
+        }}
+      >
+        <Space orientation="vertical" size={12} className="token-modal-body">
+          <Space size={[6, 6]} wrap>
+            <Button size="small" onClick={() => setManualRefreshLayers([...syncHealthLayers])}>
+              All
+            </Button>
+            <Button size="small" onClick={() => setManualRefreshLayers(["webhooks", "rules", "notifications"])}>
+              Workflow
+            </Button>
+            <Button size="small" onClick={() => setManualRefreshLayers([])}>
+              Clear
+            </Button>
+          </Space>
+          <Checkbox.Group
+            value={manualRefreshLayers}
+            onChange={(values) => {
+              setManualRefreshLayers(values.map(String).filter(isManualRefreshLayer));
+            }}
+          >
+            <Space orientation="vertical" size={8}>
+              {syncHealthLayers.map((layer) => (
+                <Checkbox key={layer} value={layer}>
+                  {labelText(layer)}
+                </Checkbox>
+              ))}
+            </Space>
+          </Checkbox.Group>
+          {manualRefreshError ? <Alert type="error" title={manualRefreshError} showIcon /> : null}
         </Space>
       </Modal>
       <Modal
