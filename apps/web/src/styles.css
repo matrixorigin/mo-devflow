@@ -814,6 +814,233 @@ body {
   border-left-color: #16a34a;
 }
 
+.team-critical-flow-panel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-left: 3px solid #dc2626;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.team-critical-flow-heading {
+  align-items: center;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 12px;
+}
+
+.team-critical-flow-heading > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.team-critical-flow-heading h4 {
+  margin: 0 !important;
+}
+
+.team-critical-flow-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.team-critical-flow-counts button {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  line-height: 1.1;
+  min-width: 0;
+  padding: 5px 9px;
+}
+
+.team-critical-flow-counts button:hover {
+  border-color: #93c5fd;
+}
+
+.team-critical-flow-counts button.is-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.team-critical-flow-counts strong,
+.team-critical-flow-counts span {
+  font-size: 12px;
+  min-width: 0;
+}
+
+.team-critical-flow-counts strong {
+  color: #111827;
+  font-weight: 750;
+}
+
+.team-critical-flow-list {
+  display: grid;
+  min-width: 0;
+}
+
+.team-critical-flow-row {
+  border-bottom: 1px solid #f3f4f6;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.62fr) auto;
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.team-critical-flow-row:last-child {
+  border-bottom: 0;
+}
+
+.team-critical-flow-row-critical {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.team-critical-flow-row-attention {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.team-critical-flow-issue,
+.team-critical-flow-prs {
+  align-content: start;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.team-critical-flow-title-line,
+.team-critical-flow-meta,
+.team-critical-flow-pr-heading,
+.team-critical-flow-pr-list,
+.team-critical-flow-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.team-critical-flow-title {
+  color: #111827;
+  display: -webkit-box;
+  font-weight: 650;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.team-critical-flow-title:hover {
+  text-decoration: underline;
+}
+
+.team-critical-flow-meta,
+.team-critical-flow-pr-heading,
+.team-critical-flow-no-pr {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.team-critical-flow-pr {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1d4ed8;
+  display: grid;
+  gap: 2px;
+  max-width: 160px;
+  min-width: 92px;
+  padding: 5px 7px;
+  text-decoration: none;
+}
+
+.team-critical-flow-pr:hover {
+  border-color: #60a5fa;
+}
+
+.team-critical-flow-pr span,
+.team-critical-flow-pr small {
+  line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-critical-flow-pr span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-critical-flow-pr small {
+  color: #4b5563;
+  font-size: 11px;
+}
+
+.team-critical-flow-pr-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.team-critical-flow-no-pr {
+  border: 1px dashed #fed7aa;
+  border-radius: 8px;
+  color: #9a3412;
+  padding: 6px 8px;
+}
+
+.team-critical-flow-actions {
+  align-content: start;
+  justify-content: flex-end;
+}
+
+.team-critical-flow-more {
+  align-items: center;
+  appearance: none;
+  background: #f9fafb;
+  border: 0;
+  border-top: 1px dashed #d1d5db;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  justify-content: space-between;
+  line-height: 1.2;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.team-critical-flow-more strong {
+  color: #1d4ed8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.team-critical-flow-more:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .team-monitor-grid {
   display: grid;
   gap: 8px;
@@ -4578,6 +4805,14 @@ button.testing-board-stat:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .team-critical-flow-row {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
+  }
+
+  .team-critical-flow-actions {
+    justify-content: flex-start;
+  }
+
   .update-pipeline-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4686,6 +4921,7 @@ button.testing-board-stat:focus-visible {
   }
 
   .team-command-heading,
+  .team-critical-flow-heading,
   .team-rotation-lane-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -4703,6 +4939,22 @@ button.testing-board-stat:focus-visible {
 
   .team-flow-risk-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-critical-flow-counts {
+    justify-content: flex-start;
+  }
+
+  .team-critical-flow-row {
+    grid-template-columns: 1fr;
+  }
+
+  .team-critical-flow-pr {
+    max-width: none;
+  }
+
+  .team-critical-flow-actions {
+    justify-content: flex-start;
   }
 
   .update-pipeline-tiles {

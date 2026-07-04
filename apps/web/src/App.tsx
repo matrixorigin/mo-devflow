@@ -1887,6 +1887,14 @@ function TeamRotationOverview({
     [data.criticalIssues]
   );
   const prRisks = sortPendingPrsForAction(data.pendingPrs, criticalIssuesByPr);
+  const criticalIssueOrder = new Map(criticalIssues.map((issue, index) => [issue.number, index]));
+  const criticalFlowRows = observedOwnerThreads(criticalIssues, data.pendingPrs)
+    .filter((thread) => thread.issue !== null)
+    .sort(
+      (left, right) =>
+        (criticalIssueOrder.get(left.issue?.number ?? -1) ?? Number.MAX_SAFE_INTEGER) -
+        (criticalIssueOrder.get(right.issue?.number ?? -1) ?? Number.MAX_SAFE_INTEGER)
+    );
   const testingIssues = sortTestingIssuesForAction(data.testing.issues);
   const observedPeople = observedPeopleFromDashboard({
     criticalIssues: data.criticalIssues,
@@ -1950,6 +1958,14 @@ function TeamRotationOverview({
         />
         <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
       </section>
+
+      <TeamCriticalFlowPanel
+        rows={criticalFlowRows}
+        onOpenIssues={() => onOpenIssuesFilter({})}
+        onOpenNoPrIssues={() => onOpenIssuesFilter({ scope: "no_pr" })}
+        onOpenPrRisks={() => onOpenPrsFilter("attention")}
+        onPreviewIssue={(issue) => setWorkPreview({ objectType: "issue", issue })}
+      />
 
       <div className="team-rotation-grid">
         <div className="team-rotation-main">
@@ -2167,6 +2183,218 @@ function TeamUpdatePipelineStrip({
       </div>
     </section>
   );
+}
+
+function TeamCriticalFlowPanel({
+  rows,
+  onOpenIssues,
+  onOpenNoPrIssues,
+  onOpenPrRisks,
+  onPreviewIssue
+}: {
+  rows: ObservedOwnerThread[];
+  onOpenIssues: () => void;
+  onOpenNoPrIssues: () => void;
+  onOpenPrRisks: () => void;
+  onPreviewIssue: (issue: CriticalIssueView) => void;
+}) {
+  const visibleRows = rows.slice(0, 7);
+  const hiddenRows = Math.max(0, rows.length - visibleRows.length);
+  const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
+  const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
+
+  return (
+    <section className="team-critical-flow-panel" aria-label="Critical issue and PR flow">
+      <div className="team-critical-flow-heading">
+        <div>
+          <Title level={4}>Critical Issue / PR Flow</Title>
+          <Text type="secondary">Active s-1/s0 issues linked to execution PRs and current blockers.</Text>
+        </div>
+        <div className="team-critical-flow-counts">
+          <button type="button" onClick={onOpenIssues}>
+            <strong>{rows.length}</strong>
+            <span>active issues</span>
+          </button>
+          <button type="button" className={noVisiblePrRows > 0 ? "is-attention" : ""} onClick={onOpenNoPrIssues}>
+            <strong>{noVisiblePrRows}</strong>
+            <span>without visible PR</span>
+          </button>
+          <button type="button" className={blockedPrs > 0 ? "is-attention" : ""} onClick={onOpenPrRisks}>
+            <strong>{blockedPrs}</strong>
+            <span>blocked PRs</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="team-critical-flow-list">
+        {visibleRows.length > 0 ? (
+          visibleRows.map((row) => (
+            <TeamCriticalFlowRow key={row.id} row={row} onOpenPrRisks={onOpenPrRisks} onPreviewIssue={onPreviewIssue} />
+          ))
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue matches this filter" />
+        )}
+      </div>
+
+      {hiddenRows > 0 ? (
+        <button type="button" className="team-critical-flow-more" onClick={onOpenIssues}>
+          <span>{hiddenRows} more active issues match this filter</span>
+          <strong>Open Issues</strong>
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function TeamCriticalFlowRow({
+  row,
+  onOpenPrRisks,
+  onPreviewIssue
+}: {
+  row: ObservedOwnerThread;
+  onOpenPrRisks: () => void;
+  onPreviewIssue: (issue: CriticalIssueView) => void;
+}) {
+  const issue = row.issue;
+  const prs = observedThreadPullRequests(row);
+  const visiblePrs = prs.slice(0, 4);
+  const status = teamCriticalFlowStatus(row);
+
+  if (!issue) {
+    return null;
+  }
+
+  return (
+    <article className={`team-critical-flow-row team-critical-flow-row-${row.tone}`}>
+      <div className="team-critical-flow-issue">
+        <div className="team-critical-flow-title-line">
+          <WorkObjectLink href={issue.htmlUrl} icon={<ShieldAlert size={15} aria-hidden="true" />}>
+            Issue #{issue.number}
+          </WorkObjectLink>
+          <Tag color={severityColor(issue.severity)}>{severityShortLabel(issue.severity)}</Tag>
+          <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
+          <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
+        </div>
+        <a className="team-critical-flow-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <div className="team-critical-flow-meta">
+          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <span>{criticalIssueNextAction(issue)}</span>
+          <span>last {formatDate(issue.lastHumanActionAt)}</span>
+        </div>
+      </div>
+
+      <div className="team-critical-flow-prs">
+        <div className="team-critical-flow-pr-heading">
+          <Tag color={status.color}>{status.label}</Tag>
+          <span>{status.detail}</span>
+        </div>
+        <div className="team-critical-flow-pr-list">
+          {visiblePrs.length > 0 ? (
+            visiblePrs.map((pr) => {
+              const reasons = prAttentionReasons(pr as PendingPrView);
+              return (
+                <Tooltip title={teamCriticalFlowPrTooltip(pr, reasons)} key={pr.number}>
+                  <a
+                    className={`team-critical-flow-pr ${reasons.length > 0 ? "team-critical-flow-pr-attention" : ""}`}
+                    href={pr.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span>PR #{pr.number}</span>
+                    <small>{teamCriticalFlowPrSummary(pr, reasons)}</small>
+                  </a>
+                </Tooltip>
+              );
+            })
+          ) : (
+            <span className="team-critical-flow-no-pr">No visible execution PR</span>
+          )}
+          {prs.length > visiblePrs.length ? <Tag>{prs.length - visiblePrs.length} more</Tag> : null}
+        </div>
+      </div>
+
+      <div className="team-critical-flow-actions">
+        <Tooltip title="Preview issue">
+          <Button
+            aria-label={`Preview issue ${issue.number}`}
+            icon={<Eye size={14} />}
+            size="small"
+            onClick={() => onPreviewIssue(issue)}
+          />
+        </Tooltip>
+        {prs.some((pr) => prAttentionReasons(pr as PendingPrView).length > 0) ? (
+          <Button size="small" onClick={onOpenPrRisks}>
+            PR Risks
+          </Button>
+        ) : (
+          <Button href={issue.htmlUrl} size="small" target="_blank">
+            GitHub
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function teamCriticalFlowBlockedPrCount(rows: ObservedOwnerThread[]): number {
+  const blockedPrNumbers = new Set<number>();
+  for (const row of rows) {
+    for (const pr of observedThreadPullRequests(row)) {
+      if (prAttentionReasons(pr as PendingPrView).length > 0) {
+        blockedPrNumbers.add(pr.number);
+      }
+    }
+  }
+  return blockedPrNumbers.size;
+}
+
+function teamCriticalFlowStatus(row: ObservedOwnerThread): { label: string; color: string; detail: string } {
+  const issue = row.issue;
+  const prs = observedThreadPullRequests(row);
+  const blockedPrs = prs.filter((pr) => prAttentionReasons(pr as PendingPrView).length > 0);
+
+  if (!issue) {
+    return { label: "pending PR", color: "default", detail: `${prs.length} PRs without a visible active issue` };
+  }
+  if (row.needsLink) {
+    return { label: "no visible PR", color: "red", detail: "execution is not visible from issue linkage" };
+  }
+  if (blockedPrs.length > 0) {
+    return {
+      label: `${blockedPrs.length} PR blocker${blockedPrs.length === 1 ? "" : "s"}`,
+      color: "orange",
+      detail: prAttentionReasons(blockedPrs[0] as PendingPrView)[0] ?? "PR needs attention"
+    };
+  }
+  if (issue.criticalAgeHours === null) {
+    return { label: "timeline missing", color: "gold", detail: "severity start time is not in cache yet" };
+  }
+  return {
+    label: "flow visible",
+    color: issue.severity === "severity/s-1" ? "red" : "blue",
+    detail: `${prs.length} PRs linked`
+  };
+}
+
+function teamCriticalFlowPrSummary(pr: ObservedThreadPullRequest, reasons: string[]): string {
+  if (reasons.length > 0) {
+    return reasons[0];
+  }
+  if (pr.testingState !== "not_ready") {
+    return testingStateBusinessLabel(pr.testingState);
+  }
+  if ("state" in pr && pr.state === "closed") {
+    return "closed";
+  }
+  return hours(pr.ageHours);
+}
+
+function teamCriticalFlowPrTooltip(pr: ObservedThreadPullRequest, reasons: string[]): string {
+  const state = "state" in pr ? pr.state : "open";
+  const reasonText = reasons.length > 0 ? ` | ${reasons.join(", ")}` : "";
+  return `PR #${pr.number} | ${state} | age ${hours(pr.ageHours)}${reasonText}`;
 }
 
 function updatePipelineTargetView(tile: UpdatePipelineTile): DashboardView {
