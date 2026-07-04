@@ -9551,7 +9551,12 @@ function WebhookSetupPanel({
           <Tag color="blue">application/json</Tag>
         </WebhookSetupCard>
         <WebhookSetupCard label="Secret">
-          <Tag color={secretConfigured ? "green" : "orange"}>{secretConfigured ? "configured" : "missing env"}</Tag>
+          <Space orientation="vertical" size={4}>
+            <Tag color={secretConfigured ? "green" : "orange"}>{secretConfigured ? "configured" : "missing env"}</Tag>
+            <Text type="secondary">
+              {secretConfigured ? "Use the same secret in GitHub." : "Run make setup locally, then restart API."}
+            </Text>
+          </Space>
         </WebhookSetupCard>
         <WebhookSetupCard label="Events">
           <Space size={[4, 4]} wrap>

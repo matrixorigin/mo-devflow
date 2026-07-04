@@ -124,9 +124,11 @@ Visible cached GitHub objects are counted as stale after
 `MO_DEVFLOW_CACHE_STALE_HOURS` so dashboards can keep serving cache while still
 showing freshness risk.
 
-GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
-`X-Hub-Signature-256` against `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET`; deliveries
-are rejected until that secret is configured. Payloads must include
+GitHub webhooks can be posted to `/api/webhooks/github`. `make setup` generates
+a local-only `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET` in `.env`; deployed environments
+should provide it through secret management. Configure the same value as the
+GitHub webhook secret. The API verifies `X-Hub-Signature-256` against that
+secret; deliveries are rejected until it is configured. Payloads must include
 `repository.full_name`, and deliveries for other repositories are ignored.
 Only implemented cache-ingestion events are accepted: `issues`,
 `issue_comment`, `pull_request`, `pull_request_review`, `workflow_run`, and
