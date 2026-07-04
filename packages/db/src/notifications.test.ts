@@ -6,6 +6,7 @@ import {
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
   notificationDeliveryVisibilityWhereSql,
+  notificationSourceObjectVisibilityWhereSql,
   notificationRecipient
 } from "./notifications";
 
@@ -141,6 +142,19 @@ describe("notification acknowledgement health", () => {
         ")"
       ].join(" "),
       params: [42, 42]
+    });
+  });
+
+  test("builds external notification source filter without token-owner-only cache", () => {
+    expect(notificationSourceObjectVisibilityWhereSql("a", profile)).toEqual({
+      sql: [
+        "(",
+        "a.object_number IS NULL",
+        "OR (a.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = a.repo_id AND i.number = a.object_number AND i.visibility_class IN ('anonymous_readable', 'logged_in_readable')))",
+        "OR (a.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = a.repo_id AND p.number = a.object_number AND p.visibility_class IN ('anonymous_readable', 'logged_in_readable')))",
+        ")"
+      ].join(" "),
+      params: []
     });
   });
 });

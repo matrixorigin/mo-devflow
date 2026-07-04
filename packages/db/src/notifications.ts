@@ -115,6 +115,26 @@ export function notificationDeliveryVisibilityWhereSql(
   };
 }
 
+export function notificationSourceObjectVisibilityWhereSql(
+  sourceAlias: string,
+  profile: RepoProfile
+): { sql: string; params: number[] } {
+  const notificationViewer = { authenticated: true, userId: null };
+  const issueVisibility = dashboardVisibilityFilter("i", profile, notificationViewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", profile, notificationViewer);
+
+  return {
+    sql: [
+      "(",
+      `${sourceAlias}.object_number IS NULL`,
+      `OR (${sourceAlias}.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = ${sourceAlias}.repo_id AND i.number = ${sourceAlias}.object_number AND ${issueVisibility.sql}))`,
+      `OR (${sourceAlias}.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = ${sourceAlias}.repo_id AND p.number = ${sourceAlias}.object_number AND ${pullRequestVisibility.sql}))`,
+      ")"
+    ].join(" "),
+    params: [...issueVisibility.params, ...pullRequestVisibility.params]
+  };
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
@@ -235,15 +255,16 @@ export async function listNotificationCandidates(
   }
   const candidates: NotificationCandidate[] = [];
   const immediateLimit = limit > 1 ? limit - 1 : 1;
+  const attentionVisibility = notificationSourceObjectVisibilityWhereSql("a", profile);
   const [attentionRows] = await getPool().execute<RowData[]>(
     `SELECT *
-     FROM attention_items
-     WHERE repo_id = ? AND resolved_at IS NULL
+     FROM attention_items a
+     WHERE a.repo_id = ? AND a.resolved_at IS NULL AND ${attentionVisibility.sql}
      ORDER BY
-       CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-       last_detected_at DESC
+       CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       a.last_detected_at DESC
      LIMIT ?`,
-    [repoId, immediateLimit]
+    [repoId, ...attentionVisibility.params, immediateLimit]
   );
   for (const row of attentionRows) {
     const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
@@ -268,15 +289,16 @@ export async function listNotificationCandidates(
 
   const remainingAfterAttention = Math.max(0, immediateLimit - candidates.length);
   if (remainingAfterAttention > 0) {
+    const violationVisibility = notificationSourceObjectVisibilityWhereSql("v", profile);
     const [violationRows] = await getPool().execute<RowData[]>(
       `SELECT *
-       FROM workflow_violations
-       WHERE repo_id = ? AND resolved_at IS NULL
+       FROM workflow_violations v
+       WHERE v.repo_id = ? AND v.resolved_at IS NULL AND ${violationVisibility.sql}
        ORDER BY
-         CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-         last_detected_at DESC
+         CASE v.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+         v.last_detected_at DESC
        LIMIT ?`,
-      [repoId, remainingAfterAttention]
+      [repoId, ...violationVisibility.params, remainingAfterAttention]
     );
     for (const row of violationRows) {
       const objectNumber = asNumber(row.object_number);
@@ -302,16 +324,17 @@ export async function listNotificationCandidates(
 
   const remainingAfterViolations = Math.max(0, immediateLimit - candidates.length);
   if (remainingAfterViolations > 0) {
+    const driftVisibility = notificationSourceObjectVisibilityWhereSql("d", profile);
     const [driftRows] = await getPool().execute<RowData[]>(
       `SELECT *
-       FROM ai_drift_signals
-       WHERE repo_id = ? AND resolved_at IS NULL
+       FROM ai_drift_signals d
+       WHERE d.repo_id = ? AND d.resolved_at IS NULL AND ${driftVisibility.sql}
        ORDER BY
-         CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-         actual_hours DESC,
-         last_detected_at DESC
+         CASE d.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+         d.actual_hours DESC,
+         d.last_detected_at DESC
        LIMIT ?`,
-      [repoId, remainingAfterViolations]
+      [repoId, ...driftVisibility.params, remainingAfterViolations]
     );
     for (const row of driftRows) {
       const objectNumber = asNumber(row.object_number);
