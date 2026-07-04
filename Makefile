@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once check test ci
+.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -8,6 +8,8 @@ WEB_PID := web_server.pid
 WEB_LOG := web_server.log
 START_BG := node scripts/run-background.mjs
 STOP_BG := node scripts/stop-background.mjs
+WAIT_URL := node scripts/wait-for-url.mjs
+WAIT_PROCESS := node scripts/wait-for-process.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
@@ -15,6 +17,7 @@ help:
 	@echo "  make setup              - Create .env and install dependencies"
 	@echo "  make dev-init           - setup + db-create + db-migrate"
 	@echo "  make dev-start          - Start API, worker, and web UI"
+	@echo "  make dev-ready          - Wait for local API, worker, and web readiness"
 	@echo "  make dev-stop           - Stop API, worker, and web UI"
 	@echo "  make dev-status         - Show service status"
 	@echo "  make db-create          - Create dedicated MatrixOne database"
@@ -56,9 +59,14 @@ notify-once:
 	@npm run notify:once
 
 dev-api-start:
-	@if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then echo "API already running (PID $$(cat $(API_PID)))"; exit 0; fi
-	@$(START_BG) $(API_PID) $(API_LOG) -- npm run start:api
-	@echo "API starting (PID $$(cat $(API_PID)), log $(API_LOG))"
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then \
+		echo "API already running (PID $$(cat $(API_PID)))"; \
+	else \
+		$(START_BG) $(API_PID) $(API_LOG) -- npm run start:api; \
+		echo "API starting (PID $$(cat $(API_PID)), log $(API_LOG))"; \
+	fi; \
+	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_API_PORT:-18081}/health" API 30000
 
 dev-api-stop:
 	@$(STOP_BG) $(API_PID) API
@@ -70,9 +78,14 @@ dev-api-status:
 	@if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then echo "API running (PID $$(cat $(API_PID)))"; else echo "API not running"; fi
 
 dev-worker-start:
-	@if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then echo "Worker already running (PID $$(cat $(WORKER_PID)))"; exit 0; fi
-	@$(START_BG) $(WORKER_PID) $(WORKER_LOG) -- npm run dev:worker
-	@echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then \
+		echo "Worker already running (PID $$(cat $(WORKER_PID)))"; \
+	else \
+		$(START_BG) $(WORKER_PID) $(WORKER_LOG) -- npm run dev:worker; \
+		echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"; \
+	fi; \
+	$(WAIT_PROCESS) $(WORKER_PID) Worker 5000
 
 dev-worker-stop:
 	@$(STOP_BG) $(WORKER_PID) Worker
@@ -84,9 +97,14 @@ dev-worker-status:
 	@if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then echo "Worker running (PID $$(cat $(WORKER_PID)))"; else echo "Worker not running"; fi
 
 dev-web-start:
-	@if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then echo "Web already running (PID $$(cat $(WEB_PID)))"; exit 0; fi
-	@$(START_BG) $(WEB_PID) $(WEB_LOG) -- npm --workspace @mo-devflow/web run dev -- --host 0.0.0.0
-	@echo "Web starting (PID $$(cat $(WEB_PID)), log $(WEB_LOG))"
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then \
+		echo "Web already running (PID $$(cat $(WEB_PID)))"; \
+	else \
+		$(START_BG) $(WEB_PID) $(WEB_LOG) -- npm --workspace @mo-devflow/web run dev -- --host 0.0.0.0; \
+		echo "Web starting (PID $$(cat $(WEB_PID)), log $(WEB_LOG))"; \
+	fi; \
+	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_WEB_PORT:-5173}/" Web 30000
 
 dev-web-stop:
 	@$(STOP_BG) $(WEB_PID) Web
@@ -98,8 +116,16 @@ dev-web-status:
 	@if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then echo "Web running (PID $$(cat $(WEB_PID)))"; else echo "Web not running"; fi
 
 dev-start: dev-api-start dev-worker-start dev-web-start
-	@echo "API: http://localhost:$${MO_DEVFLOW_API_PORT:-18081}"
-	@echo "Web: http://localhost:$${MO_DEVFLOW_WEB_PORT:-5173}"
+	@$(MAKE) --no-print-directory dev-ready
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	echo "API: http://localhost:$${MO_DEVFLOW_API_PORT:-18081}"; \
+	echo "Web: http://localhost:$${MO_DEVFLOW_WEB_PORT:-5173}"
+
+dev-ready:
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_API_PORT:-18081}/health" API 30000; \
+	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_API_PORT:-18081}/health" "Worker heartbeat" 30000 worker.status active; \
+	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_WEB_PORT:-5173}/" Web 30000
 
 dev-stop: dev-web-stop dev-worker-stop dev-api-stop
 
