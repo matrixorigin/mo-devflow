@@ -235,6 +235,7 @@ Webhook handling:
 
 - Require `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET` before accepting GitHub webhook deliveries.
 - Verify `X-Hub-Signature-256` against the exact raw request body.
+- Require `repository.full_name` in the webhook payload and ignore deliveries for any repo other than the active profile.
 - Persist each GitHub delivery ID before processing.
 - Ignore duplicate delivery IDs.
 - Store raw webhook payloads for replay.

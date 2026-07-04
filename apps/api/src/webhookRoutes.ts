@@ -49,10 +49,17 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
       });
     }
 
-    const profile = loadRepoProfile();
     const payloadRepo = webhookRepositoryFullNameFromPayload(request.body);
+    if (!payloadRepo) {
+      return reply.status(400).send({
+        error: "missing_repository_identity",
+        message: "GitHub webhook payload must include repository.full_name."
+      });
+    }
+
+    const profile = loadRepoProfile();
     const expectedRepo = `${profile.repo.owner}/${profile.repo.name}`;
-    if (payloadRepo && payloadRepo !== expectedRepo) {
+    if (payloadRepo !== expectedRepo) {
       return reply.status(202).send({
         accepted: false,
         duplicate: false,

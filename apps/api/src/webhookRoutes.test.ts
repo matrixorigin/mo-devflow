@@ -172,4 +172,37 @@ describe("webhook routes", () => {
       await app.close();
     }
   });
+
+  test("rejects signed GitHub webhooks without repository identity", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "opened",
+      issue: { number: 42 }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-2",
+          "x-github-event": "issues",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        error: "missing_repository_identity",
+        message: "GitHub webhook payload must include repository.full_name."
+      });
+      expect(mocks.upsertRepoProfile).not.toHaveBeenCalled();
+      expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 });
