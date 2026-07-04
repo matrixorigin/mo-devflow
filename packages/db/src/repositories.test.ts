@@ -12,6 +12,7 @@ import {
   criticalIssueOwnershipCounts,
   criticalIssueOwnerScope,
   dateKeyInTimezone,
+  dashboardVisibilityFilter,
   isPersonalNeedsTriageIssue,
   notificationEmployeeMappingCandidates,
   previousCalendarDayRange,
@@ -66,13 +67,23 @@ const baseProfile: RepoProfile = {
 
 describe("dashboard visibility", () => {
   test("anonymous viewers only see anonymous-readable cache objects", () => {
-    expect(visibleClassesForDashboard(baseProfile, { authenticated: false })).toEqual(["anonymous_readable"]);
+    expect(visibleClassesForDashboard(baseProfile, { authenticated: false, userId: null })).toEqual([
+      "anonymous_readable"
+    ]);
   });
 
   test("logged-in viewers can see anonymous and logged-in readable cache objects", () => {
-    expect(visibleClassesForDashboard(baseProfile, { authenticated: true })).toEqual([
+    expect(visibleClassesForDashboard(baseProfile, { authenticated: true, userId: null })).toEqual([
       "anonymous_readable",
       "logged_in_readable"
+    ]);
+  });
+
+  test("logged-in viewers with a user id can see their own token-owned cache objects", () => {
+    expect(visibleClassesForDashboard(baseProfile, { authenticated: true, userId: 42 })).toEqual([
+      "anonymous_readable",
+      "logged_in_readable",
+      "token_owner_only"
     ]);
   });
 
@@ -86,9 +97,24 @@ describe("dashboard visibility", () => {
             anonymousRead: false
           }
         },
-        { authenticated: false }
+        { authenticated: false, userId: null }
       )
     ).toEqual([]);
+  });
+
+  test("enforces token-owner visibility with source user id", () => {
+    expect(dashboardVisibilityFilter("i", baseProfile, { authenticated: false, userId: null })).toEqual({
+      sql: "i.visibility_class IN ('anonymous_readable')",
+      params: []
+    });
+    expect(dashboardVisibilityFilter("i", baseProfile, { authenticated: true, userId: null })).toEqual({
+      sql: "i.visibility_class IN ('anonymous_readable', 'logged_in_readable')",
+      params: []
+    });
+    expect(dashboardVisibilityFilter("i", baseProfile, { authenticated: true, userId: 42 })).toEqual({
+      sql: "(i.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (i.visibility_class = 'token_owner_only' AND i.source_user_id = ?))",
+      params: [42]
+    });
   });
 });
 

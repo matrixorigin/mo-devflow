@@ -66,6 +66,7 @@ export async function getCachedIssueByNumber(repoId: number, issueNumber: number
     aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
     isPullRequest: false,
     sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
+    sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     isComplete: asNumber(row.is_complete) === 1,
     rawPayload: parseJsonRecord(asString(row.raw_payload), {})

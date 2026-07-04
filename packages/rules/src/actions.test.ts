@@ -65,6 +65,7 @@ const issue: NormalizedIssue = {
   aiEffortLabel: null,
   isPullRequest: false,
   sourceAuthType: "anonymous",
+  sourceUserId: null,
   visibilityClass: "anonymous_readable",
   isComplete: false,
   rawPayload: {}

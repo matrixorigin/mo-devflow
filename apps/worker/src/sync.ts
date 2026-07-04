@@ -29,6 +29,7 @@ import {
   linkedPrAuthorsByIssueNumber,
   normalizeIssue,
   normalizePullRequest,
+  type CacheSource,
   workflowViolationsForIssue
 } from "@mo-devflow/rules";
 import type {
@@ -36,7 +37,6 @@ import type {
   NormalizedIssue,
   NotificationCandidate,
   NotificationStatus,
-  SourceAuthType,
   WorkflowViolation
 } from "@mo-devflow/shared";
 
@@ -167,8 +167,8 @@ function ensureGitHubObjectWithNumber(input: Record<string, unknown>, label: str
   return input as Record<string, unknown> & { id: number; number: number };
 }
 
-function sourceAuthTypeForWebhook(): SourceAuthType {
-  return "service_read_token";
+function cacheSourceForWebhook(): CacheSource {
+  return { authType: "service_read_token", userId: null };
 }
 
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
@@ -388,7 +388,7 @@ async function processWebhookPayload(input: {
     if (!rawIssue) {
       return { processed: true, skipped: true, message: "issues payload missing issue object" };
     }
-    const issue = normalizeIssue(input.profile, ensureGitHubObjectWithNumber(rawIssue, "issue"), sourceAuthTypeForWebhook());
+    const issue = normalizeIssue(input.profile, ensureGitHubObjectWithNumber(rawIssue, "issue"), cacheSourceForWebhook());
     if (issue.isPullRequest) {
       return { processed: true, skipped: true, message: `issue #${issue.number} is a pull request shadow issue` };
     }
@@ -429,7 +429,7 @@ async function processWebhookPayload(input: {
     const pr = normalizePullRequest(
       input.profile,
       ensureGitHubObjectWithNumber(rawPullRequest, "pull_request"),
-      sourceAuthTypeForWebhook()
+      cacheSourceForWebhook()
     );
     const cachedPr = await upsertPullRequest(input.repoId, pr);
     const activeAttentionDedupeKeys = new Set<string>();
@@ -546,7 +546,12 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
     let resolvedAttentionItems = 0;
 
     for (const rawIssue of snapshot.issues) {
-      const issue = normalizeIssue(profile, rawIssue, snapshot.sourceAuthType, { linkedPrAuthorByIssueNumber });
+      const issue = normalizeIssue(
+        profile,
+        rawIssue,
+        { authType: snapshot.sourceAuthType, userId: null },
+        { linkedPrAuthorByIssueNumber }
+      );
       if (!shouldKeepIssue(issue)) {
         continue;
       }
@@ -587,7 +592,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       const pr = normalizePullRequest(
         profile,
         rawPr,
-        snapshot.sourceAuthType,
+        { authType: snapshot.sourceAuthType, userId: null },
         snapshot.pullRequestInsights.get(rawPr.number)
       );
       const cachedPr = await upsertPullRequest(repoId, pr);

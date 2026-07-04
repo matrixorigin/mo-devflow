@@ -75,7 +75,10 @@ app.get("/api/dashboard", async (request, reply) => {
   const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
   try {
     const session = await getSessionRecordFromRequest(request, reply);
-    return await getDashboardSummary(profile, repoId, { authenticated: Boolean(session) });
+    return await getDashboardSummary(profile, repoId, {
+      authenticated: Boolean(session),
+      userId: session?.userId ?? null
+    });
   } catch (error) {
     app.log.error({ error }, "dashboard query failed");
     return reply.status(500).send({

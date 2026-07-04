@@ -74,6 +74,7 @@ function asBoolean(value: unknown): boolean {
 
 export interface DashboardViewer {
   authenticated: boolean;
+  userId: number | null;
 }
 
 function mergeUnique(left: string[], right: string[]): string[] {
@@ -89,7 +90,12 @@ export function visibleClassesForDashboard(profile: RepoProfile, viewer: Dashboa
   if (!viewer.authenticated && !profile.access.anonymousRead) {
     return [];
   }
-  return viewer.authenticated ? ["anonymous_readable", "logged_in_readable"] : ["anonymous_readable"];
+  if (!viewer.authenticated) {
+    return ["anonymous_readable"];
+  }
+  return viewer.userId === null
+    ? ["anonymous_readable", "logged_in_readable"]
+    : ["anonymous_readable", "logged_in_readable", "token_owner_only"];
 }
 
 export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> = process.env): number {
@@ -460,13 +466,34 @@ export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfi
   return warnings;
 }
 
-function visibilityClause(alias: string, classes: VisibilityClass[]): { sql: string; params: string[] } {
-  if (classes.length === 0) {
+export function dashboardVisibilityFilter(
+  alias: string,
+  profile: RepoProfile,
+  viewer: DashboardViewer
+): { sql: string; params: number[] } {
+  const visibleClasses = visibleClassesForDashboard(profile, viewer);
+  const classVisibleWithoutOwner = visibleClasses.filter((value) => value !== "token_owner_only");
+  const clauses: string[] = [];
+  const params: number[] = [];
+
+  if (classVisibleWithoutOwner.length > 0) {
+    clauses.push(`${alias}.visibility_class IN (${visibilityClassListSql(classVisibleWithoutOwner)})`);
+  }
+
+  if (visibleClasses.includes("token_owner_only")) {
+    if (viewer.userId === null) {
+      throw new Error("token_owner_only dashboard visibility requires viewer user id");
+    }
+    clauses.push(`(${alias}.visibility_class = 'token_owner_only' AND ${alias}.source_user_id = ?)`);
+    params.push(viewer.userId);
+  }
+
+  if (clauses.length === 0) {
     return { sql: "1 = 0", params: [] };
   }
   return {
-    sql: `${alias}.visibility_class IN (${visibilityClassListSql(classes)})`,
-    params: []
+    sql: clauses.length === 1 ? clauses[0] ?? "1 = 0" : `(${clauses.join(" OR ")})`,
+    params
   };
 }
 
@@ -584,9 +611,9 @@ export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promi
       repo_id, github_id, number, title, body, state, author_login, html_url,
       created_at, updated_at, closed_at, labels_json, assignees_json,
       owner_login, owner_reason, lifecycle_state, severity, ai_effort_label,
-      is_pull_request, source_auth_type, visibility_class, is_complete,
+      is_pull_request, source_auth_type, source_user_id, visibility_class, is_complete,
       sync_error, raw_payload, last_synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repoId,
       String(issue.githubId),
@@ -608,6 +635,7 @@ export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promi
       issue.aiEffortLabel,
       issue.isPullRequest ? 1 : 0,
       issue.sourceAuthType,
+      issue.sourceUserId,
       issue.visibilityClass,
       issue.isComplete ? 1 : 0,
       null,
@@ -645,6 +673,7 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
     aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
     isPullRequest: false,
     sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
+    sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     isComplete: asNumber(row.is_complete) === 1,
     rawPayload: parseJsonRecord(asString(row.raw_payload), {})
@@ -690,8 +719,8 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       latest_review_state, latest_review_submitted_at, latest_commit_at,
       detail_synced_at, detail_error, testing_state, testing_testers_json,
       testing_signals_json, testing_queue_age_hours, attention_flags_json, source_auth_type,
-      visibility_class, is_complete, sync_error, raw_payload, last_synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      source_user_id, visibility_class, is_complete, sync_error, raw_payload, last_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       repoId,
       String(next.githubId),
@@ -728,6 +757,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       next.testingQueueAgeHours,
       stringify(next.attentionFlags),
       next.sourceAuthType,
+      next.sourceUserId,
       next.visibilityClass,
       next.isComplete ? 1 : 0,
       null,
@@ -1638,39 +1668,35 @@ export async function recomputeDailyMetricsFromCache(
 export async function getDashboardSummary(
   profile: RepoProfile,
   repoId: number,
-  viewer: DashboardViewer = { authenticated: false }
+  viewer: DashboardViewer = { authenticated: false, userId: null }
 ): Promise<DashboardSummary> {
   const pool = getPool();
   const visibleClasses = visibleClassesForDashboard(profile, viewer);
-  const criticalVisibility = visibilityClause("i", visibleClasses);
-  const prVisibility = visibilityClause("p", visibleClasses);
-  const issueListVisibility = visibilityClause("i", visibleClasses);
-  const allPrVisibility = visibilityClause("p", visibleClasses);
-  const partialIssueVisibility = visibilityClause("i", visibleClasses);
-  const partialPrVisibility = visibilityClause("p", visibleClasses);
-  const staleIssueVisibility = visibilityClause("i", visibleClasses);
-  const stalePrVisibility = visibilityClause("p", visibleClasses);
-  const violationIssueVisibility = visibilityClause("i", visibleClasses);
-  const violationPrVisibility = visibilityClause("p", visibleClasses);
-  const attentionIssueVisibility = visibilityClause("i", visibleClasses);
-  const attentionPrVisibility = visibilityClause("p", visibleClasses);
-  const driftIssueVisibility = visibilityClause("i", visibleClasses);
-  const driftPrVisibility = visibilityClause("p", visibleClasses);
-  const personalIssueVisibility = visibilityClause("i", visibleClasses);
-  const personalPrVisibility = visibilityClause("p", visibleClasses);
-  const linkedPrVisibility = visibilityClause("p", visibleClasses);
+  const criticalVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const prVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const issueListVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const allPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const partialIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const partialPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const staleIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const stalePrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const violationIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const violationPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const attentionIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const attentionPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const driftIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const driftPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const personalIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const personalPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const linkedPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
   const startSql = sqlDate(start) ?? "1970-01-01 00:00:00";
   const endSql = sqlDate(end) ?? "1970-01-01 00:00:00";
   const watchedUserPlaceholders = profile.people.watchedUsers.map(() => "?").join(", ");
-  const hiddenIssueExpression =
-    visibleClasses.length === 0
-      ? "COUNT(*)"
-      : `SUM(CASE WHEN visibility_class IN (${visibilityClassListSql(visibleClasses)}) THEN 0 ELSE 1 END)`;
-  const hiddenPrExpression =
-    visibleClasses.length === 0
-      ? "COUNT(*)"
-      : `SUM(CASE WHEN visibility_class IN (${visibilityClassListSql(visibleClasses)}) THEN 0 ELSE 1 END)`;
+  const hiddenIssueExpression = `SUM(CASE WHEN ${hiddenIssueVisibility.sql} THEN 0 ELSE 1 END)`;
+  const hiddenPrExpression = `SUM(CASE WHEN ${hiddenPrVisibility.sql} THEN 0 ELSE 1 END)`;
   const staleThresholdHours = cacheStaleHoursFromEnv();
   const staleCutoff = sqlDate(new Date(Date.now() - staleThresholdHours * 3_600_000)) ?? "1970-01-01 00:00:00";
   const [criticalRows] = await pool.execute<RowData[]>(
@@ -1747,12 +1773,12 @@ export async function getDashboardSummary(
     [repoId, ...staleIssueVisibility.params, repoId, ...stalePrVisibility.params]
   );
   const [hiddenIssueRows] = await pool.execute<RowData[]>(
-    `SELECT ${hiddenIssueExpression} AS hidden_issues FROM issues WHERE repo_id = ?`,
-    [repoId]
+    `SELECT ${hiddenIssueExpression} AS hidden_issues FROM issues i WHERE i.repo_id = ?`,
+    [...hiddenIssueVisibility.params, repoId]
   );
   const [hiddenPrRows] = await pool.execute<RowData[]>(
-    `SELECT ${hiddenPrExpression} AS hidden_pull_requests FROM pull_requests WHERE repo_id = ?`,
-    [repoId]
+    `SELECT ${hiddenPrExpression} AS hidden_pull_requests FROM pull_requests p WHERE p.repo_id = ?`,
+    [...hiddenPrVisibility.params, repoId]
   );
   const [violationRows] = await pool.execute<RowData[]>(
     `SELECT v.*

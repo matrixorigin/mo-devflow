@@ -121,6 +121,7 @@ export interface NormalizedIssue {
   aiEffortLabel: string | null;
   isPullRequest: boolean;
   sourceAuthType: SourceAuthType;
+  sourceUserId: number | null;
   visibilityClass: VisibilityClass;
   isComplete: boolean;
   rawPayload: unknown;
@@ -161,6 +162,7 @@ export interface NormalizedPullRequest {
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
   sourceAuthType: SourceAuthType;
+  sourceUserId: number | null;
   visibilityClass: VisibilityClass;
   isComplete: boolean;
   rawPayload: unknown;

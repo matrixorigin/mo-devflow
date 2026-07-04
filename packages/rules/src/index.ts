@@ -68,6 +68,11 @@ interface TestingFlowDerivation {
   queueAgeHours: number | null;
 }
 
+export interface CacheSource {
+  authType: SourceAuthType;
+  userId: number | null;
+}
+
 export function labelNames(labels: Array<string | GitHubLabel> | undefined): string[] {
   return (labels ?? [])
     .map((label) => (typeof label === "string" ? label : label.name ?? ""))
@@ -142,8 +147,11 @@ function chooseAiEffortLabel(profile: RepoProfile, labels: string[]): string | n
   return profile.labels.aiEffort.find((label) => labels.includes(label)) ?? null;
 }
 
-function visibility(profile: RepoProfile, sourceAuthType: SourceAuthType): VisibilityClass {
-  if (sourceAuthType === "user_token" && !profile.access.exposeUserTokenSyncedPrivateData) {
+function visibility(profile: RepoProfile, source: CacheSource): VisibilityClass {
+  if (source.authType === "user_token" && source.userId === null) {
+    throw new Error("user_token cache source requires source user id");
+  }
+  if (source.authType === "user_token" && !profile.access.exposeUserTokenSyncedPrivateData) {
     return "token_owner_only";
   }
   return profile.access.anonymousRead ? "anonymous_readable" : "logged_in_readable";
@@ -248,7 +256,7 @@ function maxIso(values: Array<string | null | undefined>): string | null {
 export function normalizeIssue(
   profile: RepoProfile,
   issue: GitHubIssueLike,
-  sourceAuthType: SourceAuthType,
+  source: CacheSource,
   ownerHints?: IssueOwnerHints
 ): NormalizedIssue {
   const labels = labelNames(issue.labels);
@@ -273,8 +281,9 @@ export function normalizeIssue(
     severity: lifecycle.severity,
     aiEffortLabel: chooseAiEffortLabel(profile, labels),
     isPullRequest: Boolean(issue.pull_request),
-    sourceAuthType,
-    visibilityClass: visibility(profile, sourceAuthType),
+    sourceAuthType: source.authType,
+    sourceUserId: source.userId,
+    visibilityClass: visibility(profile, source),
     isComplete: false,
     rawPayload: issue
   };
@@ -283,7 +292,7 @@ export function normalizeIssue(
 export function normalizePullRequest(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
-  sourceAuthType: SourceAuthType,
+  source: CacheSource,
   insight?: PullRequestInsight
 ): NormalizedPullRequest {
   const labels = labelNames(pr.labels);
@@ -357,8 +366,9 @@ export function normalizePullRequest(
     testingSignals: testingFlow.signals,
     testingQueueAgeHours: testingFlow.queueAgeHours,
     attentionFlags,
-    sourceAuthType,
-    visibilityClass: visibility(profile, sourceAuthType),
+    sourceAuthType: source.authType,
+    sourceUserId: source.userId,
+    visibilityClass: visibility(profile, source),
     isComplete: false,
     rawPayload: pr
   };

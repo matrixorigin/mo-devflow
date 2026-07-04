@@ -51,6 +51,8 @@ const profile: RepoProfile = {
   raw: {}
 };
 
+const anonymousSource = { authType: "anonymous" as const, userId: null };
+
 describe("rules", () => {
   test("critical issue is repo-wide and owner is derived from assignee first", () => {
     const issue = normalizeIssue(
@@ -66,8 +68,7 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "owner" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(issue.lifecycleState).toBe("critical");
@@ -75,6 +76,40 @@ describe("rules", () => {
     expect(issue.ownerLogin).toBe("owner");
     expect(issue.ownerReason).toBe("assignee");
     expect(issue.visibilityClass).toBe("anonymous_readable");
+  });
+
+  test("rejects user-token cache sources without a source user id", () => {
+    expect(() =>
+      normalizeIssue(
+        profile,
+        {
+          id: 1,
+          number: 7,
+          title: "private issue",
+          state: "open",
+          user: { login: "reporter" }
+        },
+        { authType: "user_token", userId: null }
+      )
+    ).toThrow("user_token cache source requires source user id");
+  });
+
+  test("marks user-token cache as token-owner-only when profile does not expose it", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 1,
+        number: 7,
+        title: "private issue",
+        state: "open",
+        user: { login: "reporter" }
+      },
+      { authType: "user_token", userId: 42 }
+    );
+
+    expect(issue.sourceAuthType).toBe("user_token");
+    expect(issue.sourceUserId).toBe(42);
+    expect(issue.visibilityClass).toBe("token_owner_only");
   });
 
   test("issue owner can be derived from linked active PR author", () => {
@@ -91,8 +126,7 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: []
-      },
-      "anonymous",
+      }, anonymousSource,
       { linkedPrAuthorByIssueNumber: new Map([[18, "pr-author"]]) }
     );
 
@@ -114,8 +148,7 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "assigned-owner" }]
-      },
-      "anonymous",
+      }, anonymousSource,
       { linkedPrAuthorByIssueNumber: new Map([[19, "pr-author"]]) }
     );
 
@@ -161,8 +194,7 @@ describe("rules", () => {
         updated_at: "2026-06-01T00:00:00Z",
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(pr.ownerLogin).toBe("alice");
@@ -185,8 +217,7 @@ describe("rules", () => {
         updated_at: freshSystemUpdate,
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous",
+      }, anonymousSource,
       {
         number: 9,
         reviewDecision: null,
@@ -220,8 +251,7 @@ describe("rules", () => {
         updated_at: now,
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous",
+      }, anonymousSource,
       {
         number: 10,
         reviewDecision: "changes_requested",
@@ -258,8 +288,7 @@ describe("rules", () => {
         head: { ref: "fix" },
         base: { ref: "main" },
         requested_reviewers: [{ login: "tester-a" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -287,8 +316,7 @@ describe("rules", () => {
         requested_reviewers: [{ login: "tester-a" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -316,8 +344,7 @@ describe("rules", () => {
         requested_reviewers: [{ login: "tester-a" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous",
+      }, anonymousSource,
       {
         number: 23,
         reviewDecision: "approved",
@@ -362,8 +389,7 @@ describe("rules", () => {
         assignees: [{ login: "qa-owner" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -388,7 +414,7 @@ describe("rules", () => {
     };
     const now = new Date().toISOString();
 
-    const changesRequested = normalizePullRequest(testProfile, basePr, "anonymous", {
+    const changesRequested = normalizePullRequest(testProfile, basePr, anonymousSource, {
       number: 20,
       reviewDecision: "changes_requested",
       mergeStateStatus: null,
@@ -399,7 +425,7 @@ describe("rules", () => {
       detailSyncedAt: now,
       detailError: null
     });
-    const approved = normalizePullRequest(testProfile, basePr, "anonymous", {
+    const approved = normalizePullRequest(testProfile, basePr, anonymousSource, {
       number: 20,
       reviewDecision: "approved",
       mergeStateStatus: null,
@@ -410,7 +436,7 @@ describe("rules", () => {
       detailSyncedAt: now,
       detailError: null
     });
-    const closed = normalizePullRequest(testProfile, { ...basePr, state: "closed", closed_at: now }, "anonymous");
+    const closed = normalizePullRequest(testProfile, { ...basePr, state: "closed", closed_at: now }, anonymousSource);
 
     expect(changesRequested.testingState).toBe("test_changes_requested");
     expect(approved.testingState).toBe("test_passed");
@@ -431,8 +457,7 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }],
         assignees: []
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("bug_missing_needs_triage");
@@ -452,8 +477,7 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "needs-triage" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("needs_triage_stale");
@@ -473,8 +497,7 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("premature_active_severity");
@@ -494,8 +517,7 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain("premature_active_severity");
@@ -515,8 +537,7 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "needs-triage" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     const rules = workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey);
@@ -537,8 +558,7 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     expect(aiDriftSignalsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("critical_missing_ai_effort");
@@ -558,8 +578,7 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }, { name: "ai-easy" }],
         assignees: [{ login: "alice" }]
-      },
-      "anonymous"
+      }, anonymousSource
     );
 
     const signals = aiDriftSignalsForIssue(profile, issue);
