@@ -239,6 +239,7 @@ Webhook handling:
 - Verify `X-Hub-Signature-256` against the exact raw request body.
 - Require `repository.full_name` in the webhook payload and ignore deliveries for any repo other than the active profile.
 - Accept only events with implemented cache ingestion at the API boundary; MVP ingestion supports `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `workflow_run`, and `check_run`.
+- Record GitHub `ping` as a signed connectivity probe for webhook setup verification, but do not enqueue it as cache-ingestion work.
 - Process `issue_comment` by refreshing the current issue comment cache before updating issue workflow attention.
 - Process `pull_request_review` by refreshing current PR insight from GitHub before updating review attention state.
 - Process `workflow_run` and `check_run` by extracting linked PR numbers, refreshing current PR insight from GitHub, and then updating CI attention state.

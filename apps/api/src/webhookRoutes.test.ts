@@ -444,6 +444,55 @@ describe("webhook routes", () => {
     }
   });
 
+  test("records signed GitHub ping webhooks as connectivity probes without queuing cache work", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      zen: "Keep it logically awesome.",
+      hook_id: 123,
+      repository: { full_name: "matrixorigin/matrixone" }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-ping",
+          "x-github-event": "ping",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({
+        accepted: true,
+        duplicate: false,
+        ignored: true,
+        deliveryId: "delivery-ping",
+        eventName: "ping",
+        reason: "connectivity_probe"
+      });
+      expect(mocks.upsertRepoProfile).toHaveBeenCalledWith(profile);
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-ping",
+          eventName: "ping",
+          action: null,
+          ignoredReason: "connectivity_probe",
+          rawPayload: rawBody
+        })
+      );
+      expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("ignores signed GitHub webhooks for events that are not ingested yet", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
   buildGitHubWriteCapabilities,
+  githubWebhookConnectivityEvents,
+  isGitHubWebhookConnectivityEvent,
   isSupportedGitHubWebhookEvent,
   notificationStatusAllowsRetry,
   notificationStatusRequiresAcknowledgement,
@@ -164,6 +166,13 @@ describe("GitHub webhook event contract", () => {
     expect(isSupportedGitHubWebhookEvent("pull_request_review")).toBe(true);
     expect(isSupportedGitHubWebhookEvent("workflow_run")).toBe(true);
     expect(isSupportedGitHubWebhookEvent("check_run")).toBe(true);
+    expect(isSupportedGitHubWebhookEvent("ping")).toBe(false);
     expect(isSupportedGitHubWebhookEvent("deployment_status")).toBe(false);
+  });
+
+  test("keeps connectivity probes separate from cache-ingested events", () => {
+    expect(githubWebhookConnectivityEvents).toEqual(["ping"]);
+    expect(isGitHubWebhookConnectivityEvent("ping")).toBe(true);
+    expect(isGitHubWebhookConnectivityEvent("issues")).toBe(false);
   });
 });

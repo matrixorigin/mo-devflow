@@ -24,8 +24,15 @@ export const supportedGitHubWebhookEvents = [
 ] as const;
 export type SupportedGitHubWebhookEvent = (typeof supportedGitHubWebhookEvents)[number];
 
+export const githubWebhookConnectivityEvents = ["ping"] as const;
+export type GitHubWebhookConnectivityEvent = (typeof githubWebhookConnectivityEvents)[number];
+
 export function isSupportedGitHubWebhookEvent(eventName: string): eventName is SupportedGitHubWebhookEvent {
   return (supportedGitHubWebhookEvents as readonly string[]).includes(eventName);
+}
+
+export function isGitHubWebhookConnectivityEvent(eventName: string): eventName is GitHubWebhookConnectivityEvent {
+  return (githubWebhookConnectivityEvents as readonly string[]).includes(eventName);
 }
 
 export interface RepoProfile {
@@ -925,7 +932,9 @@ export interface WebhookIngestionHealth {
   normalizationFailedDeliveries: number;
   ignoredDeliveries: number;
   duplicateDeliveries: number;
+  connectivityProbeDeliveries: number;
   lastReceivedAt: string | null;
+  lastConnectivityProbeAt: string | null;
   latestFailure: string | null;
   eventSummaries: GitHubWebhookEventHealth[];
   recentDeliveries: GitHubWebhookDeliveryView[];

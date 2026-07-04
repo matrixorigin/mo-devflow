@@ -132,12 +132,15 @@ secret; deliveries are rejected until it is configured. Payloads must include
 `repository.full_name`, and deliveries for other repositories are ignored.
 Only implemented cache-ingestion events are accepted: `issues`,
 `issue_comment`, `pull_request`, `pull_request_review`, `workflow_run`, and
-`check_run`. Comment, review, and CI webhooks trigger a focused fresh read
-before updating handoff, request-change, CI, and testing attention, instead of
-trusting a single webhook payload as the final workflow state.
-Other signed events are acknowledged as ignored before they enter the queue, and
-ignored deliveries are still counted for operational visibility. Accepted
-deliveries store the delivery ID and raw payload before acknowledgement.
+`check_run`. GitHub's `ping` delivery is recorded separately as a connectivity
+probe: it proves the payload URL and secret are wired correctly, but it does not
+enter the worker queue or count as issue/PR freshness. Comment, review, and CI
+webhooks trigger a focused fresh read before updating handoff, request-change,
+CI, and testing attention, instead of trusting a single webhook payload as the
+final workflow state. Other signed events are acknowledged as ignored before
+they enter the queue, and ignored deliveries are still counted for operational
+visibility. Accepted deliveries store the delivery ID and raw payload before
+acknowledgement.
 Duplicate deliveries are ignored and counted for operational visibility. The
 worker processes stored issue and pull request deliveries asynchronously into
 the MatrixOne cache.

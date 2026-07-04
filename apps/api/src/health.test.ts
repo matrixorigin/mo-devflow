@@ -56,7 +56,9 @@ const operational: OperationalHealthSummary = {
     normalizationFailedDeliveries: 0,
     ignoredDeliveries: 0,
     duplicateDeliveries: 0,
+    connectivityProbeDeliveries: 0,
     lastReceivedAt: null,
+    lastConnectivityProbeAt: null,
     latestFailure: null,
     eventSummaries: [],
     recentDeliveries: []

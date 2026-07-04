@@ -58,6 +58,7 @@ import type {
 import {
   csrfCookieName,
   csrfHeaderName,
+  githubWebhookConnectivityEvents,
   notificationStatusAllowsRetry,
   notificationStatusRequiresAcknowledgement,
   supportedGitHubWebhookEvents,
@@ -4623,6 +4624,9 @@ function webhookStatusChipLabel(readiness: WebhookReadinessSummary): string {
   }
   if (readiness.mode === "waiting_for_delivery") {
     return "hook: waiting";
+  }
+  if (readiness.mode === "connected_waiting_for_activity") {
+    return "hook: connected";
   }
   if (readiness.mode === "queued") {
     return "hook: queued";
@@ -9428,10 +9432,12 @@ function WebhookIngestionBoard({
   const pendingDeliveries = data.webhooks.pendingDeliveries;
   const failedDeliveries = data.webhooks.failedDeliveries;
   const duplicateDeliveries = data.webhooks.duplicateDeliveries;
+  const connectivityProbeDeliveries = data.webhooks.connectivityProbeDeliveries;
   const eventSummaryByName = new Map(data.webhooks.eventSummaries.map((summary) => [summary.eventName, summary]));
   const observedUnsupportedEvents = data.webhooks.eventSummaries.filter(
     (summary) =>
-      !supportedGitHubWebhookEvents.includes(summary.eventName as (typeof supportedGitHubWebhookEvents)[number])
+      !supportedGitHubWebhookEvents.includes(summary.eventName as (typeof supportedGitHubWebhookEvents)[number]) &&
+      !githubWebhookConnectivityEvents.includes(summary.eventName as (typeof githubWebhookConnectivityEvents)[number])
   );
   const columns: ColumnsType<GitHubWebhookDeliveryView> = [
     {
@@ -9579,6 +9585,13 @@ function WebhookIngestionBoard({
             onClick={() => onScopeFilterChange("ignored")}
           />
           <CriticalBoardStat
+            label="ping"
+            value={connectivityProbeDeliveries}
+            tone={connectivityProbeDeliveries > 0 ? "good" : "muted"}
+            active={scopeFilter === "ignored"}
+            onClick={() => onScopeFilterChange("ignored")}
+          />
+          <CriticalBoardStat
             label="duplicates"
             value={duplicateDeliveries}
             tone={duplicateDeliveries > 0 ? "muted" : "good"}
@@ -9684,6 +9697,18 @@ function WebhookSetupPanel({
             </Text>
           </Space>
         </WebhookSetupCard>
+        <WebhookSetupCard label="Ping probe">
+          <Space orientation="vertical" size={4}>
+            <Tag color={data.webhooks.lastConnectivityProbeAt ? "green" : "default"}>
+              {data.webhooks.lastConnectivityProbeAt ? "connected" : "not observed"}
+            </Tag>
+            <Text type="secondary">
+              {data.webhooks.lastConnectivityProbeAt
+                ? `Last ping ${formatDate(data.webhooks.lastConnectivityProbeAt)}`
+                : "GitHub sends ping when the hook is saved."}
+            </Text>
+          </Space>
+        </WebhookSetupCard>
         <WebhookSetupCard label="Events">
           <Space size={[4, 4]} wrap>
             <Text code copyable={{ text: eventList }}>
@@ -9767,6 +9792,9 @@ function webhookReadinessModeLabel(mode: WebhookReadinessSummary["mode"]): strin
   }
   if (mode === "waiting_for_delivery") {
     return "waiting";
+  }
+  if (mode === "connected_waiting_for_activity") {
+    return "connected";
   }
   if (mode === "queued") {
     return "queued";

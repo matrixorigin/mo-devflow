@@ -52,7 +52,8 @@ export interface UpdatePipelineSummary {
   tiles: UpdatePipelineTile[];
 }
 
-export type WebhookReadinessMode = "polling_only" | "waiting_for_delivery" | "receiving" | "queued" | "failed";
+export type WebhookReadinessMode =
+  "polling_only" | "waiting_for_delivery" | "connected_waiting_for_activity" | "receiving" | "queued" | "failed";
 
 export interface WebhookReadinessSummary {
   tone: UpdatePipelineTone;
@@ -138,6 +139,10 @@ function evidenceHours(value: number | null): string {
   return `${(value / 24).toFixed(1)}d`;
 }
 
+function evidenceDate(value: string | null): string {
+  return value ?? "none";
+}
+
 function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number {
   return webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
 }
@@ -210,6 +215,42 @@ export function summarizeWebhookReadiness(
     };
   }
 
+  if (webhooks.processedDeliveries > 0) {
+    return {
+      tone: "good",
+      mode: "receiving",
+      title: "Webhook ingest is receiving workflow events",
+      description:
+        "GitHub workflow deliveries are reaching the cache; worker repair jobs keep derived dashboard facts current.",
+      facts: [
+        `last ${webhooks.lastReceivedAt}`,
+        `${processed} processed`,
+        `${webhooks.ignoredDeliveries} ignored`,
+        `${webhooks.duplicateDeliveries} duplicates`
+      ],
+      nextActions: ["Monitor failed and pending counts; no setup action is required."]
+    };
+  }
+
+  if (webhooks.lastConnectivityProbeAt) {
+    return {
+      tone: "good",
+      mode: "connected_waiting_for_activity",
+      title: "Webhook endpoint is connected",
+      description:
+        "GitHub ping has verified the payload URL and secret. No supported issue, PR, review, comment, or CI delivery has been processed yet.",
+      facts: [
+        `${webhooks.connectivityProbeDeliveries} ping probe${webhooks.connectivityProbeDeliveries === 1 ? "" : "s"}`,
+        `last ping ${webhooks.lastConnectivityProbeAt}`,
+        `${processed} processed workflow deliveries`
+      ],
+      nextActions: [
+        "Trigger a harmless issue or PR update to verify supported workflow event processing.",
+        "Keep worker polling enabled as repair until the first workflow event is processed."
+      ]
+    };
+  }
+
   if (!webhooks.lastReceivedAt) {
     return {
       tone: "attention",
@@ -226,17 +267,21 @@ export function summarizeWebhookReadiness(
   }
 
   return {
-    tone: "good",
-    mode: "receiving",
-    title: "Webhook ingest is receiving deliveries",
-    description: "GitHub deliveries are reaching the cache; worker repair jobs keep derived dashboard facts current.",
+    tone: "attention",
+    mode: "waiting_for_delivery",
+    title: "Webhook deliveries are visible but no workflow event has processed",
+    description:
+      "The endpoint has recorded deliveries, but they were ignored or unsupported. Near-real-time issue and PR freshness still needs a supported event.",
     facts: [
       `last ${webhooks.lastReceivedAt}`,
-      `${processed} processed`,
       `${webhooks.ignoredDeliveries} ignored`,
-      `${webhooks.duplicateDeliveries} duplicates`
+      `${webhooks.duplicateDeliveries} duplicates`,
+      `${processed} processed workflow deliveries`
     ],
-    nextActions: ["Monitor failed and pending counts; no setup action is required."]
+    nextActions: [
+      "Confirm GitHub is sending the supported events listed below.",
+      "Trigger an issue, PR, review, comment, or CI update and verify it is processed."
+    ]
   };
 }
 
@@ -290,15 +335,25 @@ export function summarizeUpdatePipeline(
             ? `${webhooks.pendingDeliveries} pending`
             : secretMissing
               ? "polling only"
-              : webhooks.lastReceivedAt
+              : webhooks.processedDeliveries > 0
                 ? "receiving"
-                : "no deliveries",
+                : webhooks.lastConnectivityProbeAt
+                  ? "connected"
+                  : "no deliveries",
       detail: webhooks.lastReceivedAt
-        ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed`
+        ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed; ping ${evidenceDate(
+            webhooks.lastConnectivityProbeAt
+          )}`
         : secretMissing
           ? "webhook secret is missing; worker polling and manual refresh are the current update path"
           : "polling repair is the only observed update path",
-      tone: webhookRisk ? "critical" : pendingWebhookRisk ? "attention" : webhooks.lastReceivedAt ? "good" : "normal",
+      tone: webhookRisk
+        ? "critical"
+        : pendingWebhookRisk
+          ? "attention"
+          : webhooks.processedDeliveries > 0 || webhooks.lastConnectivityProbeAt
+            ? "good"
+            : "normal",
       target: "webhooks"
     },
     {
@@ -340,9 +395,12 @@ export function summarizeUpdatePipeline(
   return {
     tone: "good",
     title: "Updates are flowing from cache",
-    detail: webhooks.lastReceivedAt
-      ? "Worker, queue, webhook processing, and active cache freshness are clear."
-      : "Worker and polling repair are healthy; no GitHub webhook delivery has been observed in cache.",
+    detail:
+      webhooks.processedDeliveries > 0
+        ? "Worker, queue, webhook processing, and active cache freshness are clear."
+        : webhooks.lastConnectivityProbeAt
+          ? "Worker and polling repair are healthy; GitHub ping has connected, but no supported workflow event has processed yet."
+          : "Worker and polling repair are healthy; no GitHub webhook delivery has been observed in cache.",
     tiles
   };
 }
@@ -402,9 +460,11 @@ export function summarizeProductionReadiness(input: {
       status:
         webhookReadiness.mode === "receiving"
           ? "ready"
-          : webhookReadiness.mode === "failed" || webhookReadiness.mode === "polling_only"
-            ? "needs_action"
-            : "waiting",
+          : webhookReadiness.mode === "connected_waiting_for_activity"
+            ? "waiting"
+            : webhookReadiness.mode === "failed" || webhookReadiness.mode === "polling_only"
+              ? "needs_action"
+              : "waiting",
       tone: webhookReadiness.tone,
       value: webhookReadiness.mode === "receiving" ? "receiving" : webhookReadiness.mode.replaceAll("_", " "),
       detail: webhookReadiness.description,

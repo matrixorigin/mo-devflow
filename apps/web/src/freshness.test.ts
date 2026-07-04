@@ -76,7 +76,9 @@ function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardS
     normalizationFailedDeliveries: 0,
     ignoredDeliveries: 0,
     duplicateDeliveries: 0,
+    connectivityProbeDeliveries: 0,
     lastReceivedAt: null,
+    lastConnectivityProbeAt: null,
     latestFailure: null,
     eventSummaries: [],
     recentDeliveries: [],
@@ -414,6 +416,43 @@ describe("webhook readiness summary", () => {
     expect(summary.nextActions.join(" ")).toContain("GitHub webhook URL");
   });
 
+  test("reports connected state when GitHub ping is received before workflow events", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({
+        ignoredDeliveries: 1,
+        connectivityProbeDeliveries: 1,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z",
+        lastConnectivityProbeAt: "2026-07-04T01:00:00.000Z"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "good",
+      mode: "connected_waiting_for_activity",
+      title: "Webhook endpoint is connected"
+    });
+    expect(summary.facts).toContain("1 ping probe");
+    expect(summary.nextActions.join(" ")).toContain("supported workflow event");
+  });
+
+  test("does not treat unsupported ignored deliveries as processed webhook freshness", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({
+        ignoredDeliveries: 1,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "attention",
+      mode: "waiting_for_delivery",
+      title: "Webhook deliveries are visible but no workflow event has processed"
+    });
+    expect(summary.facts).toContain("0 processed workflow deliveries");
+  });
+
   test("prioritizes failed deliveries over setup state", () => {
     const summary = summarizeWebhookReadiness({
       profileWarnings: [],
@@ -459,7 +498,7 @@ describe("webhook readiness summary", () => {
     expect(summary).toMatchObject({
       tone: "good",
       mode: "receiving",
-      title: "Webhook ingest is receiving deliveries"
+      title: "Webhook ingest is receiving workflow events"
     });
     expect(summary.facts).toContain("9 processed");
   });

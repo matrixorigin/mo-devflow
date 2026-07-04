@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { isSupportedGitHubWebhookEvent } from "@mo-devflow/shared";
+import { isGitHubWebhookConnectivityEvent, isSupportedGitHubWebhookEvent } from "@mo-devflow/shared";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
   enqueueJobsNow,
@@ -86,6 +86,28 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
         deliveryId: headers.deliveryId,
         eventName: headers.eventName,
         reason: "repository_mismatch"
+      });
+    }
+
+    if (isGitHubWebhookConnectivityEvent(headers.eventName)) {
+      const result = await recordIgnoredGitHubWebhookDelivery({
+        repoId,
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        action: webhookActionFromPayload(request.body),
+        signature256: headers.signature256,
+        headers: safeWebhookHeaders(request.headers),
+        payload: request.body,
+        rawPayload: rawBody,
+        ignoredReason: "connectivity_probe"
+      });
+      return reply.status(result.duplicate ? 200 : 202).send({
+        accepted: !result.duplicate,
+        duplicate: result.duplicate,
+        ignored: true,
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        reason: "connectivity_probe"
       });
     }
 

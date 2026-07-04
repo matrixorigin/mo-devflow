@@ -53,7 +53,9 @@ describe("webhook ingestion health", () => {
               normalization_failed_deliveries: 1,
               ignored_deliveries: 3,
               duplicate_deliveries: 2,
-              last_received_at: "2026-07-04 12:00:00"
+              connectivity_probe_deliveries: 1,
+              last_received_at: "2026-07-04 12:00:00",
+              last_connectivity_probe_at: "2026-07-04 10:00:00"
             }
           ]
         ];
@@ -91,7 +93,9 @@ describe("webhook ingestion health", () => {
       normalizationFailedDeliveries: 1,
       ignoredDeliveries: 3,
       duplicateDeliveries: 2,
+      connectivityProbeDeliveries: 1,
       lastReceivedAt: "2026-07-04T12:00:00.000Z",
+      lastConnectivityProbeAt: "2026-07-04T10:00:00.000Z",
       latestFailure: "delivery-bad: bad payload",
       eventSummaries: [
         {
