@@ -630,15 +630,18 @@ function testingStateColor(state: TestingFlowState): string {
   if (state === "test_passed" || state === "closed_or_merged") {
     return "green";
   }
-  if (state === "test_requested" || state === "testing") {
+  if (state === "testing") {
     return "blue";
+  }
+  if (state === "test_requested") {
+    return "gold";
   }
   return "default";
 }
 
 function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "test_requested") {
-    return "legacy PR test signal";
+    return "PR-only signal";
   }
   if (state === "testing") {
     return "issue in test";
@@ -668,16 +671,16 @@ function testingSignalBusinessLabel(signal: string): string {
     return `issue #${issueLabel[1]} label ${issueLabel[2]}`;
   }
   if (signal.startsWith("reviewer:")) {
-    return `PR reviewer signal: ${signal.slice("reviewer:".length)}`;
+    return `PR reviewer signal only; not an issue testing handoff: ${signal.slice("reviewer:".length)}`;
   }
   if (signal.startsWith("assignee:")) {
-    return `PR assigned to ${signal.slice("assignee:".length)}`;
+    return `PR assignee signal only; not an issue testing handoff: ${signal.slice("assignee:".length)}`;
   }
   if (signal.startsWith("label:")) {
-    return `label ${signal.slice("label:".length)}`;
+    return `PR label signal only; not an issue testing handoff: ${signal.slice("label:".length)}`;
   }
   if (signal.startsWith("comment:")) {
-    return `comment signal: ${signal.slice("comment:".length)}`;
+    return `PR comment signal only; not an issue testing handoff: ${signal.slice("comment:".length)}`;
   }
   return labelText(signal);
 }
@@ -692,16 +695,16 @@ function testingSignalTagLabel(signal: string): string {
     return `issue label: ${issueLabel[2]}`;
   }
   if (signal.startsWith("reviewer:")) {
-    return `legacy PR reviewer: ${signal.slice("reviewer:".length)}`;
+    return `PR reviewer: ${signal.slice("reviewer:".length)}`;
   }
   if (signal.startsWith("assignee:")) {
-    return `legacy PR assignee: ${signal.slice("assignee:".length)}`;
+    return `PR assignee: ${signal.slice("assignee:".length)}`;
   }
   if (signal.startsWith("label:")) {
-    return `legacy PR label: ${signal.slice("label:".length)}`;
+    return `PR label: ${signal.slice("label:".length)}`;
   }
   if (signal.startsWith("comment:")) {
-    return "legacy PR comment signal";
+    return "PR comment signal";
   }
   return labelText(signal);
 }
@@ -1983,7 +1986,7 @@ function TeamFlowRiskStrip({
         onClick={() => onOpenPrsFilter("attention")}
       />
       <TeamFlowRiskCard
-        label="Test waits"
+        label="Issue test waits"
         value={data.testing.staleQueueIssues}
         detail={`${data.testing.queueIssues} issues in test | max ${optionalHours(maxTestingIssueAge(data.testing.issues))}`}
         tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
@@ -3187,7 +3190,7 @@ function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { ti
   if (data.testing.staleQueueIssues > 0) {
     return {
       title: `${data.testing.staleQueueIssues} issues have waited on test too long.`,
-      detail: `${data.testing.queueIssues} issues match configured testing handoff rules.`
+      detail: `${data.testing.queueIssues} issues match configured issue testing rules.`
     };
   }
   if (data.counts.attentionPrs > 0) {
@@ -4756,8 +4759,8 @@ function TestingCommandBoard({
       <div className="testing-scope-note">
         <Text strong>An issue enters testing when it matches configured handoff rules.</Text>
         <Text type="secondary">
-          Supported evidence is configured tester assignment or configured issue label. PR reviewer signals remain
-          legacy PR evidence only.
+          Supported evidence is configured tester assignment or configured issue label. PR reviewer, assignee, label,
+          and comment signals are PR-only evidence, not issue testing handoffs.
         </Text>
       </div>
 
@@ -4802,7 +4805,7 @@ function TestingCommandBoard({
           onClick={scrollToIssueQueue}
         />
         <TestingBoardStat
-          label="test starts"
+          label="issue handoffs"
           value={testing.issueTransitionEvents}
           tone={testing.issueTransitionEvents > 0 ? "normal" : "muted"}
           actionLabel="View"
@@ -4975,7 +4978,7 @@ function TestingIssueQueuePanel({
     <section className="testing-issue-panel" id="testing-issue-queue" aria-label="Issue-level testing queue">
       <div className="testing-issue-panel-heading">
         <div>
-          <Text strong>Issues In Test</Text>
+          <Text strong>Issue Testing Queue</Text>
           <Text type="secondary">Issues assigned to configured testers. Linked PRs show execution and blockers.</Text>
         </div>
         <Tag color={sortedIssues.some(isTestingIssueStale) ? "red" : "blue"}>{sortedIssues.length} shown</Tag>
@@ -5194,7 +5197,7 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
         <section className="testing-issue-preview-section">
           <Text strong>Handoff evidence</Text>
           {issue.testingSignals.length === 0 ? (
-            <Text type="secondary">No configured testing handoff signal is visible in cache.</Text>
+            <Text type="secondary">No configured issue testing signal is visible in cache.</Text>
           ) : (
             <Space size={[4, 4]} wrap>
               {issue.testingSignals.map((signal) => (
@@ -6188,7 +6191,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           />
           <ActionQueueSection
             title="Needs attention"
-            description="PRs, issue testing handoffs, and triage items with blocking signals."
+            description="PRs, issue testing, and triage items with blocking signals."
             items={attentionItems}
             offset={criticalItems.length}
             tone="attention"
@@ -6299,7 +6302,7 @@ function actionQueueFilterDescription(filter: PersonalActionQueueFilter): string
     return "Visible issue work owned by this person.";
   }
   if (filter === "testing") {
-    return "Issues currently in testing handoff, plus linked PR evidence.";
+    return "Issues currently in testing, plus linked PR evidence.";
   }
   if (filter === "prs") {
     return "All visible PR work for this person.";
@@ -6818,7 +6821,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
         />
         <FlowThreadSection
           title="Attention threads"
-          description="PR or issue lanes with blockers, testing handoffs, review, CI, or linking risks."
+          description="PR or issue lanes with blockers, issue testing, review, CI, or linking risks."
           rows={attentionRows}
           tone="attention"
           visibleLimit={6}
@@ -6851,7 +6854,7 @@ function personalFlowThreadFilterLabel(filter: PersonalFlowThreadFilter): string
     return "blocked PR or duration-risk work";
   }
   if (filter === "testing") {
-    return "testing handoff work";
+    return "issue testing work";
   }
   if (filter === "needs_link") {
     return "issue-PR linking gaps";
@@ -7141,9 +7144,9 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
             <small>{statusCounts.blockedPrs > 0 ? `${statusCounts.blockedPrs} blocked` : "no PR blocker"}</small>
           </div>
           <div className="team-object-preview-metric">
-            <span>Test flow</span>
+            <span>Issue testing</span>
             <strong>{testingWorkCount}</strong>
-            <small>{testingWorkCount > 0 ? "testing handoff visible" : "not in test"}</small>
+            <small>{testingWorkCount > 0 ? "issue testing visible" : "not in test"}</small>
           </div>
         </div>
 
@@ -7602,7 +7605,7 @@ function PersonalRotationOverview({
                 {person.attentionPrs.length}
               </button>
             </Space>
-            <Text type="secondary">review, CI, merge, testing handoff</Text>
+            <Text type="secondary">review, CI, merge, issue testing</Text>
           </div>
           <div className="team-rotation-list">
             {person.attentionPrs.length === 0 ? (
@@ -7620,7 +7623,7 @@ function PersonalRotationOverview({
         <section className="personal-rotation-lane personal-rotation-lane-attention">
           <div className="team-rotation-lane-heading">
             <Space size={[6, 6]} wrap>
-              <Text strong>Testing Handoffs</Text>
+              <Text strong>Issue Testing</Text>
               <button
                 type="button"
                 className={`team-lane-count ${staleTestingWorkCount > 0 ? "team-lane-count-critical" : ""}`}
@@ -7633,7 +7636,7 @@ function PersonalRotationOverview({
           </div>
           <div className="team-rotation-list">
             {testingWorkCount === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue testing handoffs" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues in testing" />
             ) : (
               <>
                 {testingIssueRows.map((issue) => (
@@ -7752,13 +7755,13 @@ function personalPrimaryFocus(
   if (person.activeCriticalIssues.length > 0) {
     return {
       title: `${person.activeCriticalIssues.length} active s-1/s0 issues should drive the day.`,
-      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} testing waits, ${chart.rows.length} issue/PR threads.`
+      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} issue test waits, ${chart.rows.length} issue/PR threads.`
     };
   }
   if (blockedPrs > 0) {
     return {
       title: `${blockedPrs} PRs need owner movement.`,
-      detail: `${person.pendingPrs.length} pending PRs; ${personalTestingWorkCount(person)} testing handoffs.`
+      detail: `${person.pendingPrs.length} pending PRs; ${personalTestingWorkCount(person)} issues in testing.`
     };
   }
   if (person.needsTriageIssues.length > 0) {
@@ -7801,7 +7804,7 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
     return "Pending PRs";
   }
   if (filter === "testing") {
-    return "Testing Handoffs";
+    return "Issue Testing";
   }
   if (filter === "triage") {
     return "Needs Triage";
@@ -10649,7 +10652,7 @@ export default function App() {
               <section className="section pr-workflow-section">
                 <div className="section-heading pr-workflow-heading">
                   <div>
-                    <Title level={4}>{prBoardTab === "testing" ? "Testing Handoffs" : "PR Rotation"}</Title>
+                    <Title level={4}>{prBoardTab === "testing" ? "Issue Testing" : "PR Rotation"}</Title>
                     <Text type="secondary">
                       {prBoardTab === "testing"
                         ? "Issue assignment or configured issue label starts testing; linked PRs show execution blockers."
@@ -10661,14 +10664,14 @@ export default function App() {
                     onChange={(value) => switchPrBoardTab(value as PrBoardTab)}
                     options={[
                       { label: "PR Rotation", value: "rotation" },
-                      { label: "Testing Handoffs", value: "testing" }
+                      { label: "Issue Testing", value: "testing" }
                     ]}
                   />
                 </div>
 
                 {prBoardTab === "testing" ? (
                   <>
-                    <div className="pr-workflow-status-row" aria-label="Testing handoff shortcuts">
+                    <div className="pr-workflow-status-row" aria-label="Issue testing shortcuts">
                       <button
                         type="button"
                         className={`inline-filter-chip ${
@@ -10695,7 +10698,7 @@ export default function App() {
                         {data.testing.queuePrs} linked PRs
                       </button>
                       {testingHasIssueTransitions ? (
-                        <Tag>{data.testing.issueTransitionEvents} issue test starts</Tag>
+                        <Tag>{data.testing.issueTransitionEvents} issue handoffs</Tag>
                       ) : null}
                       {testingHasIssueTransitions ? (
                         <Tag>last start {formatDate(data.testing.lastIssueTransitionAt)}</Tag>
@@ -10710,12 +10713,12 @@ export default function App() {
                     />
                     <details className="secondary-disclosure pr-diagnostic-disclosure">
                       <summary>
-                        <span>Testing evidence details</span>
+                        <span>Issue testing evidence</span>
                         <Space size={[4, 4]} wrap>
                           <Tag>{data.testing.testers.length} testers</Tag>
                           <Tag>{data.testing.recentIssueTransitions.length} issue events</Tag>
                           {testingHasTurnoverHistory ? (
-                            <Tag>{data.testing.recentTransitions.length} PR history</Tag>
+                            <Tag>{data.testing.recentTransitions.length} PR-only signals</Tag>
                           ) : null}
                         </Space>
                       </summary>
@@ -10746,8 +10749,8 @@ export default function App() {
                             <Alert
                               className="band"
                               type="info"
-                              title="Legacy PR transition history"
-                              description="This table is kept for audit/debugging. Current testing handoff is issue-scoped, so reviewer-only PR signals should not be treated as test requests."
+                              title="PR-only signal audit"
+                              description="This table is kept for audit/debugging. Current testing handoff is issue-scoped, so reviewer-only PR signals are not counted as issue testing handoffs."
                               showIcon
                             />
                             <Table

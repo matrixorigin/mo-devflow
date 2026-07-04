@@ -366,7 +366,7 @@ const attentionFlagLabels: Record<string, string> = {
   ci_failed: "CI failed",
   merge_conflict: "Merge conflict",
   no_human_action_24h: "No human action over 24h",
-  testing_stalled: "Test wait over 24h",
+  testing_stalled: "Issue test wait over 24h",
   review_requested_no_response: "Review waiting"
 };
 
@@ -749,9 +749,9 @@ function testingIssueGanttTone(issue: TestingIssueQueueView): PersonalGanttTone 
 function testingIssueReasons(issue: TestingIssueQueueView): string[] {
   return uniqueStrings(
     [
-      "Testing handoff",
-      issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Test wait over 24h" : null,
-      issue.queueAgeEvidence === "issue_cache_timestamp" ? "Testing start from issue cache timestamp" : null,
+      "Issue testing",
+      issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Issue test wait over 24h" : null,
+      issue.queueAgeEvidence === "issue_cache_timestamp" ? "Issue testing start from issue cache timestamp" : null,
       issue.testers.length > 0 ? `${issue.testers.length} tester${issue.testers.length === 1 ? "" : "s"}` : null,
       issue.testingSignals.some((signal) => signal.startsWith("issue_label:")) ? "Issue label handoff" : null,
       issue.linkedPullRequests.length === 0 ? "No linked PR visible" : null,
@@ -824,7 +824,7 @@ function prReasons(pr: GanttPullRequestSource): string[] {
     reasons.push("Test changes requested");
   }
   if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
-    reasons.push("Test wait over 24h");
+    reasons.push("Issue test wait over 24h");
   }
   return uniqueStrings(reasons);
 }
@@ -930,7 +930,7 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
     add(
       activityFromPullRequest(pr, "Testing PR evidence", "attention", 780, [
         ...prAttentionReasons(pr),
-        pr.testingQueueAgeHours !== null ? "Test wait visible" : "Issue test status visible"
+        pr.testingQueueAgeHours !== null ? "Issue test wait visible" : "Issue test status visible"
       ])
     );
   }

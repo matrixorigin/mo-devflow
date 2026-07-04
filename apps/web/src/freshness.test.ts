@@ -360,7 +360,7 @@ describe("cache evidence summary", () => {
     expect(summary.description).toContain("Known cached facts remain visible");
     expect(summary.description).toContain("not confirmed conclusions");
     expect(summary.affectedConclusions).toContain("deferred explanation checks");
-    expect(summary.affectedConclusions).toContain("review, CI, mergeability, and testing handoff rules");
+    expect(summary.affectedConclusions).toContain("review, CI, mergeability, and issue testing rules");
   });
 
   test("explains skipped successful backfill layers when evidence remains partial", () => {

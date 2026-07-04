@@ -458,7 +458,7 @@ export function summarizeCacheEvidence(input: {
       facts,
       affectedConclusions: [
         "deferred explanation checks",
-        "review, CI, mergeability, and testing handoff rules",
+        "review, CI, mergeability, and issue testing rules",
         "AI effort drift duration checks"
       ],
       recommendedAction:
