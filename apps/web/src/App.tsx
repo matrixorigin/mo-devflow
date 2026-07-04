@@ -141,6 +141,7 @@ type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "
 type CriticalIssueAiFilter = "all" | string;
 type PrScopeFilter =
   | "all"
+  | "active_issue"
   | "attention"
   | "testing"
   | "stale_testing"
@@ -1110,6 +1111,9 @@ function criticalOverflowLabel(filter: CriticalIssueScopeFilter): string {
 }
 
 function prScopeLabel(filter: PrScopeFilter): string {
+  if (filter === "active_issue") {
+    return "linked to active s-1/s0";
+  }
   if (filter === "attention") {
     return "PR attention";
   }
@@ -1279,7 +1283,18 @@ function prEvidencePending(pr: PendingPrView): boolean {
   return !pr.isComplete || pr.detailSyncedAt === null || pr.detailError !== null;
 }
 
-function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean {
+function prHasActiveIssue(pr: PendingPrView, criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>): boolean {
+  return (criticalIssuesByPr.get(pr.number)?.length ?? 0) > 0;
+}
+
+function prMatchesScope(
+  pr: PendingPrView,
+  scopeFilter: PrScopeFilter,
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]> = new Map()
+): boolean {
+  if (scopeFilter === "active_issue") {
+    return prHasActiveIssue(pr, criticalIssuesByPr);
+  }
   if (scopeFilter === "attention") {
     return pr.attentionFlags.length > 0;
   }
@@ -1316,8 +1331,12 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
   return true;
 }
 
-function filterPendingPrs(prs: PendingPrView[], scopeFilter: PrScopeFilter): PendingPrView[] {
-  return prs.filter((pr) => prMatchesScope(pr, scopeFilter));
+function filterPendingPrs(
+  prs: PendingPrView[],
+  scopeFilter: PrScopeFilter,
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]> = new Map()
+): PendingPrView[] {
+  return prs.filter((pr) => prMatchesScope(pr, scopeFilter, criticalIssuesByPr));
 }
 
 function peopleScopeLabel(filter: PeopleScopeFilter): string {
@@ -1442,6 +1461,7 @@ function PrFilterBar({
           onChange={(value) => onScopeFilterChange(value as PrScopeFilter)}
           options={[
             { label: "All", value: "all" },
+            { label: "Active issue", value: "active_issue" },
             { label: "Attention", value: "attention" },
             { label: "Issue in test", value: "testing" },
             { label: "Stale test", value: "stale_testing" },
@@ -2036,6 +2056,59 @@ function TeamPrRiskRow({ activeIssues = [], pr }: { activeIssues?: PrCriticalIss
         <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
       </div>
     </article>
+  );
+}
+
+function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCriticalIssueContext[]; pr: PendingPrView }) {
+  const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
+  const otherIssueNumbers = pr.linkedIssueNumbers.filter((number) => !activeIssueNumbers.has(number));
+
+  return (
+    <Space direction="vertical" size={4}>
+      {activeIssues.length > 0 ? (
+        <Space size={[4, 4]} wrap>
+          {activeIssues.slice(0, 3).map((issue) => (
+            <Tooltip title={prCriticalIssueTooltip(issue)} key={issue.number}>
+              <Tag color={severityColor(issue.severity)}>
+                <a className="critical-issue-tag-link" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+                  #{issue.number} {severityShortLabel(issue.severity)}
+                </a>
+              </Tag>
+            </Tooltip>
+          ))}
+          {activeIssues.length > 3 ? <Tag>+{activeIssues.length - 3}</Tag> : null}
+        </Space>
+      ) : null}
+      {otherIssueNumbers.length > 0 ? (
+        <Space size={[4, 4]} wrap>
+          <Text type="secondary">{activeIssues.length > 0 ? "other" : "issues"}</Text>
+          {otherIssueNumbers.slice(0, 3).map((number) => (
+            <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
+              #{number}
+            </a>
+          ))}
+          {otherIssueNumbers.length > 3 ? <Tag>+{otherIssueNumbers.length - 3}</Tag> : null}
+        </Space>
+      ) : activeIssues.length === 0 ? (
+        <Space size={[4, 4]} wrap>
+          {prIssueLinkUnknown(pr) ? (
+            <Tooltip title="PR detail or relationship sync has not completed. GitHub linked issues may still be missing from cache.">
+              <Tag color="gold">issue link sync pending</Tag>
+            </Tooltip>
+          ) : (
+            <Tooltip title="PR detail sync completed, and no related issue was found in GitHub relationship data or PR text.">
+              <Tag color="orange">unlinked after sync</Tag>
+            </Tooltip>
+          )}
+        </Space>
+      ) : null}
+      {isTestingQueuePr(pr) ? (
+        <Space size={[4, 4]} wrap>
+          <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
+          {pr.testingQueueAgeHours !== null ? <Tag>test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+        </Space>
+      ) : null}
+    </Space>
   );
 }
 
@@ -3482,14 +3555,17 @@ function CriticalBoardStat({
 function PrBoardSummary({
   prs,
   filteredPrs,
+  criticalIssuesByPr,
   scopeFilter,
   onScopeFilterChange
 }: {
   prs: PendingPrView[];
   filteredPrs: PendingPrView[];
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>;
   scopeFilter: PrScopeFilter;
   onScopeFilterChange: (value: PrScopeFilter) => void;
 }) {
+  const activeIssuePrs = prs.filter((pr) => prHasActiveIssue(pr, criticalIssuesByPr)).length;
   const attentionPrs = prs.filter((pr) => pr.attentionFlags.length > 0).length;
   const testingPrs = prs.filter(isTestingQueuePr).length;
   const staleTestingPrs = prs.filter(isTestingStalePr).length;
@@ -3510,6 +3586,13 @@ function PrBoardSummary({
         tone={filteredPrs.length > 0 ? "attention" : "good"}
         active={scopeFilter !== "all"}
         onClick={() => onScopeFilterChange("all")}
+      />
+      <CriticalBoardStat
+        label="active issue PR"
+        value={activeIssuePrs}
+        tone={activeIssuePrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "active_issue"}
+        onClick={() => onScopeFilterChange("active_issue")}
       />
       <CriticalBoardStat
         label="attention"
@@ -6532,6 +6615,11 @@ export default function App() {
   const dashboardRefreshInFlight = useRef(false);
   const latestDataRef = useRef<DashboardSummary | null>(null);
   const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
+  const criticalIssuesByPr = useMemo(
+    () =>
+      data ? criticalIssueContextsByPullRequest(data.criticalIssues) : new Map<number, PrCriticalIssueContext[]>(),
+    [data]
+  );
 
   useEffect(() => {
     latestDataRef.current = data;
@@ -7240,34 +7328,9 @@ export default function App() {
         }
       },
       {
-        title: "Issue relation",
-        width: 300,
-        render: (_, pr) => (
-          <Space size={[4, 4]} wrap>
-            {prIssueLinkUnknown(pr) ? (
-              <Tooltip title="PR detail or relationship sync has not completed. GitHub linked issues may still be missing from cache.">
-                <Tag color="gold">issue link sync pending</Tag>
-              </Tooltip>
-            ) : pr.linkedIssueNumbers.length === 0 ? (
-              <Tooltip title="PR detail sync completed, and no related issue was found in GitHub relationship data or PR text.">
-                <Tag color="orange">unlinked after sync</Tag>
-              </Tooltip>
-            ) : (
-              pr.linkedIssueNumbers.slice(0, 3).map((number) => (
-                <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
-                  #{number}
-                </a>
-              ))
-            )}
-            {pr.linkedIssueNumbers.length > 3 ? <Tag>+{pr.linkedIssueNumbers.length - 3}</Tag> : null}
-            {isTestingQueuePr(pr) ? (
-              <>
-                <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
-                {pr.testingQueueAgeHours !== null ? <Tag>test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
-              </>
-            ) : null}
-          </Space>
-        )
+        title: "Issue context",
+        width: 340,
+        render: (_, pr) => <PrIssueContextCell activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} />
       },
       {
         title: "Evidence",
@@ -7792,13 +7855,15 @@ export default function App() {
         )
       }
     ],
-    [data?.repo.name, data?.repo.owner]
+    [criticalIssuesByPr, data?.repo.name, data?.repo.owner]
   );
   const selectedPersonalView =
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
-  const filteredPendingPrs = data ? filterPendingPrs(data.pendingPrs, prScopeFilter) : [];
+  const filteredPendingPrs = data
+    ? sortPendingPrsForAction(filterPendingPrs(data.pendingPrs, prScopeFilter, criticalIssuesByPr), criticalIssuesByPr)
+    : [];
   const filteredPeople = data ? filterPeople(data.people, data.personalViews, peopleScopeFilter) : [];
   const teamFlowSummary = data
     ? flowEfficiencySummary({
@@ -8647,6 +8712,7 @@ export default function App() {
                 <PrBoardSummary
                   prs={data.pendingPrs}
                   filteredPrs={filteredPendingPrs}
+                  criticalIssuesByPr={criticalIssuesByPr}
                   scopeFilter={prScopeFilter}
                   onScopeFilterChange={setPrScopeFilter}
                 />

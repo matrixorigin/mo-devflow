@@ -788,6 +788,16 @@ button.team-monitor-tile:hover,
   color: #b91c1c;
 }
 
+.critical-issue-tag-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.critical-issue-tag-link:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .team-linked-row-missing {
   color: #b45309;
 }
