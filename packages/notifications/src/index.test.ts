@@ -120,6 +120,27 @@ describe("notifications", () => {
     expect(markdown).not.toContain("INFO alert");
   });
 
+  test("builds monthly digest markdown as a summary instead of an alert", () => {
+    const markdown = buildWeComMarkdown(profile, {
+      ...candidate,
+      sourceType: "monthly_digest",
+      ruleKey: "monthly_maintainer_digest",
+      severity: "info",
+      objectType: "digest",
+      objectNumber: null,
+      title: "Monthly digest for matrixorigin/matrixone on 2026-06",
+      htmlUrl: "https://github.com/matrixorigin/matrixone",
+      dashboardUrl: "https://devflow.example.com/#analytics",
+      relatedLogin: null,
+      evidenceSummary: "Team: 100 PRs created, 82 merged."
+    });
+
+    expect(markdown).toContain("mo-devflow monthly digest");
+    expect(markdown).toContain("[Open in mo-devflow](https://devflow.example.com/#analytics)");
+    expect(markdown).toContain("Monthly digest for matrixorigin/matrixone on 2026-06");
+    expect(markdown).not.toContain("INFO alert");
+  });
+
   test("truncates long titles and evidence to keep notifications readable", () => {
     const markdown = buildWeComMarkdown(profile, {
       ...candidate,

@@ -544,7 +544,8 @@ export type NotificationSourceType =
   | "workflow_violation"
   | "ai_drift_signal"
   | "daily_digest"
-  | "weekly_digest";
+  | "weekly_digest"
+  | "monthly_digest";
 export type NotificationStatus =
   | "sent"
   | "failed"

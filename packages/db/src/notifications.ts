@@ -79,6 +79,8 @@ export function notificationDashboardUrl(
       return `${baseUrl}/#analytics`;
     case "weekly_digest":
       return `${baseUrl}/#analytics`;
+    case "monthly_digest":
+      return `${baseUrl}/#analytics`;
   }
 }
 
@@ -116,7 +118,7 @@ export function notificationRecipientScope(
 export function activeNotificationDeliverySourceWhereSql(deliveryAlias: "d" = "d"): string {
   return [
     "(",
-    `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest')`,
+    `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest', 'monthly_digest')`,
     `OR (${deliveryAlias}.source_type = 'attention_item' AND EXISTS (SELECT 1 FROM attention_items ai WHERE ai.repo_id = ${deliveryAlias}.repo_id AND ai.id = ${deliveryAlias}.source_id AND ai.resolved_at IS NULL))`,
     `OR (${deliveryAlias}.source_type = 'workflow_violation' AND EXISTS (SELECT 1 FROM workflow_violations wv WHERE wv.repo_id = ${deliveryAlias}.repo_id AND wv.id = ${deliveryAlias}.source_id AND wv.resolved_at IS NULL))`,
     `OR (${deliveryAlias}.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = ${deliveryAlias}.repo_id AND ad.id = ${deliveryAlias}.source_id AND ad.resolved_at IS NULL))`,
@@ -140,7 +142,7 @@ export function notificationDeliveryVisibilityWhereSql(
   return {
     sql: [
       "(",
-      `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest')`,
+      `${deliveryAlias}.source_type IN ('daily_digest', 'weekly_digest', 'monthly_digest')`,
       `OR ${deliveryAlias}.object_number IS NULL`,
       `OR (${deliveryAlias}.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = ${deliveryAlias}.repo_id AND i.number = ${deliveryAlias}.object_number AND ${issueVisibility.sql}))`,
       `OR (${deliveryAlias}.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = ${deliveryAlias}.repo_id AND p.number = ${deliveryAlias}.object_number AND ${pullRequestVisibility.sql}))`,
@@ -187,7 +189,7 @@ export function notificationImmediateLimit(limit: number): number {
   if (limit <= 1) {
     return 1;
   }
-  const digestSlots = limit >= 3 ? 2 : 1;
+  const digestSlots = Math.min(3, Math.max(0, limit - 1));
   return Math.max(1, limit - digestSlots);
 }
 
@@ -253,6 +255,16 @@ function weekStartDateKey(dateKey: string, weekStart: RepoProfile["reporting"]["
   return date.toISOString().slice(0, 10);
 }
 
+function addMonthsToDateKey(dateKey: string, months: number): string {
+  const date = dateFromDateKey(dateKey);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function monthStartDateKey(dateKey: string): string {
+  return `${dateKey.slice(0, 7)}-01`;
+}
+
 export function weeklyDigestPeriod(
   timezone: string,
   weekStart: RepoProfile["reporting"]["weekStart"],
@@ -272,6 +284,20 @@ export function weeklyDigestPeriod(
   };
 }
 
+export function monthlyDigestPeriod(timezone: string, now = new Date()): { start: string; end: string; label: string } {
+  const today = dateKeyInTimezone(now, timezone);
+  if (!today) {
+    throw new Error(`Unable to derive monthly digest period in timezone ${timezone}.`);
+  }
+  const currentMonthStart = monthStartDateKey(today);
+  const start = addMonthsToDateKey(currentMonthStart, -1);
+  return {
+    start,
+    end: currentMonthStart,
+    label: start.slice(0, 7)
+  };
+}
+
 export interface DailyDigestTeamMetrics {
   prsCreated: number;
   prsMerged: number;
@@ -287,6 +313,30 @@ export interface DailyDigestPersonMetrics {
   prsCreated: number;
   prsMerged: number;
   workflowViolationsDetected: number;
+}
+
+interface DigestPeriod {
+  start: string;
+  end: string;
+  label: string;
+}
+
+function digestEvidenceSummary(team: DailyDigestTeamMetrics, people: DailyDigestPersonMetrics[]): string {
+  const peopleSummary = people.length
+    ? `\nWatched users: ${people
+        .map(
+          (person) =>
+            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
+        )
+        .join("; ")}.`
+    : "";
+  return (
+    `Team: ${team.prsCreated} PRs created, ${team.prsMerged} merged, ` +
+    `${team.issuesOpened} issues opened, ${team.issuesClosed} closed, ${team.issuesDeferred} deferred.\n` +
+    `Workflow violations detected: ${team.workflowViolationsDetected}.` +
+    peopleSummary +
+    `\nCache completeness: ${team.sourceCompleteness}.`
+  );
 }
 
 export function buildCriticalNotificationEscalationCandidate(input: {
@@ -333,14 +383,6 @@ export function buildDailyDigestNotificationCandidate(input: {
   people: DailyDigestPersonMetrics[];
   generatedAt: string;
 }): NotificationCandidate {
-  const peopleSummary = input.people.length
-    ? `\nWatched users: ${input.people
-        .map(
-          (person) =>
-            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
-        )
-        .join("; ")}.`
-    : "";
   return {
     sourceType: "daily_digest",
     sourceId: 0,
@@ -354,12 +396,7 @@ export function buildDailyDigestNotificationCandidate(input: {
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:daily_digest:${input.profile.key}:${input.metricDate}`,
-    evidenceSummary:
-      `Team: ${input.team.prsCreated} PRs created, ${input.team.prsMerged} merged, ` +
-      `${input.team.issuesOpened} issues opened, ${input.team.issuesClosed} closed, ${input.team.issuesDeferred} deferred.\n` +
-      `Workflow violations detected: ${input.team.workflowViolationsDetected}.` +
-      peopleSummary +
-      `\nCache completeness: ${input.team.sourceCompleteness}.`,
+    evidenceSummary: digestEvidenceSummary(input.team, input.people),
     firstDetectedAt: input.generatedAt,
     lastDetectedAt: input.generatedAt
   };
@@ -367,19 +404,11 @@ export function buildDailyDigestNotificationCandidate(input: {
 
 export function buildWeeklyDigestNotificationCandidate(input: {
   profile: RepoProfile;
-  period: { start: string; end: string; label: string };
+  period: DigestPeriod;
   team: DailyDigestTeamMetrics;
   people: DailyDigestPersonMetrics[];
   generatedAt: string;
 }): NotificationCandidate {
-  const peopleSummary = input.people.length
-    ? `\nWatched users: ${input.people
-        .map(
-          (person) =>
-            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
-        )
-        .join("; ")}.`
-    : "";
   return {
     sourceType: "weekly_digest",
     sourceId: 0,
@@ -393,12 +422,33 @@ export function buildWeeklyDigestNotificationCandidate(input: {
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:weekly_digest:${input.profile.key}:${input.period.start}`,
-    evidenceSummary:
-      `Team: ${input.team.prsCreated} PRs created, ${input.team.prsMerged} merged, ` +
-      `${input.team.issuesOpened} issues opened, ${input.team.issuesClosed} closed, ${input.team.issuesDeferred} deferred.\n` +
-      `Workflow violations detected: ${input.team.workflowViolationsDetected}.` +
-      peopleSummary +
-      `\nCache completeness: ${input.team.sourceCompleteness}.`,
+    evidenceSummary: digestEvidenceSummary(input.team, input.people),
+    firstDetectedAt: input.generatedAt,
+    lastDetectedAt: input.generatedAt
+  };
+}
+
+export function buildMonthlyDigestNotificationCandidate(input: {
+  profile: RepoProfile;
+  period: DigestPeriod;
+  team: DailyDigestTeamMetrics;
+  people: DailyDigestPersonMetrics[];
+  generatedAt: string;
+}): NotificationCandidate {
+  return {
+    sourceType: "monthly_digest",
+    sourceId: 0,
+    ruleKey: "monthly_maintainer_digest",
+    severity: "info",
+    objectType: "digest",
+    objectNumber: null,
+    title: `Monthly digest for ${input.profile.key} on ${input.period.label}`,
+    htmlUrl: `https://github.com/${input.profile.repo.owner}/${input.profile.repo.name}`,
+    dashboardUrl: notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "monthly_digest", "digest"),
+    relatedLogin: null,
+    recipient: input.profile.notifications.routing.fallbackRecipient,
+    dedupeKey: `notification:monthly_digest:${input.profile.key}:${input.period.start}`,
+    evidenceSummary: digestEvidenceSummary(input.team, input.people),
     firstDetectedAt: input.generatedAt,
     lastDetectedAt: input.generatedAt
   };
@@ -447,11 +497,11 @@ async function getDailyDigestCandidate(
   });
 }
 
-async function getWeeklyDigestCandidate(
+async function getPeriodDigestMetrics(
   repoId: number,
-  profile: RepoProfile
-): Promise<NotificationCandidate | null> {
-  const period = weeklyDigestPeriod(profile.reporting.timezone, profile.reporting.weekStart);
+  profile: RepoProfile,
+  period: DigestPeriod
+): Promise<{ team: DailyDigestTeamMetrics; people: DailyDigestPersonMetrics[]; generatedAt: string } | null> {
   const [metricRows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM daily_metrics
@@ -488,12 +538,42 @@ async function getWeeklyDigestCandidate(
     peopleByLogin.set(login, person);
   }
 
-  return buildWeeklyDigestNotificationCandidate({
-    profile,
-    period,
+  return {
     team,
     people: Array.from(peopleByLogin.values()).sort((left, right) => left.login.localeCompare(right.login)),
     generatedAt: latestGeneratedAt(metricRows)
+  };
+}
+
+async function getWeeklyDigestCandidate(
+  repoId: number,
+  profile: RepoProfile
+): Promise<NotificationCandidate | null> {
+  const period = weeklyDigestPeriod(profile.reporting.timezone, profile.reporting.weekStart);
+  const metrics = await getPeriodDigestMetrics(repoId, profile, period);
+  if (!metrics) {
+    return null;
+  }
+  return buildWeeklyDigestNotificationCandidate({
+    profile,
+    period,
+    ...metrics
+  });
+}
+
+async function getMonthlyDigestCandidate(
+  repoId: number,
+  profile: RepoProfile
+): Promise<NotificationCandidate | null> {
+  const period = monthlyDigestPeriod(profile.reporting.timezone);
+  const metrics = await getPeriodDigestMetrics(repoId, profile, period);
+  if (!metrics) {
+    return null;
+  }
+  return buildMonthlyDigestNotificationCandidate({
+    profile,
+    period,
+    ...metrics
   });
 }
 
@@ -683,6 +763,13 @@ export async function listNotificationCandidates(
 
   if (candidates.length < limit) {
     const digest = await getWeeklyDigestCandidate(repoId, profile);
+    if (digest) {
+      candidates.push(digest);
+    }
+  }
+
+  if (candidates.length < limit) {
+    const digest = await getMonthlyDigestCandidate(repoId, profile);
     if (digest) {
       candidates.push(digest);
     }

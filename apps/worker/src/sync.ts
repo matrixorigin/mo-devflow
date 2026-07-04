@@ -100,6 +100,16 @@ export function syncIntervalSecondsFromEnv(): number {
   return Math.max(60, Math.floor(parsed));
 }
 
+export function metricsRetentionDaysFromEnv(
+  env: Record<string, string | undefined> = process.env
+): number {
+  const parsed = Number(env.MO_DEVFLOW_METRICS_RETENTION_DAYS ?? "120");
+  if (!Number.isFinite(parsed)) {
+    return 120;
+  }
+  return Math.max(31, Math.floor(parsed));
+}
+
 export function dateAfterSeconds(seconds: number): string {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
@@ -145,7 +155,11 @@ function notificationLimitFromEnv(): number {
 }
 
 function notificationCooldownHours(candidate: NotificationCandidate, defaultCooldownHours: number): number {
-  if (candidate.sourceType === "daily_digest" || candidate.sourceType === "weekly_digest") {
+  if (
+    candidate.sourceType === "daily_digest" ||
+    candidate.sourceType === "weekly_digest" ||
+    candidate.sourceType === "monthly_digest"
+  ) {
     return 24 * 365 * 10;
   }
   return defaultCooldownHours;
@@ -233,7 +247,8 @@ export async function recomputeMetricsFromCache(): Promise<MetricSyncResult> {
   const profile = loadRepoProfile();
   const startedAt = new Date().toISOString();
   const repoId = await upsertRepoProfile(profile);
-  const dailyMetrics = await recomputeDailyMetricsFromCache(repoId, profile, 30);
+  const retentionDays = metricsRetentionDaysFromEnv();
+  const dailyMetrics = await recomputeDailyMetricsFromCache(repoId, profile, retentionDays);
   await recordSyncRun({
     repoId,
     syncLayer: "metrics",
@@ -241,7 +256,7 @@ export async function recomputeMetricsFromCache(): Promise<MetricSyncResult> {
     sourceAuthType: "cache",
     startedAt,
     finishedAt: new Date().toISOString(),
-    raw: { dailyMetrics }
+    raw: { dailyMetrics, retentionDays }
   });
   return { repoId, dailyMetrics };
 }
