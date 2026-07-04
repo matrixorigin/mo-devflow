@@ -5211,9 +5211,45 @@ function isCriticalIssueView(issue: CriticalIssueView | PersonalIssueView): issu
   return "linkedPullRequests" in issue;
 }
 
+function issueCommentEvidenceDisplay(issue: CriticalIssueView | PersonalIssueView): {
+  label: string;
+  color: string;
+  tooltip: string;
+} | null {
+  if (!("commentEvidence" in issue) || issue.lifecycleState !== "deferred") {
+    return null;
+  }
+
+  const syncedAt = issue.commentEvidence.lastSyncedAt
+    ? ` Last synced ${formatDate(issue.commentEvidence.lastSyncedAt)}.`
+    : "";
+  if (issue.commentEvidence.state === "complete") {
+    return {
+      label: "defer comments checked",
+      color: "green",
+      tooltip: `Issue comments are fully backfilled, so defer-reason checks can be trusted.${syncedAt}`
+    };
+  }
+  if (issue.commentEvidence.state === "error") {
+    return {
+      label: "defer comment sync failed",
+      color: "red",
+      tooltip: issue.commentEvidence.syncError
+        ? `Issue comment backfill failed: ${issue.commentEvidence.syncError}`
+        : "Issue comment backfill failed."
+    };
+  }
+  return {
+    label: "defer comments pending",
+    color: "gold",
+    tooltip: `Backfill issue comments before treating a missing defer reason as confirmed.${syncedAt}`
+  };
+}
+
 function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView }) {
   const critical = isCriticalIssueView(issue);
   const reasons = critical ? criticalIssueReasons(issue) : personalIssueReasons(issue);
+  const commentEvidence = issueCommentEvidenceDisplay(issue);
   const durationText = critical
     ? personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" })
     : hours(issue.ageHours);
@@ -5238,6 +5274,11 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
           <Tag color={issue.lastHumanActionEvidence === "complete_cache" ? "green" : "gold"}>
             last action {formatDate(issue.lastHumanActionAt)}
           </Tag>
+        ) : null}
+        {commentEvidence ? (
+          <Tooltip title={commentEvidence.tooltip}>
+            <Tag color={commentEvidence.color}>{commentEvidence.label}</Tag>
+          </Tooltip>
         ) : null}
         {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
         {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
@@ -6695,6 +6736,9 @@ function activityReasonColor(reason: string): string {
   const normalized = reason.toLowerCase();
   if (normalized.includes("failed") || normalized.includes("conflict") || normalized.includes("changes requested")) {
     return "red";
+  }
+  if (normalized.includes("checked")) {
+    return "green";
   }
   if (normalized.includes("partial") || normalized.includes("pending") || normalized.includes("incomplete")) {
     return "gold";

@@ -13,6 +13,7 @@ import type {
   DailyMetricPoint,
   DashboardVisibility,
   DashboardSummary,
+  IssueCommentEvidenceSummary,
   NormalizedIssue,
   NormalizedIssueComment,
   NormalizedIssueTimelineEvent,
@@ -2682,7 +2683,26 @@ function toCriticalIssueView(
   };
 }
 
-function toPersonalIssueView(row: RowData): PersonalIssueView {
+function issueCommentEvidenceSummary(
+  evidence?: NonNullable<NormalizedIssue["commentEvidence"]>
+): IssueCommentEvidenceSummary {
+  if (!evidence) {
+    return { state: "missing", lastSyncedAt: null, syncError: null };
+  }
+  if (evidence.syncError) {
+    return { state: "error", lastSyncedAt: evidence.lastSyncedAt, syncError: evidence.syncError };
+  }
+  return {
+    state: evidence.isComplete ? "complete" : "pending",
+    lastSyncedAt: evidence.lastSyncedAt,
+    syncError: null
+  };
+}
+
+function toPersonalIssueView(
+  row: RowData,
+  commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>
+): PersonalIssueView {
   return {
     number: asNumber(row.number),
     title: asString(row.title),
@@ -2692,6 +2712,7 @@ function toPersonalIssueView(row: RowData): PersonalIssueView {
     ageHours: issueAgeHours(row),
     lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
     isComplete: asNumber(row.is_complete) === 1,
+    commentEvidence: issueCommentEvidenceSummary(commentEvidence),
     labels: parseJsonArray(asString(row.labels_json))
   };
 }
@@ -3753,17 +3774,18 @@ export async function getDashboardSummary(
     profile,
     testingIssueContexts
   );
-  const criticalIssueCommentEvidence = await issueCommentEvidenceByIssueNumber(
-    repoId,
-    Array.from(criticalIssueNumbers)
-  );
+  const issueCommentEvidenceNumbers = new Set([
+    ...Array.from(criticalIssueNumbers),
+    ...personalIssueRows.map((row) => asNumber(row.number))
+  ]);
+  const issueCommentEvidence = await issueCommentEvidenceByIssueNumber(repoId, Array.from(issueCommentEvidenceNumbers));
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
     toCriticalIssueView(
       row,
       linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
       profile.people.watchedUsers,
       profile.workflow.skipUsers,
-      criticalIssueCommentEvidence.get(asNumber(row.number)),
+      issueCommentEvidence.get(asNumber(row.number)),
       criticalStartedAtMap.get(asNumber(row.number)) ?? null
     )
   );
@@ -3914,7 +3936,7 @@ export async function getDashboardSummary(
             linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
             profile.people.watchedUsers,
             profile.workflow.skipUsers,
-            criticalIssueCommentEvidence.get(asNumber(row.number)),
+            issueCommentEvidence.get(asNumber(row.number)),
             criticalStartedAtMap.get(asNumber(row.number)) ?? null
           )
         ),
@@ -3928,10 +3950,10 @@ export async function getDashboardSummary(
             profile.labels.critical
           )
         )
-        .map(toPersonalIssueView),
+        .map((row) => toPersonalIssueView(row, issueCommentEvidence.get(asNumber(row.number)))),
       deferredIssues: ownedIssues
         .filter((row) => asString(row.lifecycle_state) === "deferred")
-        .map(toPersonalIssueView),
+        .map((row) => toPersonalIssueView(row, issueCommentEvidence.get(asNumber(row.number)))),
       pendingPrs: pendingOwnedPrs,
       attentionPrs: pendingOwnedPrs.filter((pr) => pr.attentionFlags.length > 0),
       testingPrs: pendingOwnedPrs.filter((pr) =>

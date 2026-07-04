@@ -403,9 +403,12 @@ export function criticalIssueReasons(issue: CriticalIssueView): string[] {
 }
 
 export function personalIssueReasons(issue: PersonalIssueView): string[] {
+  const commentEvidenceReason =
+    issue.lifecycleState === "deferred" ? deferredCommentEvidenceReason(issue.commentEvidence.state) : null;
   const reasons = [
     issue.lifecycleState === "needs-triage" ? "Waiting triage decision" : null,
     issue.lifecycleState === "deferred" ? "Deferred follow-up" : null,
+    commentEvidenceReason,
     issue.severity ? issue.severity : null,
     !issue.isComplete ? "Incomplete cache evidence" : null
   ].filter((reason): reason is string => reason !== null);
@@ -414,6 +417,16 @@ export function personalIssueReasons(issue: PersonalIssueView): string[] {
     return reasons;
   }
   return issue.labels.slice(0, 3);
+}
+
+function deferredCommentEvidenceReason(state: PersonalIssueView["commentEvidence"]["state"]): string {
+  if (state === "complete") {
+    return "Defer comments checked";
+  }
+  if (state === "error") {
+    return "Defer comment sync failed";
+  }
+  return "Defer comments pending";
 }
 
 type GanttPullRequestSource = PersonalPullRequestView | CriticalIssueLinkedPullRequestView;
@@ -895,7 +908,14 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
       return "Decide s-1/s0 or defer";
     }
     if (item.lifecycleState === "deferred") {
-      return "Check defer reason";
+      const deferredEvidence = item.reasons.find((reason) => reason.startsWith("Defer comment"));
+      if (deferredEvidence?.includes("failed")) {
+        return "Fix comment sync";
+      }
+      if (deferredEvidence?.includes("pending")) {
+        return "Backfill issue comments";
+      }
+      return "Review defer reason";
     }
     if (item.tone === "critical" && item.linkedPullRequestNumbers.length === 0) {
       return "Link an execution PR";
@@ -941,6 +961,12 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
 }
 
 export function personalActivityPrimarySignal(item: PersonalActivityItem): string {
+  if (item.lifecycleState === "deferred") {
+    const deferredEvidence = item.reasons.find((reason) => reason.startsWith("Defer comment"));
+    if (deferredEvidence) {
+      return deferredEvidence;
+    }
+  }
   if (item.reasons.length > 0) {
     return item.reasons[0];
   }

@@ -20,7 +20,9 @@ import {
   personalFlowThreadMatchesFilter,
   personalGanttChart,
   personalActivityItems,
+  personalActivityNextAction,
   personalDurationText,
+  personalIssueReasons,
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
@@ -154,6 +156,61 @@ describe("work item attention reasons", () => {
       "Incomplete cache evidence",
       "ai-easy"
     ]);
+  });
+
+  it("surfaces deferred comment evidence without exposing comment bodies", () => {
+    expect(
+      personalIssueReasons(
+        personalIssue({
+          lifecycleState: "deferred",
+          commentEvidence: { state: "pending", lastSyncedAt: null, syncError: null }
+        })
+      )
+    ).toEqual(["Deferred follow-up", "Defer comments pending"]);
+
+    expect(
+      personalIssueReasons(
+        personalIssue({
+          lifecycleState: "deferred",
+          commentEvidence: {
+            state: "complete",
+            lastSyncedAt: "2026-07-04T02:00:00Z",
+            syncError: null
+          }
+        })
+      )
+    ).toEqual(["Deferred follow-up", "Defer comments checked"]);
+  });
+
+  it("uses deferred comment evidence to pick the next action", () => {
+    const [pendingDeferred] = personalActivityItems(
+      personalView({
+        deferredIssues: [
+          personalIssue({
+            lifecycleState: "deferred",
+            commentEvidence: { state: "missing", lastSyncedAt: null, syncError: null }
+          })
+        ]
+      })
+    );
+    const [checkedDeferred] = personalActivityItems(
+      personalView({
+        deferredIssues: [
+          personalIssue({
+            number: 2,
+            lifecycleState: "deferred",
+            commentEvidence: {
+              state: "complete",
+              lastSyncedAt: "2026-07-04T02:00:00Z",
+              syncError: null
+            }
+          })
+        ]
+      })
+    );
+
+    expect(personalActivityNextAction(pendingDeferred)).toBe("Backfill issue comments");
+    expect(personalActivityNextAction(checkedDeferred)).toBe("Review defer reason");
   });
 
   it("indexes many-to-many active issue context by linked PR", () => {
@@ -600,6 +657,11 @@ function personalIssue(input: Partial<PersonalIssueView>): PersonalIssueView {
     ageHours: input.ageHours ?? 12,
     lastSyncedAt: input.lastSyncedAt ?? "2026-07-04T01:00:00Z",
     isComplete: input.isComplete ?? true,
+    commentEvidence: input.commentEvidence ?? {
+      state: "complete",
+      lastSyncedAt: "2026-07-04T01:00:00Z",
+      syncError: null
+    },
     labels: input.labels ?? []
   };
 }

@@ -173,6 +173,14 @@ export interface IssueCommentEvidence {
   comments: IssueCommentEvidenceItem[];
 }
 
+export type IssueCommentEvidenceState = "complete" | "pending" | "missing" | "error";
+
+export interface IssueCommentEvidenceSummary {
+  state: IssueCommentEvidenceState;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+}
+
 export interface IssueCommentEvidenceItem {
   authorLogin: string;
   body: string;
@@ -318,6 +326,7 @@ export interface PersonalIssueView {
   ageHours: number;
   lastSyncedAt: string;
   isComplete: boolean;
+  commentEvidence: IssueCommentEvidenceSummary;
   labels: string[];
 }
 
