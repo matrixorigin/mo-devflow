@@ -103,6 +103,9 @@ deliveries store the delivery ID and raw payload before acknowledgement.
 Duplicate deliveries are ignored and counted for operational visibility. The
 worker processes stored issue and pull request deliveries asynchronously into
 the MatrixOne cache.
+Malformed payloads for supported webhook events are marked as
+`failed_normalization`; the raw payload stays stored on the delivery row for
+inspection, and the dashboard counts them with webhook failures.
 
 The current implementation covers read-only cached observability for repo-wide
 critical issues, watched-user summaries, pending PRs, workflow violations, AI

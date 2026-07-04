@@ -53,6 +53,7 @@ const operational: OperationalHealthSummary = {
     pendingDeliveries: 0,
     processedDeliveries: 0,
     failedDeliveries: 0,
+    normalizationFailedDeliveries: 0,
     ignoredDeliveries: 0,
     duplicateDeliveries: 0,
     lastReceivedAt: null,

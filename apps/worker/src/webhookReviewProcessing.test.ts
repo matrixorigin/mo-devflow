@@ -2,14 +2,21 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 
 const mocks = vi.hoisted(() => ({
+  claimNextGitHubWebhookDelivery: vi.fn(),
+  completeGitHubWebhookDelivery: vi.fn(),
+  failGitHubWebhookDelivery: vi.fn(),
   fetchPullRequestInsightForNumber: vi.fn(),
+  loadEnv: vi.fn(),
+  loadRepoProfile: vi.fn(),
   notificationDashboardBaseUrlFromEnv: vi.fn(() => "http://localhost:5173"),
   notificationDashboardUrl: vi.fn((baseUrl: string, _sourceType: string, objectType: string) =>
     objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`
   ),
+  recordSyncRun: vi.fn(),
   resolveStaleAttentionItems: vi.fn(),
   upsertAttentionItem: vi.fn(),
-  upsertPullRequest: vi.fn()
+  upsertPullRequest: vi.fn(),
+  upsertRepoProfile: vi.fn()
 }));
 
 vi.mock("@mo-devflow/db", () => ({
@@ -31,16 +38,16 @@ vi.mock("@mo-devflow/db", () => ({
     "merge_conflict",
     "testing_stalled"
   ],
-  claimNextGitHubWebhookDelivery: vi.fn(),
-  completeGitHubWebhookDelivery: vi.fn(),
-  failGitHubWebhookDelivery: vi.fn(),
+  claimNextGitHubWebhookDelivery: mocks.claimNextGitHubWebhookDelivery,
+  completeGitHubWebhookDelivery: mocks.completeGitHubWebhookDelivery,
+  failGitHubWebhookDelivery: mocks.failGitHubWebhookDelivery,
   isNotificationInCooldown: vi.fn(),
   listCachedIssuesForRules: vi.fn(),
   listNotificationCandidates: vi.fn(),
   notificationDashboardBaseUrlFromEnv: mocks.notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl: mocks.notificationDashboardUrl,
   recordNotificationDelivery: vi.fn(),
-  recordSyncRun: vi.fn(),
+  recordSyncRun: mocks.recordSyncRun,
   recomputeDailyMetricsFromCache: vi.fn(),
   replaceAiDriftSignals: vi.fn(),
   replaceWorkflowViolations: vi.fn(),
@@ -49,7 +56,7 @@ vi.mock("@mo-devflow/db", () => ({
   upsertAttentionItem: mocks.upsertAttentionItem,
   upsertIssue: vi.fn(),
   upsertPullRequest: mocks.upsertPullRequest,
-  upsertRepoProfile: vi.fn()
+  upsertRepoProfile: mocks.upsertRepoProfile
 }));
 
 vi.mock("@mo-devflow/github", () => ({
@@ -66,8 +73,8 @@ vi.mock("@mo-devflow/notifications", () => ({
 }));
 
 vi.mock("@mo-devflow/config", () => ({
-  loadEnv: vi.fn(),
-  loadRepoProfile: vi.fn()
+  loadEnv: mocks.loadEnv,
+  loadRepoProfile: mocks.loadRepoProfile
 }));
 
 const profile: RepoProfile = {
@@ -119,6 +126,8 @@ const profile: RepoProfile = {
 describe("webhook review processing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.loadRepoProfile.mockReturnValue(profile);
+    mocks.upsertRepoProfile.mockResolvedValue(10);
   });
 
   test("refreshes PR insight from GitHub before updating requested-change attention", async () => {
@@ -333,5 +342,49 @@ describe("webhook review processing", () => {
     ).rejects.toThrow("Cannot refresh PR #44 insight from GitHub: GitHub rate limit exceeded");
     expect(mocks.upsertPullRequest).not.toHaveBeenCalled();
     expect(mocks.upsertAttentionItem).not.toHaveBeenCalled();
+  });
+
+  test("marks malformed supported webhook deliveries as failed normalization", async () => {
+    const { processGitHubWebhookDeliveriesOnce } = await import("./sync");
+    mocks.claimNextGitHubWebhookDelivery
+      .mockResolvedValueOnce({
+        id: 100,
+        repoId: 10,
+        deliveryId: "delivery-bad-issue",
+        eventName: "issues",
+        action: "opened",
+        attempts: 1,
+        payload: { action: "opened" },
+        processingOwner: "worker-1"
+      })
+      .mockResolvedValueOnce(null);
+
+    const result = await processGitHubWebhookDeliveriesOnce();
+
+    expect(result).toMatchObject({
+      repoId: 10,
+      claimed: 1,
+      processed: 0,
+      failed: 1,
+      skipped: 0
+    });
+    expect(mocks.failGitHubWebhookDelivery).toHaveBeenCalledWith({
+      deliveryId: 100,
+      processingOwner: expect.any(String),
+      errorMessage: "issues payload missing issue object",
+      status: "failed_normalization"
+    });
+    expect(mocks.completeGitHubWebhookDelivery).not.toHaveBeenCalled();
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "webhooks",
+        status: "partial",
+        raw: expect.objectContaining({
+          claimed: 1,
+          failed: 1
+        })
+      })
+    );
   });
 });

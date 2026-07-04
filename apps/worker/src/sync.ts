@@ -195,6 +195,13 @@ function webhookWorkerId(): string {
   return `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+export class WebhookNormalizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WebhookNormalizationError";
+  }
+}
+
 function recordPayload(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -520,7 +527,7 @@ export async function processWebhookPayload(input: {
   if (input.eventName === "issues") {
     const rawIssue = recordPayload(input.payload.issue);
     if (!rawIssue) {
-      return { processed: true, skipped: true, message: "issues payload missing issue object" };
+      throw new WebhookNormalizationError("issues payload missing issue object");
     }
     const issue = normalizeIssue(input.profile, ensureGitHubObjectWithNumber(rawIssue, "issue"), cacheSourceForWebhook());
     if (issue.isPullRequest) {
@@ -559,7 +566,7 @@ export async function processWebhookPayload(input: {
   if (input.eventName === "pull_request") {
     const rawPullRequest = recordPayload(input.payload.pull_request);
     if (!rawPullRequest) {
-      return { processed: true, skipped: true, message: "pull_request payload missing pull_request object" };
+      throw new WebhookNormalizationError("pull_request payload missing pull_request object");
     }
     const prNumber = await upsertPullRequestFromWebhook({
       repoId: input.repoId,
@@ -572,7 +579,7 @@ export async function processWebhookPayload(input: {
   if (input.eventName === "pull_request_review") {
     const rawPullRequest = recordPayload(input.payload.pull_request);
     if (!rawPullRequest) {
-      return { processed: true, skipped: true, message: "pull_request_review payload missing pull_request object" };
+      throw new WebhookNormalizationError("pull_request_review payload missing pull_request object");
     }
     const pullRequest = ensureGitHubObjectWithNumber(rawPullRequest, "pull_request");
     const prNumber = await refreshPullRequestInsightFromGitHub({
@@ -658,7 +665,8 @@ export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliv
       await failGitHubWebhookDelivery({
         deliveryId: delivery.id,
         processingOwner,
-        errorMessage: error instanceof Error ? error.message : String(error)
+        errorMessage: error instanceof Error ? error.message : String(error),
+        status: error instanceof WebhookNormalizationError ? "failed_normalization" : "failed"
       });
       summary.failed += 1;
     }

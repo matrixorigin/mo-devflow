@@ -2042,6 +2042,7 @@ export default function App() {
                         100,
                         data.webhooks.pendingDeliveries * 20 +
                           data.webhooks.failedDeliveries * 25 +
+                          data.webhooks.normalizationFailedDeliveries * 25 +
                           data.webhooks.ignoredDeliveries * 5
                       )}
                       showInfo={false}
@@ -2237,6 +2238,7 @@ export default function App() {
                   />
                   <Statistic title="Next Run" value={formatDate(data.sync.jobQueue.nextRunAt)} />
                   <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
+                  <Statistic title="Webhook Normalization" value={data.webhooks.normalizationFailedDeliveries} />
                   <Statistic title="Webhook Ignored" value={data.webhooks.ignoredDeliveries} />
                   <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />

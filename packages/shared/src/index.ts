@@ -767,6 +767,7 @@ export interface WebhookIngestionHealth {
   pendingDeliveries: number;
   processedDeliveries: number;
   failedDeliveries: number;
+  normalizationFailedDeliveries: number;
   ignoredDeliveries: number;
   duplicateDeliveries: number;
   lastReceivedAt: string | null;

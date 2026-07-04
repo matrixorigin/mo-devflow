@@ -235,16 +235,17 @@ export async function failGitHubWebhookDelivery(input: {
   deliveryId: number;
   processingOwner: string;
   errorMessage: string;
+  status?: "failed" | "failed_normalization";
 }): Promise<void> {
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE github_webhook_deliveries
-     SET status = 'failed',
+     SET status = ?,
          processed_at = ?,
          processing_owner = NULL,
          processing_expires_at = NULL,
          error_message = ?
      WHERE id = ? AND processing_owner = ?`,
-    [nowSql(), input.errorMessage, input.deliveryId, input.processingOwner]
+    [input.status ?? "failed", nowSql(), input.errorMessage, input.deliveryId, input.processingOwner]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
     throw new Error(`Cannot fail webhook delivery ${input.deliveryId}; lease is no longer owned by this worker.`);
@@ -256,7 +257,8 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     `SELECT
        SUM(CASE WHEN status IN ('received', 'processing') THEN 1 ELSE 0 END) AS pending_deliveries,
        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_deliveries,
-       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries,
+       SUM(CASE WHEN status IN ('failed', 'failed_normalization') THEN 1 ELSE 0 END) AS failed_deliveries,
+       SUM(CASE WHEN status = 'failed_normalization' THEN 1 ELSE 0 END) AS normalization_failed_deliveries,
        SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_deliveries,
        SUM(duplicate_count) AS duplicate_deliveries,
        MAX(received_at) AS last_received_at
@@ -267,7 +269,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
   const [failureRows] = await getPool().execute<RowData[]>(
     `SELECT delivery_id, error_message
      FROM github_webhook_deliveries
-     WHERE repo_id = ? AND status = 'failed'
+     WHERE repo_id = ? AND status IN ('failed', 'failed_normalization')
      ORDER BY received_at DESC
      LIMIT 1`,
     [repoId]
@@ -279,6 +281,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     pendingDeliveries: asNumber(row.pending_deliveries),
     processedDeliveries: asNumber(row.processed_deliveries),
     failedDeliveries: asNumber(row.failed_deliveries),
+    normalizationFailedDeliveries: asNumber(row.normalization_failed_deliveries),
     ignoredDeliveries: asNumber(row.ignored_deliveries),
     duplicateDeliveries: asNumber(row.duplicate_deliveries),
     lastReceivedAt: fromSqlDate(row.last_received_at),
