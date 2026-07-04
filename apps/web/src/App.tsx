@@ -1120,6 +1120,288 @@ function CacheRepairPlan({
   );
 }
 
+type CriticalRiskTag = {
+  key: string;
+  label: string;
+  color: string;
+  tooltip?: string;
+};
+
+function criticalIssueDuration(issue: CriticalIssueView): string {
+  return personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" });
+}
+
+function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
+  const tags: CriticalRiskTag[] = [];
+  if (issue.ownerScope === "unowned") {
+    tags.push({ key: "unowned", label: "unowned", color: "red", tooltip: ownerScopeTooltip(issue.ownerScope) });
+  } else if (issue.ownerScope === "non_watched") {
+    tags.push({
+      key: "non-watched",
+      label: "non-watched",
+      color: "orange",
+      tooltip: ownerScopeTooltip(issue.ownerScope)
+    });
+  }
+  if (issue.workflowSkipped) {
+    tags.push({ key: "skip", label: "skip automation", color: "default", tooltip: workflowSkipTooltip() });
+  }
+  if (issue.linkedPullRequests.length === 0) {
+    tags.push({ key: "no-pr", label: "no linked PR", color: "orange" });
+  }
+  if (issue.criticalAgeEvidence === "missing_timeline") {
+    tags.push({
+      key: "timeline",
+      label: "timeline missing",
+      color: "gold",
+      tooltip: "Severity promotion time is missing; active duration is unknown."
+    });
+  }
+  if (!issue.isComplete) {
+    tags.push({ key: "partial", label: "partial cache", color: "gold" });
+  }
+  if (issue.syncError) {
+    tags.push({ key: "sync-error", label: "sync error", color: "red", tooltip: issue.syncError });
+  }
+  for (const blocker of issue.blockers.filter((item) => item.severity !== "info").slice(0, 3)) {
+    tags.push({
+      key: blocker.key,
+      label: labelText(blocker.key.split(":").at(-1) ?? blocker.key),
+      color: blockerColor(blocker.severity),
+      tooltip: blocker.message
+    });
+  }
+  return tags;
+}
+
+function criticalIssueRiskScore(issue: CriticalIssueView): number {
+  const blockerScore = issue.blockers.reduce((score, blocker) => {
+    if (blocker.severity === "critical") {
+      return score + 180;
+    }
+    if (blocker.severity === "warning") {
+      return score + 100;
+    }
+    return score + 15;
+  }, 0);
+  return (
+    (issue.severity === "severity/s-1" ? 700 : 0) +
+    (issue.ownerScope === "unowned" ? 260 : 0) +
+    (issue.ownerScope === "non_watched" ? 120 : 0) +
+    (issue.workflowSkipped ? 40 : 0) +
+    (issue.linkedPullRequests.length === 0 ? 120 : 0) +
+    (issue.criticalAgeEvidence === "missing_timeline" ? 60 : 0) +
+    (!issue.isComplete ? 30 : 0) +
+    (issue.syncError ? 160 : 0) +
+    blockerScore
+  );
+}
+
+function sortCriticalIssuesForAction(issues: CriticalIssueView[]): CriticalIssueView[] {
+  return [...issues].sort((left, right) => {
+    const riskDelta = criticalIssueRiskScore(right) - criticalIssueRiskScore(left);
+    if (riskDelta !== 0) {
+      return riskDelta;
+    }
+    const durationDelta = (right.criticalAgeHours ?? -1) - (left.criticalAgeHours ?? -1);
+    if (durationDelta !== 0) {
+      return durationDelta;
+    }
+    return left.number - right.number;
+  });
+}
+
+function criticalIssueNextAction(issue: CriticalIssueView): string {
+  if (issue.ownerScope === "unowned") {
+    return "Assign an owner";
+  }
+  if (issue.linkedPullRequests.length === 0) {
+    return "Link execution PR";
+  }
+  if (issue.blockers.some((blocker) => blocker.relatedPrNumber !== null && blocker.severity !== "info")) {
+    return "Unblock linked PR";
+  }
+  if (issue.workflowSkipped) {
+    return "Manual follow-up";
+  }
+  if (issue.criticalAgeEvidence === "missing_timeline") {
+    return "Confirm severity start";
+  }
+  return issue.severity === "severity/s-1" ? "Drive emergency closure" : "Drive active execution";
+}
+
+function CriticalIssueBoard({ issues }: { issues: CriticalIssueView[] }) {
+  if (issues.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
+  }
+  const sMinusOneIssues = sortCriticalIssuesForAction(issues.filter((issue) => issue.severity === "severity/s-1"));
+  const sZeroIssues = sortCriticalIssuesForAction(issues.filter((issue) => issue.severity === "severity/s0"));
+  const otherCriticalIssues = sortCriticalIssuesForAction(
+    issues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0")
+  );
+  const missingTimeline = issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length;
+  const noLinkedPr = issues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const ownerGaps = issues.filter((issue) => issue.ownerScope !== "watched").length;
+  const skipped = issues.filter((issue) => issue.workflowSkipped).length;
+
+  return (
+    <div className="critical-board">
+      <div className="critical-board-summary" aria-label="Active critical issue summary">
+        <CriticalBoardStat label="s-1" value={sMinusOneIssues.length} tone="critical" />
+        <CriticalBoardStat label="s0" value={sZeroIssues.length} tone="attention" />
+        <CriticalBoardStat label="no linked PR" value={noLinkedPr} tone={noLinkedPr > 0 ? "attention" : "good"} />
+        <CriticalBoardStat
+          label="timeline missing"
+          value={missingTimeline}
+          tone={missingTimeline > 0 ? "attention" : "good"}
+        />
+        <CriticalBoardStat label="owner gaps" value={ownerGaps} tone={ownerGaps > 0 ? "attention" : "good"} />
+        <CriticalBoardStat label="skip automation" value={skipped} tone={skipped > 0 ? "muted" : "good"} />
+      </div>
+      <div className="critical-board-lanes">
+        <CriticalIssueLane
+          title="s-1 Emergency Lane"
+          description="Highest-severity active issues. These should be reviewed before s0 work."
+          issues={sMinusOneIssues}
+          tone="critical"
+          emptyText="No active s-1 issues"
+        />
+        <CriticalIssueLane
+          title="s0 Execution Risks"
+          description="s0 issues sorted by owner, linked PR, blocker, and evidence risk."
+          issues={sZeroIssues.slice(0, 10)}
+          tone="attention"
+          emptyText="No active s0 issues"
+          hiddenCount={Math.max(0, sZeroIssues.length - 10)}
+        />
+        {otherCriticalIssues.length > 0 ? (
+          <CriticalIssueLane
+            title="Other Active Severity"
+            description="Configured active severity labels outside s-1/s0."
+            issues={otherCriticalIssues}
+            tone="normal"
+            emptyText="No other active severity issues"
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CriticalBoardStat({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: number;
+  tone: "critical" | "attention" | "good" | "muted";
+}) {
+  return (
+    <span className={`critical-board-stat critical-board-stat-${tone}`}>
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
+function CriticalIssueLane({
+  title,
+  description,
+  issues,
+  tone,
+  emptyText,
+  hiddenCount = 0
+}: {
+  title: string;
+  description: string;
+  issues: CriticalIssueView[];
+  tone: "critical" | "attention" | "normal";
+  emptyText: string;
+  hiddenCount?: number;
+}) {
+  return (
+    <section className={`critical-lane critical-lane-${tone}`}>
+      <div className="critical-lane-heading">
+        <div>
+          <Text strong>{title}</Text>
+          <Text type="secondary">{description}</Text>
+        </div>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
+          {issues.length + hiddenCount}
+        </Tag>
+      </div>
+      {issues.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />
+      ) : (
+        <div className="critical-issue-list">
+          {issues.map((issue) => (
+            <CriticalIssueBoardRow issue={issue} key={issue.number} />
+          ))}
+        </div>
+      )}
+      {hiddenCount > 0 ? (
+        <div className="critical-lane-more">+{hiddenCount} additional s0 issues in the table</div>
+      ) : null}
+    </section>
+  );
+}
+
+function CriticalIssueBoardRow({ issue }: { issue: CriticalIssueView }) {
+  const riskTags = criticalIssueRiskTags(issue);
+  const linkedPrs = issue.linkedPullRequests.slice(0, 3);
+  return (
+    <article
+      className={`critical-issue-row critical-issue-row-${issue.severity === "severity/s-1" ? "critical" : "attention"}`}
+    >
+      <div className="critical-issue-main">
+        <div className="critical-issue-object">
+          <WorkObjectLink href={issue.htmlUrl} icon={<ShieldAlert size={15} aria-hidden="true" />}>
+            Issue #{issue.number}
+          </WorkObjectLink>
+          <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
+        </div>
+        <a className="critical-issue-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <div className="critical-issue-tags">
+          <Tooltip title={issue.ownerReason ? `Owner derived by ${labelText(issue.ownerReason)}` : undefined}>
+            <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          </Tooltip>
+          <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
+          <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
+          {riskTags.slice(0, 5).map((tag) => (
+            <Tooltip title={tag.tooltip} key={tag.key}>
+              <Tag color={tag.color}>{tag.label}</Tag>
+            </Tooltip>
+          ))}
+          {riskTags.length > 5 ? <Tag>+{riskTags.length - 5}</Tag> : null}
+        </div>
+      </div>
+      <div className="critical-issue-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{criticalIssueNextAction(issue)}</Text>
+        {linkedPrs.length > 0 ? (
+          <div className="critical-linked-prs">
+            {linkedPrs.map((pr) => (
+              <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
+                <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                  PR #{pr.number}
+                </a>
+              </Tooltip>
+            ))}
+            {issue.linkedPullRequests.length > linkedPrs.length ? (
+              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+            ) : null}
+          </div>
+        ) : (
+          <Text type="secondary">No linked PR visible</Text>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function PersonWorkloadBoard({
   people,
   personalViews,
@@ -1427,29 +1709,30 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   const criticalItems = items.filter((item) => item.tone === "critical");
   const attentionItems = items.filter((item) => item.tone === "attention");
   const routineItems = items.filter((item) => item.tone !== "critical" && item.tone !== "attention");
-  const visibleRoutineItems = routineItems.slice(0, 8);
+  const visibleRoutineItems = routineItems.slice(0, 6);
   const prItems = items.filter((item) => item.objectType === "pull_request");
   const issueItems = items.filter((item) => item.objectType === "issue");
-  const oldestCritical = maxDuration(criticalItems);
   const oldestPr = maxAge(prItems);
   const testingItems = items.filter((item) => item.testingQueueAgeHours !== null);
+  const blockedPrItems = prItems.filter(actionItemHasBlockingSignal);
   const linkedObjects = items.filter(
     (item) => item.linkedIssueNumbers.length > 0 || item.linkedPullRequestNumbers.length > 0
   ).length;
+  const unlinkedObjects = items.length - linkedObjects;
 
   return (
     <div className="activity-command-center">
       <div className="activity-summary-strip" aria-label="Personal activity summary">
         <ActivitySummaryTile
-          label="Active s-1/s0"
+          label="Now"
           value={criticalItems.length}
-          detail={optionalHours(oldestCritical)}
+          detail={criticalActivitySummary(criticalItems)}
           tone="critical"
         />
         <ActivitySummaryTile
-          label="Attention PRs"
-          value={attentionItems.length}
-          detail={`${prItems.length} PR total`}
+          label="Blocked PRs"
+          value={blockedPrItems.length}
+          detail={`${attentionItems.length} attention`}
           tone="attention"
         />
         <ActivitySummaryTile
@@ -1467,7 +1750,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
         <ActivitySummaryTile
           label="Oldest PR"
           value={oldestPr === null ? "-" : hours(oldestPr)}
-          detail="pending/active"
+          detail={`${unlinkedObjects} unlinked`}
           tone="muted"
         />
       </div>
@@ -1541,13 +1824,11 @@ function ActionQueueSection({
   return (
     <section className={`action-queue-section action-queue-section-${tone}`} role="listitem" aria-label={title}>
       <div className="action-queue-section-heading">
-        <div>
+        <div className="action-queue-section-copy">
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
-          {items.length + hiddenCount}
-        </Tag>
+        <ActionQueueSectionStats hiddenCount={hiddenCount} items={items} tone={tone} />
       </div>
       {items.length > 0 ? (
         <div className="action-queue-section-list" role="list">
@@ -1560,6 +1841,46 @@ function ActionQueueSection({
         <div className="action-queue-more">+{hiddenCount} routine objects hidden in this compact queue</div>
       ) : null}
     </section>
+  );
+}
+
+function ActionQueueSectionStats({
+  items,
+  hiddenCount,
+  tone
+}: {
+  items: PersonalActivityItem[];
+  hiddenCount: number;
+  tone: "critical" | "attention" | "normal";
+}) {
+  const oldestDuration = maxDuration(items);
+  const hasCriticalActiveDuration = items.some((item) => item.durationKind === "critical_active");
+  const oldestAge = hasCriticalActiveDuration ? null : maxAge(items);
+  const missingCriticalDuration = items.filter(
+    (item) => item.durationKind === "critical_active" && item.durationHours === null
+  ).length;
+  const blocked = items.filter(actionItemHasBlockingSignal).length;
+  const unlinked = items.filter(
+    (item) => item.linkedIssueNumbers.length === 0 && item.linkedPullRequestNumbers.length === 0
+  ).length;
+  const ageText =
+    oldestDuration !== null
+      ? `${hours(oldestDuration)} active`
+      : oldestAge !== null
+        ? `${hours(oldestAge)} oldest`
+        : missingCriticalDuration > 0
+          ? `${missingCriticalDuration} timeline missing`
+          : null;
+
+  return (
+    <div className="action-queue-section-stats" aria-label={`${items.length + hiddenCount} queue objects`}>
+      <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
+        {items.length + hiddenCount}
+      </Tag>
+      {ageText ? <span>{ageText}</span> : null}
+      {blocked > 0 ? <span>{blocked} blocked</span> : null}
+      {unlinked > 0 ? <span>{unlinked} unlinked</span> : null}
+    </div>
   );
 }
 
@@ -1583,72 +1904,86 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
   const primarySignal = personalActivityPrimarySignal(item);
   const actionTone = item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue";
   const duration = personalDurationText(item);
+  const visibleReasons = item.reasons.slice(0, 4);
+  const hiddenReasonCount = Math.max(0, item.reasons.length - visibleReasons.length);
 
   return (
     <article className={`action-queue-item action-queue-item-${item.tone}`} role="listitem">
       <div className="action-queue-rank">
         <span className="action-index">{index}</span>
+        <span className="action-queue-type">{item.objectType === "pull_request" ? "PR" : "ISSUE"}</span>
       </div>
-      <div className="action-queue-object">
-        <div className="action-queue-title-row">
-          <WorkObjectLink href={item.htmlUrl} icon={icon}>
-            {objectLabel}
-          </WorkObjectLink>
-          <Tag color={actionTone}>{item.phase}</Tag>
+      <div className="action-queue-card-main">
+        <div className="action-queue-card-header">
+          <div className="action-queue-object">
+            <div className="action-queue-title-row">
+              <WorkObjectLink href={item.htmlUrl} icon={icon}>
+                {objectLabel}
+              </WorkObjectLink>
+              <Tag color={actionTone}>{item.phase}</Tag>
+              {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
+              {item.testingState && item.testingState !== "not_ready" ? (
+                <Tag color={testingStateColor(item.testingState)}>{labelText(item.testingState)}</Tag>
+              ) : null}
+              {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+            </div>
+            <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
+              {item.title}
+            </a>
+          </div>
+          <div className="action-queue-object-meta">
+            {item.ownerLogin ? (
+              <span>
+                <UserRound size={13} aria-hidden="true" />
+                {item.ownerLogin}
+              </span>
+            ) : null}
+            {item.lastHumanActionAt ? (
+              <span>
+                <UserRound size={13} aria-hidden="true" />
+                last {formatDate(item.lastHumanActionAt)}
+              </span>
+            ) : null}
+            {item.testingQueueAgeHours !== null ? (
+              <span>
+                <ClipboardCheck size={13} aria-hidden="true" />
+                testing {hours(item.testingQueueAgeHours)}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
-          {item.title}
-        </a>
-        <div className="action-queue-object-meta">
-          {item.ownerLogin ? (
-            <span>
-              <UserRound size={13} aria-hidden="true" />
-              {item.ownerLogin}
+        <div className="action-queue-command-grid">
+          <div className="action-queue-command-card action-queue-command-primary">
+            <Text type="secondary">Next action</Text>
+            <span className="action-command">
+              <TimerReset size={14} aria-hidden="true" />
+              {nextAction}
             </span>
-          ) : null}
-          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
-          {item.testingState && item.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(item.testingState)}>{labelText(item.testingState)}</Tag>
-          ) : null}
-          {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+          </div>
+          <div className="action-queue-command-card">
+            <Text type="secondary">Duration</Text>
+            <strong>{duration}</strong>
+            <small>{labelText(item.durationEvidence)}</small>
+          </div>
+          <div className="action-queue-command-card">
+            <Text type="secondary">Signal</Text>
+            <strong>{primarySignal}</strong>
+          </div>
         </div>
-      </div>
-      <div className="action-queue-next">
-        <Text type="secondary">Next</Text>
-        <span className="action-command">
-          <TimerReset size={14} aria-hidden="true" />
-          {nextAction}
-        </span>
-        <div className="action-queue-primary-signal">
-          <Text strong>{primarySignal}</Text>
+        <div className="action-queue-footer">
+          <div className="action-queue-tags" aria-label="Queue evidence">
+            {visibleReasons.map((reason) => (
+              <Tag color={activityReasonColor(reason)} key={reason}>
+                {reason}
+              </Tag>
+            ))}
+            {hiddenReasonCount > 0 ? <Tag>+{hiddenReasonCount}</Tag> : null}
+            {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
+            {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+            {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
+          </div>
+          <ActionQueueLinks issueLinks={linkedIssueUrls} prLinks={linkedPrUrls} />
         </div>
-        <div className="action-queue-tags">
-          {item.reasons.slice(0, 2).map((reason) => (
-            <Tag color={activityReasonColor(reason)} key={reason}>
-              {reason}
-            </Tag>
-          ))}
-          {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
-          {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
-          {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
-        </div>
-      </div>
-      <div className="action-queue-duration">
-        <strong>{duration}</strong>
-        <small>{labelText(item.durationEvidence)}</small>
-        {item.lastHumanActionAt ? (
-          <span>
-            <UserRound size={13} aria-hidden="true" />
-            {formatDate(item.lastHumanActionAt)}
-          </span>
-        ) : null}
-        {item.testingQueueAgeHours !== null ? (
-          <span>
-            <ClipboardCheck size={13} aria-hidden="true" />
-            testing {hours(item.testingQueueAgeHours)}
-          </span>
-        ) : null}
-        <ActionQueueLinks issueLinks={linkedIssueUrls} prLinks={linkedPrUrls} />
       </div>
     </article>
   );
@@ -1689,6 +2024,41 @@ function ActionQueueLinks({
       ) : null}
     </div>
   );
+}
+
+function actionItemHasBlockingSignal(item: PersonalActivityItem): boolean {
+  if (item.objectType === "issue") {
+    return item.tone === "critical" && (item.linkedPullRequestNumbers.length === 0 || !item.isComplete);
+  }
+  const reasons = item.reasons.map((reason) => reason.toLowerCase());
+  return (
+    reasons.some(
+      (reason) =>
+        reason.includes("ci failed") ||
+        reason.includes("changes requested") ||
+        reason.includes("merge conflict") ||
+        reason.includes("no human action") ||
+        reason.includes("testing")
+    ) ||
+    item.reviewDecision === "changes_requested" ||
+    item.mergeStateStatus === "dirty" ||
+    item.testingState === "test_changes_requested" ||
+    item.testingQueueAgeHours !== null
+  );
+}
+
+function criticalActivitySummary(items: PersonalActivityItem[]): string {
+  const oldest = maxDuration(items);
+  if (oldest !== null) {
+    return `${hours(oldest)} active`;
+  }
+  const missingTimeline = items.filter(
+    (item) => item.durationKind === "critical_active" && item.durationHours === null
+  ).length;
+  if (missingTimeline > 0) {
+    return `${missingTimeline} timeline missing`;
+  }
+  return "no active";
 }
 
 function maxAge(items: Array<Pick<PersonalActivityItem, "ageHours">>): number | null {
@@ -2088,7 +2458,14 @@ function SelectedPersonWorkbench({
             <Tag color={activityItems.some((item) => item.tone === "attention") ? "orange" : "default"}>
               {activityItems.filter((item) => item.tone === "attention").length} attention
             </Tag>
-            <Tag>{activityItems.filter((item) => item.linkedIssueNumbers.length > 0).length} linked issues</Tag>
+            <Tag>
+              {
+                activityItems.filter(
+                  (item) => item.linkedIssueNumbers.length > 0 || item.linkedPullRequestNumbers.length > 0
+                ).length
+              }{" "}
+              linked objects
+            </Tag>
           </Space>
         </div>
         <PersonalActionQueue items={activityItems} />
@@ -4065,6 +4442,7 @@ export default function App() {
                   Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
                 </Text>
               </div>
+              <CriticalIssueBoard issues={data.criticalIssues} />
               <Table
                 rowKey="number"
                 size="middle"
