@@ -7,6 +7,7 @@ import {
   upsertRepoProfile
 } from "@mo-devflow/db";
 import { getSessionRecordFromRequest } from "./authRoutes";
+import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 
 const acknowledgeParamsSchema = z.object({
   deliveryId: z.coerce.number().int().positive()
@@ -20,6 +21,9 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
         error: "login_required",
         message: "Connect a GitHub token before acknowledging notifications."
       });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
     }
 
     const parsed = acknowledgeParamsSchema.safeParse(request.params);

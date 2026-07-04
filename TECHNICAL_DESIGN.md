@@ -296,6 +296,7 @@ Token requirements:
 - Never expose to frontend after submission.
 - Never log raw token values.
 - Restrict credentialed browser API access to configured CORS origins.
+- Protect logged-in browser write endpoints with a SameSite double-submit CSRF token: the API issues a readable `mo_devflow_csrf` cookie for authenticated sessions, and the frontend must send the same value in `x-mo-devflow-csrf`.
 - Track which user initiated every write.
 - Show write previews before execution.
 - Validate token scopes or capabilities before enabling write actions.
@@ -312,11 +313,12 @@ Write flow:
 
 1. User selects a suggested action.
 2. API builds a preview from cached current state plus a fresh GitHub check when appropriate.
-3. UI shows labels, comments, assignees, and state changes.
-4. User confirms.
-5. API executes through the user's GitHub token.
-6. Worker resyncs the affected issue or PR.
-7. Audit log records the operation and result.
+3. API rejects the browser request unless the authenticated session also carries a valid CSRF cookie/header pair.
+4. UI shows labels, comments, assignees, and state changes.
+5. User confirms.
+6. API executes through the user's GitHub token after repeating CSRF and capability checks.
+7. Worker resyncs the affected issue or PR.
+8. Audit log records the operation and result.
 
 The API should reject or re-preview a write when the fresh GitHub state no longer matches the preview assumptions. This prevents applying stale label or comment changes after another maintainer has already updated the issue or PR.
 

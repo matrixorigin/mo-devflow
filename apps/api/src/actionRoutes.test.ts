@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile, WorkflowFixPreview } from "@mo-devflow/shared";
 import { registerActionRoutes } from "./actionRoutes";
+import { csrfCookieName, csrfHeaderName } from "./csrf";
 
 const mocks = vi.hoisted(() => ({
   loadRepoProfile: vi.fn(),
@@ -119,6 +120,12 @@ const preview: WorkflowFixPreview = {
   expiresAt: "2999-07-04T00:00:00.000Z"
 };
 
+const csrfToken = "a".repeat(43);
+const csrfHeaders = {
+  cookie: `${csrfCookieName}=${csrfToken}`,
+  [csrfHeaderName]: csrfToken
+};
+
 describe("action routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -139,6 +146,34 @@ describe("action routes", () => {
       status: "previewed",
       expiresAt: preview.expiresAt
     });
+  });
+
+  test("rejects workflow fix previews without a valid CSRF token", async () => {
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        payload: {
+          actionKey: "add_needs_triage",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "bug_missing_needs_triage"
+        }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({
+        error: "csrf_required",
+        message: "Refresh the session and retry the request."
+      });
+      expect(mocks.loadRepoProfile).not.toHaveBeenCalled();
+      expect(mocks.getActiveWorkflowViolation).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 
   test("scopes workflow fix preview lookups to cache visible to the session user", async () => {
@@ -170,6 +205,7 @@ describe("action routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
         payload: {
           actionKey: "add_needs_triage",
           objectType: "issue",
@@ -207,6 +243,7 @@ describe("action routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
         payload: { previewId: preview.previewId }
       });
 

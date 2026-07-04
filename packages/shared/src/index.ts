@@ -639,6 +639,9 @@ export interface SessionView {
   tokenEncryptionConfigured: boolean;
 }
 
+export const csrfCookieName = "mo_devflow_csrf";
+export const csrfHeaderName = "x-mo-devflow-csrf";
+
 export const syncHealthLayers = ["github_sync", "webhooks", "rules", "metrics", "ai_drift", "notifications"] as const;
 export type SyncHealthLayer = (typeof syncHealthLayers)[number];
 export type SyncHealthStatus = "success" | "failed" | "partial" | "blocked" | "not_started";

@@ -26,6 +26,7 @@ import type {
 } from "@mo-devflow/shared";
 import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
+import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 import { githubTokenFailureForWorkflowRead } from "./githubTokenFailures";
 import { workflowWriteRefreshJobs } from "./refreshJobs";
 
@@ -94,6 +95,9 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         error: "login_required",
         message: "Connect a GitHub token before previewing workflow fixes."
       });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
     }
 
     const parsed = workflowFixPreviewSchema.safeParse(request.body);
@@ -247,6 +251,9 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         error: "login_required",
         message: "Connect a GitHub token before confirming workflow fixes."
       });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
     }
 
     const parsed = workflowFixConfirmSchema.safeParse(request.body);

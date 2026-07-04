@@ -595,6 +595,8 @@ Write operations are available only to logged-in users with a connected GitHub t
 
 The product should validate token capability before offering a write action. If the token is missing, expired, lacks scope, or no longer has repository permission, the UI should explain the problem and keep the action disabled.
 
+Logged-in browser write operations must also prove that the request originated from the active product session, not only from a browser that happens to carry the session cookie.
+
 Before a write, the product must show:
 
 - Target issue or PR.

@@ -50,7 +50,7 @@ import type {
   WorkflowFixStateSnapshot,
   WorkflowViolationView
 } from "@mo-devflow/shared";
-import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
+import { csrfCookieName, csrfHeaderName, notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
@@ -110,6 +110,32 @@ async function responseError(response: Response): Promise<string> {
   } catch {
     return `API returned ${response.status}`;
   }
+}
+
+function readBrowserCookie(name: string): string | null {
+  for (const segment of document.cookie.split(";")) {
+    const [rawKey, ...valueParts] = segment.trim().split("=");
+    if (rawKey === name) {
+      try {
+        return decodeURIComponent(valueParts.join("="));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function csrfHeaders(): Record<string, string> {
+  const token = readBrowserCookie(csrfCookieName);
+  return token ? { [csrfHeaderName]: token } : {};
+}
+
+function jsonHeadersWithCsrf(): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    ...csrfHeaders()
+  };
 }
 
 function severityColor(severity: string | null): string {
@@ -588,7 +614,7 @@ export default function App() {
     try {
       const response = await fetch("/api/session/github-token", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
         body: JSON.stringify({ token: tokenInput.trim() })
       });
@@ -615,6 +641,7 @@ export default function App() {
     try {
       const response = await fetch("/api/session", {
         method: "DELETE",
+        headers: csrfHeaders(),
         credentials: "same-origin"
       });
       if (!response.ok) {
@@ -633,7 +660,7 @@ export default function App() {
     try {
       const response = await fetch("/api/refresh", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
         body: JSON.stringify({})
       });
@@ -663,6 +690,7 @@ export default function App() {
     try {
       const response = await fetch(`/api/notifications/deliveries/${delivery.id}/acknowledge`, {
         method: "POST",
+        headers: csrfHeaders(),
         credentials: "same-origin"
       });
       if (!response.ok) {
@@ -691,7 +719,7 @@ export default function App() {
     try {
       const response = await fetch("/api/actions/workflow-fix/preview", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
         body: JSON.stringify({
           actionKey,
@@ -721,7 +749,7 @@ export default function App() {
     try {
       const response = await fetch("/api/actions/workflow-fix/confirm", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
         body: JSON.stringify({ previewId: workflowPreview.previewId })
       });

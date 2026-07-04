@@ -9,6 +9,7 @@ import {
 } from "@mo-devflow/db";
 import type { ManualRefreshLayer } from "@mo-devflow/shared";
 import { getSessionRecordFromRequest } from "./authRoutes";
+import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 import { jobKeyForLayer, manualRefreshLayers, type RefreshJobSeed } from "./refreshJobs";
 
 const manualRefreshSchema = z.object({
@@ -28,6 +29,9 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
         error: "login_required",
         message: "Connect a GitHub token before queueing refresh jobs."
       });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
     }
 
     const parsed = manualRefreshSchema.safeParse(request.body ?? {});

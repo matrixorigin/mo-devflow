@@ -18,6 +18,14 @@ import {
   tokenEncryptionConfigFromEnv
 } from "./authCrypto";
 import {
+  buildClearCsrfCookie,
+  buildCsrfCookie,
+  buildCsrfCookieForSession,
+  createCsrfToken,
+  hasValidCsrfToken,
+  sendCsrfRequired
+} from "./csrf";
+import {
   buildClearSessionCookie,
   buildSessionCookie,
   cookieSecureFromEnv,
@@ -58,6 +66,12 @@ async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply)
   if (!session) {
     return anonymousSession();
   }
+  if (reply) {
+    reply.header(
+      "set-cookie",
+      buildCsrfCookieForSession(request, new Date(session.sessionExpiresAt), cookieSecureFromEnv())
+    );
+  }
   const profile = loadRepoProfile();
   return {
     authenticated: true,
@@ -77,7 +91,8 @@ export async function getSessionRecordFromRequest(
   const session = await getActiveSession(hashSessionToken(sessionToken));
   if (!session) {
     if (reply) {
-      reply.header("set-cookie", buildClearSessionCookie(cookieSecureFromEnv()));
+      const secureCookie = cookieSecureFromEnv();
+      reply.header("set-cookie", [buildClearSessionCookie(secureCookie), buildClearCsrfCookie(secureCookie)]);
     }
     return null;
   }
@@ -150,7 +165,11 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       sessionHash: hashSessionToken(sessionToken),
       expiresAt: expiresAt.toISOString()
     });
-    reply.header("set-cookie", buildSessionCookie(sessionToken, expiresAt, cookieSecureFromEnv()));
+    const secureCookie = cookieSecureFromEnv();
+    reply.header("set-cookie", [
+      buildSessionCookie(sessionToken, expiresAt, secureCookie),
+      buildCsrfCookie(createCsrfToken(), expiresAt, secureCookie)
+    ]);
     return {
       authenticated: true,
       user: toAuthenticatedUserView({
@@ -167,11 +186,16 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete("/api/session", async (request, reply) => {
+    const secureCookie = cookieSecureFromEnv();
     const sessionToken = readCookieValue(request.headers.cookie, sessionCookieName);
+    const session = sessionToken ? await getSessionRecordFromRequest(request, reply) : null;
+    if (session && !hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
+    }
     if (sessionToken) {
       await revokeSession(hashSessionToken(sessionToken));
     }
-    reply.header("set-cookie", buildClearSessionCookie(cookieSecureFromEnv()));
+    reply.header("set-cookie", [buildClearSessionCookie(secureCookie), buildClearCsrfCookie(secureCookie)]);
     return anonymousSession();
   });
 }

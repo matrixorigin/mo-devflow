@@ -31,6 +31,10 @@ Local development defaults to `http://localhost:${MO_DEVFLOW_WEB_PORT}` and
 `http://127.0.0.1:${MO_DEVFLOW_WEB_PORT}`. Set
 `MO_DEVFLOW_ALLOWED_ORIGINS` to a comma-separated allowlist for deployed
 frontends; each value must be an origin only, with no path, query, or fragment.
+Logged-in browser write requests also require the API-issued
+`mo_devflow_csrf` cookie value in the `x-mo-devflow-csrf` header. This protects
+manual refresh, notification acknowledgement, workflow-fix preview/confirm, and
+logout endpoints while keeping the session cookie HttpOnly.
 
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.
