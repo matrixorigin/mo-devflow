@@ -394,7 +394,6 @@ const compatibilityStatements = [
   "ALTER TABLE pull_requests ADD COLUMN testing_testers_json LONGTEXT",
   "ALTER TABLE pull_requests ADD COLUMN testing_signals_json LONGTEXT",
   "ALTER TABLE pull_requests ADD COLUMN testing_queue_age_hours DOUBLE",
-  "ALTER TABLE notification_deliveries MODIFY COLUMN attention_item_id BIGINT",
   "ALTER TABLE notification_deliveries ADD COLUMN source_type VARCHAR(64)",
   "ALTER TABLE notification_deliveries ADD COLUMN source_id BIGINT",
   "ALTER TABLE notification_deliveries ADD COLUMN rule_key VARCHAR(128)",

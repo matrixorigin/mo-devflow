@@ -3,7 +3,8 @@ import type { RepoProfile } from "@mo-devflow/shared";
 import {
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
-  deliveryStatusRequiresAcknowledgement
+  deliveryStatusRequiresAcknowledgement,
+  notificationRecipient
 } from "./notifications";
 
 const profile: RepoProfile = {
@@ -99,5 +100,29 @@ describe("notification acknowledgement health", () => {
     expect(deliveryStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(deliveryStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(deliveryStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+  });
+});
+
+describe("notification recipient routing", () => {
+  test("maps GitHub logins to employee recipients case-insensitively", () => {
+    expect(
+      notificationRecipient(
+        {
+          ...profile,
+          notifications: {
+            ...profile.notifications,
+            employees: {
+              alice: { wecomUserId: "alice-wecom" }
+            }
+          }
+        },
+        "Alice"
+      )
+    ).toBe("alice-wecom");
+  });
+
+  test("uses the configured fallback recipient when mapping is missing", () => {
+    expect(notificationRecipient(profile, "missing-user")).toBe("maintainer_group");
+    expect(notificationRecipient(profile, null)).toBe("maintainer_group");
   });
 });

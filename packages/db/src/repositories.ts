@@ -3,6 +3,7 @@ import type {
   AiDriftSignal,
   AiDriftSignalView,
   AnalyticsSummary,
+  AttentionSeverity,
   CriticalIssueBlockerView,
   CriticalIssueView,
   CriticalIssueLinkedPullRequestView,
@@ -167,6 +168,12 @@ export interface TestingReviewerCandidate {
   openPrs: number;
 }
 
+export interface NotificationEmployeeMappingCandidate {
+  login: string;
+  attentionItems: number;
+  highestSeverity: AttentionSeverity;
+}
+
 export function criticalIssueOwnerCoverage(
   criticalIssues: Array<{ ownerLogin: string | null; ownerScope: CriticalIssueOwnerScope; ageHours: number }>
 ): CriticalOwnerCoverageView[] {
@@ -261,10 +268,86 @@ function hasTestingHandoffSignal(profile: RepoProfile): boolean {
   );
 }
 
+const attentionSeverityRank: Record<AttentionSeverity, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2
+};
+
+function attentionSeverity(value: unknown): AttentionSeverity {
+  const severity = asString(value);
+  if (severity === "critical" || severity === "warning" || severity === "info") {
+    return severity;
+  }
+  return "warning";
+}
+
+function employeeMappingLoginSet(profile: RepoProfile): Set<string> {
+  return new Set(
+    Object.entries(profile.notifications.employees)
+      .filter(([, value]) => value.wecomUserId.trim().length > 0)
+      .map(([login]) => normalizedLogin(login))
+      .filter(Boolean)
+  );
+}
+
+function employeePlaceholder(login: string): string {
+  const key = normalizedLogin(login).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  return `TODO_${key || "USER"}`;
+}
+
+export function notificationEmployeeMappingCandidates(
+  profile: RepoProfile,
+  attentionSources: Array<{ relatedLogin: string | null; severity: AttentionSeverity }>
+): NotificationEmployeeMappingCandidate[] {
+  const mappedEmployees = employeeMappingLoginSet(profile);
+  const candidates = new Map<
+    string,
+    {
+      login: string;
+      attentionItems: number;
+      highestSeverity: AttentionSeverity;
+    }
+  >();
+
+  for (const source of attentionSources) {
+    const loginKey = source.relatedLogin ? normalizedLogin(source.relatedLogin) : "";
+    if (!loginKey || mappedEmployees.has(loginKey)) {
+      continue;
+    }
+
+    const existing = candidates.get(loginKey);
+    if (existing) {
+      existing.attentionItems += 1;
+      if (attentionSeverityRank[source.severity] < attentionSeverityRank[existing.highestSeverity]) {
+        existing.highestSeverity = source.severity;
+      }
+    } else {
+      candidates.set(loginKey, {
+        login: source.relatedLogin as string,
+        attentionItems: 1,
+        highestSeverity: source.severity
+      });
+    }
+  }
+
+  return Array.from(candidates.values()).sort((left, right) => {
+    const severityRank = attentionSeverityRank[left.highestSeverity] - attentionSeverityRank[right.highestSeverity];
+    if (severityRank !== 0) {
+      return severityRank;
+    }
+    if (right.attentionItems !== left.attentionItems) {
+      return right.attentionItems - left.attentionItems;
+    }
+    return left.login.localeCompare(right.login);
+  });
+}
+
 export function profileActionSuggestions(
   profile: RepoProfile,
   criticalOwnerCoverage: CriticalOwnerCoverageView[],
-  testingReviewerCandidates: TestingReviewerCandidate[]
+  testingReviewerCandidates: TestingReviewerCandidate[],
+  notificationMappingCandidates: NotificationEmployeeMappingCandidate[]
 ): ProfileActionSuggestion[] {
   const suggestions: ProfileActionSuggestion[] = [];
   const watched = normalizedLoginSet(profile.people.watchedUsers);
@@ -306,6 +389,23 @@ export function profileActionSuggestions(
       yamlSnippet: `people:\n  testers:\n${testingReviewerLogins.map((login) => `    - ${login}`).join(
         "\n"
       )}\ntesting:\n  handoff_signals:\n    reviewer_users:\n${testingReviewerLogins.map((login) => `      - ${login}`).join("\n")}`
+    });
+  }
+
+  const hasNotificationRoutingIntent =
+    profile.notifications.wecom.enabled || Boolean(profile.notifications.wecom.webhookUrlEnv);
+  const notificationLogins = notificationMappingCandidates.map((candidate) => candidate.login).slice(0, 12);
+  if (hasNotificationRoutingIntent && notificationLogins.length > 0) {
+    suggestions.push({
+      key: "profile:notification_employee_mapping_candidates",
+      severity: profile.notifications.wecom.enabled ? "warning" : "info",
+      title: "Notification employee mappings missing",
+      description: `${notificationLogins.length} GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient ${profile.notifications.routing.fallbackRecipient}.`,
+      action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+      relatedLogins: notificationLogins,
+      yamlSnippet: `notifications:\n  employees:\n${notificationLogins
+        .map((login) => `    ${login}:\n      wecom_user_id: ${employeePlaceholder(login)}`)
+        .join("\n")}`
     });
   }
 
@@ -1531,6 +1631,8 @@ export async function getDashboardSummary(
   const stalePrVisibility = visibilityClause("p", visibleClasses);
   const violationIssueVisibility = visibilityClause("i", visibleClasses);
   const violationPrVisibility = visibilityClause("p", visibleClasses);
+  const attentionIssueVisibility = visibilityClause("i", visibleClasses);
+  const attentionPrVisibility = visibilityClause("p", visibleClasses);
   const driftIssueVisibility = visibilityClause("i", visibleClasses);
   const driftPrVisibility = visibilityClause("p", visibleClasses);
   const personalIssueVisibility = visibilityClause("i", visibleClasses);
@@ -1651,6 +1753,29 @@ export async function getDashboardSummary(
        v.last_detected_at DESC
      LIMIT 100`,
     [repoId, ...violationIssueVisibility.params, ...violationPrVisibility.params]
+  );
+  const [attentionItemRows] = await pool.execute<RowData[]>(
+    `SELECT a.related_login, a.severity
+     FROM attention_items a
+     WHERE a.repo_id = ? AND a.resolved_at IS NULL
+       AND (
+         a.object_number IS NULL
+         OR
+         (a.object_type = 'issue' AND EXISTS (
+           SELECT 1 FROM issues i
+           WHERE i.repo_id = a.repo_id AND i.number = a.object_number AND ${attentionIssueVisibility.sql}
+         ))
+         OR
+         (a.object_type = 'pull_request' AND EXISTS (
+           SELECT 1 FROM pull_requests p
+           WHERE p.repo_id = a.repo_id AND p.number = a.object_number AND ${attentionPrVisibility.sql}
+         ))
+       )
+     ORDER BY
+       CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+       a.last_detected_at DESC
+     LIMIT 200`,
+    [repoId, ...attentionIssueVisibility.params, ...attentionPrVisibility.params]
   );
   const [metricRows] = await pool.execute<RowData[]>(
     `SELECT *
@@ -1952,6 +2077,20 @@ export async function getDashboardSummary(
       requestedReviewers: parseJsonArray(asString(row.requested_reviewers_json))
     }))
   );
+  const notificationMappingCandidates = notificationEmployeeMappingCandidates(profile, [
+    ...attentionItemRows.map((row) => ({
+      relatedLogin: row.related_login ? asString(row.related_login) : null,
+      severity: attentionSeverity(row.severity)
+    })),
+    ...workflowViolations.map((violation) => ({
+      relatedLogin: violation.relatedLogin,
+      severity: attentionSeverity(violation.severity)
+    })),
+    ...aiDriftSignals.map((signal) => ({
+      relatedLogin: signal.ownerLogin,
+      severity: attentionSeverity(signal.severity)
+    }))
+  ]);
   const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
@@ -1965,7 +2104,12 @@ export async function getDashboardSummary(
       timezone: profile.reporting.timezone
     },
     profileWarnings: profileConfigurationWarnings(profile),
-    profileActions: profileActionSuggestions(profile, criticalOwnerCoverage, testingReviewerCandidates),
+    profileActions: profileActionSuggestions(
+      profile,
+      criticalOwnerCoverage,
+      testingReviewerCandidates,
+      notificationMappingCandidates
+    ),
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),

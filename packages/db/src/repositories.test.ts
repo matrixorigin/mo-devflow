@@ -13,6 +13,7 @@ import {
   criticalIssueOwnerScope,
   dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
+  notificationEmployeeMappingCandidates,
   previousCalendarDayRange,
   profileActionSuggestions,
   profileConfigurationWarnings,
@@ -239,6 +240,7 @@ describe("profile configuration guidance", () => {
           { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 },
           { ownerLogin: "carol", ownerScope: "watched", criticalIssues: 4, averageAgeHours: 6 }
         ],
+        [],
         []
       )
     ).toEqual([
@@ -262,6 +264,7 @@ describe("profile configuration guidance", () => {
           { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
           { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 5, averageAgeHours: 8 }
         ],
+        [],
         []
       )
     ).toEqual([]);
@@ -275,7 +278,8 @@ describe("profile configuration guidance", () => {
         [
           { login: "qa-a", openPrs: 8 },
           { login: "qa-b", openPrs: 4 }
-        ]
+        ],
+        []
       )
     ).toEqual([
       {
@@ -310,9 +314,70 @@ describe("profile configuration guidance", () => {
         [
           { login: "qa-a", openPrs: 8 },
           { login: "qa-b", openPrs: 4 }
-        ]
+        ],
+        []
       )
     ).toEqual([]);
+  });
+
+  test("summarizes notification employee mapping candidates", () => {
+    expect(
+      notificationEmployeeMappingCandidates(
+        {
+          ...baseProfile,
+          notifications: {
+            ...baseProfile.notifications,
+            employees: {
+              alice: { wecomUserId: "alice-wecom" }
+            }
+          }
+        },
+        [
+          { relatedLogin: "Alice", severity: "critical" },
+          { relatedLogin: "Bob", severity: "warning" },
+          { relatedLogin: "bob", severity: "critical" },
+          { relatedLogin: "carol", severity: "warning" },
+          { relatedLogin: "carol", severity: "warning" },
+          { relatedLogin: "  ", severity: "critical" },
+          { relatedLogin: null, severity: "critical" }
+        ]
+      )
+    ).toEqual([
+      { login: "Bob", attentionItems: 2, highestSeverity: "critical" },
+      { login: "carol", attentionItems: 2, highestSeverity: "warning" }
+    ]);
+  });
+
+  test("suggests notification employee mappings for owner-routed attention", () => {
+    expect(
+      profileActionSuggestions(
+        {
+          ...baseProfile,
+          notifications: {
+            ...baseProfile.notifications,
+            wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+          }
+        },
+        [],
+        [],
+        [
+          { login: "Bob", attentionItems: 2, highestSeverity: "critical" },
+          { login: "carol", attentionItems: 1, highestSeverity: "warning" }
+        ]
+      )
+    ).toEqual([
+      {
+        key: "profile:notification_employee_mapping_candidates",
+        severity: "warning",
+        title: "Notification employee mappings missing",
+        description:
+          "2 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
+        action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+        relatedLogins: ["Bob", "carol"],
+        yamlSnippet:
+          "notifications:\n  employees:\n    Bob:\n      wecom_user_id: TODO_BOB\n    carol:\n      wecom_user_id: TODO_CAROL"
+      }
+    ]);
   });
 
   test("surfaces missing watched users and testing handoff configuration", () => {

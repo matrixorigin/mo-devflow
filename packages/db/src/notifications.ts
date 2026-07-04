@@ -56,9 +56,18 @@ function notificationSeverity(value: unknown): NotificationCandidate["severity"]
   return "warning";
 }
 
-function notificationRecipient(profile: RepoProfile, login: string | null): string {
-  if (login && profile.notifications.employees[login]?.wecomUserId) {
-    return profile.notifications.employees[login].wecomUserId;
+function normalizedLogin(login: string): string {
+  return login.trim().toLowerCase();
+}
+
+export function notificationRecipient(profile: RepoProfile, login: string | null): string {
+  const loginKey = login ? normalizedLogin(login) : "";
+  if (loginKey) {
+    for (const [configuredLogin, employee] of Object.entries(profile.notifications.employees)) {
+      if (normalizedLogin(configuredLogin) === loginKey && employee.wecomUserId.trim()) {
+        return employee.wecomUserId;
+      }
+    }
   }
   return profile.notifications.routing.fallbackRecipient;
 }
