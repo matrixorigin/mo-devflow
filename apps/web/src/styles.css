@@ -974,6 +974,14 @@ button.team-monitor-tile:hover,
   min-width: 0;
 }
 
+.board-filter-help {
+  flex: 1 1 280px;
+  font-size: 12px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .board-filter-group-inline {
   justify-content: flex-end;
 }

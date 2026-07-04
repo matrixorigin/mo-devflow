@@ -1347,6 +1347,19 @@ function prScopeLabel(filter: PrScopeFilter): string {
   return "all pending";
 }
 
+function prScopeHelp(filter: PrScopeFilter): string | null {
+  if (filter === "no_issue") {
+    return "Only PRs with completed detail sync and no discovered issue relationship are counted here.";
+  }
+  if (filter === "issue_link_pending") {
+    return "These PRs are not treated as unlinked yet; relationship evidence is still incomplete.";
+  }
+  if (filter === "evidence_pending") {
+    return "PR review, CI, merge, or issue-link evidence is still incomplete for these rows.";
+  }
+  return null;
+}
+
 function prBoardTabForScope(scope: PrScopeFilter): PrBoardTab {
   if (scope === "testing" || scope === "stale_testing" || scope === "testing_evidence_gap") {
     return "testing";
@@ -1760,6 +1773,8 @@ function PrFilterBar({
   scopeFilter: PrScopeFilter;
   onScopeFilterChange: (value: PrScopeFilter) => void;
 }) {
+  const scopeHelp = prScopeHelp(scopeFilter);
+
   return (
     <div className="board-filter-bar" aria-label="Pending PR filters">
       <div className="board-filter-group">
@@ -1777,13 +1792,18 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "Unlinked", value: "no_issue" },
+            { label: "Verified unlinked", value: "no_issue" },
             { label: "Link sync pending", value: "issue_link_pending" },
             { label: "Evidence pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
       </div>
+      {scopeHelp ? (
+        <Text type="secondary" className="board-filter-help">
+          {scopeHelp}
+        </Text>
+      ) : null}
     </div>
   );
 }
