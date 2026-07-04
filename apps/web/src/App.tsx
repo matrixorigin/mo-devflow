@@ -3393,6 +3393,7 @@ function HealthMetricCard({
   tone,
   action,
   disabled = false,
+  disabledReason,
   loading = false,
   onClick
 }: {
@@ -3402,6 +3403,7 @@ function HealthMetricCard({
   tone: HealthTileTone;
   action?: string;
   disabled?: boolean;
+  disabledReason?: string;
   loading?: boolean;
   onClick?: () => void;
 }) {
@@ -3413,9 +3415,13 @@ function HealthMetricCard({
         <small>{detail}</small>
       </div>
       {action && onClick ? (
-        <Button size="small" disabled={disabled} loading={loading} onClick={onClick}>
-          {action}
-        </Button>
+        <Tooltip title={disabled ? disabledReason : undefined}>
+          <span>
+            <Button size="small" disabled={disabled} loading={loading} onClick={onClick}>
+              {action}
+            </Button>
+          </span>
+        </Tooltip>
       ) : null}
     </article>
   );
@@ -3449,9 +3455,13 @@ function HealthLayerRow({
         {item.skipped ? <span>skipped {item.skipReason ?? "no reason recorded"}</span> : null}
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
-      <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
-        Refresh layer
-      </Button>
+      <Tooltip title={authenticated ? "Queue this sync layer" : "Connect GitHub token to queue worker refresh jobs"}>
+        <span>
+          <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
+            Refresh layer
+          </Button>
+        </span>
+      </Tooltip>
     </article>
   );
 }
@@ -3465,6 +3475,7 @@ function HealthBoard({
   onQueueLayers,
   onOpenView,
   onImpactSelect,
+  onConnectToken,
   onRetryFailedWebhooks
 }: {
   data: DashboardSummary;
@@ -3475,6 +3486,7 @@ function HealthBoard({
   onQueueLayers: (layers: ManualRefreshLayer[]) => void;
   onOpenView: (view: DashboardView) => void;
   onImpactSelect: (target: CacheEvidenceImpactTarget) => void;
+  onConnectToken: () => void;
   onRetryFailedWebhooks: () => void;
 }) {
   const score = operationalHealthScore(data);
@@ -3485,6 +3497,9 @@ function HealthBoard({
   const repairRecommendation = recommendCacheRepair(data.sync);
   const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
   const webhookReadiness = summarizeWebhookReadiness(data);
+  const refreshDisabledReason = authenticated
+    ? undefined
+    : "Anonymous users can inspect cached health only. Connect a GitHub token to queue worker refresh jobs.";
 
   return (
     <section className="section">
@@ -3498,6 +3513,21 @@ function HealthBoard({
         <Tag color={healthTileToneColor(score.tone)}>{score.label}</Tag>
       </div>
 
+      {!authenticated ? (
+        <Alert
+          className="health-readonly-alert"
+          type="info"
+          showIcon
+          title="Observer mode"
+          description="Cached data remains visible. Queueing repair, webhook retry, and worker refresh actions requires a connected GitHub token and CSRF-protected session."
+          action={
+            <Button size="small" onClick={onConnectToken}>
+              Connect
+            </Button>
+          }
+        />
+      ) : null}
+
       <div className="health-command-grid">
         <HealthMetricCard
           label="Cache evidence"
@@ -3506,6 +3536,7 @@ function HealthBoard({
           tone={data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "attention" : "good"}
           action={repairRecommendation.layers.length > 0 ? "Queue repair" : "Refresh cache"}
           disabled={!authenticated}
+          disabledReason={refreshDisabledReason}
           loading={manualRefreshSaving}
           onClick={() =>
             onQueueLayers(repairRecommendation.layers.length > 0 ? repairRecommendation.layers : ["github_sync"])
@@ -3520,6 +3551,7 @@ function HealthBoard({
           tone={unhealthyLayers > 0 ? "attention" : "good"}
           action="Refresh all"
           disabled={!authenticated}
+          disabledReason={refreshDisabledReason}
           loading={manualRefreshSaving}
           onClick={() => onQueueLayers([...syncHealthLayers])}
         />
@@ -3530,6 +3562,7 @@ function HealthBoard({
           tone={data.sync.worker.status === "active" && data.sync.jobQueue.status === "healthy" ? "good" : "critical"}
           action="Refresh status"
           disabled={!authenticated}
+          disabledReason={refreshDisabledReason}
           loading={manualRefreshSaving}
           onClick={() => onQueueLayers(["rules", "metrics", "ai_drift", "notifications"])}
         />
@@ -3540,6 +3573,7 @@ function HealthBoard({
           tone={webhookReadiness.tone}
           action={data.webhooks.failedDeliveries > 0 ? "Retry failed" : "Open webhooks"}
           disabled={data.webhooks.failedDeliveries > 0 && !authenticated}
+          disabledReason={refreshDisabledReason}
           loading={webhookRetrySaving}
           onClick={() => (data.webhooks.failedDeliveries > 0 ? onRetryFailedWebhooks() : onOpenView("Webhooks"))}
         />
@@ -11584,6 +11618,7 @@ export default function App() {
                 onQueueLayers={(layers) => void queueManualRefreshForLayers(layers)}
                 onOpenView={selectView}
                 onImpactSelect={openCacheEvidenceImpact}
+                onConnectToken={openTokenReconnect}
                 onRetryFailedWebhooks={() => void retryFailedWebhooks()}
               />
             ) : null}
@@ -12337,6 +12372,19 @@ export default function App() {
               Clear
             </Button>
           </Space>
+          {!session?.authenticated ? (
+            <Alert
+              type="info"
+              title="Observer mode"
+              description="You can inspect cached data without logging in. Queueing worker refresh jobs requires a connected GitHub token."
+              action={
+                <Button size="small" onClick={openTokenReconnect}>
+                  Connect
+                </Button>
+              }
+              showIcon
+            />
+          ) : null}
           <Checkbox.Group
             value={manualRefreshLayers}
             onChange={(values) => {

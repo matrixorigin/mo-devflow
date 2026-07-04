@@ -4578,6 +4578,10 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.health-readonly-alert {
+  margin-bottom: 12px;
+}
+
 .health-metric-card {
   align-items: start;
   background: #f8fafc;
@@ -4613,6 +4617,10 @@ button.testing-board-stat:focus-visible {
 }
 
 .health-metric-card .ant-btn {
+  align-self: start;
+}
+
+.health-metric-card > span {
   align-self: start;
 }
 
