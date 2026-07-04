@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  Dropdown,
   Empty,
   Input,
   Layout,
@@ -17,6 +18,7 @@ import {
   Tooltip,
   Typography
 } from "antd";
+import type { MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type {
   AggregatedMetricPoint,
@@ -193,6 +195,16 @@ const viewOptions = [
   "Audit"
 ] as const;
 type DashboardView = (typeof viewOptions)[number];
+const primaryViewOptions = ["Overview", "Issues", "Personal", "People", "PRs", "Analytics"] satisfies DashboardView[];
+const systemViewOptions = [
+  "Health",
+  "Violations",
+  "Drift",
+  "Notifications",
+  "Webhooks",
+  "Audit"
+] satisfies DashboardView[];
+const systemViewOptionSet = new Set<DashboardView>(systemViewOptions);
 
 const hashViewMap: Record<string, DashboardView> = {
   overview: "Overview",
@@ -9950,6 +9962,11 @@ export default function App() {
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
   const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
+  const systemViewMenuItems: MenuProps["items"] = systemViewOptions.map((option) => ({
+    key: option,
+    label: option
+  }));
+  const systemViewActive = systemViewOptionSet.has(view);
 
   return (
     <Layout className="app-shell">
@@ -9972,8 +9989,21 @@ export default function App() {
               className="view-tabs"
               value={view}
               onChange={(value) => selectView(String(value) as DashboardView)}
-              options={[...viewOptions]}
+              options={[...primaryViewOptions]}
             />
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: systemViewMenuItems,
+                selectedKeys: systemViewActive ? [view] : [],
+                onClick: ({ key }) => selectView(key as DashboardView)
+              }}
+            >
+              <Button className={`system-view-menu-trigger ${systemViewActive ? "is-active" : ""}`} size="small">
+                System
+                <ChevronDown size={14} aria-hidden="true" />
+              </Button>
+            </Dropdown>
           </nav>
           {authenticatedUser && headerIssueLabelCapability ? (
             <Space className="account-actions" size={[8, 8]} wrap>

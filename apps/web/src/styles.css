@@ -118,6 +118,9 @@ body {
 }
 
 .view-tabs-scroll {
+  align-items: center;
+  display: flex;
+  gap: 8px;
   max-width: min(760px, calc(100vw - 56px));
   min-width: 0;
   overflow-x: auto;
@@ -127,6 +130,19 @@ body {
 
 .view-tabs {
   white-space: nowrap;
+}
+
+.system-view-menu-trigger {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.system-view-menu-trigger.is-active {
+  background: #ffffff;
+  border-color: #d1d5db;
+  color: #111827;
+  font-weight: 600;
 }
 
 .account-actions {
