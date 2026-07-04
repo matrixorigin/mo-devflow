@@ -815,7 +815,7 @@ export async function processWebhookPayload(input: {
         relatedLogin: issue.ownerLogin,
         targetRecipient: issue.ownerLogin,
         dedupeKey,
-        evidenceSummary: `Critical issue #${issue.number} has no recent human action.`,
+        evidenceSummary: `Active s-1/s0 issue #${issue.number} has no recent human action.`,
         dashboardUrl: attentionDashboardUrl("issue")
       });
     }
@@ -1036,7 +1036,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           relatedLogin: issue.ownerLogin,
           targetRecipient: issue.ownerLogin,
           dedupeKey,
-          evidenceSummary: `Critical issue #${issue.number} has no recent human action.`,
+          evidenceSummary: `Active s-1/s0 issue #${issue.number} has no recent human action.`,
           dashboardUrl: attentionDashboardUrl("issue")
         });
       }

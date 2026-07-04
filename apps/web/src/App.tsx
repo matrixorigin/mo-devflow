@@ -260,6 +260,10 @@ function workloadStatusColor(status: WorkloadStatus): string {
   return "green";
 }
 
+function workloadStatusText(status: WorkloadStatus): string {
+  return status === "critical" ? "s-1/s0" : labelText(status);
+}
+
 function capabilityStatusColor(status: GitHubWriteCapability["status"]): string {
   if (status === "ready") {
     return "green";
@@ -802,13 +806,13 @@ function PersonWorkloadBoard({
               </span>
               <span className="person-card-title">
                 <Text strong>{person.login}</Text>
-                <Tag color={workloadStatusColor(status)}>{labelText(status)}</Tag>
+                <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
               </span>
             </span>
             <span className="person-stat-grid">
               <span>
                 <strong>{person.activeCriticalIssues}</strong>
-                <small>critical</small>
+                <small>s-1/s0</small>
               </span>
               <span>
                 <strong>{person.attentionPrs}</strong>
@@ -1062,7 +1066,7 @@ function SelectedPersonWorkbench({
             <Title level={4}>{person.login}</Title>
             <Space size={[6, 6]} wrap>
               <Tag color={person.summary.activeCriticalIssues > 0 ? "red" : "default"}>
-                {person.summary.activeCriticalIssues} critical
+                {person.summary.activeCriticalIssues} s-1/s0
               </Tag>
               <Tag color={person.summary.attentionPrs > 0 ? "orange" : "default"}>
                 {person.summary.attentionPrs} PR attention
@@ -1080,8 +1084,8 @@ function SelectedPersonWorkbench({
       </div>
 
       <div className="work-lane-grid work-lane-grid-priority">
-        <WorkLane title="Active Critical Issues" count={person.activeCriticalIssues.length} tone="critical">
-          <IssueCardList issues={person.activeCriticalIssues} emptyText="No active critical issues" />
+        <WorkLane title="Active s-1/s0 Issues" count={person.activeCriticalIssues.length} tone="critical">
+          <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
         </WorkLane>
         <WorkLane title="PR Attention" count={person.attentionPrs.length} tone="attention">
           <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
@@ -1436,7 +1440,7 @@ export default function App() {
         )
       },
       {
-        title: "Critical",
+        title: "s-1/s0",
         dataIndex: "criticalIssues",
         width: 110,
         render: (value) => <Text strong>{value}</Text>
@@ -2357,7 +2361,7 @@ export default function App() {
               <>
                 <section className="kpi-grid">
                   <div className="metric">
-                    <Statistic title="Critical Issues" value={data.counts.criticalIssues} />
+                    <Statistic title="Active s-1/s0" value={data.counts.criticalIssues} />
                     <Progress
                       percent={Math.min(100, data.counts.criticalIssues * 10)}
                       showInfo={false}
@@ -2365,7 +2369,7 @@ export default function App() {
                     />
                   </div>
                   <div className="metric">
-                    <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
+                    <Statistic title="Unowned s-1/s0" value={data.counts.unownedCriticalIssues} />
                     <Progress
                       percent={Math.min(100, data.counts.unownedCriticalIssues * 20)}
                       showInfo={false}
@@ -2373,7 +2377,7 @@ export default function App() {
                     />
                   </div>
                   <div className="metric">
-                    <Statistic title="Non-watched Critical" value={data.counts.nonWatchedCriticalIssues} />
+                    <Statistic title="Non-watched s-1/s0" value={data.counts.nonWatchedCriticalIssues} />
                     <Progress
                       percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)}
                       showInfo={false}
@@ -2548,7 +2552,7 @@ export default function App() {
                 {criticalOwnerCoverageRows.length > 0 ? (
                   <section className="section">
                     <div className="section-heading">
-                      <Title level={4}>Critical Owner Coverage</Title>
+                      <Title level={4}>Active s-1/s0 Owner Coverage</Title>
                       <Space size={[4, 4]} wrap>
                         <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
                         <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
@@ -2875,7 +2879,7 @@ export default function App() {
                   <Title level={4}>Personal Workbench</Title>
                   <Space size={[6, 6]} wrap>
                     <Tag color={selectedPersonalView?.summary.activeCriticalIssues ? "red" : "default"}>
-                      {selectedPersonalView?.summary.activeCriticalIssues ?? 0} critical
+                      {selectedPersonalView?.summary.activeCriticalIssues ?? 0} s-1/s0
                     </Tag>
                     <Tag color={selectedPersonalView?.summary.attentionPrs ? "orange" : "default"}>
                       {selectedPersonalView?.summary.attentionPrs ?? 0} PR attention
@@ -2967,7 +2971,7 @@ export default function App() {
               <div className="section-heading">
                 <Space>
                   <ShieldAlert size={18} />
-                  <Title level={4}>Critical Issues</Title>
+                  <Title level={4}>Active s-1/s0 Issues</Title>
                 </Space>
                 <Text type="secondary">
                   Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
@@ -2980,7 +2984,7 @@ export default function App() {
                 dataSource={data.criticalIssues}
                 scroll={{ x: 1700 }}
                 pagination={{ pageSize: 8 }}
-                locale={{ emptyText: <Empty description="No active critical issues in cache" /> }}
+                locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
               />
             </section>
 
@@ -2991,7 +2995,7 @@ export default function App() {
                   <Space size={[6, 6]} wrap>
                     <Tag>{data.people.length} watched</Tag>
                     <Tag color={data.people.some((person) => person.activeCriticalIssues > 0) ? "red" : "default"}>
-                      {data.people.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} critical
+                      {data.people.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} s-1/s0
                     </Tag>
                     <Tag color={data.people.some((person) => person.attentionPrs > 0) ? "orange" : "default"}>
                       {data.people.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention

@@ -8,7 +8,7 @@ The first target profile is MatrixOne, but the product must not be hardcoded to 
 
 The product helps maintainers and developers answer:
 
-- Which critical issues are currently active?
+- Which active `s-1/s0` issues exist right now?
 - Who owns the active `s0` and `s-1` work?
 - Which issues and PRs are stuck?
 - Which workflow rules are being violated?
@@ -65,7 +65,7 @@ Maintainers need an overall view of workflow health:
 
 Developers need an action-oriented personal view:
 
-- Their active critical issues.
+- Their active `s-1/s0` issues.
 - Their `needs-triage` and `deferred` issues.
 - Their PRs created yesterday.
 - Their PRs merged yesterday.
@@ -111,7 +111,7 @@ A repo profile should include:
 - Watched users.
 - Tester users.
 - Owner attribution rules.
-- Critical issue scope.
+- Active `s-1/s0` issue scope.
 - Notification recipients and GitHub-user to employee mappings.
 - Lifecycle labels.
 - Severity labels.
@@ -228,13 +228,15 @@ The product should detect:
 - New issues prematurely labeled as `severity/s0`, `severity/s1`, or `severity/s-1`.
 - Old `needs-triage` issues that are not being drained.
 
-### 5.2 Active Critical Execution
+### 5.2 Active s-1/s0 Execution
 
 The product should prioritize visibility for active `severity/s0` and `severity/s-1` issues.
 
-Critical issues are repo-wide by default. They must not be limited to watched users. Issues owned by non-watched users and issues without owners should still appear in the critical issues view.
+`severity/s-1` and `severity/s0` are active execution severities, not lifecycle states. `severity/s-1` is the highest and most severe priority, followed by `severity/s0`.
 
-The critical issue view should show:
+Active `s-1/s0` issues are repo-wide by default. They must not be limited to watched users. Issues owned by non-watched users and issues without owners should still appear in the active `s-1/s0` view.
+
+The active `s-1/s0` issue view should show:
 
 - Issue number and title.
 - Severity.
@@ -342,7 +344,7 @@ The overall view should answer:
 
 Required sections:
 
-- Critical issues summary.
+- Active `s-1/s0` issues summary.
 - Watched-user workload summary.
 - PR flow summary.
 - Testing flow summary.
@@ -472,7 +474,7 @@ Team metrics:
 
 Individual metrics:
 
-- Active critical issue count.
+- Active `s-1/s0` issue count.
 - `needs-triage` count.
 - `deferred` count.
 - PRs created.
@@ -536,10 +538,10 @@ MatrixOne profile examples:
 - Bug issue missing `needs-triage`.
 - New bug prematurely labeled as active severity.
 - `s0` or `s-1` without clear owner.
-- Active critical issue with no recent action.
+- Active `s-1/s0` issue with no recent action.
 - Deferred issue missing explanation comment.
 - Issue with conflicting lifecycle labels.
-- PR linked to critical issue but stalled.
+- PR linked to active `s-1/s0` issue but stalled.
 - PR has failed CI.
 - PR has unresolved requested changes.
 - PR has merge conflict.
@@ -562,7 +564,7 @@ Notification examples:
 - A user's PR has failed CI.
 - A user's PR has merge conflict.
 - A tester has a PR waiting in the testing queue beyond the configured threshold.
-- An `ai-easy` critical issue has taken abnormally long to reach testing.
+- An `ai-easy` active `s-1/s0` issue has taken abnormally long to reach testing.
 - A daily or weekly summary should be delivered to a maintainer group.
 
 Notifications must be controlled by policy:
@@ -651,7 +653,7 @@ MVP0 should include:
 - Anonymous read-only dashboard with explicit visibility policy.
 - Overall view.
 - Personal view.
-- Repo-wide critical issues view for `s0` and `s-1`.
+- Repo-wide active `s-1/s0` issues view.
 - Owner attribution and `unowned` bucket.
 - `needs-triage` and `deferred` counts per watched user.
 - Yesterday PR created and merged counts per watched user.
@@ -694,8 +696,8 @@ The MVP may defer:
 A maintainer should be able to open the product and quickly answer:
 
 - Which `s0` and `s-1` issues are active right now?
-- Who owns each active critical issue?
-- Which critical issues are unowned or owned by non-watched users?
+- Who owns each active `s-1/s0` issue?
+- Which active `s-1/s0` issues are unowned or owned by non-watched users?
 - Which watched users have `needs-triage` or `deferred` backlog?
 - Who created and merged PRs yesterday?
 - Which PRs are pending and how old are they?

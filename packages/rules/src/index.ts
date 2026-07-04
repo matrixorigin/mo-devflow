@@ -143,9 +143,6 @@ function chooseLifecycle(
 ): { lifecycle: LifecycleState; severity: string | null } {
   const severity =
     [...profile.labels.critical, ...profile.labels.active].find((label) => labels.includes(label)) ?? null;
-  if (severity && profile.labels.critical.includes(severity)) {
-    return { lifecycle: "critical", severity };
-  }
   if (labels.includes(profile.labels.deferred)) {
     return { lifecycle: "deferred", severity };
   }
@@ -665,7 +662,7 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
         ruleKey: "critical_issue_unowned",
         severity: "critical",
         relatedLogin: null,
-        evidenceSummary: `Critical issue #${issue.number} has no derived owner in the cache.`,
+        evidenceSummary: `Active s-1/s0 issue #${issue.number} has no derived owner in the cache.`,
         suggestedAction: "Assign an owner or update the repository profile ownership rules.",
         fixable: true
       })
@@ -698,7 +695,7 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
       aiEffortLabel: null,
       expectedHours: null,
       actualHours: ageHours,
-      evidenceSummary: `Critical issue #${issue.number} has no AI effort label in the cache.`,
+      evidenceSummary: `Active s-1/s0 issue #${issue.number} has no AI effort label in the cache.`,
       suggestedAction: "Add an ai-* effort label or confirm this issue should be excluded from AI effort analysis.",
       sourceCompleteness: "partial_cache"
     });
@@ -719,7 +716,7 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
         aiEffortLabel: issue.aiEffortLabel,
         expectedHours: warningHours,
         actualHours: ageHours,
-        evidenceSummary: `Critical ai-easy issue #${issue.number} is ${ageHours}h old; threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
+        evidenceSummary: `Active s-1/s0 ai-easy issue #${issue.number} is ${ageHours}h old; threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
         suggestedAction:
           "Review whether ai-easy is still accurate, split blockers, or update the effort label before close.",
         sourceCompleteness: "partial_cache"

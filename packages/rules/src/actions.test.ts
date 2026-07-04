@@ -192,7 +192,7 @@ describe("workflow fix previews", () => {
       issue: {
         ...issue,
         labels: ["kind/bug", "severity/s0", "ai-easy"],
-        lifecycleState: "critical",
+        lifecycleState: "active",
         severity: "severity/s0",
         aiEffortLabel: "ai-easy"
       },

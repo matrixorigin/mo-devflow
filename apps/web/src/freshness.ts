@@ -119,7 +119,7 @@ export function summarizeCacheEvidence(input: {
         "One or more sync layers are blocked or failing. Cached data is still shown, but fresh workflow conclusions should wait for the failed layer to recover.",
       facts,
       affectedConclusions: [
-        "current critical ownership and blockers",
+        "current s-1/s0 ownership and blockers",
         "PR attention freshness",
         "workflow violation freshness"
       ],
@@ -139,7 +139,7 @@ export function summarizeCacheEvidence(input: {
       )}. Known cached facts remain visible, but current workflow conclusions should be reviewed after refresh.`,
       facts,
       affectedConclusions: [
-        "current critical ownership and blockers",
+        "current s-1/s0 ownership and blockers",
         "PR attention age",
         "testing queue state",
         "workflow violation freshness"

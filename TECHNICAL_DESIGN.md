@@ -23,7 +23,7 @@ This keeps frontend, backend, worker jobs, GitHub data models, and workflow rule
 The web app renders:
 
 - Overall dashboard.
-- Critical issues view.
+- Active `s-1/s0` issues view.
 - Personal views.
 - PR flow view.
 - Testing flow view.
@@ -261,7 +261,7 @@ Rate limiting:
 - Record GitHub rate limit headers for every request.
 - Back off when remaining requests are low.
 - Prefer conditional requests and targeted refreshes where possible.
-- Separate high-priority critical issue refresh from lower-priority historical backfill.
+- Separate high-priority active `s-1/s0` issue refresh from lower-priority historical backfill.
 
 Worker reliability:
 
@@ -280,7 +280,7 @@ Backfill:
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
 - Manual refresh should enqueue selected sync layers through the same MatrixOne-backed job lease system as scheduled refreshes, so users can repair a stale layer without consuming rate limit across unrelated layers.
 - Metrics evaluation should also be runnable from cached normalized data. Until full historical backfill exists, generated trend points must carry partial-cache completeness metadata and the UI must explain the limitation.
-- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on critical issues, `ai-easy` critical issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
+- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on active `s-1/s0` issues, `ai-easy` active `s-1/s0` issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
 
 ## 9. Authentication and Token Handling
 
@@ -391,6 +391,8 @@ notifications:
       recipient: maintainer_group
       schedule: "0 9 * * 1-5"
 
+Severity labels are not lifecycle states. `severity/s-1` and `severity/s0` are active execution severities, with `severity/s-1` ranked before `severity/s0` as the most severe priority.
+
 labels:
   bug: kind/bug
   needs_triage: needs-triage
@@ -441,7 +443,7 @@ Derived state should include:
 
 - Issue lifecycle state.
 - Issue owner attribution.
-- Critical issue age and last human action.
+- Active `s-1/s0` issue age and last human action.
 - PR owner.
 - PR age.
 - PR `last_human_action_at`.
@@ -595,7 +597,7 @@ Initial notification rules:
 - PR has failed CI.
 - PR has merge conflict.
 - Testing handoff is stale.
-- `ai-easy` critical issue exceeds expected `s0` to testing duration.
+- `ai-easy` active `s-1/s0` issue exceeds expected severity-to-testing duration.
 - `ai-easy` PR has requested changes, failed CI, or merge conflict blocker evidence.
 - Daily watched-user digest.
 - Daily maintainer digest.
@@ -627,13 +629,13 @@ Error handling rules:
 
 - Retriable GitHub errors should use exponential backoff.
 - Non-retriable permission errors should mark the affected sync as blocked until credentials change.
-- Rate-limit errors should pause lower-priority backfill before critical issue refresh.
+- Rate-limit errors should pause lower-priority backfill before active `s-1/s0` issue refresh.
 - Parsing errors should store the raw payload and mark the object as failed-normalization for inspection.
 - Notification errors should not block GitHub sync or dashboard reads.
 
 ## 16. First Implementation Slice
 
-The first implementation should map to Product MVP0: read-only critical flow.
+The first implementation should map to Product MVP0: read-only active `s-1/s0` flow.
 
 1. Monorepo setup.
 2. MatrixOne connection config.
@@ -645,7 +647,7 @@ The first implementation should map to Product MVP0: read-only critical flow.
 8. Cached issue and PR tables with visibility metadata.
 9. Job table with leases for polling and derived-state work.
 10. Owner attribution and action derivation.
-11. Critical issues API.
+11. Active `s-1/s0` issues API.
 12. Personal summary API.
 13. Basic PR attention rules using `last_human_action_at`.
 14. Basic React dashboard.

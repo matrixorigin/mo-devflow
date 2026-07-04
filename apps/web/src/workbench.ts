@@ -65,7 +65,7 @@ function workloadStatusRank(status: WorkloadStatus): number {
 
 export function personPrimaryReasons(person: PersonSummary, testingPrs: number): string[] {
   const reasons = [
-    person.activeCriticalIssues > 0 ? `${person.activeCriticalIssues} active critical` : null,
+    person.activeCriticalIssues > 0 ? `${person.activeCriticalIssues} active s-1/s0` : null,
     person.attentionPrs > 0 ? `${person.attentionPrs} PR attention` : null,
     testingPrs > 0 ? `${testingPrs} in testing` : null,
     person.needsTriageIssues > 0 ? `${person.needsTriageIssues} needs triage` : null,

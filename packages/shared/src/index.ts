@@ -2,7 +2,7 @@ export type SourceAuthType = "anonymous" | "service_read_token" | "user_token";
 
 export type VisibilityClass = "anonymous_readable" | "logged_in_readable" | "token_owner_only" | "admin_only";
 
-export type LifecycleState = "critical" | "needs-triage" | "deferred" | "active" | "other";
+export type LifecycleState = "needs-triage" | "deferred" | "active" | "other";
 
 export type AttentionSeverity = "info" | "warning" | "critical";
 

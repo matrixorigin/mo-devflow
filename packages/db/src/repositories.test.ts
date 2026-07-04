@@ -443,7 +443,7 @@ describe("profile configuration guidance", () => {
         key: "profile:watched_users_candidates",
         severity: "warning",
         title: "Watched user candidates found",
-        description: "2 owners outside people.watched_users currently own active critical issues.",
+        description: "2 owners outside people.watched_users currently own active s-1/s0 issues.",
         action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
         relatedLogins: ["alice", "bob"],
         yamlSnippet: "people:\n  watched_users:\n    - alice\n    - bob"
@@ -556,7 +556,7 @@ describe("profile configuration guidance", () => {
         key: "profile:watched_users_candidates",
         severity: "warning",
         title: "Watched user candidates found",
-        description: "1 owners outside people.watched_users currently own active critical issues.",
+        description: "1 owners outside people.watched_users currently own active s-1/s0 issues.",
         action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
         relatedLogins: ["alice"],
         yamlSnippet: "people:\n  watched_users:\n    - alice"

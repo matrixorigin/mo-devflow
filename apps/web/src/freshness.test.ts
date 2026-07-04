@@ -137,7 +137,7 @@ describe("cache evidence summary", () => {
     });
     expect(summary.description).toContain("3 active visible GitHub objects");
     expect(summary.description).toContain("9.5h");
-    expect(summary.affectedConclusions).toContain("current critical ownership and blockers");
+    expect(summary.affectedConclusions).toContain("current s-1/s0 ownership and blockers");
     expect(summary.facts).toContain("40 cached objects are partial");
   });
 

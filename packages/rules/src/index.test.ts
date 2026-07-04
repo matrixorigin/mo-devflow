@@ -59,7 +59,7 @@ const profile: RepoProfile = {
 const anonymousSource = { authType: "anonymous" as const, userId: null };
 
 describe("rules", () => {
-  test("critical issue is repo-wide and owner is derived from assignee first", () => {
+  test("s0 issue is active and owner is derived from assignee first", () => {
     const issue = normalizeIssue(
       profile,
       {
@@ -77,7 +77,7 @@ describe("rules", () => {
       anonymousSource
     );
 
-    expect(issue.lifecycleState).toBe("critical");
+    expect(issue.lifecycleState).toBe("active");
     expect(issue.severity).toBe("severity/s0");
     expect(issue.ownerLogin).toBe("owner");
     expect(issue.ownerReason).toBe("assignee");
@@ -803,7 +803,7 @@ describe("rules", () => {
       {
         id: 8,
         number: 14,
-        title: "old active critical",
+        title: "old active s0",
         state: "open",
         user: { login: "reporter" },
         html_url: "https://example.test/14",
@@ -962,7 +962,7 @@ describe("rules", () => {
     expect(aiDriftSignalsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("critical_missing_ai_effort");
   });
 
-  test("AI drift detects old ai-easy critical issues with partial-cache evidence", () => {
+  test("AI drift detects old ai-easy active s-1/s0 issues with partial-cache evidence", () => {
     const issue = normalizeIssue(
       profile,
       {

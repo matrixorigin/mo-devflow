@@ -9,7 +9,7 @@ import {
 } from "./workbench";
 
 describe("person workload summaries", () => {
-  it("prioritizes active critical work over lower-level queues", () => {
+  it("prioritizes active s-1/s0 work over lower-level queues", () => {
     expect(
       personWorkloadStatus({
         login: "alice",
@@ -88,16 +88,16 @@ describe("work item attention reasons", () => {
     ]);
   });
 
-  it("includes critical issue blockers before generic evidence", () => {
+  it("includes active s-1/s0 issue blockers before generic evidence", () => {
     const issue: CriticalIssueView = {
       number: 42,
-      title: "slow critical bug",
+      title: "slow s0 bug",
       htmlUrl: "https://github.com/example/repo/issues/42",
       severity: "severity/s0",
       ownerLogin: "alice",
       ownerScope: "watched",
       ownerReason: "assignee",
-      lifecycleState: "critical",
+      lifecycleState: "active",
       aiEffortLabel: "ai-easy",
       ageHours: 48,
       sourceUpdatedAt: "2026-07-04T00:00:00Z",

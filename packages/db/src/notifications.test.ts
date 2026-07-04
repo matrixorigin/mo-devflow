@@ -257,7 +257,7 @@ describe("notification acknowledgement health", () => {
       dashboardUrl: "https://devflow.example.com/#overview",
       htmlUrl: "https://github.com/matrixorigin/matrixone/issues/24413",
       relatedLogin: "alice",
-      evidenceSummary: "Critical issue #24413 has no recent human action.",
+      evidenceSummary: "Active s-1/s0 issue #24413 has no recent human action.",
       firstDetectedAt: "2026-07-01T00:00:00.000Z",
       lastDetectedAt: "2026-07-03T00:00:00.000Z",
       lastSentAt: "2026-07-02T00:00:00.000Z",
@@ -278,7 +278,7 @@ describe("notification acknowledgement health", () => {
       dedupeKey: "notification:attention_item_escalation:42:critical_no_human_action"
     });
     expect(candidate.evidenceSummary).toContain("unacknowledged for at least 24h");
-    expect(candidate.evidenceSummary).toContain("Critical issue #24413 has no recent human action.");
+    expect(candidate.evidenceSummary).toContain("Active s-1/s0 issue #24413 has no recent human action.");
   });
 
   test("builds attention source exclusion filters for already escalated candidates", () => {

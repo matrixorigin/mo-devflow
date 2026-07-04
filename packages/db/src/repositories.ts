@@ -109,6 +109,12 @@ function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
 
+function severityRankSql(column: string, severities: readonly string[]): string {
+  return `CASE ${column} ${severities.map((_, index) => `WHEN ? THEN ${index}`).join(" ")} ELSE ${
+    severities.length
+  } END`;
+}
+
 function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
 }
@@ -643,7 +649,7 @@ export function profileActionSuggestions(
       key: "profile:watched_users_candidates",
       severity: "warning",
       title: "Watched user candidates found",
-      description: `${candidateLogins.length} owners outside people.watched_users currently own active critical issues.`,
+      description: `${candidateLogins.length} owners outside people.watched_users currently own active s-1/s0 issues.`,
       action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
       relatedLogins: candidateLogins,
       yamlSnippet: `people:\n  watched_users:\n${candidateLogins.map((login) => `    - ${login}`).join("\n")}`
@@ -1906,7 +1912,7 @@ export function criticalIssueBlockersFromCache(input: {
     blockers.push({
       key: "issue:unowned",
       severity: "critical",
-      message: "Critical issue has no owner in cache.",
+      message: "Active s-1/s0 issue has no owner in cache.",
       relatedPrNumber: null
     });
   }
@@ -1914,7 +1920,7 @@ export function criticalIssueBlockersFromCache(input: {
     blockers.push({
       key: "issue:missing_ai_effort",
       severity: "warning",
-      message: "Critical issue has no AI effort label.",
+      message: "Active s-1/s0 issue has no AI effort label.",
       relatedPrNumber: null
     });
   }
@@ -2328,15 +2334,16 @@ export async function getDashboardSummary(
   const hiddenPrExpression = `SUM(CASE WHEN ${hiddenPrVisibility.sql} THEN 0 ELSE 1 END)`;
   const staleThresholdHours = cacheStaleHoursFromEnv();
   const staleCutoff = sqlDate(new Date(Date.now() - staleThresholdHours * 3_600_000)) ?? "1970-01-01 00:00:00";
+  const criticalSeverityRank = severityRankSql("i.severity", profile.labels.critical);
   const [criticalRows] = await pool.execute<RowData[]>(
     `SELECT * FROM issues i
      WHERE i.repo_id = ?
        AND i.state = 'open'
        AND i.severity IN (${profile.labels.critical.map(() => "?").join(", ")})
        AND ${criticalVisibility.sql}
-     ORDER BY updated_at ASC
+     ORDER BY ${criticalSeverityRank}, i.updated_at ASC
      LIMIT 100`,
-    [repoId, ...profile.labels.critical, ...criticalVisibility.params]
+    [repoId, ...profile.labels.critical, ...criticalVisibility.params, ...profile.labels.critical]
   );
   const [prRows] = await pool.execute<RowData[]>(
     `SELECT * FROM pull_requests p
@@ -2566,9 +2573,19 @@ export async function getDashboardSummary(
                OR i.lifecycle_state IN ('needs-triage', 'deferred')
              )
              AND ${personalIssueVisibility.sql}
-           ORDER BY i.updated_at ASC
+           ORDER BY
+             CASE WHEN i.severity IS NULL THEN 1 ELSE 0 END,
+             ${criticalSeverityRank},
+             CASE i.lifecycle_state WHEN 'needs-triage' THEN 0 WHEN 'deferred' THEN 1 ELSE 2 END,
+             i.updated_at ASC
            LIMIT 500`,
-          [repoId, ...profile.people.watchedUsers, ...profile.labels.critical, ...personalIssueVisibility.params]
+          [
+            repoId,
+            ...profile.people.watchedUsers,
+            ...profile.labels.critical,
+            ...personalIssueVisibility.params,
+            ...profile.labels.critical
+          ]
         );
   const [personalPrRows] =
     profile.people.watchedUsers.length === 0
