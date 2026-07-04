@@ -735,6 +735,11 @@ button.team-status-row:focus-visible {
   margin-bottom: 0;
 }
 
+.write-audit-summary {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin-bottom: 14px;
+}
+
 .webhook-event-panel {
   background: #ffffff;
   border: 1px solid #e5e7eb;

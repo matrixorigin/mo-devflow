@@ -134,6 +134,8 @@ type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
 type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
+type WriteAuditScopeFilter =
+  "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
 interface WebhookRetryResult {
   retriedDeliveries: number;
   requestId: number | null;
@@ -1059,6 +1061,60 @@ function webhookDeliveryStatusColor(status: GitHubWebhookDeliveryView["status"])
     return "default";
   }
   return "blue";
+}
+
+function writeAuditScopeLabel(filter: WriteAuditScopeFilter): string {
+  if (filter === "attention") {
+    return "attention";
+  }
+  if (filter === "failed") {
+    return "failed";
+  }
+  if (filter === "stale_preview") {
+    return "stale preview";
+  }
+  if (filter === "token_unavailable") {
+    return "token unavailable";
+  }
+  if (filter === "success") {
+    return "success";
+  }
+  if (filter === "workflow_fix") {
+    return "workflow fixes";
+  }
+  if (filter === "notification") {
+    return "notification actions";
+  }
+  return "all write actions";
+}
+
+function writeActionNeedsAttention(action: WriteActionExecutionView): boolean {
+  return action.status !== "success";
+}
+
+function writeAuditMatchesScope(action: WriteActionExecutionView, filter: WriteAuditScopeFilter): boolean {
+  if (filter === "attention") {
+    return writeActionNeedsAttention(action);
+  }
+  if (filter === "failed") {
+    return action.status === "failed";
+  }
+  if (filter === "stale_preview") {
+    return action.status === "stale_preview";
+  }
+  if (filter === "token_unavailable") {
+    return action.status === "token_unavailable";
+  }
+  if (filter === "success") {
+    return action.status === "success";
+  }
+  if (filter === "workflow_fix") {
+    return action.actionKey === "add_needs_triage" || action.actionKey === "move_to_deferred";
+  }
+  if (filter === "notification") {
+    return action.actionKey === "acknowledge_notification" || action.actionKey === "retry_notification";
+  }
+  return true;
 }
 
 function prHasFailedCi(pr: PendingPrView): boolean {
@@ -5074,6 +5130,133 @@ function WebhookIngestionBoard({
   );
 }
 
+function WriteAuditBoard({
+  actions,
+  columns,
+  scopeFilter,
+  onScopeFilterChange,
+  authenticated
+}: {
+  actions: WriteActionExecutionView[];
+  columns: ColumnsType<WriteActionExecutionView>;
+  scopeFilter: WriteAuditScopeFilter;
+  onScopeFilterChange: (value: WriteAuditScopeFilter) => void;
+  authenticated: boolean;
+}) {
+  const filteredActions = actions.filter((action) => writeAuditMatchesScope(action, scopeFilter));
+  const attentionActions = actions.filter(writeActionNeedsAttention).length;
+  const failedActions = actions.filter((action) => action.status === "failed").length;
+  const stalePreviewActions = actions.filter((action) => action.status === "stale_preview").length;
+  const tokenUnavailableActions = actions.filter((action) => action.status === "token_unavailable").length;
+  const successActions = actions.filter((action) => action.status === "success").length;
+  const workflowFixActions = actions.filter((action) => writeAuditMatchesScope(action, "workflow_fix")).length;
+  const notificationActions = actions.filter((action) => writeAuditMatchesScope(action, "notification")).length;
+
+  return (
+    <section className="section">
+      <div className="section-heading">
+        <Space>
+          <ClipboardCheck size={18} />
+          <Title level={4}>Write Audit</Title>
+        </Space>
+        <Space size={[6, 6]} wrap>
+          <Text type="secondary">{authenticated ? "Recent write actions" : "Login required"}</Text>
+          <Tag color={attentionActions > 0 ? "orange" : "green"}>{attentionActions} need attention</Tag>
+        </Space>
+      </div>
+
+      <div className="critical-board-summary write-audit-summary" aria-label="Write audit filters">
+        <CriticalBoardStat
+          label="shown"
+          value={filteredActions.length}
+          tone={filteredActions.length > 0 ? "attention" : "good"}
+          active={scopeFilter !== "all"}
+          onClick={() => onScopeFilterChange("all")}
+        />
+        <CriticalBoardStat
+          label="attention"
+          value={attentionActions}
+          tone={attentionActions > 0 ? "attention" : "good"}
+          active={scopeFilter === "attention"}
+          onClick={() => onScopeFilterChange("attention")}
+        />
+        <CriticalBoardStat
+          label="failed"
+          value={failedActions}
+          tone={failedActions > 0 ? "critical" : "good"}
+          active={scopeFilter === "failed"}
+          onClick={() => onScopeFilterChange("failed")}
+        />
+        <CriticalBoardStat
+          label="stale preview"
+          value={stalePreviewActions}
+          tone={stalePreviewActions > 0 ? "attention" : "good"}
+          active={scopeFilter === "stale_preview"}
+          onClick={() => onScopeFilterChange("stale_preview")}
+        />
+        <CriticalBoardStat
+          label="token issue"
+          value={tokenUnavailableActions}
+          tone={tokenUnavailableActions > 0 ? "critical" : "good"}
+          active={scopeFilter === "token_unavailable"}
+          onClick={() => onScopeFilterChange("token_unavailable")}
+        />
+        <CriticalBoardStat
+          label="success"
+          value={successActions}
+          tone="good"
+          active={scopeFilter === "success"}
+          onClick={() => onScopeFilterChange("success")}
+        />
+        <CriticalBoardStat
+          label="workflow fix"
+          value={workflowFixActions}
+          tone={workflowFixActions > 0 ? "attention" : "good"}
+          active={scopeFilter === "workflow_fix"}
+          onClick={() => onScopeFilterChange("workflow_fix")}
+        />
+        <CriticalBoardStat
+          label="notification"
+          value={notificationActions}
+          tone={notificationActions > 0 ? "attention" : "good"}
+          active={scopeFilter === "notification"}
+          onClick={() => onScopeFilterChange("notification")}
+        />
+      </div>
+
+      {!authenticated ? (
+        <Alert
+          className="band"
+          type="info"
+          title="Connect GitHub token to view write audit"
+          description="Write audit rows are only shown to logged-in users and are filtered by the same cached object visibility policy as issues and PRs."
+          showIcon
+        />
+      ) : null}
+
+      <Table
+        rowKey="id"
+        size="middle"
+        columns={columns}
+        dataSource={filteredActions}
+        scroll={{ x: 1420 }}
+        pagination={{ pageSize: 8 }}
+        locale={{
+          emptyText: (
+            <Empty
+              description={
+                authenticated
+                  ? `No ${writeAuditScopeLabel(scopeFilter)} visible in cache`
+                  : "Connect GitHub token to view write audit"
+              }
+            />
+          )
+        }}
+      />
+    </section>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
@@ -5096,6 +5279,7 @@ export default function App() {
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
+  const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
@@ -6795,34 +6979,13 @@ export default function App() {
             ) : null}
 
             {view === "Audit" ? (
-              <section className="section">
-                <div className="section-heading">
-                  <Space>
-                    <ClipboardCheck size={18} />
-                    <Title level={4}>Write Audit</Title>
-                  </Space>
-                  <Text type="secondary">{session?.authenticated ? "Recent write actions" : "Login required"}</Text>
-                </div>
-                <Table
-                  rowKey="id"
-                  size="middle"
-                  columns={writeActionColumns}
-                  dataSource={data.writeActions}
-                  scroll={{ x: 1420 }}
-                  pagination={{ pageSize: 8 }}
-                  locale={{
-                    emptyText: (
-                      <Empty
-                        description={
-                          session?.authenticated
-                            ? "No write actions visible in cache"
-                            : "Connect GitHub token to view write audit"
-                        }
-                      />
-                    )
-                  }}
-                />
-              </section>
+              <WriteAuditBoard
+                actions={data.writeActions}
+                columns={writeActionColumns}
+                scopeFilter={writeAuditScopeFilter}
+                onScopeFilterChange={setWriteAuditScopeFilter}
+                authenticated={Boolean(session?.authenticated)}
+              />
             ) : null}
 
             {view === "PRs" ? (
