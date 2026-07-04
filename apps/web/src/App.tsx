@@ -6772,28 +6772,23 @@ function PersonalActionQueueItem({
             ) : null}
           </div>
         </div>
-        <div className="action-queue-command-grid">
-          <div className="action-queue-command-card action-queue-command-primary">
-            <Text type="secondary">Next action</Text>
-            <span className="action-command">
-              <TimerReset size={14} aria-hidden="true" />
-              {nextAction}
-            </span>
-          </div>
-          <div className="action-queue-command-card">
-            <Text type="secondary">Duration</Text>
+        <div className="action-queue-decision-row">
+          <span className="action-queue-next-action">
+            <TimerReset size={14} aria-hidden="true" />
+            {nextAction}
+          </span>
+          <span className="action-queue-fact">
             <strong>{duration}</strong>
             <small>{labelText(item.durationEvidence)}</small>
-          </div>
-          <div className="action-queue-command-card">
-            <Text type="secondary">Links</Text>
+          </span>
+          <span className="action-queue-fact">
             <strong>
               {item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length === 0
                 ? "No visible link"
                 : `${item.linkedIssueNumbers.length} issue / ${item.linkedPullRequestNumbers.length} PR`}
             </strong>
             <small>{primarySignal}</small>
-          </div>
+          </span>
         </div>
         <div className="action-queue-footer">
           <div className="action-queue-tags" aria-label="Queue evidence">
@@ -7221,6 +7216,8 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
+  const visibleSignals = reasons.slice(0, 4);
+  const hiddenSignalCount = Math.max(0, reasons.length - visibleSignals.length);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedPrs, setExpandedPrs] = useState(false);
   const visiblePrs = expandedPrs ? row.prs : row.prs.slice(0, 6);
@@ -7278,20 +7275,20 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
       </div>
 
       <div className="flow-thread-signals">
-        <div className="flow-thread-kpis">
-          <span>
+        <div className="flow-thread-facts">
+          <span className="flow-thread-fact">
             <strong>{row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}</strong>
             <small>{issueDurationLabel}</small>
           </span>
-          <span>
+          <span className="flow-thread-fact">
             <strong>{statusCounts.prs}</strong>
             <small>PRs</small>
           </span>
-          <span>
+          <span className="flow-thread-fact">
             <strong>{statusCounts.blockedPrs}</strong>
             <small>blocked</small>
           </span>
-          <span>
+          <span className="flow-thread-fact">
             <strong>{testingWorkCount}</strong>
             <small>testing</small>
           </span>
@@ -7303,11 +7300,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               {warning}
             </Tag>
           ))}
-          {reasons.slice(0, 5).map((reason) => (
+          {visibleSignals.map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
             </Tag>
           ))}
+          {hiddenSignalCount > 0 ? <Tag>+{hiddenSignalCount}</Tag> : null}
         </div>
         {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
           <div className="flow-linked-row">
