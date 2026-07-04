@@ -111,8 +111,7 @@ export function loadRepoProfile(
   profilePath = process.env.MO_DEVFLOW_PROFILE ?? "config/repos/matrixone.yaml"
 ): RepoProfile {
   const absolutePath = path.resolve(profilePath);
-  const rawText = fs.readFileSync(absolutePath, "utf8");
-  const raw = YAML.parse(rawText);
+  const raw = loadProfileYamlWithLocalOverrides(absolutePath);
   const parsed = profileSchema.parse(raw);
   const key = `${parsed.repo.owner}/${parsed.repo.name}`;
 
@@ -193,6 +192,44 @@ export function loadRepoProfile(
     },
     raw
   };
+}
+
+function loadProfileYamlWithLocalOverrides(absolutePath: string): unknown {
+  const base = parseYamlFile(absolutePath);
+  const localPath = localProfilePath(absolutePath);
+  if (!fs.existsSync(localPath)) {
+    return base;
+  }
+  return mergeProfileValues(base, parseYamlFile(localPath));
+}
+
+function localProfilePath(absolutePath: string): string {
+  const extension = path.extname(absolutePath);
+  if (!extension) {
+    return `${absolutePath}.local`;
+  }
+  const baseName = absolutePath.slice(0, -extension.length);
+  return `${baseName}.local${extension}`;
+}
+
+function parseYamlFile(filePath: string): unknown {
+  return YAML.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function mergeProfileValues(base: unknown, override: unknown): unknown {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override ?? base;
+  }
+
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    merged[key] = mergeProfileValues(merged[key], overrideValue);
+  }
+  return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function loadEnv(): void {

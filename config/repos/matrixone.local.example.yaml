@@ -1,0 +1,25 @@
+# Copy to config/repos/matrixone.local.yaml for local development.
+# Do not commit the copied file. It may contain real GitHub logins,
+# local checkout paths, and notification routing details.
+
+repo:
+  local_path: /path/to/matrixone
+
+people:
+  watched_users:
+    - developer-a
+    - developer-b
+  testers:
+    - tester-a
+    - tester-b
+
+testing:
+  handoff_signals:
+    reviewer_users: []
+    assignee_users:
+      - tester-a
+      - tester-b
+
+workflow:
+  skip_users:
+    - automation-or-maintenance-user

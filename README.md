@@ -144,6 +144,15 @@ critical issues, watched-user summaries, pending PRs, workflow violations, AI
 drift signals, testing queue state, cached analytics, owner attribution, and
 data freshness indicators.
 
+Committed repository profiles are safe templates. Put real watched users,
+tester identities, workflow skip users, employee mappings, and local checkout
+paths in an untracked sibling profile such as
+`config/repos/matrixone.local.yaml`; it is merged automatically over
+`config/repos/matrixone.yaml` at startup. Start from
+`config/repos/matrixone.local.example.yaml` and keep `MO_DEVFLOW_PROFILE`
+pointing at the committed base profile unless you intentionally want a
+different repo.
+
 When watched users, testing handoff, or notification employee mappings are not
 configured, the dashboard surfaces profile setup actions plus one merged YAML
 setup patch. The patch is derived from cached owners, requested reviewers, and
