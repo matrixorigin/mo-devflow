@@ -57,7 +57,8 @@ const operational: OperationalHealthSummary = {
     ignoredDeliveries: 0,
     duplicateDeliveries: 0,
     lastReceivedAt: null,
-    latestFailure: null
+    latestFailure: null,
+    recentDeliveries: []
   }
 };
 

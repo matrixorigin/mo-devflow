@@ -1,4 +1,8 @@
-import type { WebhookIngestionHealth } from "@mo-devflow/shared";
+import type {
+  GitHubWebhookDeliveryStatus,
+  GitHubWebhookDeliveryView,
+  WebhookIngestionHealth
+} from "@mo-devflow/shared";
 import { parseJsonRecord } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
@@ -298,8 +302,30 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
      LIMIT 1`,
     [repoId]
   );
+  const [recentRows] = await getPool().execute<RowData[]>(
+    `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,
+            received_at, processed_at, error_message
+     FROM github_webhook_deliveries
+     WHERE repo_id = ?
+     ORDER BY received_at DESC
+     LIMIT 12`,
+    [repoId]
+  );
+  const [recentFailureRows] = await getPool().execute<RowData[]>(
+    `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,
+            received_at, processed_at, error_message
+     FROM github_webhook_deliveries
+     WHERE repo_id = ? AND status IN ('failed', 'failed_normalization')
+     ORDER BY received_at DESC
+     LIMIT 8`,
+    [repoId]
+  );
   const row = statusRows[0] ?? {};
   const failure = failureRows[0];
+  const diagnosticDeliveries = new Map<string, GitHubWebhookDeliveryView>();
+  for (const delivery of [...recentRows, ...recentFailureRows].map(toGitHubWebhookDeliveryView)) {
+    diagnosticDeliveries.set(delivery.deliveryId, delivery);
+  }
 
   return {
     pendingDeliveries: asNumber(row.pending_deliveries),
@@ -309,6 +335,23 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     ignoredDeliveries: asNumber(row.ignored_deliveries),
     duplicateDeliveries: asNumber(row.duplicate_deliveries),
     lastReceivedAt: fromSqlDate(row.last_received_at),
-    latestFailure: failure ? `${asString(failure.delivery_id)}: ${asString(failure.error_message)}` : null
+    latestFailure: failure ? `${asString(failure.delivery_id)}: ${asString(failure.error_message)}` : null,
+    recentDeliveries: [...diagnosticDeliveries.values()].sort(
+      (left, right) => new Date(right.receivedAt).getTime() - new Date(left.receivedAt).getTime()
+    )
+  };
+}
+
+function toGitHubWebhookDeliveryView(row: RowData): GitHubWebhookDeliveryView {
+  return {
+    deliveryId: asString(row.delivery_id),
+    eventName: asString(row.event_name),
+    action: row.action === null || row.action === undefined ? null : asString(row.action),
+    status: asString(row.status) as GitHubWebhookDeliveryStatus,
+    attempts: asNumber(row.attempts),
+    duplicateCount: asNumber(row.duplicate_count),
+    receivedAt: fromSqlDate(row.received_at) ?? "",
+    processedAt: fromSqlDate(row.processed_at),
+    errorMessage: row.error_message === null || row.error_message === undefined ? null : asString(row.error_message)
   };
 }

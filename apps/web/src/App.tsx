@@ -29,6 +29,7 @@ import type {
   CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardSummary,
+  GitHubWebhookDeliveryView,
   GitHubWriteCapability,
   ManualRefreshLayer,
   ManualRefreshResult,
@@ -56,6 +57,7 @@ import {
   csrfHeaderName,
   notificationStatusAllowsRetry,
   notificationStatusRequiresAcknowledgement,
+  supportedGitHubWebhookEvents,
   syncHealthLayers
 } from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
@@ -131,6 +133,7 @@ type PrScopeFilter =
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
+type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
 interface WebhookRetryResult {
   retriedDeliveries: number;
   requestId: number | null;
@@ -148,6 +151,7 @@ const viewOptions = [
   "Violations",
   "Drift",
   "Notifications",
+  "Webhooks",
   "Audit"
 ] as const;
 type DashboardView = (typeof viewOptions)[number];
@@ -162,6 +166,7 @@ const hashViewMap: Record<string, DashboardView> = {
   violations: "Violations",
   drift: "Drift",
   notifications: "Notifications",
+  webhooks: "Webhooks",
   audit: "Audit"
 };
 
@@ -959,6 +964,57 @@ function prScopeLabel(filter: PrScopeFilter): string {
   return "all pending";
 }
 
+function webhookScopeLabel(filter: WebhookDeliveryScopeFilter): string {
+  if (filter === "pending") {
+    return "pending";
+  }
+  if (filter === "failed") {
+    return "failed";
+  }
+  if (filter === "processed") {
+    return "processed";
+  }
+  if (filter === "ignored") {
+    return "ignored";
+  }
+  if (filter === "duplicates") {
+    return "duplicates";
+  }
+  return "all deliveries";
+}
+
+function webhookDeliveryMatchesScope(delivery: GitHubWebhookDeliveryView, filter: WebhookDeliveryScopeFilter): boolean {
+  if (filter === "pending") {
+    return delivery.status === "received" || delivery.status === "processing";
+  }
+  if (filter === "failed") {
+    return delivery.status === "failed" || delivery.status === "failed_normalization";
+  }
+  if (filter === "processed") {
+    return delivery.status === "processed";
+  }
+  if (filter === "ignored") {
+    return delivery.status === "ignored";
+  }
+  if (filter === "duplicates") {
+    return delivery.duplicateCount > 0;
+  }
+  return true;
+}
+
+function webhookDeliveryStatusColor(status: GitHubWebhookDeliveryView["status"]): string {
+  if (status === "processed") {
+    return "green";
+  }
+  if (status === "failed" || status === "failed_normalization") {
+    return "red";
+  }
+  if (status === "ignored") {
+    return "default";
+  }
+  return "blue";
+}
+
 function prHasFailedCi(pr: PendingPrView): boolean {
   return ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState ?? "");
 }
@@ -1344,7 +1400,7 @@ function TeamRotationOverview({
 
         <aside className="team-rotation-side">
           <TeamPeopleFocus people={peopleFocus} personalViews={data.personalViews} onPersonSelect={onPersonSelect} />
-          <TeamOpsStatus data={data} />
+          <TeamOpsStatus data={data} onNavigate={onNavigate} />
         </aside>
       </div>
 
@@ -1618,7 +1674,7 @@ function TeamPeopleFocus({
   );
 }
 
-function TeamOpsStatus({ data }: { data: DashboardSummary }) {
+function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigate: (view: DashboardView) => void }) {
   const notificationRisk =
     data.notifications.failedDeliveries +
     data.notifications.unacknowledgedDeliveries +
@@ -1632,27 +1688,47 @@ function TeamOpsStatus({ data }: { data: DashboardSummary }) {
         </Tag>
       </div>
       <div className="team-status-list">
-        <TeamStatusRow label="Cache" value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} partial`} />
+        <TeamStatusRow
+          label="Cache"
+          value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} partial`}
+          onClick={() => onNavigate("Analytics")}
+        />
         <TeamStatusRow
           label="Worker"
           value={`${labelText(data.sync.worker.phase ?? data.sync.worker.status)} | queue ${data.sync.jobQueue.queueDepth}`}
+          onClick={() => onNavigate("Analytics")}
         />
         <TeamStatusRow
           label="Webhook"
           value={`${data.webhooks.pendingDeliveries} pending / ${data.webhooks.failedDeliveries} failed`}
+          onClick={() => onNavigate("Webhooks")}
         />
-        <TeamStatusRow label="Notifications" value={`${notificationRisk} active delivery risk`} />
+        <TeamStatusRow
+          label="Notifications"
+          value={`${notificationRisk} active delivery risk`}
+          onClick={() => onNavigate("Notifications")}
+        />
       </div>
     </section>
   );
 }
 
-function TeamStatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="team-status-row">
+function TeamStatusRow({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+  const content = (
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
+    </>
+  );
+
+  if (!onClick) {
+    return <div className="team-status-row">{content}</div>;
+  }
+
+  return (
+    <button type="button" className="team-status-row" onClick={onClick}>
+      {content}
+    </button>
   );
 }
 
@@ -4740,6 +4816,218 @@ function SelectedPersonWorkbench({
   );
 }
 
+function WebhookIngestionBoard({
+  data,
+  scopeFilter,
+  onScopeFilterChange,
+  authenticated,
+  retrySaving,
+  onRetryFailed,
+  onRefreshWebhooks
+}: {
+  data: DashboardSummary;
+  scopeFilter: WebhookDeliveryScopeFilter;
+  onScopeFilterChange: (value: WebhookDeliveryScopeFilter) => void;
+  authenticated: boolean;
+  retrySaving: boolean;
+  onRetryFailed: () => void;
+  onRefreshWebhooks: () => void;
+}) {
+  const secretConfigured = !data.profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
+  const recentDeliveries = data.webhooks.recentDeliveries.filter((delivery) =>
+    webhookDeliveryMatchesScope(delivery, scopeFilter)
+  );
+  const pendingDeliveries = data.webhooks.pendingDeliveries;
+  const failedDeliveries = data.webhooks.failedDeliveries;
+  const duplicateDeliveries = data.webhooks.duplicateDeliveries;
+  const columns: ColumnsType<GitHubWebhookDeliveryView> = [
+    {
+      title: "Delivery",
+      dataIndex: "deliveryId",
+      width: 220,
+      render: (deliveryId) => (
+        <Text code copyable={{ text: deliveryId }}>
+          {deliveryId}
+        </Text>
+      )
+    },
+    {
+      title: "Event",
+      width: 210,
+      render: (_, delivery) => (
+        <Space size={[4, 4]} wrap>
+          <Tag color="blue">{delivery.eventName}</Tag>
+          {delivery.action ? <Tag>{delivery.action}</Tag> : null}
+        </Space>
+      )
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      width: 170,
+      render: (status, delivery) => (
+        <Space size={[4, 4]} wrap>
+          <Tag color={webhookDeliveryStatusColor(status)}>{labelText(status)}</Tag>
+          {delivery.duplicateCount > 0 ? <Tag color="gold">{delivery.duplicateCount} duplicate</Tag> : null}
+        </Space>
+      )
+    },
+    {
+      title: "Attempts",
+      dataIndex: "attempts",
+      width: 100,
+      render: (attempts) => <Text>{attempts}</Text>
+    },
+    {
+      title: "Received",
+      dataIndex: "receivedAt",
+      width: 168,
+      render: (value) => formatDate(value)
+    },
+    {
+      title: "Processed",
+      dataIndex: "processedAt",
+      width: 168,
+      render: (value) => formatDate(value)
+    },
+    {
+      title: "Error",
+      dataIndex: "errorMessage",
+      ellipsis: true,
+      render: (errorMessage) =>
+        errorMessage ? (
+          <Text type="danger" ellipsis={{ tooltip: errorMessage }}>
+            {errorMessage}
+          </Text>
+        ) : (
+          <Text type="secondary">-</Text>
+        )
+    }
+  ];
+
+  return (
+    <section className="section">
+      <div className="section-heading">
+        <Space>
+          <RefreshCw size={18} />
+          <Title level={4}>Webhook Ingestion</Title>
+        </Space>
+        <Space size={[6, 6]} wrap>
+          <Tag color={secretConfigured ? "green" : "orange"}>
+            {secretConfigured ? "secret configured" : "secret missing"}
+          </Tag>
+          <Tag color={data.webhooks.lastReceivedAt ? "green" : "default"}>
+            last {formatDate(data.webhooks.lastReceivedAt)}
+          </Tag>
+          <Button size="small" disabled={!authenticated} onClick={onRefreshWebhooks}>
+            Refresh webhooks
+          </Button>
+        </Space>
+      </div>
+
+      {!secretConfigured ? (
+        <Alert
+          className="band"
+          type="warning"
+          title="GitHub webhook secret is not configured"
+          description="Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET before relying on near-real-time GitHub updates."
+          showIcon
+        />
+      ) : null}
+
+      {failedDeliveries > 0 ? (
+        <Alert
+          className="band"
+          type="warning"
+          title={`${failedDeliveries} webhook deliveries need attention`}
+          description={data.webhooks.latestFailure ?? "Failed deliveries are retained in the cache for retry."}
+          action={
+            <Button size="small" disabled={!authenticated} loading={retrySaving} onClick={onRetryFailed}>
+              Retry failed
+            </Button>
+          }
+          showIcon
+        />
+      ) : null}
+
+      <div className="webhook-command-grid">
+        <div className="critical-board-summary webhook-summary" aria-label="Webhook delivery filters">
+          <CriticalBoardStat
+            label="shown"
+            value={recentDeliveries.length}
+            tone={recentDeliveries.length > 0 ? "attention" : "good"}
+            active={scopeFilter !== "all"}
+            onClick={() => onScopeFilterChange("all")}
+          />
+          <CriticalBoardStat
+            label="pending"
+            value={pendingDeliveries}
+            tone={pendingDeliveries > 0 ? "attention" : "good"}
+            active={scopeFilter === "pending"}
+            onClick={() => onScopeFilterChange("pending")}
+          />
+          <CriticalBoardStat
+            label="failed"
+            value={failedDeliveries}
+            tone={failedDeliveries > 0 ? "critical" : "good"}
+            active={scopeFilter === "failed"}
+            onClick={() => onScopeFilterChange("failed")}
+          />
+          <CriticalBoardStat
+            label="processed"
+            value={data.webhooks.processedDeliveries}
+            tone="good"
+            active={scopeFilter === "processed"}
+            onClick={() => onScopeFilterChange("processed")}
+          />
+          <CriticalBoardStat
+            label="ignored"
+            value={data.webhooks.ignoredDeliveries}
+            tone={data.webhooks.ignoredDeliveries > 0 ? "muted" : "good"}
+            active={scopeFilter === "ignored"}
+            onClick={() => onScopeFilterChange("ignored")}
+          />
+          <CriticalBoardStat
+            label="duplicates"
+            value={duplicateDeliveries}
+            tone={duplicateDeliveries > 0 ? "muted" : "good"}
+            active={scopeFilter === "duplicates"}
+            onClick={() => onScopeFilterChange("duplicates")}
+          />
+        </div>
+
+        <div className="webhook-event-panel">
+          <Text strong>Accepted Events</Text>
+          <div className="webhook-event-list">
+            {supportedGitHubWebhookEvents.map((eventName) => (
+              <Tag color="blue" key={eventName}>
+                {eventName}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <Table
+        rowKey="deliveryId"
+        size="middle"
+        columns={columns}
+        dataSource={recentDeliveries}
+        scroll={{ x: 1240 }}
+        pagination={{ pageSize: 8 }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={`No recent ${webhookScopeLabel(scopeFilter)} recorded`}
+            />
+          )
+        }}
+      />
+    </section>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
@@ -4759,6 +5047,7 @@ export default function App() {
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
+  const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
@@ -6418,6 +6707,18 @@ export default function App() {
                   locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
                 />
               </section>
+            ) : null}
+
+            {view === "Webhooks" ? (
+              <WebhookIngestionBoard
+                data={data}
+                scopeFilter={webhookScopeFilter}
+                onScopeFilterChange={setWebhookScopeFilter}
+                authenticated={Boolean(session?.authenticated)}
+                retrySaving={webhookRetrySaving}
+                onRetryFailed={() => void retryFailedWebhooks()}
+                onRefreshWebhooks={() => openManualRefreshModal(["webhooks"])}
+              />
             ) : null}
 
             {view === "Audit" ? (

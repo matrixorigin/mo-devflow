@@ -813,6 +813,22 @@ export interface WebhookIngestionHealth {
   duplicateDeliveries: number;
   lastReceivedAt: string | null;
   latestFailure: string | null;
+  recentDeliveries: GitHubWebhookDeliveryView[];
+}
+
+export type GitHubWebhookDeliveryStatus =
+  "received" | "processing" | "processed" | "failed" | "failed_normalization" | "ignored";
+
+export interface GitHubWebhookDeliveryView {
+  deliveryId: string;
+  eventName: string;
+  action: string | null;
+  status: GitHubWebhookDeliveryStatus;
+  attempts: number;
+  duplicateCount: number;
+  receivedAt: string;
+  processedAt: string | null;
+  errorMessage: string | null;
 }
 
 export type CacheHealthStatus = "healthy" | "partial" | "stale";

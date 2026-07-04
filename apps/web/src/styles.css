@@ -688,11 +688,31 @@ button.team-monitor-tile:hover,
 }
 
 .team-status-row {
+  appearance: none;
+  background: #ffffff;
   border-bottom: 1px solid #f3f4f6;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
   display: grid;
   gap: 2px;
   min-width: 0;
   padding: 9px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+button.team-status-row {
+  cursor: pointer;
+}
+
+button.team-status-row:hover {
+  background: #eff6ff;
+}
+
+button.team-status-row:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: -2px;
 }
 
 .team-status-row strong {
@@ -700,6 +720,40 @@ button.team-monitor-tile:hover,
   font-size: 13px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+.webhook-command-grid {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.28fr);
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.webhook-summary {
+  margin-bottom: 0;
+}
+
+.webhook-event-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.webhook-event-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.webhook-event-list .ant-tag {
+  margin-inline-end: 0;
 }
 
 .secondary-disclosure {
@@ -2585,6 +2639,10 @@ button.critical-board-stat:hover {
   }
 
   .team-rotation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .webhook-command-grid {
     grid-template-columns: 1fr;
   }
 
