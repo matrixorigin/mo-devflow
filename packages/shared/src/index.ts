@@ -625,6 +625,7 @@ export interface WebhookIngestionHealth {
   pendingDeliveries: number;
   processedDeliveries: number;
   failedDeliveries: number;
+  ignoredDeliveries: number;
   duplicateDeliveries: number;
   lastReceivedAt: string | null;
   latestFailure: string | null;

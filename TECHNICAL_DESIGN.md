@@ -237,6 +237,7 @@ Webhook handling:
 - Verify `X-Hub-Signature-256` against the exact raw request body.
 - Require `repository.full_name` in the webhook payload and ignore deliveries for any repo other than the active profile.
 - Accept only events with implemented cache ingestion at the API boundary; MVP ingestion supports `issues` and `pull_request`.
+- Record signed ignored deliveries with `status = ignored` for dashboard health, but do not put them in the worker processing queue.
 - Persist each GitHub delivery ID before processing.
 - Ignore duplicate delivery IDs.
 - Store raw webhook payloads for replay.

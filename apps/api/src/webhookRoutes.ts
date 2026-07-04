@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { isSupportedGitHubWebhookEvent } from "@mo-devflow/shared";
 import { loadRepoProfile } from "@mo-devflow/config";
-import { recordGitHubWebhookDelivery, upsertRepoProfile } from "@mo-devflow/db";
+import { recordGitHubWebhookDelivery, recordIgnoredGitHubWebhookDelivery, upsertRepoProfile } from "@mo-devflow/db";
 import {
   githubWebhookSecretFromEnv,
   isValidGitHubWebhookSignature,
@@ -60,10 +60,22 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
 
     const profile = loadRepoProfile();
     const expectedRepo = `${profile.repo.owner}/${profile.repo.name}`;
+    const repoId = await upsertRepoProfile(profile);
     if (payloadRepo !== expectedRepo) {
-      return reply.status(202).send({
+      const result = await recordIgnoredGitHubWebhookDelivery({
+        repoId,
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        action: webhookActionFromPayload(request.body),
+        signature256: headers.signature256,
+        headers: safeWebhookHeaders(request.headers),
+        payload: request.body,
+        rawPayload: rawBody,
+        ignoredReason: "repository_mismatch"
+      });
+      return reply.status(result.duplicate ? 200 : 202).send({
         accepted: false,
-        duplicate: false,
+        duplicate: result.duplicate,
         ignored: true,
         deliveryId: headers.deliveryId,
         eventName: headers.eventName,
@@ -72,9 +84,20 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
     }
 
     if (!isSupportedGitHubWebhookEvent(headers.eventName)) {
-      return reply.status(202).send({
+      const result = await recordIgnoredGitHubWebhookDelivery({
+        repoId,
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        action: webhookActionFromPayload(request.body),
+        signature256: headers.signature256,
+        headers: safeWebhookHeaders(request.headers),
+        payload: request.body,
+        rawPayload: rawBody,
+        ignoredReason: "unsupported_event"
+      });
+      return reply.status(result.duplicate ? 200 : 202).send({
         accepted: false,
-        duplicate: false,
+        duplicate: result.duplicate,
         ignored: true,
         deliveryId: headers.deliveryId,
         eventName: headers.eventName,
@@ -82,7 +105,6 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
       });
     }
 
-    const repoId = await upsertRepoProfile(profile);
     const result = await recordGitHubWebhookDelivery({
       repoId,
       deliveryId: headers.deliveryId,

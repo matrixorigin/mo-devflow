@@ -56,10 +56,11 @@ are rejected until that secret is configured. Payloads must include
 `repository.full_name`, and deliveries for other repositories are ignored.
 Only implemented cache-ingestion events are accepted: `issues` and
 `pull_request`. Other signed events are acknowledged as ignored before they enter
-the queue. Accepted deliveries store the delivery ID and raw payload before
-acknowledgement. Duplicate deliveries are ignored and counted for operational
-visibility. The worker processes stored issue and pull request deliveries
-asynchronously into the MatrixOne cache.
+the queue, and ignored deliveries are still counted for operational visibility.
+Accepted deliveries store the delivery ID and raw payload before acknowledgement.
+Duplicate deliveries are ignored and counted for operational visibility. The
+worker processes stored issue and pull request deliveries asynchronously into
+the MatrixOne cache.
 
 The current implementation covers read-only cached observability for repo-wide
 critical issues, watched-user summaries, pending PRs, workflow violations, AI

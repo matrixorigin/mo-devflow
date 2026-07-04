@@ -1573,7 +1573,12 @@ export default function App() {
               <div className="metric">
                 <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
                 <Progress
-                  percent={Math.min(100, data.webhooks.pendingDeliveries * 20 + data.webhooks.failedDeliveries * 25)}
+                  percent={Math.min(
+                    100,
+                    data.webhooks.pendingDeliveries * 20 +
+                      data.webhooks.failedDeliveries * 25 +
+                      data.webhooks.ignoredDeliveries * 5
+                  )}
                   showInfo={false}
                   strokeColor={data.webhooks.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
                 />
@@ -1740,6 +1745,7 @@ export default function App() {
                   />
                   <Statistic title="Next Run" value={formatDate(data.sync.jobQueue.nextRunAt)} />
                   <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
+                  <Statistic title="Webhook Ignored" value={data.webhooks.ignoredDeliveries} />
                   <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
                   <Statistic title="Testing Queue" value={data.testing.queuePrs} />

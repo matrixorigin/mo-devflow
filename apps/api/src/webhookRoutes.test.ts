@@ -7,6 +7,7 @@ import { registerWebhookRoutes } from "./webhookRoutes";
 const mocks = vi.hoisted(() => ({
   loadRepoProfile: vi.fn(),
   recordGitHubWebhookDelivery: vi.fn(),
+  recordIgnoredGitHubWebhookDelivery: vi.fn(),
   upsertRepoProfile: vi.fn()
 }));
 
@@ -16,6 +17,7 @@ vi.mock("@mo-devflow/config", () => ({
 
 vi.mock("@mo-devflow/db", () => ({
   recordGitHubWebhookDelivery: mocks.recordGitHubWebhookDelivery,
+  recordIgnoredGitHubWebhookDelivery: mocks.recordIgnoredGitHubWebhookDelivery,
   upsertRepoProfile: mocks.upsertRepoProfile
 }));
 
@@ -83,11 +85,16 @@ describe("webhook routes", () => {
     delete process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET;
     mocks.loadRepoProfile.mockReturnValue(profile);
     mocks.upsertRepoProfile.mockResolvedValue(10);
-    mocks.recordGitHubWebhookDelivery.mockResolvedValue({
+    mocks.recordGitHubWebhookDelivery.mockImplementation(async (input: { deliveryId: string }) => ({
       duplicate: false,
-      deliveryId: "delivery-1",
-      status: "pending"
-    });
+      deliveryId: input.deliveryId,
+      status: "received"
+    }));
+    mocks.recordIgnoredGitHubWebhookDelivery.mockImplementation(async (input: { deliveryId: string }) => ({
+      duplicate: false,
+      deliveryId: input.deliveryId,
+      status: "ignored"
+    }));
   });
 
   afterEach(() => {
@@ -156,7 +163,7 @@ describe("webhook routes", () => {
         duplicate: false,
         deliveryId: "delivery-1",
         eventName: "issues",
-        status: "pending"
+        status: "received"
       });
       expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -168,6 +175,54 @@ describe("webhook routes", () => {
           rawPayload: rawBody
         })
       );
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("records signed GitHub webhooks ignored for a different repository", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "opened",
+      repository: { full_name: "matrixorigin/other" }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-mismatch",
+          "x-github-event": "issues",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({
+        accepted: false,
+        duplicate: false,
+        ignored: true,
+        deliveryId: "delivery-mismatch",
+        eventName: "issues",
+        reason: "repository_mismatch"
+      });
+      expect(mocks.upsertRepoProfile).toHaveBeenCalledWith(profile);
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-mismatch",
+          eventName: "issues",
+          action: "opened",
+          ignoredReason: "repository_mismatch",
+          rawPayload: rawBody
+        })
+      );
+      expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -237,7 +292,17 @@ describe("webhook routes", () => {
         eventName: "workflow_run",
         reason: "unsupported_event"
       });
-      expect(mocks.upsertRepoProfile).not.toHaveBeenCalled();
+      expect(mocks.upsertRepoProfile).toHaveBeenCalledWith(profile);
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-3",
+          eventName: "workflow_run",
+          action: "completed",
+          ignoredReason: "unsupported_event",
+          rawPayload: rawBody
+        })
+      );
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
     } finally {
       await app.close();

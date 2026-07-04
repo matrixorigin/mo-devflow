@@ -21,7 +21,7 @@ export interface GitHubWebhookDeliveryRecord {
 export interface GitHubWebhookRecordResult {
   duplicate: boolean;
   deliveryId: string;
-  status: "received" | "duplicate";
+  status: "received" | "ignored" | "duplicate";
 }
 
 export interface LeasedGitHubWebhookDelivery {
@@ -61,9 +61,22 @@ function isDuplicateError(error: unknown): boolean {
   return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
 }
 
-export async function recordGitHubWebhookDelivery(
-  input: GitHubWebhookDeliveryRecord
-): Promise<GitHubWebhookRecordResult> {
+async function incrementDuplicateDelivery(deliveryId: string, now: string): Promise<GitHubWebhookRecordResult> {
+  await getPool().execute(
+    `UPDATE github_webhook_deliveries
+     SET duplicate_count = duplicate_count + 1,
+         last_duplicate_at = ?
+     WHERE delivery_id = ?`,
+    [now, deliveryId]
+  );
+  return {
+    duplicate: true,
+    deliveryId,
+    status: "duplicate"
+  };
+}
+
+export async function recordGitHubWebhookDelivery(input: GitHubWebhookDeliveryRecord): Promise<GitHubWebhookRecordResult> {
   const now = nowSql();
   try {
     await getPool().execute(
@@ -92,18 +105,44 @@ export async function recordGitHubWebhookDelivery(
     if (!isDuplicateError(error)) {
       throw error;
     }
+    return incrementDuplicateDelivery(input.deliveryId, now);
+  }
+}
+
+export async function recordIgnoredGitHubWebhookDelivery(
+  input: GitHubWebhookDeliveryRecord & { ignoredReason: string }
+): Promise<GitHubWebhookRecordResult> {
+  const now = nowSql();
+  try {
     await getPool().execute(
-      `UPDATE github_webhook_deliveries
-       SET duplicate_count = duplicate_count + 1,
-           last_duplicate_at = ?
-       WHERE delivery_id = ?`,
-      [now, input.deliveryId]
+      `INSERT INTO github_webhook_deliveries(
+        repo_id, delivery_id, event_name, action, status, signature256,
+        headers_json, payload_json, raw_payload, received_at, processed_at, error_message
+      ) VALUES (?, ?, ?, ?, 'ignored', ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.repoId,
+        input.deliveryId,
+        input.eventName,
+        input.action,
+        input.signature256,
+        stringify(input.headers),
+        stringify(input.payload),
+        input.rawPayload,
+        now,
+        now,
+        input.ignoredReason
+      ]
     );
     return {
-      duplicate: true,
+      duplicate: false,
       deliveryId: input.deliveryId,
-      status: "duplicate"
+      status: "ignored"
     };
+  } catch (error) {
+    if (!isDuplicateError(error)) {
+      throw error;
+    }
+    return incrementDuplicateDelivery(input.deliveryId, now);
   }
 }
 
@@ -218,6 +257,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
        SUM(CASE WHEN status IN ('received', 'processing') THEN 1 ELSE 0 END) AS pending_deliveries,
        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_deliveries,
        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries,
+       SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_deliveries,
        SUM(duplicate_count) AS duplicate_deliveries,
        MAX(received_at) AS last_received_at
      FROM github_webhook_deliveries
@@ -239,6 +279,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     pendingDeliveries: asNumber(row.pending_deliveries),
     processedDeliveries: asNumber(row.processed_deliveries),
     failedDeliveries: asNumber(row.failed_deliveries),
+    ignoredDeliveries: asNumber(row.ignored_deliveries),
     duplicateDeliveries: asNumber(row.duplicate_deliveries),
     lastReceivedAt: fromSqlDate(row.last_received_at),
     latestFailure: failure ? `${asString(failure.delivery_id)}: ${asString(failure.error_message)}` : null
