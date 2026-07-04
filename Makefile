@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-clean dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-create db-migrate sync-once rules-once metrics-once drift-once notify-once format format-check check test ci
+.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-clean dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-check db-create db-migrate sync-once rules-once metrics-once drift-once notify-once format format-check check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -11,6 +11,7 @@ STOP_BG := node scripts/stop-background.mjs
 WAIT_URL := node scripts/wait-for-url.mjs
 WAIT_WORKER := node scripts/wait-for-worker-heartbeat.mjs
 ASSERT_PORT_FREE := node scripts/assert-port-free.mjs
+ASSERT_DB_READY := node scripts/assert-db-ready.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
@@ -22,6 +23,7 @@ help:
 	@echo "  make dev-stop           - Stop API, worker, and web UI"
 	@echo "  make dev-clean          - Stop services and remove local runtime artifacts"
 	@echo "  make dev-status         - Show service status"
+	@echo "  make db-check           - Verify MatrixOne connection configuration"
 	@echo "  make db-create          - Create dedicated MatrixOne database"
 	@echo "  make db-migrate         - Run schema migrations"
 	@echo "  make sync-once          - Run one GitHub sync pass"
@@ -43,6 +45,10 @@ dev-init: setup db-create db-migrate
 db-create:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
 	mysql --protocol=TCP -h"$${MO_DEVFLOW_DB_HOST:-127.0.0.1}" -P"$${MO_DEVFLOW_DB_PORT:-6001}" -u"$${MO_DEVFLOW_DB_USER:-root}" --password="$${MO_DEVFLOW_DB_PASSWORD:-}" -e "CREATE DATABASE IF NOT EXISTS \`$${MO_DEVFLOW_DB_NAME:-mo_devflow}\`;"
+
+db-check:
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	$(ASSERT_DB_READY)
 
 db-migrate:
 	@npm run db:migrate
@@ -68,6 +74,7 @@ dev-api-start:
 	if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then \
 		echo "API already running (PID $$(cat $(API_PID)))"; \
 	else \
+		$(ASSERT_DB_READY) || exit 1; \
 		$(ASSERT_PORT_FREE) 127.0.0.1 "$${MO_DEVFLOW_API_PORT:-18081}" API; \
 		$(START_BG) $(API_PID) $(API_LOG) -- npm run start:api; \
 		started=1; \
@@ -93,6 +100,7 @@ dev-worker-start:
 	if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then \
 		echo "Worker already running (PID $$(cat $(WORKER_PID)))"; \
 	else \
+		$(ASSERT_DB_READY) || exit 1; \
 		$(START_BG) $(WORKER_PID) $(WORKER_LOG) -- npm run dev:worker; \
 		started=1; \
 		echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"; \
