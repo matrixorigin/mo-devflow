@@ -94,8 +94,12 @@ import {
   flowThreadDurationWarnings,
   flowThreadNextAction,
   flowEfficiencySummary,
+  personalActionQueueCounts,
+  personalActionQueueItemsForFilter,
   personalGanttChart,
+  personalActivityHasBlockingSignal,
   personalActivityItems,
+  personalActivityNeedsLink,
   personalActivityNextAction,
   personalActivityPrimarySignal,
   personalDurationText,
@@ -105,6 +109,7 @@ import {
   prAttentionReasons,
   sortPeopleByWorkload,
   type FlowEfficiencySummary,
+  type PersonalActionQueueFilter,
   type PersonalActivityItem,
   type PersonalGanttChart,
   type PersonalGanttPrBar,
@@ -4549,9 +4554,12 @@ function PullRequestCardList({
 }
 
 function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
+  const [queueFilter, setQueueFilter] = useState<PersonalActionQueueFilter>("all");
+
   if (items.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
   }
+  const counts = personalActionQueueCounts(items);
   const criticalItems = items.filter((item) => item.tone === "critical");
   const attentionItems = items.filter((item) => item.tone === "attention");
   const routineItems = items.filter((item) => item.tone !== "critical" && item.tone !== "attention");
@@ -4559,71 +4567,112 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   const issueItems = items.filter((item) => item.objectType === "issue");
   const oldestPr = maxAge(prItems);
   const testingItems = items.filter((item) => item.testingQueueAgeHours !== null);
-  const blockedPrItems = prItems.filter(actionItemHasBlockingSignal);
-  const linkedObjects = items.filter(
-    (item) => item.linkedIssueNumbers.length > 0 || item.linkedPullRequestNumbers.length > 0
-  ).length;
-  const unlinkedObjects = items.length - linkedObjects;
+  const blockedPrItems = prItems.filter(personalActivityHasBlockingSignal);
+  const selectedItems = personalActionQueueItemsForFilter(items, queueFilter);
+  const selectedTone = actionQueueToneForItems(selectedItems);
 
   return (
     <div className="activity-command-center">
       <div className="activity-summary-strip" aria-label="Personal activity summary">
         <ActivitySummaryTile
+          label="All"
+          value={counts.all}
+          detail="full queue"
+          tone="normal"
+          active={queueFilter === "all"}
+          onSelect={() => setQueueFilter("all")}
+        />
+        <ActivitySummaryTile
           label="Now"
           value={criticalItems.length}
           detail={criticalActivitySummary(criticalItems)}
           tone="critical"
+          active={queueFilter === "critical"}
+          onSelect={() => setQueueFilter("critical")}
         />
         <ActivitySummaryTile
           label="Blocked PRs"
           value={blockedPrItems.length}
           detail={`${attentionItems.length} attention`}
           tone="attention"
+          active={queueFilter === "pr_blockers"}
+          onSelect={() => setQueueFilter("pr_blockers")}
         />
         <ActivitySummaryTile
           label="Issue threads"
           value={issueItems.length}
-          detail={`${linkedObjects} linked`}
+          detail={`${counts.needs_link} need links`}
           tone="normal"
+          active={queueFilter === "issues"}
+          onSelect={() => setQueueFilter("issues")}
         />
         <ActivitySummaryTile
           label="Issues in test"
           value={testingItems.length}
           detail={optionalHours(maxTestingAge(testingItems))}
           tone="normal"
+          active={queueFilter === "testing"}
+          onSelect={() => setQueueFilter("testing")}
         />
         <ActivitySummaryTile
-          label="Oldest PR"
+          label="PR age"
           value={oldestPr === null ? "-" : hours(oldestPr)}
-          detail={`${unlinkedObjects} unlinked`}
+          detail={`${counts.prs} PRs`}
           tone="muted"
+          active={queueFilter === "prs"}
+          onSelect={() => setQueueFilter("prs")}
+        />
+        <ActivitySummaryTile
+          label="Needs link"
+          value={counts.needs_link}
+          detail="issue-PR gaps"
+          tone={counts.needs_link > 0 ? "attention" : "muted"}
+          active={queueFilter === "needs_link"}
+          onSelect={() => setQueueFilter("needs_link")}
         />
       </div>
-      <div className="action-queue-sections" role="list" aria-label="Personal action queue">
-        <ActionQueueSection
-          title="Critical now"
-          description="Active s-1/s0 issues that should drive the day."
-          items={criticalItems}
-          offset={0}
-          tone="critical"
-        />
-        <ActionQueueSection
-          title="Needs attention"
-          description="PRs, linked issues in test, and triage items with blocking signals."
-          items={attentionItems}
-          offset={criticalItems.length}
-          tone="attention"
-          visibleLimit={8}
-        />
-        <ActionQueueSection
-          title="Routine movement"
-          description="Pending, deferred, created, or merged work to keep rotating."
-          items={routineItems}
-          offset={criticalItems.length + attentionItems.length}
-          tone="normal"
-          visibleLimit={6}
-        />
-      </div>
+      {queueFilter === "all" ? (
+        <div className="action-queue-sections" role="list" aria-label="Personal action queue">
+          <ActionQueueSection
+            title="Critical now"
+            description="Active s-1/s0 issues that should drive the day."
+            items={criticalItems}
+            offset={0}
+            tone="critical"
+          />
+          <ActionQueueSection
+            title="Needs attention"
+            description="PRs, linked issues in test, and triage items with blocking signals."
+            items={attentionItems}
+            offset={criticalItems.length}
+            tone="attention"
+            visibleLimit={8}
+          />
+          <ActionQueueSection
+            title="Routine movement"
+            description="Pending, deferred, created, or merged work to keep rotating."
+            items={routineItems}
+            offset={criticalItems.length + attentionItems.length}
+            tone="normal"
+            visibleLimit={6}
+          />
+        </div>
+      ) : selectedItems.length === 0 ? (
+        <div className="action-queue-empty" role="status">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`No ${actionQueueFilterLabel(queueFilter)}`} />
+        </div>
+      ) : (
+        <div className="action-queue-sections" role="list" aria-label={`${actionQueueFilterLabel(queueFilter)} queue`}>
+          <ActionQueueSection
+            title={actionQueueFilterLabel(queueFilter)}
+            description={actionQueueFilterDescription(queueFilter)}
+            items={selectedItems}
+            offset={0}
+            tone={selectedTone}
+            visibleLimit={10}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -4632,20 +4681,83 @@ function ActivitySummaryTile({
   label,
   value,
   detail,
-  tone
+  tone,
+  active,
+  onSelect
 }: {
   label: string;
   value: string | number;
   detail: string;
   tone: "critical" | "attention" | "normal" | "muted";
+  active: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <div className={`activity-summary-tile activity-summary-${tone}`}>
+    <button
+      type="button"
+      className={`activity-summary-tile activity-summary-${tone} ${active ? "activity-summary-active" : ""}`}
+      aria-pressed={active}
+      onClick={onSelect}
+    >
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
-    </div>
+    </button>
   );
+}
+
+function actionQueueToneForItems(items: PersonalActivityItem[]): "critical" | "attention" | "normal" {
+  if (items.some((item) => item.tone === "critical")) {
+    return "critical";
+  }
+  if (items.some((item) => item.tone === "attention")) {
+    return "attention";
+  }
+  return "normal";
+}
+
+function actionQueueFilterLabel(filter: PersonalActionQueueFilter): string {
+  if (filter === "critical") {
+    return "Critical now";
+  }
+  if (filter === "pr_blockers") {
+    return "Blocked PRs";
+  }
+  if (filter === "issues") {
+    return "Issue threads";
+  }
+  if (filter === "testing") {
+    return "Issues in test";
+  }
+  if (filter === "prs") {
+    return "PR rotation";
+  }
+  if (filter === "needs_link") {
+    return "Needs link";
+  }
+  return "All activity";
+}
+
+function actionQueueFilterDescription(filter: PersonalActionQueueFilter): string {
+  if (filter === "critical") {
+    return "Active s-1/s0 issues and their execution gaps.";
+  }
+  if (filter === "pr_blockers") {
+    return "Open PRs blocked by review, CI, merge, idle, or test signals.";
+  }
+  if (filter === "issues") {
+    return "Visible issue work owned by this person.";
+  }
+  if (filter === "testing") {
+    return "PRs linked to issues currently assigned to testers.";
+  }
+  if (filter === "prs") {
+    return "All visible PR work for this person.";
+  }
+  if (filter === "needs_link") {
+    return "Critical issues without execution PRs and PRs without visible issue links.";
+  }
+  return "All visible action objects.";
 }
 
 function ActionQueueSection({
@@ -4716,10 +4828,8 @@ function ActionQueueSectionStats({
   const missingCriticalDuration = items.filter(
     (item) => item.durationKind === "critical_active" && item.durationHours === null
   ).length;
-  const blocked = items.filter(actionItemHasBlockingSignal).length;
-  const unlinked = items.filter(
-    (item) => item.linkedIssueNumbers.length === 0 && item.linkedPullRequestNumbers.length === 0
-  ).length;
+  const blocked = items.filter(personalActivityHasBlockingSignal).length;
+  const needsLink = items.filter(personalActivityNeedsLink).length;
   const ageText =
     oldestDuration !== null
       ? `${hours(oldestDuration)} active`
@@ -4736,7 +4846,7 @@ function ActionQueueSectionStats({
       </Tag>
       {ageText ? <span>{ageText}</span> : null}
       {blocked > 0 ? <span>{blocked} blocked</span> : null}
-      {unlinked > 0 ? <span>{unlinked} unlinked</span> : null}
+      {needsLink > 0 ? <span>{needsLink} need links</span> : null}
     </div>
   );
 }
@@ -4880,27 +4990,6 @@ function ActionQueueLinks({
         </span>
       ) : null}
     </div>
-  );
-}
-
-function actionItemHasBlockingSignal(item: PersonalActivityItem): boolean {
-  if (item.objectType === "issue") {
-    return item.tone === "critical" && (item.linkedPullRequestNumbers.length === 0 || !item.isComplete);
-  }
-  const reasons = item.reasons.map((reason) => reason.toLowerCase());
-  return (
-    reasons.some(
-      (reason) =>
-        reason.includes("ci failed") ||
-        reason.includes("changes requested") ||
-        reason.includes("merge conflict") ||
-        reason.includes("no human action") ||
-        reason.includes("testing")
-    ) ||
-    item.reviewDecision === "changes_requested" ||
-    item.mergeStateStatus === "dirty" ||
-    item.testingState === "test_changes_requested" ||
-    item.testingQueueAgeHours !== null
   );
 }
 
@@ -5366,7 +5455,7 @@ function PersonalRotationOverview({
   const criticalItems = activityItems.filter((item) => item.tone === "critical");
   const attentionItems = activityItems.filter((item) => item.tone === "attention");
   const blockedPrItems = activityItems.filter(
-    (item) => item.objectType === "pull_request" && actionItemHasBlockingSignal(item)
+    (item) => item.objectType === "pull_request" && personalActivityHasBlockingSignal(item)
   );
   const [aiFilter, setAiFilter] = useState<CriticalIssueAiFilter>("all");
   const testingStalePrs = person.testingPrs.filter(isTestingStalePr);

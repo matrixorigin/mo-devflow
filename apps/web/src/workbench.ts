@@ -12,6 +12,8 @@ export type WorkloadStatus = "critical" | "attention" | "triage" | "active" | "c
 export type PersonalActivityTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalActivityObjectType = "issue" | "pull_request";
 export type PersonalDurationKind = "critical_active" | "issue_age" | "pr_age" | "unknown";
+export type PersonalActionQueueFilter =
+  "all" | "critical" | "pr_blockers" | "issues" | "testing" | "prs" | "needs_link";
 
 export interface PersonalActivityItem {
   id: string;
@@ -40,6 +42,8 @@ export interface PersonalActivityItem {
   reasons: string[];
   isComplete: boolean;
 }
+
+export type PersonalActionQueueCounts = Record<PersonalActionQueueFilter, number>;
 
 export type PersonalGanttTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalGanttRowKind = "issue" | "other_prs";
@@ -732,6 +736,72 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
     }
     return left.number - right.number;
   });
+}
+
+export function personalActivityHasBlockingSignal(item: PersonalActivityItem): boolean {
+  if (item.objectType === "issue") {
+    return item.tone === "critical" && (item.linkedPullRequestNumbers.length === 0 || !item.isComplete);
+  }
+  const reasons = item.reasons.map((reason) => reason.toLowerCase());
+  return (
+    reasons.some(
+      (reason) =>
+        reason.includes("ci failed") ||
+        reason.includes("changes requested") ||
+        reason.includes("merge conflict") ||
+        reason.includes("no human action") ||
+        reason.includes("testing") ||
+        reason.includes("test wait")
+    ) ||
+    item.reviewDecision === "changes_requested" ||
+    item.mergeStateStatus === "dirty" ||
+    item.testingState === "test_changes_requested" ||
+    item.testingQueueAgeHours !== null
+  );
+}
+
+export function personalActivityNeedsLink(item: PersonalActivityItem): boolean {
+  if (item.objectType === "issue") {
+    return item.tone === "critical" && item.linkedPullRequestNumbers.length === 0;
+  }
+  return item.objectType === "pull_request" && item.linkedIssueNumbers.length === 0;
+}
+
+export function personalActionQueueItemsForFilter(
+  items: PersonalActivityItem[],
+  filter: PersonalActionQueueFilter
+): PersonalActivityItem[] {
+  if (filter === "critical") {
+    return items.filter((item) => item.tone === "critical");
+  }
+  if (filter === "pr_blockers") {
+    return items.filter((item) => item.objectType === "pull_request" && personalActivityHasBlockingSignal(item));
+  }
+  if (filter === "issues") {
+    return items.filter((item) => item.objectType === "issue");
+  }
+  if (filter === "testing") {
+    return items.filter((item) => item.testingQueueAgeHours !== null);
+  }
+  if (filter === "prs") {
+    return items.filter((item) => item.objectType === "pull_request");
+  }
+  if (filter === "needs_link") {
+    return items.filter(personalActivityNeedsLink);
+  }
+  return items;
+}
+
+export function personalActionQueueCounts(items: PersonalActivityItem[]): PersonalActionQueueCounts {
+  return {
+    all: items.length,
+    critical: personalActionQueueItemsForFilter(items, "critical").length,
+    pr_blockers: personalActionQueueItemsForFilter(items, "pr_blockers").length,
+    issues: personalActionQueueItemsForFilter(items, "issues").length,
+    testing: personalActionQueueItemsForFilter(items, "testing").length,
+    prs: personalActionQueueItemsForFilter(items, "prs").length,
+    needs_link: personalActionQueueItemsForFilter(items, "needs_link").length
+  };
 }
 
 export function personalActivityNextAction(item: PersonalActivityItem): string {

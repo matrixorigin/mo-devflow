@@ -11,6 +11,8 @@ import {
   effectiveAiEffortLabel,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
+  personalActionQueueCounts,
+  personalActionQueueItemsForFilter,
   personalGanttChart,
   personalActivityItems,
   personalDurationText,
@@ -254,6 +256,58 @@ describe("personal activity feed", () => {
     expect(item?.durationKind).toBe("critical_active");
     expect(item?.durationHours).toBe(18);
     expect(personalDurationText(item!)).toBe("s0/s-1 18h");
+  });
+
+  it("filters action queue metrics to the corresponding objects", () => {
+    const activeIssue = criticalIssue({
+      number: 10,
+      linkedPullRequests: []
+    });
+    const blockedPr = pullRequest({
+      number: 20,
+      attentionFlags: ["ci_failed"],
+      ciState: "failure",
+      linkedIssueNumbers: [10]
+    });
+    const testingPr = pullRequest({
+      number: 21,
+      testingState: "testing",
+      testingQueueAgeHours: 30,
+      linkedIssueNumbers: [10]
+    });
+    const unlinkedPr = pullRequest({
+      number: 22,
+      linkedIssueNumbers: []
+    });
+    const triageIssue = personalIssue({ number: 30, lifecycleState: "needs-triage" });
+    const items = personalActivityItems(
+      personalView({
+        activeCriticalIssues: [activeIssue],
+        attentionPrs: [blockedPr],
+        testingPrs: [testingPr],
+        pendingPrs: [blockedPr, testingPr, unlinkedPr],
+        needsTriageIssues: [triageIssue]
+      })
+    );
+
+    expect(personalActionQueueCounts(items)).toMatchObject({
+      all: 5,
+      critical: 1,
+      pr_blockers: 2,
+      issues: 2,
+      testing: 1,
+      prs: 3,
+      needs_link: 2
+    });
+    expect(personalActionQueueItemsForFilter(items, "critical").map((item) => item.id)).toEqual(["issue:10"]);
+    expect(personalActionQueueItemsForFilter(items, "pr_blockers").map((item) => item.id)).toEqual([
+      "pull_request:20",
+      "pull_request:21"
+    ]);
+    expect(personalActionQueueItemsForFilter(items, "needs_link").map((item) => item.id)).toEqual([
+      "issue:10",
+      "pull_request:22"
+    ]);
   });
 });
 

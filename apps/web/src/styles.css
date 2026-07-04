@@ -1953,17 +1953,26 @@ button.critical-board-stat:hover {
 .activity-summary-strip {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
 }
 
 .activity-summary-tile {
+  appearance: none;
+  background: #ffffff;
   border: 1px solid #e5e7eb;
   border-left: 3px solid #94a3b8;
   border-radius: 8px;
+  cursor: pointer;
   display: grid;
   gap: 2px;
   min-width: 0;
   padding: 8px 10px;
+  text-align: left;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
 }
 
 .activity-summary-tile span,
@@ -1979,6 +1988,23 @@ button.critical-board-stat:hover {
   color: #111827;
   font-size: 20px;
   line-height: 1.15;
+}
+
+.activity-summary-tile:hover {
+  background: #f9fafb;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.activity-summary-tile:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.activity-summary-active {
+  background: #f8fafc;
+  border-color: #111827;
+  box-shadow: inset 0 0 0 1px #111827;
 }
 
 .activity-summary-critical {
@@ -1997,6 +2023,12 @@ button.critical-board-stat:hover {
   display: grid;
   gap: 12px;
   min-width: 0;
+}
+
+.action-queue-empty {
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 18px;
 }
 
 .action-queue-section {
