@@ -632,6 +632,7 @@ export interface DashboardSummary {
   counts: {
     criticalIssues: number;
     unownedCriticalIssues: number;
+    nonWatchedCriticalIssues: number;
     pendingPrs: number;
     attentionPrs: number;
     workflowViolations: number;

@@ -409,6 +409,7 @@ interface DashboardSummary {
   counts: {
     criticalIssues: number;
     unownedCriticalIssues: number;
+    nonWatchedCriticalIssues: number;
     pendingPrs: number;
     attentionPrs: number;
     workflowViolations: number;
@@ -1773,6 +1774,10 @@ export default function App() {
               <div className="metric">
                 <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
                 <Progress percent={Math.min(100, data.counts.unownedCriticalIssues * 20)} showInfo={false} strokeColor="#d97706" />
+              </div>
+              <div className="metric">
+                <Statistic title="Non-watched Critical" value={data.counts.nonWatchedCriticalIssues} />
+                <Progress percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)} showInfo={false} strokeColor="#ca8a04" />
               </div>
               <div className="metric">
                 <Statistic title="Pending PRs" value={data.counts.pendingPrs} />

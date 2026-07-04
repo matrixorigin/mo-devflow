@@ -115,6 +115,17 @@ export function isPersonalNeedsTriageIssue(input: {
   return input.lifecycleState === "needs-triage" && !criticalLabels.includes(input.severity ?? "");
 }
 
+export function criticalIssueOwnershipCounts(
+  criticalIssues: Array<{ ownerLogin: string | null }>,
+  watchedUsers: string[]
+): { unownedCriticalIssues: number; nonWatchedCriticalIssues: number } {
+  const watched = new Set(watchedUsers);
+  return {
+    unownedCriticalIssues: criticalIssues.filter((issue) => !issue.ownerLogin).length,
+    nonWatchedCriticalIssues: criticalIssues.filter((issue) => issue.ownerLogin && !watched.has(issue.ownerLogin)).length
+  };
+}
+
 export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
   const warnings: ProfileConfigurationWarning[] = [];
   if (profile.people.watchedUsers.length === 0) {
@@ -1747,6 +1758,7 @@ export async function getDashboardSummary(
   const worker: WorkerHealth = await getWorkerHealth();
   const notifications = await getNotificationHealth(repoId, profile);
   const webhooks = await getWebhookIngestionHealth(repoId);
+  const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
   const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
@@ -1773,7 +1785,8 @@ export async function getDashboardSummary(
     },
     counts: {
       criticalIssues: criticalIssues.length,
-      unownedCriticalIssues: criticalIssues.filter((issue) => !issue.ownerLogin).length,
+      unownedCriticalIssues: criticalOwnershipCounts.unownedCriticalIssues,
+      nonWatchedCriticalIssues: criticalOwnershipCounts.nonWatchedCriticalIssues,
       pendingPrs: pendingPrs.length,
       attentionPrs: pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
       workflowViolations: workflowViolations.length,

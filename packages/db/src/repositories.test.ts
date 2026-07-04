@@ -8,6 +8,7 @@ import {
   cacheStaleHoursFromEnv,
   calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
+  criticalIssueOwnershipCounts,
   dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
   previousCalendarDayRange,
@@ -161,6 +162,25 @@ describe("personal issue buckets", () => {
         baseProfile.labels.critical
       )
     ).toBe(false);
+  });
+});
+
+describe("critical issue ownership counts", () => {
+  test("separates unowned critical work from owners outside the watched set", () => {
+    expect(
+      criticalIssueOwnershipCounts(
+        [
+          { ownerLogin: null },
+          { ownerLogin: "alice" },
+          { ownerLogin: "bob" },
+          { ownerLogin: "carol" }
+        ],
+        ["alice", "bob"]
+      )
+    ).toEqual({
+      unownedCriticalIssues: 1,
+      nonWatchedCriticalIssues: 1
+    });
   });
 });
 
