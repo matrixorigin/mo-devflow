@@ -4706,10 +4706,14 @@ function testingRiskColor(risk: string): string {
 function TestingCommandBoard({
   pendingPrs,
   testing,
+  testingIssueFilter,
+  onTestingIssueFilterChange,
   onOpenPrsFilter
 }: {
   pendingPrs: PendingPrView[];
   testing: DashboardSummary["testing"];
+  testingIssueFilter: TestingIssueQueueFilter;
+  onTestingIssueFilterChange: (filter: TestingIssueQueueFilter) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
 }) {
   const queuePrs = sortTestingQueuePrs(pendingPrs.filter(isTestingQueuePr));
@@ -4736,6 +4740,10 @@ function TestingCommandBoard({
   const scrollToIssueQueue = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  const openIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
+    onTestingIssueFilterChange(nextFilter);
+    window.setTimeout(scrollToIssueQueue, 0);
+  };
 
   if (testing.issues.length === 0 && queuePrs.length === 0 && testing.testers.length === 0) {
     return (
@@ -4758,13 +4766,17 @@ function TestingCommandBoard({
           label="issues in test"
           value={testing.queueIssues}
           tone="normal"
-          onClick={scrollToIssueQueue}
+          active={testingIssueFilter === "all"}
+          actionLabel="Filter"
+          onClick={() => openIssueQueueFilter("all")}
         />
         <TestingBoardStat
           label="waiting >24h"
           value={testing.staleQueueIssues}
           tone="critical"
-          onClick={scrollToIssueQueue}
+          active={testingIssueFilter === "stale"}
+          actionLabel="Filter"
+          onClick={() => openIssueQueueFilter("stale")}
         />
         <TestingBoardStat
           label="avg issue wait"
@@ -4779,19 +4791,28 @@ function TestingCommandBoard({
           label="linked PRs"
           value={testing.queuePrs}
           tone={testing.queuePrs > 0 ? "normal" : "muted"}
+          actionLabel="Filter"
           onClick={testing.queuePrs > 0 ? () => onOpenPrsFilter("testing") : undefined}
         />
-        <TestingBoardStat label="testers" value={testing.testers.length} tone="normal" onClick={scrollToIssueQueue} />
+        <TestingBoardStat
+          label="testers"
+          value={testing.testers.length}
+          tone="normal"
+          actionLabel="View"
+          onClick={scrollToIssueQueue}
+        />
         <TestingBoardStat
           label="test starts"
           value={testing.issueTransitionEvents}
           tone={testing.issueTransitionEvents > 0 ? "normal" : "muted"}
+          actionLabel="View"
           onClick={testing.issueTransitionEvents > 0 ? scrollToIssueQueue : undefined}
         />
         <TestingBoardStat
           label="linked PR gaps"
           value={evidenceGapPrs.length}
           tone={evidenceGapPrs.length > 0 ? "attention" : "normal"}
+          actionLabel="Filter"
           onClick={evidenceGapPrs.length > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
         />
         {hasTurnoverHistory ? (
@@ -4799,6 +4820,7 @@ function TestingCommandBoard({
             label="closed without pass"
             value={testing.closedWithoutPassSignalSamples}
             tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
+            actionLabel="Filter"
             onClick={() => onOpenPrsFilter("testing")}
           />
         ) : null}
@@ -4807,6 +4829,7 @@ function TestingCommandBoard({
             label="history gaps"
             value={partialTransitions}
             tone={partialTransitions > 0 ? "attention" : "normal"}
+            actionLabel="Filter"
             onClick={partialTransitions > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
           />
         ) : null}
@@ -4816,7 +4839,11 @@ function TestingCommandBoard({
         <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
       ) : null}
 
-      <TestingIssueQueuePanel issues={testing.issues} />
+      <TestingIssueQueuePanel
+        filter={testingIssueFilter}
+        issues={testing.issues}
+        onFilterChange={onTestingIssueFilterChange}
+      />
 
       {testerRows.length > 0 ? (
         <div className="testing-tester-strip" id="testing-tester-queue" aria-label="Tester queue ownership">
@@ -4867,7 +4894,7 @@ function TestingCommandBoard({
   );
 }
 
-type TestingIssueQueueFilter = "all" | "attention" | "unlinked" | "data_gap";
+type TestingIssueQueueFilter = "all" | "stale" | "attention" | "unlinked" | "data_gap";
 type TestingIssueQueueSort = "priority" | "wait" | "number";
 
 function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
@@ -4875,6 +4902,9 @@ function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
 }
 
 function testingIssueMatchesFilter(issue: TestingIssueQueueView, filter: TestingIssueQueueFilter): boolean {
+  if (filter === "stale") {
+    return isTestingIssueStale(issue);
+  }
   if (filter === "attention") {
     return testingIssueNeedsAttention(issue);
   }
@@ -4902,14 +4932,22 @@ function sortTestingIssueQueue(issues: TestingIssueQueueView[], sort: TestingIss
   return sortTestingIssuesForAction(issues);
 }
 
-function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] }) {
+function TestingIssueQueuePanel({
+  filter,
+  issues,
+  onFilterChange
+}: {
+  filter: TestingIssueQueueFilter;
+  issues: TestingIssueQueueView[];
+  onFilterChange: (filter: TestingIssueQueueFilter) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const [filter, setFilter] = useState<TestingIssueQueueFilter>("all");
   const [sort, setSort] = useState<TestingIssueQueueSort>("priority");
   const [previewIssue, setPreviewIssue] = useState<TestingIssueQueueView | null>(null);
   const visibleLimit = 8;
   const filterCounts: Record<TestingIssueQueueFilter, number> = {
     all: issues.length,
+    stale: issues.filter(isTestingIssueStale).length,
     attention: issues.filter(testingIssueNeedsAttention).length,
     unlinked: issues.filter((issue) => issue.linkedPullRequests.length === 0).length,
     data_gap: issues.filter(testingIssueHasDataGap).length
@@ -4921,7 +4959,7 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
   const visibleIssues = expanded ? sortedIssues : sortedIssues.slice(0, visibleLimit);
   const hiddenCount = Math.max(0, sortedIssues.length - visibleIssues.length);
   const changeFilter = (nextFilter: TestingIssueQueueFilter) => {
-    setFilter(nextFilter);
+    onFilterChange(nextFilter);
     setExpanded(false);
   };
   const changeSort = (nextSort: TestingIssueQueueSort) => {
@@ -4950,6 +4988,15 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
             onClick={() => changeFilter("all")}
           >
             All {filterCounts.all}
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${
+              filterCounts.stale > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+            } ${filter === "stale" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => changeFilter("stale")}
+          >
+            Waiting &gt;24h {filterCounts.stale}
           </button>
           <button
             type="button"
@@ -5211,22 +5258,31 @@ function TestingBoardStat({
   label,
   value,
   tone,
+  active = false,
+  actionLabel,
   onClick
 }: {
   label: string;
   value: string | number;
   tone: "critical" | "attention" | "normal" | "muted";
+  active?: boolean;
+  actionLabel?: "Filter" | "View";
   onClick?: () => void;
 }) {
   const content = (
     <>
       <strong>{value}</strong>
       <small>{label}</small>
+      {onClick ? <span className="testing-board-stat-action">{actionLabel ?? "Open"}</span> : null}
     </>
   );
   if (onClick) {
     return (
-      <button type="button" className={`testing-board-stat testing-board-stat-${tone}`} onClick={onClick}>
+      <button
+        type="button"
+        className={`testing-board-stat testing-board-stat-${tone} ${active ? "testing-board-stat-active" : ""}`}
+        onClick={onClick}
+      >
         {content}
       </button>
     );
@@ -7770,6 +7826,7 @@ function PersonalDrilldownBoard({
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
 }) {
   const title = personalDrilldownLabel(filter);
+  const [testingIssueFilter, setTestingIssueFilter] = useState<TestingIssueQueueFilter>("all");
 
   if (filter === "threads") {
     return (
@@ -7878,7 +7935,11 @@ function PersonalDrilldownBoard({
             <Tag>{person.testingPrs.length} linked PR</Tag>
           </Space>
         </div>
-        <TestingIssueQueuePanel issues={person.testingIssues} />
+        <TestingIssueQueuePanel
+          filter={testingIssueFilter}
+          issues={person.testingIssues}
+          onFilterChange={setTestingIssueFilter}
+        />
         {person.testingPrs.length > 0 || person.testingIssues.length === 0 ? (
           <div className="testing-linked-pr-evidence">
             <div className="subsection-heading subsection-heading-compact">
@@ -8622,6 +8683,7 @@ export default function App() {
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
   const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
+  const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
@@ -10049,8 +10111,13 @@ export default function App() {
   const testingHasIssueTransitions = data
     ? data.testing.issueTransitionEvents > 0 || data.testing.recentIssueTransitions.length > 0
     : false;
-  const scrollToTestingIssueQueue = () => {
+  const scrollTestingIssueQueueIntoView = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const openTestingIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
+    setTestingIssueQueueFilter(nextFilter);
+    setPrBoardTab("testing");
+    window.setTimeout(scrollTestingIssueQueueIntoView, 0);
   };
   const criticalOwnerCoverageRows = data
     ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped).slice(0, 8)
@@ -10606,8 +10673,8 @@ export default function App() {
                         type="button"
                         className={`inline-filter-chip ${
                           data.testing.queueIssues > 0 ? "" : "inline-filter-chip-muted"
-                        }`}
-                        onClick={scrollToTestingIssueQueue}
+                        } ${testingIssueQueueFilter === "all" ? "inline-filter-chip-active" : ""}`}
+                        onClick={() => openTestingIssueQueueFilter("all")}
                       >
                         {data.testing.queueIssues} issues in test
                       </button>
@@ -10615,8 +10682,8 @@ export default function App() {
                         type="button"
                         className={`inline-filter-chip ${
                           data.testing.staleQueueIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-                        }`}
-                        onClick={scrollToTestingIssueQueue}
+                        } ${testingIssueQueueFilter === "stale" ? "inline-filter-chip-active" : ""}`}
+                        onClick={() => openTestingIssueQueueFilter("stale")}
                       >
                         {data.testing.staleQueueIssues} waiting &gt;24h
                       </button>
@@ -10637,6 +10704,8 @@ export default function App() {
                     <TestingCommandBoard
                       pendingPrs={data.pendingPrs}
                       testing={data.testing}
+                      testingIssueFilter={testingIssueQueueFilter}
+                      onTestingIssueFilterChange={setTestingIssueQueueFilter}
                       onOpenPrsFilter={openPrsWithFilter}
                     />
                     <details className="secondary-disclosure pr-diagnostic-disclosure">
