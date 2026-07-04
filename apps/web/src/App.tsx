@@ -10486,6 +10486,19 @@ export default function App() {
                     />
                   ))}
 
+                  {!session?.authenticated &&
+                  data.profileSetup.status === "action_required" &&
+                  data.profileActions.length > 0 &&
+                  !data.profileSetup.yamlPatch ? (
+                    <Alert
+                      className="band"
+                      type="info"
+                      title="Profile setup details are operator-only"
+                      description="Anonymous viewers can see that repository setup is incomplete, but candidate GitHub logins and copyable YAML patches are hidden until login."
+                      showIcon
+                    />
+                  ) : null}
+
                   {data.profileActions.length > 0 ? (
                     <section className="section">
                       <div className="section-heading">
