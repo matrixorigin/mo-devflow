@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile, WorkflowFixPreview } from "@mo-devflow/shared";
+import { encryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { registerActionRoutes } from "./actionRoutes";
 import { csrfCookieName, csrfHeaderName } from "./csrf";
 
@@ -14,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   getActiveWorkflowViolation: vi.fn(),
   getCachedIssueByNumber: vi.fn(),
   getRepoId: vi.fn(),
+  fetchIssueFreshState: vi.fn(),
+  fetchIssueWritePermission: vi.fn(),
   applyWorkflowFixPreview: vi.fn()
 }));
 
@@ -41,7 +44,8 @@ vi.mock("@mo-devflow/db", () => ({
 
 vi.mock("@mo-devflow/github", () => ({
   applyWorkflowFixPreview: mocks.applyWorkflowFixPreview,
-  fetchIssueFreshState: vi.fn()
+  fetchIssueFreshState: mocks.fetchIssueFreshState,
+  fetchIssueWritePermission: mocks.fetchIssueWritePermission
 }));
 
 const profile: RepoProfile = {
@@ -126,9 +130,33 @@ const csrfHeaders = {
   [csrfHeaderName]: csrfToken
 };
 
+const originalTokenEncryptionKey = process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+
+function encryptedStoredToken() {
+  process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+  const config = tokenEncryptionConfigFromEnv();
+  if (!config) {
+    throw new Error("test token encryption config missing");
+  }
+  const encrypted = encryptSecret("test-user-token", config);
+  return {
+    encryptedToken: encrypted.ciphertext,
+    tokenIv: encrypted.iv,
+    tokenAuthTag: encrypted.authTag,
+    keyVersion: encrypted.keyVersion,
+    scopes: ["repo"],
+    lastValidatedAt: "2026-07-04T00:00:00.000Z"
+  };
+}
+
 describe("action routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    if (originalTokenEncryptionKey === undefined) {
+      delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+    } else {
+      process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = originalTokenEncryptionKey;
+    }
     mocks.loadRepoProfile.mockReturnValue(profile);
     mocks.getSessionRecordFromRequest.mockResolvedValue({
       userId: 1,
@@ -145,6 +173,12 @@ describe("action routes", () => {
       preview,
       status: "previewed",
       expiresAt: preview.expiresAt
+    });
+    mocks.fetchIssueWritePermission.mockResolvedValue({
+      allowed: true,
+      permission: "write",
+      message: "GitHub token has write permission for issue workflow fixes.",
+      rateLimitRemaining: 99
     });
   });
 
@@ -235,6 +269,67 @@ describe("action routes", () => {
     }
   });
 
+  test("rejects workflow fix preview before fresh issue read when token lacks repository write permission", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveWorkflowViolation.mockResolvedValue({
+      objectType: "issue",
+      objectNumber: 42,
+      title: "panic on insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+      ruleKey: "bug_missing_needs_triage",
+      severity: "warning",
+      relatedLogin: "alice",
+      evidenceSummary: "Open bug issue #42 has no needs-triage label.",
+      suggestedAction: "Add needs-triage.",
+      fixable: true,
+      firstDetectedAt: "2026-07-04T00:00:00.000Z",
+      lastDetectedAt: "2026-07-04T00:00:00.000Z"
+    });
+    mocks.getCachedIssueByNumber.mockResolvedValue({ number: 42 });
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.fetchIssueWritePermission.mockResolvedValue({
+      allowed: false,
+      permission: "read",
+      message: "GitHub token has read permission for this repository; triage or write access is required.",
+      rateLimitRemaining: 98
+    });
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
+        payload: {
+          actionKey: "add_needs_triage",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "bug_missing_needs_triage"
+        }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({
+        error: "write_permission_unavailable",
+        message: "GitHub token has read permission for this repository; triage or write access is required.",
+        permission: "read"
+      });
+      expect(mocks.fetchIssueWritePermission).toHaveBeenCalledWith({
+        token: "test-user-token",
+        profile: writeBackProfile
+      });
+      expect(mocks.fetchIssueFreshState).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("blocks workflow fix confirmation before token access when profile write-back is disabled", async () => {
     const app = Fastify();
     await registerActionRoutes(app);
@@ -269,6 +364,53 @@ describe("action routes", () => {
         })
       );
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("audits workflow fix confirmation as blocked when token loses repository write permission", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.fetchIssueWritePermission.mockResolvedValue({
+      allowed: false,
+      permission: "read",
+      message: "GitHub token has read permission for this repository; triage or write access is required.",
+      rateLimitRemaining: 98
+    });
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        previewId: preview.previewId,
+        status: "blocked",
+        message: "GitHub token has read permission for this repository; triage or write access is required.",
+        executedOperations: []
+      });
+      expect(mocks.recordWorkflowFixExecution).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          userId: 1,
+          githubLogin: "alice",
+          preview,
+          result: expect.objectContaining({ status: "blocked" })
+        })
+      );
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
     } finally {
       await app.close();

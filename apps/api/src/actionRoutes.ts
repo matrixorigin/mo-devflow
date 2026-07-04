@@ -15,7 +15,7 @@ import {
   revokeGitHubTokenForUser,
   upsertRepoProfile
 } from "@mo-devflow/db";
-import { applyWorkflowFixPreview, fetchIssueFreshState } from "@mo-devflow/github";
+import { applyWorkflowFixPreview, fetchIssueFreshState, fetchIssueWritePermission } from "@mo-devflow/github";
 import { buildWorkflowFixPreview } from "@mo-devflow/rules";
 import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
 import type {
@@ -187,6 +187,33 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       return reply.status(403).send({
         error: "write_capability_unavailable",
         message: "Stored GitHub token could not be decrypted. Reconnect the token before previewing workflow fixes."
+      });
+    }
+
+    try {
+      const issueWritePermission = await fetchIssueWritePermission({ token, profile });
+      if (!issueWritePermission.allowed) {
+        return reply.status(403).send({
+          error: "write_permission_unavailable",
+          message: issueWritePermission.message,
+          permission: issueWritePermission.permission
+        });
+      }
+    } catch (error) {
+      const failure = githubTokenFailureForWorkflowRead(error);
+      if (failure) {
+        if (failure.shouldRevokeToken) {
+          await revokeGitHubTokenForUser(session.userId);
+        }
+        return reply.status(failure.statusCode).send({
+          error: failure.error,
+          message: failure.message
+        });
+      }
+      app.log.error({ error, repoKey: profile.key }, "workflow fix repository permission check failed");
+      return reply.status(502).send({
+        error: "github_permission_check_failed",
+        message: "GitHub repository permission check failed. Try again after GitHub connectivity recovers."
       });
     }
 
@@ -381,6 +408,22 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
     try {
+      const issueWritePermission = await fetchIssueWritePermission({ token, profile });
+      if (!issueWritePermission.allowed) {
+        const result = executionResult({
+          previewId: preview.previewId,
+          status: "blocked",
+          message: issueWritePermission.message
+        });
+        return persistExecution({
+          repoId: storedPreview.repoId,
+          userId: session.userId,
+          githubLogin: session.githubLogin,
+          preview,
+          result
+        });
+      }
+
       const applied = await applyWorkflowFixPreview({ token, profile, preview });
       const stale = applied.appliedOperations.length === 0;
       const result = executionResult({

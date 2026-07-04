@@ -49,6 +49,13 @@ export interface GitHubIssueFreshState {
   rateLimitRemaining: number | null;
 }
 
+export interface GitHubIssueWritePermission {
+  allowed: boolean;
+  permission: "admin" | "maintain" | "write" | "triage" | "read" | "none" | "unverified";
+  message: string;
+  rateLimitRemaining: number | null;
+}
+
 export interface GitHubWorkflowFixApplyResult {
   freshState: GitHubIssueFreshState;
   appliedOperations: WorkflowFixOperation[];
@@ -103,6 +110,56 @@ export async function validateGitHubToken(token: string): Promise<GitHubTokenVal
     githubLogin: response.data.login,
     avatarUrl: response.data.avatar_url ?? null,
     scopes,
+    rateLimitRemaining: readRateLimit(response.headers)
+  };
+}
+
+function issueWritePermissionFromRepositoryData(data: unknown): GitHubIssueWritePermission["permission"] {
+  const permissions = (data as { permissions?: Record<string, unknown> }).permissions;
+  if (!permissions) {
+    return "unverified";
+  }
+  if (permissions.admin === true) {
+    return "admin";
+  }
+  if (permissions.maintain === true) {
+    return "maintain";
+  }
+  if (permissions.push === true) {
+    return "write";
+  }
+  if (permissions.triage === true) {
+    return "triage";
+  }
+  if (permissions.pull === true) {
+    return "read";
+  }
+  return "none";
+}
+
+function issueWritePermissionAllowsLabels(permission: GitHubIssueWritePermission["permission"]): boolean {
+  return ["admin", "maintain", "write", "triage"].includes(permission);
+}
+
+export async function fetchIssueWritePermission(input: {
+  token: string;
+  profile: RepoProfile;
+}): Promise<GitHubIssueWritePermission> {
+  const octokit = createUserGitHubClient(input.token);
+  const response = await octokit.rest.repos.get({
+    owner: input.profile.repo.owner,
+    repo: input.profile.repo.name
+  });
+  const permission = issueWritePermissionFromRepositoryData(response.data);
+  const allowed = issueWritePermissionAllowsLabels(permission);
+  return {
+    allowed,
+    permission,
+    message: allowed
+      ? `GitHub token has ${permission} permission for issue workflow fixes.`
+      : permission === "unverified"
+        ? "GitHub did not report repository permissions for this token. Reconnect a token with triage or write access."
+        : `GitHub token has ${permission} permission for this repository; triage or write access is required for issue workflow fixes.`,
     rateLimitRemaining: readRateLimit(response.headers)
   };
 }

@@ -3,6 +3,7 @@ import type { RepoProfile, WorkflowFixPreview, WorkflowFixStateSnapshot } from "
 import {
   applyWorkflowFixPreview,
   classifyGitHubError,
+  fetchIssueWritePermission,
   configuredGitHubSourceAuthType,
   githubLinkHeaderHasNextPage
 } from "./index";
@@ -12,6 +13,7 @@ const octokitMocks = vi.hoisted(() => ({
   issuesAddLabels: vi.fn(),
   issuesRemoveLabel: vi.fn(),
   issuesCreateComment: vi.fn(),
+  reposGet: vi.fn(),
   usersGetAuthenticated: vi.fn()
 }));
 
@@ -24,6 +26,9 @@ vi.mock("@octokit/rest", () => ({
           addLabels: octokitMocks.issuesAddLabels,
           removeLabel: octokitMocks.issuesRemoveLabel,
           createComment: octokitMocks.issuesCreateComment
+        },
+        repos: {
+          get: octokitMocks.reposGet
         },
         users: {
           getAuthenticated: octokitMocks.usersGetAuthenticated
@@ -310,6 +315,58 @@ describe("workflow fix execution", () => {
     expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
     expect(result.response).toEqual({ skipped: "issue_labels_changed" });
+  });
+});
+
+describe("GitHub repository write permission", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("allows issue workflow fixes for triage or stronger repository permission", async () => {
+    octokitMocks.reposGet.mockResolvedValue({
+      data: { permissions: { pull: true, triage: true, push: false, maintain: false, admin: false } },
+      headers: { "x-ratelimit-remaining": "88" }
+    });
+
+    const result = await fetchIssueWritePermission({ token: "test-user-token", profile });
+
+    expect(octokitMocks.reposGet).toHaveBeenCalledWith({ owner: "matrixorigin", repo: "matrixone" });
+    expect(result).toMatchObject({
+      allowed: true,
+      permission: "triage",
+      rateLimitRemaining: 88
+    });
+  });
+
+  test("blocks issue workflow fixes when the token only has read permission", async () => {
+    octokitMocks.reposGet.mockResolvedValue({
+      data: { permissions: { pull: true, triage: false, push: false, maintain: false, admin: false } },
+      headers: { "x-ratelimit-remaining": "87" }
+    });
+
+    const result = await fetchIssueWritePermission({ token: "test-user-token", profile });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      permission: "read"
+    });
+    expect(result.message).toContain("triage or write access");
+  });
+
+  test("blocks issue workflow fixes when repository permissions are not reported", async () => {
+    octokitMocks.reposGet.mockResolvedValue({
+      data: {},
+      headers: {}
+    });
+
+    const result = await fetchIssueWritePermission({ token: "test-user-token", profile });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      permission: "unverified",
+      rateLimitRemaining: null
+    });
   });
 });
 
