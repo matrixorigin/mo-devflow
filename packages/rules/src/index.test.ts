@@ -1114,4 +1114,61 @@ describe("rules", () => {
       "partial_cache"
     );
   });
+
+  test("AI drift uses severity activation time instead of issue created time when timeline evidence exists", () => {
+    const issue = {
+      ...normalizeIssue(
+        profile,
+        {
+          id: 12,
+          number: 18,
+          title: "recently promoted ai easy critical",
+          state: "open",
+          user: { login: "reporter" },
+          html_url: "https://example.test/18",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-07-04T00:00:00Z",
+          labels: [{ name: "kind/bug" }, { name: "severity/s0" }, { name: "ai-easy" }],
+          assignees: [{ login: "alice" }]
+        },
+        anonymousSource
+      ),
+      criticalStartedAt: "2026-07-04T00:00:00Z"
+    };
+
+    expect(aiDriftSignalsForIssue(profile, issue)).toEqual([]);
+  });
+
+  test("AI drift measures ai-easy critical duration to issue testing handoff when available", () => {
+    const issue = {
+      ...normalizeIssue(
+        profile,
+        {
+          id: 13,
+          number: 19,
+          title: "slow handoff ai easy critical",
+          state: "open",
+          user: { login: "reporter" },
+          html_url: "https://example.test/19",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-09T00:00:00Z",
+          labels: [{ name: "kind/bug" }, { name: "severity/s0" }, { name: "ai-easy" }],
+          assignees: [{ login: "alice" }, { login: "tester-a" }]
+        },
+        anonymousSource
+      ),
+      criticalStartedAt: "2026-01-01T00:00:00Z",
+      testingHandoffStartedAt: "2026-01-09T00:00:00Z"
+    };
+
+    const [signal] = aiDriftSignalsForIssue(profile, issue);
+
+    expect(signal).toMatchObject({
+      ruleKey: "ai_easy_critical_too_old",
+      actualHours: 192,
+      sourceCompleteness: "complete_cache"
+    });
+    expect(signal?.evidenceSummary).toContain("s-1/s0 active time until testing handoff");
+    expect(signal?.suggestedAction).toContain("testing handoff took longer");
+  });
 });

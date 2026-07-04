@@ -384,7 +384,7 @@ export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncRe
   const profile = loadRepoProfile();
   const startedAt = new Date().toISOString();
   const repoId = await upsertRepoProfile(profile);
-  const issues = await listCachedIssuesForRules(repoId);
+  const issues = await listCachedIssuesForRules(repoId, profile);
   const workflowViolations = issues.flatMap((issue) => workflowViolationsForIssue(profile, issue));
   await replaceWorkflowViolations(repoId, workflowViolations);
   await recordSyncRun({
@@ -423,7 +423,7 @@ export async function recomputeAiDriftFromCache(): Promise<DriftSyncResult> {
   const profile = loadRepoProfile();
   const startedAt = new Date().toISOString();
   const repoId = await upsertRepoProfile(profile);
-  const issues = await listCachedIssuesForRules(repoId);
+  const issues = await listCachedIssuesForRules(repoId, profile);
   const pullRequests = await listCachedPullRequestsForRules(repoId);
   const aiDriftSignals = [
     ...issues.flatMap((issue) => aiDriftSignalsForIssue(profile, issue)),

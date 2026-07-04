@@ -638,12 +638,12 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
   }
 
   const signals: AiDriftSignal[] = [];
-  const ageHours = hoursBetween(issue.createdAt);
 
   if (issue.aiEffortLabel === "ai-easy") {
     const warningHours = profile.thresholds.aiEasyS0ToTestAttentionDays * 24;
     const criticalHours = profile.thresholds.aiEasyCriticalCriticalDays * 24;
-    if (ageHours >= warningHours) {
+    const duration = aiEasyCriticalIssueDuration(issue);
+    if (duration.hours >= warningHours) {
       const effortEvidence = hasExplicitAiEffortLabel(profile, issue.labels)
         ? "is labeled ai-easy"
         : "has no ai-* label and is treated as ai-easy";
@@ -653,20 +653,53 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
         title: issue.title,
         htmlUrl: issue.htmlUrl,
         ruleKey: "ai_easy_critical_too_old",
-        severity: ageHours >= criticalHours ? "critical" : "warning",
+        severity: duration.hours >= criticalHours ? "critical" : "warning",
         ownerLogin: issue.ownerLogin,
         aiEffortLabel: issue.aiEffortLabel,
         expectedHours: warningHours,
-        actualHours: ageHours,
-        evidenceSummary: `Active s-1/s0 issue #${issue.number} ${effortEvidence}; it is ${ageHours}h old and the threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
-        suggestedAction:
-          "Review whether ai-easy is still accurate, split blockers, or change the effort label before close.",
-        sourceCompleteness: "partial_cache"
+        actualHours: duration.hours,
+        evidenceSummary: `Active s-1/s0 issue #${issue.number} ${effortEvidence}; ${duration.evidence} is ${duration.hours}h and the threshold is ${warningHours}h.`,
+        suggestedAction: duration.completedToTest
+          ? "Review whether ai-easy is still accurate before close, or document why the testing handoff took longer than expected."
+          : "Review whether ai-easy is still accurate, split blockers, or move the issue toward testing with visible ownership.",
+        sourceCompleteness: duration.sourceCompleteness
       });
     }
   }
 
   return signals;
+}
+
+function aiEasyCriticalIssueDuration(issue: NormalizedIssue): {
+  hours: number;
+  evidence: string;
+  completedToTest: boolean;
+  sourceCompleteness: "partial_cache" | "complete_cache";
+} {
+  if (issue.criticalStartedAt) {
+    if (issue.testingHandoffStartedAt) {
+      const hours = Math.max(0, hoursBetween(issue.criticalStartedAt, issue.testingHandoffStartedAt));
+      return {
+        hours,
+        evidence: "s-1/s0 active time until testing handoff",
+        completedToTest: true,
+        sourceCompleteness: "complete_cache"
+      };
+    }
+    return {
+      hours: hoursBetween(issue.criticalStartedAt),
+      evidence: "s-1/s0 active time without a testing handoff in cache",
+      completedToTest: false,
+      sourceCompleteness: "complete_cache"
+    };
+  }
+
+  return {
+    hours: hoursBetween(issue.createdAt),
+    evidence: "created time proxy because severity timeline evidence is missing",
+    completedToTest: false,
+    sourceCompleteness: "partial_cache"
+  };
 }
 
 export function aiDriftSignalsForPullRequest(profile: RepoProfile, pr: NormalizedPullRequest): AiDriftSignal[] {

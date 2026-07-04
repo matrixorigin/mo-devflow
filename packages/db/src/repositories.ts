@@ -1233,7 +1233,7 @@ export async function upsertIssueTimelineEvent(repoId: number, event: Normalized
   }
 }
 
-export async function listCachedIssuesForRules(repoId: number): Promise<NormalizedIssue[]> {
+export async function listCachedIssuesForRules(repoId: number, profile: RepoProfile): Promise<NormalizedIssue[]> {
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM issues
@@ -1242,6 +1242,24 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
   );
   const issueNumbers = rows.map((row) => asNumber(row.number));
   const commentEvidence = await issueCommentEvidenceByIssueNumber(repoId, issueNumbers);
+  const currentCriticalSeverityByIssueNumber = new Map(
+    rows
+      .map((row) => [asNumber(row.number), row.severity ? asString(row.severity) : null] as const)
+      .filter(
+        (entry): entry is readonly [number, string] => entry[1] !== null && profile.labels.critical.includes(entry[1])
+      )
+  );
+  const criticalStartedAt = await criticalStartedAtByIssueNumber(
+    repoId,
+    currentCriticalSeverityByIssueNumber,
+    "1 = 1",
+    []
+  );
+  const baseTestingContexts = testingIssueContextsByNumber(profile, rows);
+  const testingContexts = testingIssueContextsWithAssignmentEvidence(
+    baseTestingContexts,
+    await testingAssignmentStartedAtByIssueNumber(repoId, baseTestingContexts, "1 = 1", [])
+  );
 
   return rows.map((row) => ({
     githubId: asNumber(row.github_id),
@@ -1261,6 +1279,8 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
     lifecycleState: asString(row.lifecycle_state) as NormalizedIssue["lifecycleState"],
     severity: row.severity ? asString(row.severity) : null,
     aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy",
+    criticalStartedAt: criticalStartedAt.get(asNumber(row.number)) ?? null,
+    testingHandoffStartedAt: testingContexts.get(asNumber(row.number))?.queueStartedAt ?? null,
     isPullRequest: false,
     sourceAuthType: asString(row.source_auth_type) as NormalizedIssue["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),

@@ -141,6 +141,8 @@ export interface NormalizedIssue {
   lifecycleState: LifecycleState;
   severity: string | null;
   aiEffortLabel: string | null;
+  criticalStartedAt?: string | null;
+  testingHandoffStartedAt?: string | null;
   isPullRequest: boolean;
   sourceAuthType: SourceAuthType;
   sourceUserId: number | null;
