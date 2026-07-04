@@ -116,6 +116,19 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing";
 type CriticalIssueAiFilter = "all" | string;
+type PrScopeFilter =
+  | "all"
+  | "attention"
+  | "testing"
+  | "stale_testing"
+  | "ci_failed"
+  | "request_changes"
+  | "conflict"
+  | "no_issue"
+  | "no_action_24h";
+type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
+type PersonalDrilldownFilter =
+  "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
 const viewOptions = [
   "Overview",
   "Issues",
@@ -890,6 +903,139 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   return "all active";
 }
 
+function prScopeLabel(filter: PrScopeFilter): string {
+  if (filter === "attention") {
+    return "PR attention";
+  }
+  if (filter === "testing") {
+    return "testing handoff";
+  }
+  if (filter === "stale_testing") {
+    return "stale testing";
+  }
+  if (filter === "ci_failed") {
+    return "CI failed";
+  }
+  if (filter === "request_changes") {
+    return "request changes";
+  }
+  if (filter === "conflict") {
+    return "conflict";
+  }
+  if (filter === "no_issue") {
+    return "no linked issue";
+  }
+  if (filter === "no_action_24h") {
+    return "no action 24h";
+  }
+  return "all pending";
+}
+
+function prHasFailedCi(pr: PendingPrView): boolean {
+  return ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState ?? "");
+}
+
+function prHasRequestChanges(pr: PendingPrView): boolean {
+  return pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested";
+}
+
+function prHasConflict(pr: PendingPrView): boolean {
+  return pr.mergeStateStatus === "dirty";
+}
+
+function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean {
+  if (scopeFilter === "attention") {
+    return pr.attentionFlags.length > 0;
+  }
+  if (scopeFilter === "testing") {
+    return isTestingQueuePr(pr);
+  }
+  if (scopeFilter === "stale_testing") {
+    return isTestingStalePr(pr);
+  }
+  if (scopeFilter === "ci_failed") {
+    return prHasFailedCi(pr);
+  }
+  if (scopeFilter === "request_changes") {
+    return prHasRequestChanges(pr);
+  }
+  if (scopeFilter === "conflict") {
+    return prHasConflict(pr);
+  }
+  if (scopeFilter === "no_issue") {
+    return pr.linkedIssueNumbers.length === 0;
+  }
+  if (scopeFilter === "no_action_24h") {
+    return pr.attentionFlags.includes("no_human_action_24h");
+  }
+  return true;
+}
+
+function filterPendingPrs(prs: PendingPrView[], scopeFilter: PrScopeFilter): PendingPrView[] {
+  return prs.filter((pr) => prMatchesScope(pr, scopeFilter));
+}
+
+function peopleScopeLabel(filter: PeopleScopeFilter): string {
+  if (filter === "critical") {
+    return "s-1/s0";
+  }
+  if (filter === "attention") {
+    return "PR attention";
+  }
+  if (filter === "triage") {
+    return "needs triage";
+  }
+  if (filter === "pending_pr") {
+    return "pending PR";
+  }
+  if (filter === "testing") {
+    return "testing";
+  }
+  if (filter === "yesterday_pr") {
+    return "yesterday PR";
+  }
+  return "all watched";
+}
+
+function testingCountForPeople(login: string, personalByLogin: Map<string, PersonalActionView>): number {
+  return personalByLogin.get(login)?.testingPrs.length ?? 0;
+}
+
+function personMatchesScope(
+  person: PersonSummary,
+  personalByLogin: Map<string, PersonalActionView>,
+  scopeFilter: PeopleScopeFilter
+): boolean {
+  if (scopeFilter === "critical") {
+    return person.activeCriticalIssues > 0;
+  }
+  if (scopeFilter === "attention") {
+    return person.attentionPrs > 0;
+  }
+  if (scopeFilter === "triage") {
+    return person.needsTriageIssues > 0;
+  }
+  if (scopeFilter === "pending_pr") {
+    return person.pendingPrs > 0;
+  }
+  if (scopeFilter === "testing") {
+    return testingCountForPeople(person.login, personalByLogin) > 0;
+  }
+  if (scopeFilter === "yesterday_pr") {
+    return person.prsCreatedYesterday + person.prsMergedYesterday > 0;
+  }
+  return true;
+}
+
+function filterPeople(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  scopeFilter: PeopleScopeFilter
+): PersonSummary[] {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return people.filter((person) => personMatchesScope(person, personalByLogin, scopeFilter));
+}
+
 function CriticalIssueFilterBar({
   issues,
   aiFilter,
@@ -934,6 +1080,68 @@ function CriticalIssueFilterBar({
   );
 }
 
+function PrFilterBar({
+  scopeFilter,
+  onScopeFilterChange
+}: {
+  scopeFilter: PrScopeFilter;
+  onScopeFilterChange: (value: PrScopeFilter) => void;
+}) {
+  return (
+    <div className="board-filter-bar" aria-label="Pending PR filters">
+      <div className="board-filter-group">
+        <Text type="secondary">Scope</Text>
+        <Segmented
+          size="small"
+          value={scopeFilter}
+          onChange={(value) => onScopeFilterChange(value as PrScopeFilter)}
+          options={[
+            { label: "All", value: "all" },
+            { label: "Attention", value: "attention" },
+            { label: "Testing", value: "testing" },
+            { label: "Stale test", value: "stale_testing" },
+            { label: "CI failed", value: "ci_failed" },
+            { label: "Request change", value: "request_changes" },
+            { label: "Conflict", value: "conflict" },
+            { label: "No issue", value: "no_issue" },
+            { label: "No action 24h", value: "no_action_24h" }
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PeopleFilterBar({
+  scopeFilter,
+  onScopeFilterChange
+}: {
+  scopeFilter: PeopleScopeFilter;
+  onScopeFilterChange: (value: PeopleScopeFilter) => void;
+}) {
+  return (
+    <div className="board-filter-bar" aria-label="People filters">
+      <div className="board-filter-group">
+        <Text type="secondary">Scope</Text>
+        <Segmented
+          size="small"
+          value={scopeFilter}
+          onChange={(value) => onScopeFilterChange(value as PeopleScopeFilter)}
+          options={[
+            { label: "All", value: "all" },
+            { label: "s-1/s0", value: "critical" },
+            { label: "PR attention", value: "attention" },
+            { label: "Triage", value: "triage" },
+            { label: "Pending PR", value: "pending_pr" },
+            { label: "Testing", value: "testing" },
+            { label: "Yesterday PR", value: "yesterday_pr" }
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
 function TeamRotationOverview({
   data,
   flowSummary,
@@ -946,7 +1154,9 @@ function TeamRotationOverview({
   criticalScopeFilter,
   onCriticalAiFilterChange,
   onCriticalScopeFilterChange,
-  onOpenIssuesFilter
+  onOpenIssuesFilter,
+  onOpenPrsFilter,
+  onOpenPeopleFilter
 }: {
   data: DashboardSummary;
   flowSummary: FlowEfficiencySummary | null;
@@ -960,6 +1170,8 @@ function TeamRotationOverview({
   onCriticalAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onCriticalScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
   onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
   const criticalIssues = sortCriticalIssuesForAction(
     filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
@@ -995,9 +1207,13 @@ function TeamRotationOverview({
             >
               {data.counts.criticalIssues} active s-1/s0
             </button>
-            <Tag color={data.counts.attentionPrs > 0 ? "orange" : "default"}>
+            <button
+              type="button"
+              className={`inline-filter-chip ${data.counts.attentionPrs > 0 ? "" : "inline-filter-chip-muted"}`}
+              onClick={() => onOpenPrsFilter("attention")}
+            >
               {data.counts.attentionPrs} PR attention
-            </Tag>
+            </button>
           </Space>
         </div>
         <div className="team-focus-callout">
@@ -1020,21 +1236,21 @@ function TeamRotationOverview({
             value={data.counts.attentionPrs}
             detail={`${data.counts.pendingPrs} pending | ${oldestPendingPrText(data.pendingPrs)}`}
             tone={data.counts.attentionPrs > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("PRs")}
+            onClick={() => onOpenPrsFilter("attention")}
           />
           <TeamMonitorTile
             label="Testing handoff"
             value={data.testing.queuePrs}
             detail={`${data.testing.staleQueuePrs} stale | avg ${optionalHours(data.testing.averageQueueAgeHours)}`}
             tone={data.testing.staleQueuePrs > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("PRs")}
+            onClick={() => onOpenPrsFilter("testing")}
           />
           <TeamMonitorTile
             label="People focus"
             value={data.people.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0).length}
             detail={`${data.people.length} watched | ${data.people.reduce((sum, person) => sum + person.needsTriageIssues, 0)} triage`}
             tone={peopleFocus.length > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("People")}
+            onClick={() => onOpenPeopleFilter("attention")}
           />
           <TeamMonitorTile
             label="Data confidence"
@@ -1073,7 +1289,7 @@ function TeamRotationOverview({
             count={data.counts.attentionPrs}
             actionLabel="Open PRs"
             tone="attention"
-            onAction={() => onNavigate("PRs")}
+            onAction={() => onOpenPrsFilter("attention")}
           >
             {prRisks.slice(0, 6).map((pr) => (
               <TeamPrRiskRow pr={pr} key={pr.number} />
@@ -1084,7 +1300,7 @@ function TeamRotationOverview({
             count={data.testing.queuePrs}
             actionLabel="Open PRs"
             tone={data.testing.staleQueuePrs > 0 ? "critical" : "attention"}
-            onAction={() => onNavigate("PRs")}
+            onAction={() => onOpenPrsFilter("testing")}
           >
             {testingPrs.slice(0, 5).map((pr) => (
               <TeamPrRiskRow pr={pr} key={pr.number} />
@@ -2129,10 +2345,10 @@ function CriticalIssueBoard({
         <CriticalIssueLane
           title="s0 Execution Risks"
           description="s0 issues sorted by owner, linked PR, blocker, and evidence risk."
-          issues={sZeroIssues.slice(0, 10)}
+          issues={sZeroIssues}
           tone="attention"
           emptyText="No active s0 issues"
-          hiddenCount={Math.max(0, sZeroIssues.length - 10)}
+          visibleLimit={10}
         />
         {otherCriticalIssues.length > 0 ? (
           <CriticalIssueLane
@@ -2185,21 +2401,193 @@ function CriticalBoardStat({
   );
 }
 
+function PrBoardSummary({
+  prs,
+  filteredPrs,
+  scopeFilter,
+  onScopeFilterChange
+}: {
+  prs: PendingPrView[];
+  filteredPrs: PendingPrView[];
+  scopeFilter: PrScopeFilter;
+  onScopeFilterChange: (value: PrScopeFilter) => void;
+}) {
+  const attentionPrs = prs.filter((pr) => pr.attentionFlags.length > 0).length;
+  const testingPrs = prs.filter(isTestingQueuePr).length;
+  const staleTestingPrs = prs.filter(isTestingStalePr).length;
+  const ciFailedPrs = prs.filter(prHasFailedCi).length;
+  const requestedChangePrs = prs.filter(prHasRequestChanges).length;
+  const conflictPrs = prs.filter(prHasConflict).length;
+  const noIssuePrs = prs.filter((pr) => pr.linkedIssueNumbers.length === 0).length;
+  const noActionPrs = prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length;
+
+  return (
+    <div className="critical-board-summary pr-board-summary" aria-label="Pending PR summary">
+      <CriticalBoardStat
+        label="shown"
+        value={filteredPrs.length}
+        tone={filteredPrs.length > 0 ? "attention" : "good"}
+        active={scopeFilter !== "all"}
+        onClick={() => onScopeFilterChange("all")}
+      />
+      <CriticalBoardStat
+        label="attention"
+        value={attentionPrs}
+        tone={attentionPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "attention"}
+        onClick={() => onScopeFilterChange("attention")}
+      />
+      <CriticalBoardStat
+        label="testing"
+        value={testingPrs}
+        tone={testingPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "testing"}
+        onClick={() => onScopeFilterChange("testing")}
+      />
+      <CriticalBoardStat
+        label="stale testing"
+        value={staleTestingPrs}
+        tone={staleTestingPrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "stale_testing"}
+        onClick={() => onScopeFilterChange("stale_testing")}
+      />
+      <CriticalBoardStat
+        label="CI failed"
+        value={ciFailedPrs}
+        tone={ciFailedPrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "ci_failed"}
+        onClick={() => onScopeFilterChange("ci_failed")}
+      />
+      <CriticalBoardStat
+        label="request changes"
+        value={requestedChangePrs}
+        tone={requestedChangePrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "request_changes"}
+        onClick={() => onScopeFilterChange("request_changes")}
+      />
+      <CriticalBoardStat
+        label="conflict"
+        value={conflictPrs}
+        tone={conflictPrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "conflict"}
+        onClick={() => onScopeFilterChange("conflict")}
+      />
+      <CriticalBoardStat
+        label="no linked issue"
+        value={noIssuePrs}
+        tone={noIssuePrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "no_issue"}
+        onClick={() => onScopeFilterChange("no_issue")}
+      />
+      <CriticalBoardStat
+        label="no action 24h"
+        value={noActionPrs}
+        tone={noActionPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "no_action_24h"}
+        onClick={() => onScopeFilterChange("no_action_24h")}
+      />
+    </div>
+  );
+}
+
+function PeopleBoardSummary({
+  people,
+  personalViews,
+  filteredPeople,
+  scopeFilter,
+  onScopeFilterChange
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  filteredPeople: PersonSummary[];
+  scopeFilter: PeopleScopeFilter;
+  onScopeFilterChange: (value: PeopleScopeFilter) => void;
+}) {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const criticalPeople = people.filter((person) => person.activeCriticalIssues > 0).length;
+  const attentionPeople = people.filter((person) => person.attentionPrs > 0).length;
+  const triagePeople = people.filter((person) => person.needsTriageIssues > 0).length;
+  const pendingPrPeople = people.filter((person) => person.pendingPrs > 0).length;
+  const testingPeople = people.filter((person) => testingCountForPeople(person.login, personalByLogin) > 0).length;
+  const yesterdayPrPeople = people.filter(
+    (person) => person.prsCreatedYesterday + person.prsMergedYesterday > 0
+  ).length;
+
+  return (
+    <div className="critical-board-summary people-board-summary" aria-label="People summary">
+      <CriticalBoardStat
+        label="shown"
+        value={filteredPeople.length}
+        tone={filteredPeople.length > 0 ? "attention" : "good"}
+        active={scopeFilter !== "all"}
+        onClick={() => onScopeFilterChange("all")}
+      />
+      <CriticalBoardStat
+        label="s-1/s0"
+        value={criticalPeople}
+        tone={criticalPeople > 0 ? "critical" : "good"}
+        active={scopeFilter === "critical"}
+        onClick={() => onScopeFilterChange("critical")}
+      />
+      <CriticalBoardStat
+        label="PR attention"
+        value={attentionPeople}
+        tone={attentionPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "attention"}
+        onClick={() => onScopeFilterChange("attention")}
+      />
+      <CriticalBoardStat
+        label="triage"
+        value={triagePeople}
+        tone={triagePeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "triage"}
+        onClick={() => onScopeFilterChange("triage")}
+      />
+      <CriticalBoardStat
+        label="pending PR"
+        value={pendingPrPeople}
+        tone={pendingPrPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "pending_pr"}
+        onClick={() => onScopeFilterChange("pending_pr")}
+      />
+      <CriticalBoardStat
+        label="testing"
+        value={testingPeople}
+        tone={testingPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "testing"}
+        onClick={() => onScopeFilterChange("testing")}
+      />
+      <CriticalBoardStat
+        label="yesterday PR"
+        value={yesterdayPrPeople}
+        tone={yesterdayPrPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "yesterday_pr"}
+        onClick={() => onScopeFilterChange("yesterday_pr")}
+      />
+    </div>
+  );
+}
+
 function CriticalIssueLane({
   title,
   description,
   issues,
   tone,
   emptyText,
-  hiddenCount = 0
+  visibleLimit
 }: {
   title: string;
   description: string;
   issues: CriticalIssueView[];
   tone: "critical" | "attention" | "normal";
   emptyText: string;
-  hiddenCount?: number;
+  visibleLimit?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOverflow = visibleLimit !== undefined && issues.length > visibleLimit;
+  const visibleIssues = hasOverflow && !expanded ? issues.slice(0, visibleLimit) : issues;
+  const hiddenCount = Math.max(0, issues.length - visibleIssues.length);
+
   return (
     <section className={`critical-lane critical-lane-${tone}`}>
       <div className="critical-lane-heading">
@@ -2207,21 +2595,29 @@ function CriticalIssueLane({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
-          {issues.length + hiddenCount}
-        </Tag>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{issues.length}</Tag>
       </div>
-      {issues.length === 0 ? (
+      {visibleIssues.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />
       ) : (
         <div className="critical-issue-list">
-          {issues.map((issue) => (
+          {visibleIssues.map((issue) => (
             <CriticalIssueBoardRow issue={issue} key={issue.number} />
           ))}
         </div>
       )}
       {hiddenCount > 0 ? (
-        <div className="critical-lane-more">+{hiddenCount} additional s0 issues in the table</div>
+        <button type="button" className="critical-lane-more" onClick={() => setExpanded(true)}>
+          +{hiddenCount} additional s0 issues. Show all in this lane
+        </button>
+      ) : hasOverflow && expanded ? (
+        <button
+          type="button"
+          className="critical-lane-more critical-lane-more-muted"
+          onClick={() => setExpanded(false)}
+        >
+          Show compact list
+        </button>
       ) : null}
     </section>
   );
@@ -2293,7 +2689,7 @@ function isTestingStalePr(pr: PendingPrView): boolean {
   return pr.attentionFlags.includes("testing_stalled") || (pr.testingQueueAgeHours ?? 0) >= 24;
 }
 
-function sortTestingQueuePrs(prs: PendingPrView[]): PendingPrView[] {
+function sortTestingQueuePrs<T extends PendingPrView>(prs: T[]): T[] {
   return [...prs].sort((left, right) => {
     const staleDelta = Number(isTestingStalePr(right)) - Number(isTestingStalePr(left));
     if (staleDelta !== 0) {
@@ -2375,10 +2771,12 @@ function testingRiskColor(risk: string): string {
 
 function TestingCommandBoard({
   pendingPrs,
-  testing
+  testing,
+  onOpenPrsFilter
 }: {
   pendingPrs: PendingPrView[];
   testing: DashboardSummary["testing"];
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
 }) {
   const queuePrs = sortTestingQueuePrs(pendingPrs.filter(isTestingQueuePr));
   const stalePrs = queuePrs.filter(isTestingStalePr);
@@ -2404,23 +2802,40 @@ function TestingCommandBoard({
   return (
     <div className="testing-command-board">
       <div className="testing-command-summary" aria-label="Testing command summary">
-        <TestingBoardStat label="testing queue" value={testing.queuePrs} tone="normal" />
-        <TestingBoardStat label="stale handoff" value={testing.staleQueuePrs} tone="critical" />
+        <TestingBoardStat
+          label="testing queue"
+          value={testing.queuePrs}
+          tone="normal"
+          onClick={() => onOpenPrsFilter("testing")}
+        />
+        <TestingBoardStat
+          label="stale handoff"
+          value={testing.staleQueuePrs}
+          tone="critical"
+          onClick={() => onOpenPrsFilter("stale_testing")}
+        />
         <TestingBoardStat
           label="avg queue age"
           value={testing.averageQueueAgeHours === null ? "-" : hours(testing.averageQueueAgeHours)}
           tone={testing.averageQueueAgeHours !== null && testing.averageQueueAgeHours >= 24 ? "attention" : "normal"}
         />
-        <TestingBoardStat label="tester lanes" value={testing.testers.length} tone="normal" />
+        <TestingBoardStat
+          label="tester lanes"
+          value={testing.testers.length}
+          tone="normal"
+          onClick={() => onOpenPrsFilter("testing")}
+        />
         <TestingBoardStat
           label="closed no pass"
           value={testing.closedWithoutPassSignalSamples}
           tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
+          onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
           label="partial events"
           value={partialTransitions}
           tone={partialTransitions > 0 ? "attention" : "normal"}
+          onClick={() => onOpenPrsFilter("testing")}
         />
       </div>
 
@@ -2443,24 +2858,24 @@ function TestingCommandBoard({
         <TestingQueueLane
           title="Stale Testing Handoffs"
           description="PRs in testing for more than a day or flagged by testing attention rules."
-          prs={stalePrs.slice(0, 8)}
-          hiddenCount={Math.max(0, stalePrs.length - 8)}
+          prs={stalePrs}
+          visibleLimit={8}
           tone="critical"
           emptyText="No stale testing handoffs in cached pending PRs"
         />
         <TestingQueueLane
           title="Missing Tester Owner"
           description="Testing-state PRs where the cache cannot identify a tester owner."
-          prs={missingTesterPrs.slice(0, 6)}
-          hiddenCount={Math.max(0, missingTesterPrs.length - 6)}
+          prs={missingTesterPrs}
+          visibleLimit={6}
           tone="attention"
           emptyText="All visible testing PRs have tester owners"
         />
         <TestingQueueLane
           title="Active Testing Movement"
           description="Recently active testing handoffs without stale attention flags."
-          prs={activePrs.slice(0, 6)}
-          hiddenCount={Math.max(0, activePrs.length - 6)}
+          prs={activePrs}
+          visibleLimit={6}
           tone="normal"
           emptyText="No active testing movement outside stale lanes"
         />
@@ -2472,35 +2887,50 @@ function TestingCommandBoard({
 function TestingBoardStat({
   label,
   value,
-  tone
+  tone,
+  onClick
 }: {
   label: string;
   value: string | number;
   tone: "critical" | "attention" | "normal" | "muted";
+  onClick?: () => void;
 }) {
-  return (
-    <span className={`testing-board-stat testing-board-stat-${tone}`}>
+  const content = (
+    <>
       <strong>{value}</strong>
       <small>{label}</small>
-    </span>
+    </>
   );
+  if (onClick) {
+    return (
+      <button type="button" className={`testing-board-stat testing-board-stat-${tone}`} onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+  return <span className={`testing-board-stat testing-board-stat-${tone}`}>{content}</span>;
 }
 
 function TestingQueueLane({
   title,
   description,
   prs,
-  hiddenCount,
   tone,
-  emptyText
+  emptyText,
+  visibleLimit
 }: {
   title: string;
   description: string;
   prs: PendingPrView[];
-  hiddenCount: number;
   tone: "critical" | "attention" | "normal";
   emptyText: string;
+  visibleLimit?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOverflow = visibleLimit !== undefined && prs.length > visibleLimit;
+  const visiblePrs = hasOverflow && !expanded ? prs.slice(0, visibleLimit) : prs;
+  const hiddenCount = Math.max(0, prs.length - visiblePrs.length);
+
   return (
     <section className={`testing-queue-lane testing-queue-lane-${tone}`}>
       <div className="testing-queue-lane-heading">
@@ -2508,13 +2938,11 @@ function TestingQueueLane({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
-          {prs.length + hiddenCount}
-        </Tag>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{prs.length}</Tag>
       </div>
-      {prs.length > 0 ? (
+      {visiblePrs.length > 0 ? (
         <div className="testing-queue-list">
-          {prs.map((pr) => (
+          {visiblePrs.map((pr) => (
             <TestingQueueRow pr={pr} key={pr.number} />
           ))}
         </div>
@@ -2523,7 +2951,19 @@ function TestingQueueLane({
           <Text type="secondary">{emptyText}</Text>
         </div>
       )}
-      {hiddenCount > 0 ? <div className="testing-queue-more">+{hiddenCount} more PRs in this lane</div> : null}
+      {hiddenCount > 0 ? (
+        <button type="button" className="testing-queue-more" onClick={() => setExpanded(true)}>
+          +{hiddenCount} more PRs. Show all in this lane
+        </button>
+      ) : hasOverflow && expanded ? (
+        <button
+          type="button"
+          className="testing-queue-more testing-queue-more-muted"
+          onClick={() => setExpanded(false)}
+        >
+          Show compact list
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -2598,12 +3038,14 @@ function PersonWorkloadBoard({
   personalViews,
   selectedLogin,
   onSelect,
+  onMetricSelect,
   compact = false
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   selectedLogin: string | null;
   onSelect: (login: string) => void;
+  onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
   compact?: boolean;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
@@ -2628,59 +3070,91 @@ function PersonWorkloadBoard({
         const status = personWorkloadStatus(person);
         const reasons = personPrimaryReasons(person, testingPrs);
         const selected = selectedLogin === person.login;
+        const openMetric = (metric: PersonalDrilldownFilter) => {
+          if (onMetricSelect) {
+            onMetricSelect(person.login, metric);
+            return;
+          }
+          onSelect(person.login);
+        };
 
         return (
-          <button
-            type="button"
-            className={`person-card person-card-${status}${selected ? " is-selected" : ""}`}
-            aria-pressed={selected}
-            aria-label={`Open ${person.login} workbench`}
-            key={person.login}
-            onClick={() => onSelect(person.login)}
-          >
-            <span className="person-card-header">
-              <span className="person-avatar" aria-hidden="true">
-                {person.login.slice(0, 1).toUpperCase()}
+          <article className={`person-card person-card-${status}${selected ? " is-selected" : ""}`} key={person.login}>
+            <button
+              type="button"
+              className="person-card-open"
+              aria-pressed={selected}
+              aria-label={`Open ${person.login} workbench`}
+              onClick={() => onSelect(person.login)}
+            >
+              <span className="person-card-header">
+                <span className="person-avatar" aria-hidden="true">
+                  {person.login.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="person-card-title">
+                  <Text strong>{person.login}</Text>
+                  <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
+                </span>
               </span>
-              <span className="person-card-title">
-                <Text strong>{person.login}</Text>
-                <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
-              </span>
-            </span>
+            </button>
             <span className="person-stat-grid">
-              <span>
+              <button
+                type="button"
+                onClick={() => openMetric("active_issues")}
+                aria-label={`Open ${person.login} active s-1/s0 issues`}
+              >
                 <strong>{person.activeCriticalIssues}</strong>
                 <small>s-1/s0</small>
-              </span>
-              <span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openMetric("pr_attention")}
+                aria-label={`Open ${person.login} PR attention items`}
+              >
                 <strong>{person.attentionPrs}</strong>
                 <small>attention</small>
-              </span>
-              <span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openMetric("triage")}
+                aria-label={`Open ${person.login} needs triage issues`}
+              >
                 <strong>{person.needsTriageIssues}</strong>
                 <small>triage</small>
-              </span>
-              <span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openMetric("pending_pr")}
+                aria-label={`Open ${person.login} pending PRs`}
+              >
                 <strong>{person.pendingPrs}</strong>
                 <small>pending PR</small>
-              </span>
-              <span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openMetric("testing")}
+                aria-label={`Open ${person.login} testing handoff PRs`}
+              >
                 <strong>{testingPrs}</strong>
                 <small>testing</small>
-              </span>
-              <span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openMetric("yesterday_pr")}
+                aria-label={`Open ${person.login} yesterday PR activity`}
+              >
                 <strong>
                   {person.prsCreatedYesterday}/{person.prsMergedYesterday}
                 </strong>
                 <small>PR yday</small>
-              </span>
+              </button>
             </span>
             <span className="person-reasons">
               {reasons.slice(0, 3).map((reason) => (
                 <span key={reason}>{reason}</span>
               ))}
             </span>
-          </button>
+          </article>
         );
       })}
     </div>
@@ -2900,7 +3374,6 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   const criticalItems = items.filter((item) => item.tone === "critical");
   const attentionItems = items.filter((item) => item.tone === "attention");
   const routineItems = items.filter((item) => item.tone !== "critical" && item.tone !== "attention");
-  const visibleRoutineItems = routineItems.slice(0, 6);
   const prItems = items.filter((item) => item.objectType === "pull_request");
   const issueItems = items.filter((item) => item.objectType === "issue");
   const oldestPr = maxAge(prItems);
@@ -2963,10 +3436,10 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
         <ActionQueueSection
           title="Routine movement"
           description="Pending, deferred, created, or merged work to keep rotating."
-          items={visibleRoutineItems}
+          items={routineItems}
           offset={criticalItems.length + attentionItems.length}
           tone="normal"
-          hiddenCount={Math.max(0, routineItems.length - visibleRoutineItems.length)}
+          visibleLimit={6}
         />
       </div>
     </div>
@@ -2999,16 +3472,21 @@ function ActionQueueSection({
   items,
   offset,
   tone,
-  hiddenCount = 0
+  visibleLimit
 }: {
   title: string;
   description: string;
   items: PersonalActivityItem[];
   offset: number;
   tone: "critical" | "attention" | "normal";
-  hiddenCount?: number;
+  visibleLimit?: number;
 }) {
-  if (items.length === 0 && hiddenCount === 0) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOverflow = visibleLimit !== undefined && items.length > visibleLimit;
+  const visibleItems = hasOverflow && !expanded ? items.slice(0, visibleLimit) : items;
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  if (items.length === 0) {
     return null;
   }
 
@@ -3019,17 +3497,23 @@ function ActionQueueSection({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <ActionQueueSectionStats hiddenCount={hiddenCount} items={items} tone={tone} />
+        <ActionQueueSectionStats hiddenCount={hiddenCount} items={visibleItems} tone={tone} />
       </div>
-      {items.length > 0 ? (
+      {visibleItems.length > 0 ? (
         <div className="action-queue-section-list" role="list">
-          {items.map((item, index) => (
+          {visibleItems.map((item, index) => (
             <PersonalActionQueueItem index={offset + index + 1} item={item} key={item.id} />
           ))}
         </div>
       ) : null}
       {hiddenCount > 0 ? (
-        <div className="action-queue-more">+{hiddenCount} routine objects hidden in this compact queue</div>
+        <button type="button" className="action-queue-more" onClick={() => setExpanded(true)}>
+          +{hiddenCount} routine objects hidden. Show all
+        </button>
+      ) : hasOverflow && expanded ? (
+        <button type="button" className="action-queue-more action-queue-more-muted" onClick={() => setExpanded(false)}>
+          Show compact queue
+        </button>
       ) : null}
     </section>
   );
@@ -3280,7 +3764,6 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
   const criticalRows = chart.rows.filter((row) => row.tone === "critical");
   const attentionRows = chart.rows.filter((row) => row.tone === "attention");
   const routineRows = chart.rows.filter((row) => row.tone !== "critical" && row.tone !== "attention");
-  const visibleRoutineRows = routineRows.slice(0, 8);
 
   return (
     <div className="flow-map">
@@ -3314,9 +3797,9 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
         <FlowThreadSection
           title="Routine threads"
           description="Open movement that should keep rotating after critical and blocked work."
-          rows={visibleRoutineRows}
+          rows={routineRows}
           tone="normal"
-          hiddenCount={Math.max(0, routineRows.length - visibleRoutineRows.length)}
+          visibleLimit={8}
         />
       </div>
     </div>
@@ -3328,15 +3811,20 @@ function FlowThreadSection({
   description,
   rows,
   tone,
-  hiddenCount = 0
+  visibleLimit
 }: {
   title: string;
   description: string;
   rows: PersonalGanttRow[];
   tone: "critical" | "attention" | "normal";
-  hiddenCount?: number;
+  visibleLimit?: number;
 }) {
-  if (rows.length === 0 && hiddenCount === 0) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOverflow = visibleLimit !== undefined && rows.length > visibleLimit;
+  const visibleRows = hasOverflow && !expanded ? rows.slice(0, visibleLimit) : rows;
+  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+
+  if (rows.length === 0) {
     return null;
   }
 
@@ -3347,18 +3835,24 @@ function FlowThreadSection({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
-          {rows.length + hiddenCount}
-        </Tag>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{rows.length}</Tag>
       </div>
-      {rows.length > 0 ? (
+      {visibleRows.length > 0 ? (
         <div className="flow-thread-list" role="list">
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <PersonalFlowThread row={row} key={row.id} />
           ))}
         </div>
       ) : null}
-      {hiddenCount > 0 ? <div className="flow-thread-more">+{hiddenCount} routine threads hidden</div> : null}
+      {hiddenCount > 0 ? (
+        <button type="button" className="flow-thread-more" onClick={() => setExpanded(true)}>
+          +{hiddenCount} routine threads hidden. Show all
+        </button>
+      ) : hasOverflow && expanded ? (
+        <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={() => setExpanded(false)}>
+          Show compact list
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -3371,6 +3865,9 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
+  const [expandedPrs, setExpandedPrs] = useState(false);
+  const visiblePrs = expandedPrs ? row.prs : row.prs.slice(0, 6);
+  const hiddenPrCount = Math.max(0, row.prs.length - visiblePrs.length);
 
   return (
     <article className={`flow-thread flow-thread-${row.tone}`} role="listitem">
@@ -3430,10 +3927,18 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
             <div className="flow-pr-empty">No linked PR visible</div>
           ) : (
             <>
-              {row.prs.slice(0, 6).map((pr) => (
+              {visiblePrs.map((pr) => (
                 <FlowPrRow pr={pr} key={pr.number} />
               ))}
-              {row.prs.length > 6 ? <div className="flow-pr-more">+{row.prs.length - 6} more PRs</div> : null}
+              {hiddenPrCount > 0 ? (
+                <button type="button" className="flow-pr-more" onClick={() => setExpandedPrs(true)}>
+                  +{hiddenPrCount} more PRs. Show all
+                </button>
+              ) : row.prs.length > 6 && expandedPrs ? (
+                <button type="button" className="flow-pr-more flow-pr-more-muted" onClick={() => setExpandedPrs(false)}>
+                  Show compact PR list
+                </button>
+              ) : null}
             </>
           )}
         </div>
@@ -3592,11 +4097,15 @@ function activityReasonColor(reason: string): string {
 function PersonalRotationOverview({
   person,
   chart,
-  activityItems
+  activityItems,
+  drilldownFilter,
+  onDrilldownChange
 }: {
   person: PersonalActionView;
   chart: PersonalGanttChart;
   activityItems: PersonalActivityItem[];
+  drilldownFilter: PersonalDrilldownFilter;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
 }) {
   const criticalItems = activityItems.filter((item) => item.tone === "critical");
   const attentionItems = activityItems.filter((item) => item.tone === "attention");
@@ -3618,9 +4127,31 @@ function PersonalRotationOverview({
             <Text type="secondary">Issue and PR rotation for {person.login}</Text>
           </div>
           <Space size={[6, 6]} wrap>
-            <Tag color={criticalItems.length > 0 ? "red" : "default"}>{criticalItems.length} active s-1/s0</Tag>
-            <Tag color={attentionItems.length > 0 ? "orange" : "default"}>{attentionItems.length} attention</Tag>
-            <Tag>{chart.rows.length} threads</Tag>
+            <button
+              type="button"
+              className={`inline-filter-chip ${criticalItems.length > 0 ? "inline-filter-chip-red" : ""} ${
+                drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={() => onDrilldownChange("active_issues")}
+            >
+              {criticalItems.length} active s-1/s0
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${attentionItems.length > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={() => onDrilldownChange("pr_attention")}
+            >
+              {attentionItems.length} attention
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${drilldownFilter === "threads" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("threads")}
+            >
+              {chart.rows.length} threads
+            </button>
           </Space>
         </div>
         <div className="team-focus-callout personal-focus-callout">
@@ -3636,30 +4167,35 @@ function PersonalRotationOverview({
             value={person.activeCriticalIssues.length}
             detail={criticalActivitySummary(criticalItems)}
             tone={person.activeCriticalIssues.length > 0 ? "critical" : "good"}
+            onClick={() => onDrilldownChange("active_issues")}
           />
           <TeamMonitorTile
             label="PR blockers"
             value={blockedPrItems.length}
             detail={`${person.attentionPrs.length} attention | ${oldestPersonalPrText(person.pendingPrs)}`}
             tone={blockedPrItems.length > 0 ? "attention" : "good"}
+            onClick={() => onDrilldownChange("pr_attention")}
           />
           <TeamMonitorTile
             label="Testing handoff"
             value={person.testingPrs.length}
             detail={`${testingStalePrs.length} stale | ${personalTestingOwnerGaps(person.testingPrs)} owner gaps`}
             tone={testingStalePrs.length > 0 ? "critical" : person.testingPrs.length > 0 ? "attention" : "good"}
+            onClick={() => onDrilldownChange("testing")}
           />
           <TeamMonitorTile
             label="Triage"
             value={person.needsTriageIssues.length}
             detail={`${person.deferredIssues.length} deferred`}
             tone={person.needsTriageIssues.length > 0 ? "attention" : "good"}
+            onClick={() => onDrilldownChange("triage")}
           />
           <TeamMonitorTile
             label="Yesterday PR"
             value={person.prsCreatedYesterday.length + person.prsMergedYesterday.length}
             detail={`${person.prsCreatedYesterday.length} created | ${person.prsMergedYesterday.length} merged`}
             tone="good"
+            onClick={() => onDrilldownChange("yesterday_pr")}
           />
         </div>
       </section>
@@ -3843,16 +4379,160 @@ function personalTestingOwnerGaps(prs: PersonalPullRequestView[]): number {
   return prs.filter((pr) => isTestingQueuePr(pr) && pr.testingTesters.length === 0).length;
 }
 
+function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
+  if (filter === "active_issues") {
+    return "Active s-1/s0 Issues";
+  }
+  if (filter === "pr_attention") {
+    return "PR Attention";
+  }
+  if (filter === "pending_pr") {
+    return "Pending PRs";
+  }
+  if (filter === "testing") {
+    return "Testing Handoff";
+  }
+  if (filter === "triage") {
+    return "Needs Triage";
+  }
+  if (filter === "yesterday_pr") {
+    return "Yesterday PR";
+  }
+  return "Issue-PR Threads";
+}
+
+function PersonalDrilldownBoard({
+  person,
+  chart,
+  filter
+}: {
+  person: PersonalActionView;
+  chart: PersonalGanttChart;
+  filter: PersonalDrilldownFilter;
+}) {
+  const title = personalDrilldownLabel(filter);
+
+  if (filter === "threads") {
+    return (
+      <section className="personal-filtered-board personal-filtered-board-critical">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Space size={[4, 4]} wrap>
+            <Tag>{chart.rows.length} threads</Tag>
+            <Tag>{chart.sharedPrCount} shared PR</Tag>
+            <Tag color={chart.unlinkedPrCount > 0 ? "orange" : "default"}>{chart.unlinkedPrCount} unlinked PR</Tag>
+          </Space>
+        </div>
+        <div className="team-rotation-list">
+          {chart.rows.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR threads" />
+          ) : (
+            chart.rows.slice(0, 8).map((row) => <PersonalRotationThreadRow row={row} key={row.id} />)
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  if (filter === "yesterday_pr") {
+    return (
+      <section className="personal-filtered-board">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Space size={[4, 4]} wrap>
+            <Tag>{person.prsCreatedYesterday.length} created</Tag>
+            <Tag>{person.prsMergedYesterday.length} merged</Tag>
+          </Space>
+        </div>
+        <div className="work-lane-grid work-lane-grid-secondary">
+          <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
+            <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
+          </WorkLane>
+          <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
+            <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
+          </WorkLane>
+        </div>
+      </section>
+    );
+  }
+
+  if (filter === "active_issues") {
+    return (
+      <section className="personal-filtered-board personal-filtered-board-critical">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Tag color={person.activeCriticalIssues.length > 0 ? "red" : "default"}>
+            {person.activeCriticalIssues.length} active
+          </Tag>
+        </div>
+        <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
+      </section>
+    );
+  }
+
+  if (filter === "pr_attention") {
+    return (
+      <section className="personal-filtered-board personal-filtered-board-attention">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Tag color={person.attentionPrs.length > 0 ? "orange" : "default"}>{person.attentionPrs.length} PR</Tag>
+        </div>
+        <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
+      </section>
+    );
+  }
+
+  if (filter === "pending_pr") {
+    return (
+      <section className="personal-filtered-board">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Tag>{person.pendingPrs.length} PR</Tag>
+        </div>
+        <PullRequestCardList prs={person.pendingPrs} emptyText="No pending PRs" />
+      </section>
+    );
+  }
+
+  if (filter === "testing") {
+    return (
+      <section className="personal-filtered-board personal-filtered-board-attention">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Tag color={person.testingPrs.some(isTestingStalePr) ? "red" : "blue"}>{person.testingPrs.length} PR</Tag>
+        </div>
+        <PullRequestCardList prs={sortTestingQueuePrs(person.testingPrs)} emptyText="No testing handoff PRs" />
+      </section>
+    );
+  }
+
+  return (
+    <section className="personal-filtered-board">
+      <div className="subsection-heading">
+        <Title level={5}>{title}</Title>
+        <Tag color={person.needsTriageIssues.length > 0 ? "gold" : "default"}>
+          {person.needsTriageIssues.length} issue
+        </Tag>
+      </div>
+      <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
+    </section>
+  );
+}
+
 function SelectedPersonWorkbench({
   person,
   analyticsPeriod,
   trendPoints,
-  onAnalyticsPeriodChange
+  onAnalyticsPeriodChange,
+  drilldownFilter,
+  onDrilldownChange
 }: {
   person: PersonalActionView;
   analyticsPeriod: MetricPeriod;
   trendPoints: TrendMetricPoint[];
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
+  drilldownFilter: PersonalDrilldownFilter;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
 }) {
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
@@ -3893,7 +4573,15 @@ function SelectedPersonWorkbench({
         </div>
       </div>
 
-      <PersonalRotationOverview person={person} chart={gantt} activityItems={activityItems} />
+      <PersonalRotationOverview
+        person={person}
+        chart={gantt}
+        activityItems={activityItems}
+        drilldownFilter={drilldownFilter}
+        onDrilldownChange={onDrilldownChange}
+      />
+
+      <PersonalDrilldownBoard person={person} chart={gantt} filter={drilldownFilter} />
 
       <details className="secondary-disclosure personal-detail-disclosure">
         <summary>
@@ -4011,6 +4699,9 @@ export default function App() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
+  const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
+  const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
+  const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
@@ -4132,6 +4823,12 @@ export default function App() {
     selectView("Personal", login);
   }
 
+  function openPersonalDrilldown(login: string, filter: PersonalDrilldownFilter) {
+    setPersonalDrilldownFilter(filter);
+    setSelectedPerson(login);
+    selectView("Personal", login);
+  }
+
   function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
     if (filters.ai) {
       setCriticalIssueAiFilter(filters.ai);
@@ -4140,6 +4837,16 @@ export default function App() {
       setCriticalIssueScopeFilter(filters.scope);
     }
     selectView("Issues");
+  }
+
+  function openPrsWithFilter(scope: PrScopeFilter) {
+    setPrScopeFilter(scope);
+    selectView("PRs");
+  }
+
+  function openPeopleWithFilter(scope: PeopleScopeFilter) {
+    setPeopleScopeFilter(scope);
+    selectView("People");
   }
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
@@ -5106,6 +5813,8 @@ export default function App() {
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
+  const filteredPendingPrs = data ? filterPendingPrs(data.pendingPrs, prScopeFilter) : [];
+  const filteredPeople = data ? filterPeople(data.people, data.personalViews, peopleScopeFilter) : [];
   const teamFlowSummary = data
     ? flowEfficiencySummary({
         points: teamTrendPoints,
@@ -5296,6 +6005,8 @@ export default function App() {
                 onCriticalAiFilterChange={setCriticalIssueAiFilter}
                 onCriticalScopeFilterChange={setCriticalIssueScopeFilter}
                 onOpenIssuesFilter={openIssuesWithFilter}
+                onOpenPrsFilter={openPrsWithFilter}
+                onOpenPeopleFilter={openPeopleWithFilter}
               />
             ) : null}
 
@@ -5561,20 +6272,42 @@ export default function App() {
                 <div className="section-heading">
                   <Title level={4}>Testing Flow</Title>
                   <Space size={[6, 6]} wrap>
-                    <Tag color={data.testing.queuePrs > 0 ? "blue" : "default"}>{data.testing.queuePrs} queued</Tag>
-                    <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${data.testing.queuePrs > 0 ? "" : "inline-filter-chip-muted"}`}
+                      onClick={() => openPrsWithFilter("testing")}
+                    >
+                      {data.testing.queuePrs} queued
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        data.testing.staleQueuePrs > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+                      }`}
+                      onClick={() => openPrsWithFilter("stale_testing")}
+                    >
                       {data.testing.staleQueuePrs} stale
-                    </Tag>
+                    </button>
                     <Tag>{data.testing.transitionEvents} transitions</Tag>
                     <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
                     <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag>
-                    <Tag color={data.testing.closedWithoutPassSignalSamples > 0 ? "orange" : "default"}>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        data.testing.closedWithoutPassSignalSamples > 0 ? "" : "inline-filter-chip-muted"
+                      }`}
+                      onClick={() => openPrsWithFilter("testing")}
+                    >
                       {data.testing.closedWithoutPassSignalSamples} closed no pass
-                    </Tag>
+                    </button>
                     <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
                   </Space>
                 </div>
-                <TestingCommandBoard pendingPrs={data.pendingPrs} testing={data.testing} />
+                <TestingCommandBoard
+                  pendingPrs={data.pendingPrs}
+                  testing={data.testing}
+                  onOpenPrsFilter={openPrsWithFilter}
+                />
                 <Table
                   rowKey="login"
                   size="middle"
@@ -5602,13 +6335,35 @@ export default function App() {
                 <div className="section-heading">
                   <Title level={4}>Personal Workbench</Title>
                   <Space size={[6, 6]} wrap>
-                    <Tag color={selectedPersonalView?.summary.activeCriticalIssues ? "red" : "default"}>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        selectedPersonalView?.summary.activeCriticalIssues
+                          ? "inline-filter-chip-red"
+                          : "inline-filter-chip-muted"
+                      } ${personalDrilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPersonalDrilldownFilter("active_issues")}
+                    >
                       {selectedPersonalView?.summary.activeCriticalIssues ?? 0} s-1/s0
-                    </Tag>
-                    <Tag color={selectedPersonalView?.summary.attentionPrs ? "orange" : "default"}>
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        selectedPersonalView?.summary.attentionPrs ? "" : "inline-filter-chip-muted"
+                      } ${personalDrilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPersonalDrilldownFilter("pr_attention")}
+                    >
                       {selectedPersonalView?.summary.attentionPrs ?? 0} PR attention
-                    </Tag>
-                    <Tag>{selectedPersonalView?.testingPrs.length ?? 0} testing</Tag>
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        personalDrilldownFilter === "testing" ? "inline-filter-chip-active" : ""
+                      }`}
+                      onClick={() => setPersonalDrilldownFilter("testing")}
+                    >
+                      {selectedPersonalView?.testingPrs.length ?? 0} testing
+                    </button>
                   </Space>
                 </div>
                 <PersonWorkloadBoard
@@ -5617,6 +6372,7 @@ export default function App() {
                   personalViews={data.personalViews}
                   selectedLogin={selectedPersonalView?.login ?? null}
                   onSelect={selectPerson}
+                  onMetricSelect={openPersonalDrilldown}
                 />
                 {selectedPersonalView ? (
                   <SelectedPersonWorkbench
@@ -5624,6 +6380,8 @@ export default function App() {
                     analyticsPeriod={analyticsPeriod}
                     trendPoints={personalTrendPoints}
                     onAnalyticsPeriodChange={setAnalyticsPeriod}
+                    drilldownFilter={personalDrilldownFilter}
+                    onDrilldownChange={setPersonalDrilldownFilter}
                   />
                 ) : (
                   <Empty description="No watched users configured for personal action lists" />
@@ -5748,20 +6506,49 @@ export default function App() {
                 <div className="section-heading">
                   <Title level={4}>People Workbench</Title>
                   <Space size={[6, 6]} wrap>
-                    <Tag>{data.people.length} watched</Tag>
-                    <Tag color={data.people.some((person) => person.activeCriticalIssues > 0) ? "red" : "default"}>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("all")}
+                    >
+                      {data.people.length} watched
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        data.people.some((person) => person.activeCriticalIssues > 0)
+                          ? "inline-filter-chip-red"
+                          : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("critical")}
+                    >
                       {data.people.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} s-1/s0
-                    </Tag>
-                    <Tag color={data.people.some((person) => person.attentionPrs > 0) ? "orange" : "default"}>
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        data.people.some((person) => person.attentionPrs > 0) ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("attention")}
+                    >
                       {data.people.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
-                    </Tag>
+                    </button>
                   </Space>
                 </div>
-                <PersonWorkloadBoard
+                <PeopleFilterBar scopeFilter={peopleScopeFilter} onScopeFilterChange={setPeopleScopeFilter} />
+                <PeopleBoardSummary
                   people={data.people}
+                  personalViews={data.personalViews}
+                  filteredPeople={filteredPeople}
+                  scopeFilter={peopleScopeFilter}
+                  onScopeFilterChange={setPeopleScopeFilter}
+                />
+                <PersonWorkloadBoard
+                  people={filteredPeople}
                   personalViews={data.personalViews}
                   selectedLogin={selectedPersonalView?.login ?? null}
                   onSelect={openPersonWorkbench}
+                  onMetricSelect={openPersonalDrilldown}
                 />
               </section>
             ) : null}
@@ -5769,14 +6556,23 @@ export default function App() {
             {view === "PRs" ? (
               <section className="section">
                 <div className="section-heading">
-                  <Title level={4}>Pending PRs</Title>
-                  <Text type="secondary">Stale checks use last human action</Text>
+                  <div>
+                    <Title level={4}>Pending PRs</Title>
+                    <Text type="secondary">{prScopeLabel(prScopeFilter)} | Stale checks use last human action</Text>
+                  </div>
                 </div>
+                <PrFilterBar scopeFilter={prScopeFilter} onScopeFilterChange={setPrScopeFilter} />
+                <PrBoardSummary
+                  prs={data.pendingPrs}
+                  filteredPrs={filteredPendingPrs}
+                  scopeFilter={prScopeFilter}
+                  onScopeFilterChange={setPrScopeFilter}
+                />
                 <Table
                   rowKey="number"
                   size="middle"
                   columns={prColumns}
-                  dataSource={data.pendingPrs}
+                  dataSource={filteredPendingPrs}
                   scroll={{ x: 1220 }}
                   pagination={{ pageSize: 10 }}
                   locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}

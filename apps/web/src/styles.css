@@ -934,12 +934,42 @@ button.critical-board-stat:hover {
 }
 
 .critical-lane-more {
+  appearance: none;
   background: #f9fafb;
+  border: 0;
   border-top: 1px dashed #d1d5db;
   color: #6b7280;
+  cursor: pointer;
   font-size: 12px;
   padding: 8px 10px;
   text-align: center;
+  width: 100%;
+}
+
+.critical-lane-more:hover,
+.testing-queue-more:hover,
+.action-queue-more:hover,
+.flow-pr-more:hover,
+.flow-thread-more:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.critical-lane-more:focus-visible,
+.testing-queue-more:focus-visible,
+.action-queue-more:focus-visible,
+.flow-pr-more:focus-visible,
+.flow-thread-more:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: -2px;
+}
+
+.critical-lane-more-muted,
+.testing-queue-more-muted,
+.action-queue-more-muted,
+.flow-pr-more-muted,
+.flow-thread-more-muted {
+  color: #374151;
 }
 
 .testing-command-board {
@@ -1179,12 +1209,16 @@ button.critical-board-stat:hover {
 }
 
 .testing-queue-more {
+  appearance: none;
   background: #f9fafb;
+  border: 0;
   border-top: 1px dashed #d1d5db;
   color: #6b7280;
+  cursor: pointer;
   font-size: 12px;
   padding: 8px 10px;
   text-align: center;
+  width: 100%;
 }
 
 .profile-setup-summary {
@@ -1639,11 +1673,15 @@ button.critical-board-stat:hover {
 }
 
 .action-queue-more {
+  appearance: none;
   background: #f9fafb;
+  border: 0;
   color: #6b7280;
+  cursor: pointer;
   font-size: 12px;
   padding: 8px 11px;
   text-align: center;
+  width: 100%;
 }
 
 .action-queue-rank,
@@ -2062,12 +2100,21 @@ button.critical-board-stat:hover {
 .flow-pr-empty,
 .flow-pr-more,
 .flow-thread-more {
+  appearance: none;
   background: #f9fafb;
   border: 1px dashed #d1d5db;
   border-radius: 6px;
   color: #6b7280;
+  cursor: pointer;
   font-size: 12px;
   padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.flow-pr-empty {
+  cursor: default;
+  text-align: left;
 }
 
 .flow-thread-more {
