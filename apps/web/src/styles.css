@@ -1204,6 +1204,23 @@ button.critical-board-stat:hover {
   min-width: 0;
 }
 
+.testing-scope-note {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.testing-scope-note .ant-typography {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
 .testing-command-summary {
   display: grid;
   gap: 8px;

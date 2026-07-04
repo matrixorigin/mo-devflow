@@ -3688,6 +3688,11 @@ function TestingCommandBoard({
   const partialTransitions = testing.recentTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
+  const hasTurnoverHistory =
+    testing.transitionEvents > 0 ||
+    testing.requestToPassSamples > 0 ||
+    testing.passToCloseSamples > 0 ||
+    testing.closedWithoutPassSignalSamples > 0;
   const testerRows = [...testing.testers]
     .sort((left, right) => {
       const queueDelta = right.queueIssues - left.queueIssues;
@@ -3697,6 +3702,9 @@ function TestingCommandBoard({
       return (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0);
     })
     .slice(0, 8);
+  const scrollToIssueQueue = () => {
+    document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   if (testing.issues.length === 0 && queuePrs.length === 0 && testing.testers.length === 0) {
     return (
@@ -3706,18 +3714,25 @@ function TestingCommandBoard({
 
   return (
     <div className="testing-command-board">
+      <div className="testing-scope-note">
+        <Text strong>Issue assignment is the active test handoff source.</Text>
+        <Text type="secondary">
+          PR review requests stay review signals unless the repo profile explicitly configures PR reviewer handoff.
+        </Text>
+      </div>
+
       <div className="testing-command-summary" aria-label="Testing command summary">
         <TestingBoardStat
           label="issues in test"
           value={testing.queueIssues}
           tone="normal"
-          onClick={() => onOpenPrsFilter("testing")}
+          onClick={scrollToIssueQueue}
         />
         <TestingBoardStat
           label="waiting >24h"
           value={testing.staleQueueIssues}
           tone="critical"
-          onClick={() => onOpenPrsFilter("stale_testing")}
+          onClick={scrollToIssueQueue}
         />
         <TestingBoardStat
           label="avg issue wait"
@@ -3731,41 +3746,42 @@ function TestingCommandBoard({
         <TestingBoardStat
           label="linked PRs"
           value={testing.queuePrs}
-          tone="normal"
-          onClick={() => onOpenPrsFilter("testing")}
+          tone={testing.queuePrs > 0 ? "normal" : "muted"}
+          onClick={testing.queuePrs > 0 ? () => onOpenPrsFilter("testing") : undefined}
         />
+        <TestingBoardStat label="testers" value={testing.testers.length} tone="normal" onClick={scrollToIssueQueue} />
         <TestingBoardStat
-          label="testers"
-          value={testing.testers.length}
-          tone="normal"
-          onClick={() => onOpenPrsFilter("testing")}
-        />
-        <TestingBoardStat
-          label="test evidence pending"
+          label="linked PR evidence"
           value={evidenceGapPrs.length}
           tone={evidenceGapPrs.length > 0 ? "attention" : "normal"}
-          onClick={() => onOpenPrsFilter("testing_evidence_gap")}
+          onClick={evidenceGapPrs.length > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
         />
-        <TestingBoardStat
-          label="closed without pass"
-          value={testing.closedWithoutPassSignalSamples}
-          tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
-          onClick={() => onOpenPrsFilter("testing")}
-        />
-        <TestingBoardStat
-          label="incomplete history"
-          value={partialTransitions}
-          tone={partialTransitions > 0 ? "attention" : "normal"}
-          onClick={() => onOpenPrsFilter("testing_evidence_gap")}
-        />
+        {hasTurnoverHistory ? (
+          <TestingBoardStat
+            label="closed without pass"
+            value={testing.closedWithoutPassSignalSamples}
+            tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
+            onClick={() => onOpenPrsFilter("testing")}
+          />
+        ) : null}
+        {hasTurnoverHistory ? (
+          <TestingBoardStat
+            label="incomplete history"
+            value={partialTransitions}
+            tone={partialTransitions > 0 ? "attention" : "normal"}
+            onClick={partialTransitions > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
+          />
+        ) : null}
       </div>
 
-      <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
+      {hasTurnoverHistory ? (
+        <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
+      ) : null}
 
       <TestingIssueQueuePanel issues={testing.issues} />
 
       {testerRows.length > 0 ? (
-        <div className="testing-tester-strip" aria-label="Tester queue ownership">
+        <div className="testing-tester-strip" id="testing-tester-queue" aria-label="Tester queue ownership">
           {testerRows.map((tester) => (
             <article className="testing-tester-card" key={tester.login}>
               <div>
@@ -3781,32 +3797,34 @@ function TestingCommandBoard({
         </div>
       ) : null}
 
-      <div className="testing-command-lanes">
-        <TestingQueueLane
-          title="Test Wait Over 24h"
-          description="PRs whose linked issues are assigned to testers and have waited more than a day."
-          prs={stalePrs}
-          visibleLimit={8}
-          tone="critical"
-          emptyText="No issue in test has waited more than a day"
-        />
-        <TestingQueueLane
-          title="Test Evidence Pending"
-          description="PRs linked to test issues where wait time or cache evidence is incomplete."
-          prs={evidenceGapPrs}
-          visibleLimit={6}
-          tone="attention"
-          emptyText="No incomplete linked-issue test data in cached pending PRs"
-        />
-        <TestingQueueLane
-          title="Linked PRs In Test"
-          description="PRs attached to issues already assigned to testers, without current blocker evidence."
-          prs={activePrs}
-          visibleLimit={6}
-          tone="normal"
-          emptyText="No active linked-issue test movement outside waiting lanes"
-        />
-      </div>
+      {queuePrs.length > 0 ? (
+        <div className="testing-command-lanes">
+          <TestingQueueLane
+            title="Test Wait Over 24h"
+            description="PRs whose linked issues are assigned to testers and have waited more than a day."
+            prs={stalePrs}
+            visibleLimit={8}
+            tone="critical"
+            emptyText="No issue in test has waited more than a day"
+          />
+          <TestingQueueLane
+            title="Test Evidence Pending"
+            description="PRs linked to test issues where wait time or cache evidence is incomplete."
+            prs={evidenceGapPrs}
+            visibleLimit={6}
+            tone="attention"
+            emptyText="No incomplete linked-issue test data in cached pending PRs"
+          />
+          <TestingQueueLane
+            title="Linked PRs In Test"
+            description="PRs attached to issues already assigned to testers, without current blocker evidence."
+            prs={activePrs}
+            visibleLimit={6}
+            tone="normal"
+            emptyText="No active linked-issue test movement outside waiting lanes"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3829,7 +3847,7 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
   }
 
   return (
-    <section className="testing-issue-panel" aria-label="Issue-level testing queue">
+    <section className="testing-issue-panel" id="testing-issue-queue" aria-label="Issue-level testing queue">
       <div className="testing-issue-panel-heading">
         <div>
           <Text strong>Issue-Level Test Queue</Text>
@@ -7434,6 +7452,15 @@ export default function App() {
     : null;
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
+  const testingHasTurnoverHistory = data
+    ? data.testing.transitionEvents > 0 ||
+      data.testing.requestToPassSamples > 0 ||
+      data.testing.passToCloseSamples > 0 ||
+      data.testing.closedWithoutPassSignalSamples > 0
+    : false;
+  const scrollToTestingIssueQueue = () => {
+    document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const criticalOwnerCoverageRows = data
     ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped).slice(0, 8)
     : [];
@@ -7943,7 +7970,7 @@ export default function App() {
                     <button
                       type="button"
                       className={`inline-filter-chip ${data.testing.queueIssues > 0 ? "" : "inline-filter-chip-muted"}`}
-                      onClick={() => openPrsWithFilter("testing")}
+                      onClick={scrollToTestingIssueQueue}
                     >
                       {data.testing.queueIssues} issues in test
                     </button>
@@ -7952,23 +7979,26 @@ export default function App() {
                       className={`inline-filter-chip ${
                         data.testing.staleQueueIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
                       }`}
-                      onClick={() => openPrsWithFilter("stale_testing")}
+                      onClick={scrollToTestingIssueQueue}
                     >
                       {data.testing.staleQueueIssues} stale
                     </button>
-                    <Tag>{data.testing.transitionEvents} transitions</Tag>
-                    <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
-                    <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        data.testing.closedWithoutPassSignalSamples > 0 ? "" : "inline-filter-chip-muted"
-                      }`}
-                      onClick={() => openPrsWithFilter("testing")}
-                    >
-                      {data.testing.closedWithoutPassSignalSamples} closed without pass
-                    </button>
-                    <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag>
+                    <Tag>issue assignment handoff</Tag>
+                    {testingHasTurnoverHistory ? <Tag>{data.testing.transitionEvents} transitions</Tag> : null}
+                    {testingHasTurnoverHistory ? <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag> : null}
+                    {testingHasTurnoverHistory ? <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag> : null}
+                    {testingHasTurnoverHistory ? (
+                      <button
+                        type="button"
+                        className={`inline-filter-chip ${
+                          data.testing.closedWithoutPassSignalSamples > 0 ? "" : "inline-filter-chip-muted"
+                        }`}
+                        onClick={() => openPrsWithFilter("testing")}
+                      >
+                        {data.testing.closedWithoutPassSignalSamples} closed without pass
+                      </button>
+                    ) : null}
+                    {testingHasTurnoverHistory ? <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag> : null}
                   </Space>
                 </div>
                 <TestingCommandBoard
@@ -7985,16 +8015,18 @@ export default function App() {
                   pagination={false}
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />
-                <Table
-                  className="testing-transition-table"
-                  rowKey="id"
-                  size="middle"
-                  columns={testingTransitionColumns}
-                  dataSource={data.testing.recentTransitions}
-                  scroll={{ x: 1040 }}
-                  pagination={{ pageSize: 6 }}
-                  locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
-                />
+                {testingHasTurnoverHistory ? (
+                  <Table
+                    className="testing-transition-table"
+                    rowKey="id"
+                    size="middle"
+                    columns={testingTransitionColumns}
+                    dataSource={data.testing.recentTransitions}
+                    scroll={{ x: 1040 }}
+                    pagination={{ pageSize: 6 }}
+                    locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
+                  />
+                ) : null}
               </section>
             ) : null}
 
