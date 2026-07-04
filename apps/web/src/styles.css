@@ -884,12 +884,12 @@ body {
 .production-readiness-gates {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   min-width: 0;
 }
 
 .production-readiness-compact .production-readiness-gates {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
 }
 
 .production-readiness-gate {

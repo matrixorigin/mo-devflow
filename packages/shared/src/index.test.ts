@@ -6,8 +6,138 @@ import {
   isSupportedGitHubWebhookEvent,
   notificationStatusAllowsRetry,
   notificationStatusRequiresAcknowledgement,
+  repoProfileConfigurationStatus,
   supportedGitHubWebhookEvents
 } from "./index";
+import type { RepoProfile } from "./index";
+
+const profile: RepoProfile = {
+  key: "example/repo",
+  repo: {
+    owner: "example",
+    name: "repo",
+    localPath: "/tmp/repo"
+  },
+  reporting: {
+    timezone: "Asia/Shanghai",
+    weekStart: "Monday"
+  },
+  access: {
+    anonymousRead: true,
+    exposeUserTokenSyncedPrivateData: false,
+    criticalScope: "repo-wide",
+    writeBackEnabled: true
+  },
+  people: {
+    watchedUsers: ["alice"],
+    testers: ["qa"]
+  },
+  ownership: {
+    issueOwnerPriority: ["assignee", "linked_pr_author", "author"],
+    prOwner: "author",
+    unownedBucket: true
+  },
+  labels: {
+    bug: "kind/bug",
+    needsTriage: "needs-triage",
+    deferred: "deferred",
+    critical: ["severity/s-1", "severity/s0"],
+    active: ["severity/s-1", "severity/s0", "severity/s1"],
+    aiEffort: ["ai-easy", "ai-manual"]
+  },
+  thresholds: {
+    prNoActionAttentionHours: 24,
+    criticalNoActionAttentionHours: 24,
+    aiEasyS0ToTestAttentionDays: 7,
+    needsTriageStaleHours: 72,
+    prematureSeverityWindowHours: 24,
+    aiEasyCriticalCriticalDays: 14
+  },
+  testing: {
+    handoffScope: "issue",
+    handoffSignals: {
+      labels: [],
+      reviewerUsers: [],
+      assigneeUsers: ["qa"],
+      comments: []
+    }
+  },
+  workflow: {
+    skipUsers: []
+  },
+  notifications: {
+    wecom: {
+      enabled: false
+    },
+    employees: {},
+    routing: {
+      cooldownHours: 12,
+      fallbackRecipient: "maintainers",
+      escalateAfterHours: 24
+    }
+  },
+  raw: {}
+};
+
+describe("repo profile configuration status", () => {
+  test("keeps GitHub evidence backfill disabled by default without a service token", () => {
+    expect(repoProfileConfigurationStatus(profile, {})).toMatchObject({
+      githubServiceTokenConfigured: false,
+      prDetailBackfillLimit: 0,
+      commentBackfillLimit: 0,
+      issueTimelineBackfillLimit: 0,
+      githubEvidenceBackfillConfigured: false
+    });
+  });
+
+  test("defaults GitHub evidence backfill to bounded batches when a service token exists", () => {
+    const status = repoProfileConfigurationStatus(profile, {
+      MO_DEVFLOW_GITHUB_TOKEN: "secret-token"
+    });
+
+    expect(status).toMatchObject({
+      githubServiceTokenConfigured: true,
+      prDetailBackfillLimit: 25,
+      commentBackfillLimit: 25,
+      issueTimelineBackfillLimit: 25,
+      githubEvidenceBackfillConfigured: true
+    });
+    expect(JSON.stringify(status)).not.toContain("secret-token");
+  });
+
+  test("uses explicit backfill limits without requiring a service token", () => {
+    expect(
+      repoProfileConfigurationStatus(profile, {
+        MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS: "3",
+        MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "4",
+        MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS: "5"
+      })
+    ).toMatchObject({
+      githubServiceTokenConfigured: false,
+      prDetailBackfillLimit: 3,
+      commentBackfillLimit: 4,
+      issueTimelineBackfillLimit: 5,
+      githubEvidenceBackfillConfigured: true
+    });
+  });
+
+  test("allows explicit zero limits to disable service-token backfill", () => {
+    expect(
+      repoProfileConfigurationStatus(profile, {
+        GITHUB_TOKEN: "secret-token",
+        MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS: "-1",
+        MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "bad",
+        MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS: "2"
+      })
+    ).toMatchObject({
+      githubServiceTokenConfigured: true,
+      prDetailBackfillLimit: 0,
+      commentBackfillLimit: 25,
+      issueTimelineBackfillLimit: 2,
+      githubEvidenceBackfillConfigured: false
+    });
+  });
+});
 
 describe("GitHub write capabilities", () => {
   test("requires a validated connected token before issue label writes are enabled", () => {

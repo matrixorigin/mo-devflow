@@ -676,6 +676,7 @@ interface ProfileCapabilityCard {
 
 function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[] {
   const configuration = data.profileConfiguration;
+  const evidenceLimitValue = `${configuration.prDetailBackfillLimit}/${configuration.commentBackfillLimit}/${configuration.issueTimelineBackfillLimit}`;
   return [
     {
       key: "watched-users",
@@ -703,6 +704,19 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
         ? "Local source context can enrich diagnostics without being exposed in API responses."
         : "Dashboards work from GitHub cache only.",
       configured: configuration.localCheckoutConfigured
+    },
+    {
+      key: "github-evidence",
+      label: "PR/issue evidence",
+      value: configuration.githubEvidenceBackfillConfigured
+        ? `backfill ${evidenceLimitValue}`
+        : configuration.githubServiceTokenConfigured
+          ? `limited ${evidenceLimitValue}`
+          : "anonymous only",
+      detail: configuration.githubEvidenceBackfillConfigured
+        ? "PR detail, comments, and issue timeline backfill can support review, CI, links, and workflow checks."
+        : "PR review, CI, issue links, and comment-backed rules can be incomplete until evidence backfill is configured.",
+      configured: configuration.githubEvidenceBackfillConfigured
     },
     {
       key: "workflow-fixes",

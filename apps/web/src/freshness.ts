@@ -66,7 +66,7 @@ export interface WebhookReadinessSummary {
 
 export type ProductionReadinessStatus = "ready" | "needs_action" | "waiting" | "disabled";
 export type ProductionReadinessGateKey =
-  "cache" | "worker" | "webhook" | "token" | "write_back" | "notifications" | "audit";
+  "cache" | "worker" | "github_evidence" | "webhook" | "token" | "write_back" | "notifications" | "audit";
 export type ProductionReadinessTarget = "health" | "webhooks" | "notifications" | "audit" | "connect_token";
 
 export interface ProductionReadinessGate {
@@ -149,6 +149,76 @@ function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number
 
 function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
   return profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
+}
+
+const githubEvidenceLayers: ManualRefreshLayer[] = ["pr_backfill", "comment_backfill", "issue_timeline_backfill"];
+
+function summarizeGithubEvidenceGate(data: DashboardSummary): ProductionReadinessGate {
+  const configuration = data.profileConfiguration;
+  const limits = [
+    configuration.prDetailBackfillLimit,
+    configuration.commentBackfillLimit,
+    configuration.issueTimelineBackfillLimit
+  ];
+  const limitValue = `${limits[0]}/${limits[1]}/${limits[2]}`;
+  const evidenceLayers = data.sync.health.filter((item) => githubEvidenceLayers.includes(item.layer));
+  const failedLayers = evidenceLayers.filter((item) => item.status === "failed" || item.status === "blocked");
+  const incompleteLayers = evidenceLayers.filter(
+    (item) => item.status === "partial" || item.status === "not_started" || item.skipped
+  );
+
+  if (failedLayers.length > 0) {
+    return {
+      key: "github_evidence",
+      label: "PR/issue evidence",
+      status: "needs_action",
+      tone: "critical",
+      value: `${failedLayers.length} failed`,
+      detail: `Backfill failed for ${failedLayers.map((item) => item.layer).join(", ")}; PR review, CI, links, and comment checks may be wrong.`,
+      action: "Repair evidence",
+      target: "health"
+    };
+  }
+
+  if (!configuration.githubEvidenceBackfillConfigured) {
+    return {
+      key: "github_evidence",
+      label: "PR/issue evidence",
+      status: "needs_action",
+      tone: configuration.githubServiceTokenConfigured ? "attention" : "critical",
+      value: configuration.githubServiceTokenConfigured ? `limits ${limitValue}` : "anonymous only",
+      detail: configuration.githubServiceTokenConfigured
+        ? "Service token exists, but at least one PR detail, comment, or issue timeline backfill limit is zero."
+        : "No service read token or evidence backfill limit is configured, so PR review, CI, mergeability, issue links, and comment-backed rules can be incomplete.",
+      action: "Configure evidence",
+      target: "health"
+    };
+  }
+
+  if (data.sync.partialObjects > 0 || incompleteLayers.length > 0) {
+    return {
+      key: "github_evidence",
+      label: "PR/issue evidence",
+      status: "waiting",
+      tone: "attention",
+      value: `limits ${limitValue}`,
+      detail:
+        "Evidence backfill is configured, but cached GitHub objects still include partial PR detail, comment, or timeline evidence.",
+      action: "Repair evidence",
+      target: "health"
+    };
+  }
+
+  return {
+    key: "github_evidence",
+    label: "PR/issue evidence",
+    status: "ready",
+    tone: "good",
+    value: `backfill ${limitValue}`,
+    detail: "PR review, CI, mergeability, issue links, and issue comment evidence have configured backfill coverage.",
+    action: "Inspect health",
+    target: "health"
+  };
 }
 
 export function summarizeWebhookReadiness(
@@ -454,6 +524,7 @@ export function summarizeProductionReadiness(input: {
       action: "Open health",
       target: "health"
     },
+    summarizeGithubEvidenceGate(data),
     {
       key: "webhook",
       label: "Near real-time updates",
@@ -620,7 +691,8 @@ export function summarizeProductionReadiness(input: {
     score,
     label: "ready",
     title: "Production readiness is clear",
-    detail: "Cache, worker, webhook, token, write-back, notifications, and audit evidence are in a usable state.",
+    detail:
+      "Cache, worker, PR/issue evidence, webhook, token, write-back, notifications, and audit evidence are in a usable state.",
     gates,
     blockers,
     waiting,

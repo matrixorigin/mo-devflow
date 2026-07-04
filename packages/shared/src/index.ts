@@ -143,6 +143,35 @@ export interface RepoProfileConfigurationStatus {
   notificationEmployeesConfigured: boolean;
   notificationEmployeeCount: number;
   webhookSecretConfigured: boolean;
+  githubServiceTokenConfigured: boolean;
+  prDetailBackfillLimit: number;
+  commentBackfillLimit: number;
+  issueTimelineBackfillLimit: number;
+  githubEvidenceBackfillConfigured: boolean;
+}
+
+function githubServiceTokenConfigured(env: Record<string, string | undefined>): boolean {
+  return Boolean(env.MO_DEVFLOW_GITHUB_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim());
+}
+
+function githubBackfillLimitFromEnv(input: {
+  env: Record<string, string | undefined>;
+  key:
+    | "MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS"
+    | "MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS"
+    | "MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS";
+  serviceTokenConfigured: boolean;
+}): number {
+  const fallback = input.serviceTokenConfigured ? 25 : 0;
+  const configured = input.env[input.key];
+  if (configured === undefined) {
+    return fallback;
+  }
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(parsed));
 }
 
 export function repoProfileConfigurationStatus(
@@ -153,6 +182,22 @@ export function repoProfileConfigurationStatus(
   const testerCount = profile.people.testers.length;
   const workflowSkipUserCount = profile.workflow.skipUsers.length;
   const notificationEmployeeCount = Object.keys(profile.notifications.employees).length;
+  const serviceTokenConfigured = githubServiceTokenConfigured(env);
+  const prDetailBackfillLimit = githubBackfillLimitFromEnv({
+    env,
+    key: "MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS",
+    serviceTokenConfigured
+  });
+  const commentBackfillLimit = githubBackfillLimitFromEnv({
+    env,
+    key: "MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS",
+    serviceTokenConfigured
+  });
+  const issueTimelineBackfillLimit = githubBackfillLimitFromEnv({
+    env,
+    key: "MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS",
+    serviceTokenConfigured
+  });
   const issueHandoffSignals = [
     ...(profile.people.testers ?? []),
     ...(profile.testing.handoffSignals?.assigneeUsers ?? []),
@@ -171,7 +216,13 @@ export function repoProfileConfigurationStatus(
     workflowSkipUserCount,
     notificationEmployeesConfigured: notificationEmployeeCount > 0,
     notificationEmployeeCount,
-    webhookSecretConfigured: Boolean(env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET?.trim())
+    webhookSecretConfigured: Boolean(env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET?.trim()),
+    githubServiceTokenConfigured: serviceTokenConfigured,
+    prDetailBackfillLimit,
+    commentBackfillLimit,
+    issueTimelineBackfillLimit,
+    githubEvidenceBackfillConfigured:
+      prDetailBackfillLimit > 0 && commentBackfillLimit > 0 && issueTimelineBackfillLimit > 0
   };
 }
 

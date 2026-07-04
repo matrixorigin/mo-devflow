@@ -137,7 +137,12 @@ function dashboard(input: Partial<DashboardSummary> = {}): DashboardSummary {
       workflowSkipUserCount: 0,
       notificationEmployeesConfigured: true,
       notificationEmployeeCount: 2,
-      webhookSecretConfigured: true
+      webhookSecretConfigured: true,
+      githubServiceTokenConfigured: true,
+      prDetailBackfillLimit: 25,
+      commentBackfillLimit: 25,
+      issueTimelineBackfillLimit: 25,
+      githubEvidenceBackfillConfigured: true
     },
     profileWarnings: [],
     profileActions: [],
@@ -650,6 +655,58 @@ describe("production readiness summary", () => {
       status: "waiting",
       value: "token needed"
     });
+  });
+
+  test("blocks production readiness when GitHub evidence backfill is not configured", () => {
+    const base = dashboard();
+    const summary = summarizeProductionReadiness({
+      data: dashboard({
+        profileConfiguration: {
+          ...base.profileConfiguration,
+          githubServiceTokenConfigured: false,
+          prDetailBackfillLimit: 0,
+          commentBackfillLimit: 0,
+          issueTimelineBackfillLimit: 0,
+          githubEvidenceBackfillConfigured: false
+        }
+      }),
+      session: anonymousSession()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "critical",
+      label: "action required"
+    });
+    expect(summary.gates.find((gate) => gate.key === "github_evidence")).toMatchObject({
+      status: "needs_action",
+      tone: "critical",
+      value: "anonymous only",
+      target: "health"
+    });
+    expect(summary.gates.find((gate) => gate.key === "github_evidence")?.detail).toContain("PR review");
+  });
+
+  test("prioritizes failed GitHub evidence sync layers", () => {
+    const summary = summarizeProductionReadiness({
+      data: dashboard({
+        sync: sync({
+          health: [
+            layer({ layer: "github_sync" }),
+            layer({ layer: "pr_backfill", status: "failed", errorMessage: "rate limit" }),
+            layer({ layer: "comment_backfill" }),
+            layer({ layer: "issue_timeline_backfill" })
+          ]
+        })
+      }),
+      session: authenticatedSession()
+    });
+
+    expect(summary.gates.find((gate) => gate.key === "github_evidence")).toMatchObject({
+      status: "needs_action",
+      tone: "critical",
+      value: "1 failed"
+    });
+    expect(summary.blockers.map((gate) => gate.key)).toContain("github_evidence");
   });
 
   test("prioritizes blocking production gaps from stale cache, failed webhook, and notification setup", () => {

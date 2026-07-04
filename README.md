@@ -175,8 +175,16 @@ Issue comment backfill is available for workflow rules that need comment
 evidence. Deferred issues only raise a missing-explanation violation after the
 comment sync for that issue is complete; partial comment evidence suppresses the
 rule instead of producing a misleading alert. Anonymous GitHub sync does not
-fetch comments by default; set `MO_DEVFLOW_ISSUE_COMMENT_MAX_ITEMS` or configure
-a service read token before relying on comment-backed workflow checks.
+fetch comments by default; configure a service read token or set bounded
+backfill limits before relying on comment-backed workflow checks.
+
+Production readiness shows the current PR/issue evidence path without exposing
+token values. `MO_DEVFLOW_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` enables a
+service read token; only its presence is returned to the UI. PR detail, issue
+comment, and issue timeline backfill default to `25/25/25` with a service token
+and `0/0/0` anonymously. Override them with
+`MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS`, `MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS`, and
+`MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS`.
 
 The same GitHub issue-comment cache supports configured PR testing handoff
 comments. When `testing.handoff_signals.comments` is configured, matching

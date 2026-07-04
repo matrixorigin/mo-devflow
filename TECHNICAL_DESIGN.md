@@ -257,7 +257,10 @@ Polling:
 - Track seen issue and PR numbers during paginated reads to avoid duplicate processing.
 - Treat GitHub pagination races as expected; repair with later incremental sync.
 - Enrich open PRs with review decision, latest review, latest commit, CI state, and mergeability.
-- Keep PR enrichment bounded by `MO_DEVFLOW_PR_DETAIL_MAX_ITEMS`; default anonymous enrichment is off because GitHub anonymous REST quota is only 60 requests/hour.
+- Keep PR enrichment bounded by `MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS`; default anonymous enrichment is off because GitHub anonymous REST quota is only 60 requests/hour.
+- Keep issue comment and issue timeline backfill bounded by `MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS` and `MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS`.
+- Treat `MO_DEVFLOW_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` as a service read token for polling and backfill. The API may expose whether a service token is configured, but must never expose the token value.
+- Show the configured PR detail/comment/timeline backfill limits in production readiness so operators know whether PR review, CI, mergeability, issue links, and comment-backed rules have production-quality evidence.
 - For production-quality request-change, CI-failure, and merge-conflict attention rules, configure a service read token or authenticated sync path.
 
 Rate limiting:
@@ -616,7 +619,8 @@ Required health surfaces:
 Dashboard behavior:
 
 - Show stale banners when key sync layers are behind.
-- Show partial-data warnings when timeline or review backfill is incomplete.
+- Show partial-data warnings when timeline, comment, PR detail, or review backfill is incomplete.
+- Show a PR/issue evidence readiness gate that points to operational health when backfill is disabled, partial, blocked, or failed.
 - Keep serving cached data when GitHub is temporarily unavailable.
 - Avoid presenting stale or partial data as confirmed evidence in workflow violations.
 
