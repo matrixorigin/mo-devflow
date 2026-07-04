@@ -1,5 +1,6 @@
 import type {
   NormalizedIssue,
+  RepoProfile,
   WorkflowFixExecutionResult,
   WorkflowFixExecutionStatus,
   WorkflowFixPreview,
@@ -8,6 +9,7 @@ import type {
 import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
+import { dashboardVisibilityFilter, type DashboardViewer } from "./repositories";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -34,13 +36,19 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
-export async function getCachedIssueByNumber(repoId: number, issueNumber: number): Promise<NormalizedIssue | null> {
+export async function getCachedIssueByNumber(input: {
+  repoId: number;
+  issueNumber: number;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
+}): Promise<NormalizedIssue | null> {
+  const visibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
-     FROM issues
-     WHERE repo_id = ? AND number = ? AND is_pull_request = 0
+     FROM issues i
+     WHERE i.repo_id = ? AND i.number = ? AND i.is_pull_request = 0 AND ${visibility.sql}
      LIMIT 1`,
-    [repoId, issueNumber]
+    [input.repoId, input.issueNumber, ...visibility.params]
   );
   const row = rows[0];
   if (!row) {
@@ -78,7 +86,11 @@ export async function getActiveWorkflowViolation(input: {
   objectType: string;
   objectNumber: number;
   ruleKey: string;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
 }): Promise<WorkflowViolationView | null> {
+  const issueVisibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM workflow_violations
@@ -87,8 +99,30 @@ export async function getActiveWorkflowViolation(input: {
        AND object_number = ?
        AND rule_key = ?
        AND resolved_at IS NULL
+       AND (
+         (object_type = 'issue' AND EXISTS (
+           SELECT 1 FROM issues i
+           WHERE i.repo_id = workflow_violations.repo_id
+             AND i.number = workflow_violations.object_number
+             AND ${issueVisibility.sql}
+         ))
+         OR
+         (object_type = 'pull_request' AND EXISTS (
+           SELECT 1 FROM pull_requests p
+           WHERE p.repo_id = workflow_violations.repo_id
+             AND p.number = workflow_violations.object_number
+             AND ${pullRequestVisibility.sql}
+         ))
+       )
      LIMIT 1`,
-    [input.repoId, input.objectType, input.objectNumber, input.ruleKey]
+    [
+      input.repoId,
+      input.objectType,
+      input.objectNumber,
+      input.ruleKey,
+      ...issueVisibility.params,
+      ...pullRequestVisibility.params
+    ]
   );
   const row = rows[0];
   if (!row) {

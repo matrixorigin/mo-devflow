@@ -119,11 +119,14 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
+    const viewer = { authenticated: true, userId: session.userId };
     const violation = await getActiveWorkflowViolation({
       repoId,
       objectType: parsed.data.objectType,
       objectNumber: parsed.data.objectNumber,
-      ruleKey: parsed.data.ruleKey
+      ruleKey: parsed.data.ruleKey,
+      profile,
+      viewer
     });
     if (!violation) {
       return reply.status(404).send({
@@ -138,7 +141,12 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
 
-    const issue = await getCachedIssueByNumber(repoId, parsed.data.objectNumber);
+    const issue = await getCachedIssueByNumber({
+      repoId,
+      issueNumber: parsed.data.objectNumber,
+      profile,
+      viewer
+    });
     if (!issue) {
       return reply.status(404).send({
         error: "cached_issue_not_found",

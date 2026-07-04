@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   markWorkflowFixPreviewStatus: vi.fn(),
   recordWorkflowFixExecution: vi.fn(),
   getActiveGitHubTokenForUser: vi.fn(),
+  getActiveWorkflowViolation: vi.fn(),
+  getCachedIssueByNumber: vi.fn(),
+  getRepoId: vi.fn(),
   applyWorkflowFixPreview: vi.fn()
 }));
 
@@ -24,9 +27,9 @@ vi.mock("./authRoutes", () => ({
 vi.mock("@mo-devflow/db", () => ({
   enqueueJobsNow: vi.fn(),
   getActiveGitHubTokenForUser: mocks.getActiveGitHubTokenForUser,
-  getActiveWorkflowViolation: vi.fn(),
-  getCachedIssueByNumber: vi.fn(),
-  getRepoId: vi.fn(),
+  getActiveWorkflowViolation: mocks.getActiveWorkflowViolation,
+  getCachedIssueByNumber: mocks.getCachedIssueByNumber,
+  getRepoId: mocks.getRepoId,
   getWorkflowFixPreviewForUser: mocks.getWorkflowFixPreviewForUser,
   markWorkflowFixPreviewStatus: mocks.markWorkflowFixPreviewStatus,
   recordWorkflowFixExecution: mocks.recordWorkflowFixExecution,
@@ -123,6 +126,7 @@ describe("action routes", () => {
       tokenScopes: ["repo"],
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
+    mocks.getRepoId.mockResolvedValue(10);
     mocks.getWorkflowFixPreviewForUser.mockResolvedValue({
       repoId: 10,
       userId: 1,
@@ -132,6 +136,64 @@ describe("action routes", () => {
       status: "previewed",
       expiresAt: preview.expiresAt
     });
+  });
+
+  test("scopes workflow fix preview lookups to cache visible to the session user", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveWorkflowViolation.mockResolvedValue({
+      objectType: "issue",
+      objectNumber: 42,
+      title: "panic on insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+      ruleKey: "bug_missing_needs_triage",
+      severity: "warning",
+      relatedLogin: "alice",
+      evidenceSummary: "Open bug issue #42 has no needs-triage label.",
+      suggestedAction: "Add needs-triage.",
+      fixable: true,
+      firstDetectedAt: "2026-07-04T00:00:00.000Z",
+      lastDetectedAt: "2026-07-04T00:00:00.000Z"
+    });
+    mocks.getCachedIssueByNumber.mockResolvedValue(null);
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        payload: {
+          actionKey: "add_needs_triage",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "bug_missing_needs_triage"
+        }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(mocks.getActiveWorkflowViolation).toHaveBeenCalledWith({
+        repoId: 10,
+        objectType: "issue",
+        objectNumber: 42,
+        ruleKey: "bug_missing_needs_triage",
+        profile: writeBackProfile,
+        viewer: { authenticated: true, userId: 1 }
+      });
+      expect(mocks.getCachedIssueByNumber).toHaveBeenCalledWith({
+        repoId: 10,
+        issueNumber: 42,
+        profile: writeBackProfile,
+        viewer: { authenticated: true, userId: 1 }
+      });
+      expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 
   test("blocks workflow fix confirmation before token access when profile write-back is disabled", async () => {
