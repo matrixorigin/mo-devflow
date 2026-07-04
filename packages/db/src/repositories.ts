@@ -105,6 +105,37 @@ function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
 }
 
+export function pullRequestWithPreservedInsight(input: {
+  current: NormalizedPullRequest;
+  previous: Record<string, unknown> | null | undefined;
+}): NormalizedPullRequest {
+  if (input.current.state !== "open" || input.current.detailSyncedAt || input.current.detailError) {
+    return input.current;
+  }
+  const previousDetailSyncedAt = fromSqlDate(input.previous?.detail_synced_at);
+  if (!previousDetailSyncedAt) {
+    return input.current;
+  }
+  const previousDetailError = input.previous?.detail_error ? asString(input.previous.detail_error) : null;
+  return {
+    ...input.current,
+    lastHumanActionAt: fromSqlDate(input.previous?.last_human_action_at) ?? input.current.lastHumanActionAt,
+    reviewDecision: input.previous?.review_decision ? asString(input.previous.review_decision) : null,
+    mergeStateStatus: input.previous?.merge_state_status ? asString(input.previous.merge_state_status) : null,
+    ciState: input.previous?.ci_state ? asString(input.previous.ci_state) : null,
+    latestReviewState: input.previous?.latest_review_state ? asString(input.previous.latest_review_state) : null,
+    latestReviewSubmittedAt: fromSqlDate(input.previous?.latest_review_submitted_at),
+    latestCommitAt: fromSqlDate(input.previous?.latest_commit_at),
+    detailSyncedAt: previousDetailSyncedAt,
+    detailError: previousDetailError,
+    attentionFlags: mergeUnique(
+      input.current.attentionFlags,
+      parseJsonArray(asString(input.previous?.attention_flags_json))
+    ),
+    isComplete: !previousDetailError
+  };
+}
+
 function testingTransitionOccurredAt(pr: NormalizedPullRequest): string {
   if (pr.testingState === "closed_or_merged") {
     return pr.mergedAt ?? pr.closedAt ?? pr.updatedAt;
@@ -1137,23 +1168,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
     );
     hasExistingTestingEvents = testingEventRows.length > 0;
   }
-  if (pr.state === "open" && !pr.detailSyncedAt && !pr.detailError) {
-    if (previous?.detail_synced_at) {
-      next = {
-        ...pr,
-        lastHumanActionAt: fromSqlDate(previous.last_human_action_at) ?? pr.lastHumanActionAt,
-        reviewDecision: previous.review_decision ? asString(previous.review_decision) : null,
-        mergeStateStatus: previous.merge_state_status ? asString(previous.merge_state_status) : null,
-        ciState: previous.ci_state ? asString(previous.ci_state) : null,
-        latestReviewState: previous.latest_review_state ? asString(previous.latest_review_state) : null,
-        latestReviewSubmittedAt: fromSqlDate(previous.latest_review_submitted_at),
-        latestCommitAt: fromSqlDate(previous.latest_commit_at),
-        detailSyncedAt: fromSqlDate(previous.detail_synced_at),
-        detailError: previous.detail_error ? asString(previous.detail_error) : null,
-        attentionFlags: mergeUnique(pr.attentionFlags, parseJsonArray(asString(previous.attention_flags_json)))
-      };
-    }
-  }
+  next = pullRequestWithPreservedInsight({ current: pr, previous });
   const testingTransition = pullRequestTestingTransitionForUpsert({
     repoId,
     previousTestingState: previous?.testing_state

@@ -25,6 +25,7 @@ import {
   profileActionSuggestions,
   profileConfigurationWarnings,
   profileSetupPlan,
+  pullRequestWithPreservedInsight,
   pullRequestTestingTransitionForUpsert,
   testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
@@ -960,6 +961,41 @@ describe("pull request testing transition events", () => {
         pr: pullRequest
       })
     ).toBeNull();
+  });
+
+  test("preserves complete PR detail evidence when a later list sync omits detail enrichment", () => {
+    const next = pullRequestWithPreservedInsight({
+      current: {
+        ...pullRequest,
+        detailSyncedAt: null,
+        detailError: null,
+        reviewDecision: null,
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: null,
+        attentionFlags: [],
+        isComplete: false
+      },
+      previous: {
+        last_human_action_at: "2026-07-02 08:00:00",
+        review_decision: "approved",
+        merge_state_status: "clean",
+        ci_state: "success",
+        latest_review_state: "APPROVED",
+        latest_review_submitted_at: "2026-07-02 09:00:00",
+        latest_commit_at: "2026-07-02 07:00:00",
+        detail_synced_at: "2026-07-03 00:00:00",
+        detail_error: null,
+        attention_flags_json: JSON.stringify(["no_human_action_24h"])
+      }
+    });
+
+    expect(next.isComplete).toBe(true);
+    expect(next.detailSyncedAt).toBe("2026-07-03T00:00:00Z");
+    expect(next.reviewDecision).toBe("approved");
+    expect(next.attentionFlags).toEqual(["no_human_action_24h"]);
   });
 
   test("records first-observed testing states when existing cache predates event history", () => {
