@@ -104,7 +104,9 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
 
+    const profile = loadRepoProfile();
     const capability = buildGitHubWriteCapabilities({
+      writeBackEnabled: profile.access.writeBackEnabled,
       tokenScopes: session.tokenScopes,
       tokenLastValidatedAt: session.tokenLastValidatedAt
     }).issueLabels;
@@ -116,7 +118,6 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
 
-    const profile = loadRepoProfile();
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const violation = await getActiveWorkflowViolation({
       repoId,
@@ -295,6 +296,27 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
       });
     }
 
+    const profile = loadRepoProfile();
+    const capability = buildGitHubWriteCapabilities({
+      writeBackEnabled: profile.access.writeBackEnabled,
+      tokenScopes: session.tokenScopes,
+      tokenLastValidatedAt: session.tokenLastValidatedAt
+    }).issueLabels;
+    if (!capability.enabled) {
+      const result = executionResult({
+        previewId: preview.previewId,
+        status: "blocked",
+        message: capability.message
+      });
+      return persistExecution({
+        repoId: storedPreview.repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        preview,
+        result
+      });
+    }
+
     const storedToken = await getActiveGitHubTokenForUser(session.userId);
     let encryptionConfig;
     try {
@@ -343,8 +365,6 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         result
       });
     }
-
-    const profile = loadRepoProfile();
     try {
       const applied = await applyWorkflowFixPreview({ token, profile, preview });
       const stale = applied.appliedOperations.length === 0;

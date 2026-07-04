@@ -22,17 +22,12 @@ const profileSchema = z.object({
       week_start: z.enum(["Monday", "Sunday"]).default("Monday")
     })
     .default({ timezone: "Asia/Shanghai", week_start: "Monday" }),
-  access: z
-    .object({
-      anonymous_read: z.boolean().default(true),
-      expose_user_token_synced_private_data: z.boolean().default(false),
-      critical_scope: z.enum(["repo-wide", "watched-users"]).default("repo-wide")
-    })
-    .default({
-      anonymous_read: true,
-      expose_user_token_synced_private_data: false,
-      critical_scope: "repo-wide"
-    }),
+  access: z.object({
+    anonymous_read: z.boolean(),
+    expose_user_token_synced_private_data: z.boolean(),
+    critical_scope: z.enum(["repo-wide", "watched-users"]),
+    write_back_enabled: z.boolean()
+  }),
   people: z
     .object({
       watched_users: z.array(z.string()).default([]),
@@ -143,7 +138,8 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
     access: {
       anonymousRead: parsed.access.anonymous_read,
       exposeUserTokenSyncedPrivateData: parsed.access.expose_user_token_synced_private_data,
-      criticalScope: parsed.access.critical_scope
+      criticalScope: parsed.access.critical_scope,
+      writeBackEnabled: parsed.access.write_back_enabled
     },
     people: {
       watchedUsers: parsed.people.watched_users,

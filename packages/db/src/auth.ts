@@ -233,7 +233,10 @@ export async function getActiveGitHubTokenForUser(userId: number): Promise<Store
   };
 }
 
-export function toAuthenticatedUserView(record: SessionRecord): AuthenticatedUserView {
+export function toAuthenticatedUserView(
+  record: SessionRecord,
+  input: { writeBackEnabled: boolean }
+): AuthenticatedUserView {
   return {
     githubLogin: record.githubLogin,
     githubId: record.githubId,
@@ -242,6 +245,7 @@ export function toAuthenticatedUserView(record: SessionRecord): AuthenticatedUse
     tokenLastValidatedAt: record.tokenLastValidatedAt,
     sessionExpiresAt: record.sessionExpiresAt,
     writeCapabilities: buildGitHubWriteCapabilities({
+      writeBackEnabled: input.writeBackEnabled,
       tokenScopes: record.tokenScopes,
       tokenLastValidatedAt: record.tokenLastValidatedAt
     })

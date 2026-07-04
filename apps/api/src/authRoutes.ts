@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { loadRepoProfile } from "@mo-devflow/config";
 import {
   createUserSession,
   getActiveSession,
@@ -57,9 +58,10 @@ async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply)
   if (!session) {
     return anonymousSession();
   }
+  const profile = loadRepoProfile();
   return {
     authenticated: true,
-    user: toAuthenticatedUserView(session),
+    user: toAuthenticatedUserView(session, { writeBackEnabled: profile.access.writeBackEnabled }),
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
 }
@@ -142,6 +144,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
     const sessionToken = createSessionToken();
     const expiresAt = new Date(Date.now() + sessionTtlDaysFromEnv() * 24 * 3_600_000);
+    const profile = loadRepoProfile();
     await createUserSession({
       userId,
       sessionHash: hashSessionToken(sessionToken),
@@ -158,7 +161,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         tokenScopes: validation.scopes,
         tokenLastValidatedAt: validatedAt,
         sessionExpiresAt: expiresAt.toISOString()
-      }),
+      }, { writeBackEnabled: profile.access.writeBackEnabled }),
       tokenEncryptionConfigured: true
     } satisfies SessionView;
   });

@@ -11,6 +11,7 @@ access:
   anonymous_read: true
   expose_user_token_synced_private_data: false
   critical_scope: repo-wide
+  write_back_enabled: false
 
 people:
   watched_users: []

@@ -4,6 +4,7 @@ import { buildGitHubWriteCapabilities, notificationStatusRequiresAcknowledgement
 describe("GitHub write capabilities", () => {
   test("requires a validated connected token before issue label writes are enabled", () => {
     const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
       tokenScopes: ["repo"],
       tokenLastValidatedAt: null
     });
@@ -16,6 +17,7 @@ describe("GitHub write capabilities", () => {
 
   test("enables issue label writes for classic repo scope", () => {
     const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
       tokenScopes: ["read:user", "repo"],
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
@@ -28,6 +30,7 @@ describe("GitHub write capabilities", () => {
 
   test("enables issue label writes for classic public_repo scope", () => {
     const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
       tokenScopes: ["public_repo"],
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
@@ -40,6 +43,7 @@ describe("GitHub write capabilities", () => {
 
   test("keeps issue label writes disabled for insufficient classic scopes", () => {
     const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
       tokenScopes: ["read:user"],
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
@@ -52,6 +56,7 @@ describe("GitHub write capabilities", () => {
 
   test("keeps issue label writes disabled when GitHub did not report classic scopes", () => {
     const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
       tokenScopes: [],
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
@@ -60,6 +65,20 @@ describe("GitHub write capabilities", () => {
       enabled: false,
       status: "scope_unverified"
     });
+  });
+
+  test("keeps issue label writes disabled when repo write-back is disabled", () => {
+    const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: false,
+      tokenScopes: ["repo"],
+      tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    expect(capabilities.issueLabels).toMatchObject({
+      enabled: false,
+      status: "write_back_disabled"
+    });
+    expect(capabilities.issueLabels.message).toContain("disabled in the repository profile");
   });
 });
 

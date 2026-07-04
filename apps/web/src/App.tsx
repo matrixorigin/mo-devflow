@@ -1333,6 +1333,10 @@ export default function App() {
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const criticalOwnerCoverageRows =
     data ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) : [];
+  const authenticatedUser = session?.authenticated && session.user ? session.user : null;
+  const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
+  const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
+  const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
 
   return (
     <Layout className="app-shell">
@@ -1349,28 +1353,28 @@ export default function App() {
             onChange={(value) => setView(String(value))}
             options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
           />
-          {session?.authenticated && session.user ? (
+          {authenticatedUser && headerIssueLabelCapability ? (
             <Space size={8}>
-              <Avatar size={28} src={session.user.avatarUrl}>
-                {session.user.githubLogin.slice(0, 1).toUpperCase()}
+              <Avatar size={28} src={authenticatedUser.avatarUrl}>
+                {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
               </Avatar>
-              <Tag>{session.user.githubLogin}</Tag>
+              <Tag>{authenticatedUser.githubLogin}</Tag>
               <Tooltip
                 title={
-                  session.tokenEncryptionConfigured === false
+                  tokenEncryptionUnavailable
                     ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
-                    : session.user.writeCapabilities.issueLabels.enabled
+                    : headerIssueLabelCapability.enabled
                       ? "Reconnect GitHub token"
-                      : session.user.writeCapabilities.issueLabels.message
+                      : headerIssueLabelCapability.message
                 }
               >
                 <Button
                   aria-label="Reconnect GitHub token"
                   icon={<KeyRound size={16} />}
-                  disabled={session.tokenEncryptionConfigured === false}
+                  disabled={tokenEncryptionUnavailable || headerWriteBackDisabled}
                   onClick={openTokenReconnect}
                 >
-                  {session.user.writeCapabilities.issueLabels.enabled ? null : "Reconnect"}
+                  {headerIssueLabelCapability.enabled ? null : headerWriteBackDisabled ? "Read-only" : "Reconnect"}
                 </Button>
               </Tooltip>
               <Tooltip title="Disconnect GitHub token">
@@ -1380,14 +1384,14 @@ export default function App() {
           ) : (
             <Tooltip
               title={
-                session?.tokenEncryptionConfigured === false
+                tokenEncryptionUnavailable
                   ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
                   : "Connect GitHub token"
               }
             >
               <Button
                 icon={<KeyRound size={16} />}
-                disabled={session?.tokenEncryptionConfigured === false}
+                disabled={tokenEncryptionUnavailable}
                 onClick={openTokenReconnect}
               >
                 Connect

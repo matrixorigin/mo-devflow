@@ -28,7 +28,8 @@ const baseProfile: RepoProfile = {
   access: {
     anonymousRead: true,
     exposeUserTokenSyncedPrivateData: false,
-    criticalScope: "repo-wide"
+    criticalScope: "repo-wide",
+    writeBackEnabled: true
   },
   people: { watchedUsers: [], testers: [] },
   ownership: {

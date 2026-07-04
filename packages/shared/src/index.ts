@@ -30,6 +30,7 @@ export interface RepoProfile {
     anonymousRead: boolean;
     exposeUserTokenSyncedPrivateData: boolean;
     criticalScope: "repo-wide" | "watched-users";
+    writeBackEnabled: boolean;
   };
   people: {
     watchedUsers: string[];
@@ -526,7 +527,8 @@ export type GitHubWriteCapabilityStatus =
   | "ready"
   | "missing_token"
   | "insufficient_scope"
-  | "scope_unverified";
+  | "scope_unverified"
+  | "write_back_disabled";
 
 export interface GitHubWriteCapability {
   enabled: boolean;
@@ -737,6 +739,7 @@ export function extractLinkedIssueNumbers(text: string): number[] {
 const issueLabelClassicScopes = ["repo", "public_repo"] as const;
 
 export function buildGitHubWriteCapabilities(input: {
+  writeBackEnabled: boolean;
   tokenScopes: string[];
   tokenLastValidatedAt: string | null;
 }): GitHubWriteCapabilities {
@@ -744,6 +747,18 @@ export function buildGitHubWriteCapabilities(input: {
   const normalizedScopes = new Set(currentScopes.map((scope) => scope.toLowerCase()));
   const hasIssueLabelScope = issueLabelClassicScopes.some((scope) => normalizedScopes.has(scope));
   const requiredScopes = [...issueLabelClassicScopes];
+
+  if (!input.writeBackEnabled) {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "write_back_disabled",
+        message: "GitHub write-back is disabled in the repository profile.",
+        requiredScopes,
+        currentScopes
+      }
+    };
+  }
 
   if (!input.tokenLastValidatedAt) {
     return {
