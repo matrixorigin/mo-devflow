@@ -272,6 +272,7 @@ export interface CriticalIssueView {
   ownerLogin: string | null;
   ownerScope: CriticalIssueOwnerScope;
   ownerReason: string | null;
+  workflowSkipped: boolean;
   lifecycleState: LifecycleState;
   aiEffortLabel: string | null;
   ageHours: number;
@@ -292,6 +293,7 @@ export interface CriticalIssueView {
 export interface CriticalOwnerCoverageView {
   ownerLogin: string | null;
   ownerScope: CriticalIssueOwnerScope;
+  workflowSkipped: boolean;
   criticalIssues: number;
   averageAgeHours: number | null;
 }
@@ -894,6 +896,7 @@ export interface DashboardSummary {
     criticalIssues: number;
     unownedCriticalIssues: number;
     nonWatchedCriticalIssues: number;
+    skippedCriticalIssues: number;
     pendingPrs: number;
     attentionPrs: number;
     workflowViolations: number;

@@ -266,6 +266,10 @@ function ownerScopeTooltip(scope: CriticalIssueOwnerScope): string {
   return "Owner is in the configured watched users.";
 }
 
+function workflowSkipTooltip(): string {
+  return "This login is in workflow.skip_users: keep visible, but suppress automated violations, drift signals, attention notifications, and setup suggestions.";
+}
+
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
 }
@@ -1184,6 +1188,11 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
         ) : null}
         {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
         {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
+        {critical && issue.workflowSkipped ? (
+          <Tooltip title={workflowSkipTooltip()}>
+            <Tag color="default">skip automation</Tag>
+          </Tooltip>
+        ) : null}
       </div>
       {critical && issue.linkedPullRequests.length > 0 ? (
         <div className="linked-pr-strip">
@@ -2394,6 +2403,11 @@ export default function App() {
             <Tooltip title={ownerScopeTooltip(row.ownerScope)}>
               <Tag color={ownerScopeColor(row.ownerScope)}>{labelText(row.ownerScope)}</Tag>
             </Tooltip>
+            {row.workflowSkipped ? (
+              <Tooltip title={workflowSkipTooltip()}>
+                <Tag color="default">skip automation</Tag>
+              </Tooltip>
+            ) : null}
           </Space>
         )
       },
@@ -2510,6 +2524,11 @@ export default function App() {
             <Tooltip title={ownerScopeTooltip(issue.ownerScope)}>
               <Tag color={ownerScopeColor(issue.ownerScope)}>{labelText(issue.ownerScope)}</Tag>
             </Tooltip>
+            {issue.workflowSkipped ? (
+              <Tooltip title={workflowSkipTooltip()}>
+                <Tag color="default">skip automation</Tag>
+              </Tooltip>
+            ) : null}
           </Space>
         )
       },
@@ -3156,7 +3175,7 @@ export default function App() {
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const criticalOwnerCoverageRows = data
-    ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8)
+    ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped).slice(0, 8)
     : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const freshness = data ? summarizeFreshness(data.sync) : null;
@@ -3374,6 +3393,14 @@ export default function App() {
                     />
                   </div>
                   <div className="metric">
+                    <Statistic title="Skipped s-1/s0" value={data.counts.skippedCriticalIssues} />
+                    <Progress
+                      percent={Math.min(100, data.counts.skippedCriticalIssues * 20)}
+                      showInfo={false}
+                      strokeColor={data.counts.skippedCriticalIssues > 0 ? "#6b7280" : "#16a34a"}
+                    />
+                  </div>
+                  <div className="metric">
                     <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
                     <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
                   </div>
@@ -3545,6 +3572,9 @@ export default function App() {
                       <Space size={[4, 4]} wrap>
                         <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
                         <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
+                        <Tooltip title={workflowSkipTooltip()}>
+                          <Tag>{data.counts.skippedCriticalIssues} skip automation</Tag>
+                        </Tooltip>
                       </Space>
                     </div>
                     <Table

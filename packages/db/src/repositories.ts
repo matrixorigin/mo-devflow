@@ -417,6 +417,10 @@ function normalizedLoginSet(logins: string[]): Set<string> {
   return new Set(logins.map(normalizedLogin).filter(Boolean));
 }
 
+function workflowSkippedFromSet(login: string | null, skippedLogins: Set<string>): boolean {
+  return Boolean(login && skippedLogins.has(normalizedLogin(login)));
+}
+
 function criticalIssueOwnerScopeFromSet(
   ownerLogin: string | null,
   watchedLogins: Set<string>
@@ -436,9 +440,9 @@ export function criticalIssueOwnerScope(ownerLogin: string | null, watchedUsers:
 }
 
 export function criticalIssueOwnershipCounts(
-  criticalIssues: Array<{ ownerLogin: string | null }>,
+  criticalIssues: Array<{ ownerLogin: string | null; workflowSkipped?: boolean }>,
   watchedUsers: string[]
-): { unownedCriticalIssues: number; nonWatchedCriticalIssues: number } {
+): { unownedCriticalIssues: number; nonWatchedCriticalIssues: number; skippedCriticalIssues: number } {
   const watchedLogins = normalizedLoginSet(watchedUsers);
   return {
     unownedCriticalIssues: criticalIssues.filter(
@@ -446,7 +450,8 @@ export function criticalIssueOwnershipCounts(
     ).length,
     nonWatchedCriticalIssues: criticalIssues.filter(
       (issue) => criticalIssueOwnerScopeFromSet(issue.ownerLogin, watchedLogins) === "non_watched"
-    ).length
+    ).length,
+    skippedCriticalIssues: criticalIssues.filter((issue) => issue.workflowSkipped).length
   };
 }
 
@@ -468,13 +473,19 @@ export interface NotificationEmployeeMappingCandidate {
 }
 
 export function criticalIssueOwnerCoverage(
-  criticalIssues: Array<{ ownerLogin: string | null; ownerScope: CriticalIssueOwnerScope; ageHours: number }>
+  criticalIssues: Array<{
+    ownerLogin: string | null;
+    ownerScope: CriticalIssueOwnerScope;
+    ageHours: number;
+    workflowSkipped?: boolean;
+  }>
 ): CriticalOwnerCoverageView[] {
   const owners = new Map<
     string,
     {
       ownerLogin: string | null;
       ownerScope: CriticalIssueOwnerScope;
+      workflowSkipped: boolean;
       criticalIssues: number;
       totalAgeHours: number;
     }
@@ -488,10 +499,12 @@ export function criticalIssueOwnerCoverage(
     if (existing) {
       existing.criticalIssues += 1;
       existing.totalAgeHours += issue.ageHours;
+      existing.workflowSkipped = existing.workflowSkipped || Boolean(issue.workflowSkipped);
     } else {
       owners.set(key, {
         ownerLogin: ownerScope === "unowned" ? null : issue.ownerLogin,
         ownerScope,
+        workflowSkipped: Boolean(issue.workflowSkipped),
         criticalIssues: 1,
         totalAgeHours: issue.ageHours
       });
@@ -502,6 +515,7 @@ export function criticalIssueOwnerCoverage(
     .map((owner) => ({
       ownerLogin: owner.ownerLogin,
       ownerScope: owner.ownerScope,
+      workflowSkipped: owner.workflowSkipped,
       criticalIssues: owner.criticalIssues,
       averageAgeHours:
         owner.criticalIssues === 0 ? null : Math.round((owner.totalAgeHours / owner.criticalIssues) * 10) / 10
@@ -2200,10 +2214,12 @@ function toCriticalIssueView(
   row: RowData,
   linkedPullRequests: CriticalIssueLinkedPullRequestView[] = [],
   watchedUsers: string[] = [],
+  skipUsers: string[] = [],
   commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>,
   criticalStartedAt: string | null = null
 ): CriticalIssueView {
   const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
+  const skippedLogins = normalizedLoginSet(skipUsers);
   const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy";
   const syncError = row.sync_error ? asString(row.sync_error) : null;
   const isComplete = asNumber(row.is_complete) === 1;
@@ -2216,6 +2232,7 @@ function toCriticalIssueView(
     ownerLogin,
     ownerScope: criticalIssueOwnerScope(ownerLogin, watchedUsers),
     ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
+    workflowSkipped: workflowSkippedFromSet(ownerLogin, skippedLogins),
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
     aiEffortLabel,
     ageHours: issueAgeHours(row),
@@ -3219,6 +3236,7 @@ export async function getDashboardSummary(
       row,
       linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
       profile.people.watchedUsers,
+      profile.workflow.skipUsers,
       criticalIssueCommentEvidence.get(asNumber(row.number)),
       criticalStartedAtMap.get(asNumber(row.number)) ?? null
     )
@@ -3361,6 +3379,7 @@ export async function getDashboardSummary(
             row,
             linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
             profile.people.watchedUsers,
+            profile.workflow.skipUsers,
             criticalIssueCommentEvidence.get(asNumber(row.number)),
             criticalStartedAtMap.get(asNumber(row.number)) ?? null
           )
@@ -3535,6 +3554,7 @@ export async function getDashboardSummary(
       criticalIssues: criticalIssues.length,
       unownedCriticalIssues: criticalOwnershipCounts.unownedCriticalIssues,
       nonWatchedCriticalIssues: criticalOwnershipCounts.nonWatchedCriticalIssues,
+      skippedCriticalIssues: criticalOwnershipCounts.skippedCriticalIssues,
       pendingPrs: pendingPrs.length,
       attentionPrs: pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
       workflowViolations: workflowViolations.length,

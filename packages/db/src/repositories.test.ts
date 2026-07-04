@@ -379,13 +379,13 @@ describe("critical issue ownership counts", () => {
         { ownerLogin: "carol", ownerScope: "non_watched", ageHours: 8 },
         { ownerLogin: null, ownerScope: "unowned", ageHours: 10 },
         { ownerLogin: null, ownerScope: "unowned", ageHours: 2 },
-        { ownerLogin: "bob", ownerScope: "non_watched", ageHours: 20 }
+        { ownerLogin: "bob", ownerScope: "non_watched", ageHours: 20, workflowSkipped: true }
       ])
     ).toEqual([
-      { ownerLogin: null, ownerScope: "unowned", criticalIssues: 2, averageAgeHours: 6 },
-      { ownerLogin: "Carol", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 6 },
-      { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 1, averageAgeHours: 20 },
-      { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 1, averageAgeHours: 2 }
+      { ownerLogin: null, ownerScope: "unowned", workflowSkipped: false, criticalIssues: 2, averageAgeHours: 6 },
+      { ownerLogin: "Carol", ownerScope: "non_watched", workflowSkipped: false, criticalIssues: 2, averageAgeHours: 6 },
+      { ownerLogin: "bob", ownerScope: "non_watched", workflowSkipped: true, criticalIssues: 1, averageAgeHours: 20 },
+      { ownerLogin: "alice", ownerScope: "watched", workflowSkipped: false, criticalIssues: 1, averageAgeHours: 2 }
     ]);
   });
 
@@ -401,12 +401,19 @@ describe("critical issue ownership counts", () => {
   test("separates unowned critical work from owners outside the watched set", () => {
     expect(
       criticalIssueOwnershipCounts(
-        [{ ownerLogin: null }, { ownerLogin: "alice" }, { ownerLogin: "bob" }, { ownerLogin: "carol" }],
+        [
+          { ownerLogin: null },
+          { ownerLogin: "alice" },
+          { ownerLogin: "bob" },
+          { ownerLogin: "carol" },
+          { ownerLogin: "skip-me", workflowSkipped: true }
+        ],
         ["alice", "bob"]
       )
     ).toEqual({
       unownedCriticalIssues: 1,
-      nonWatchedCriticalIssues: 1
+      nonWatchedCriticalIssues: 2,
+      skippedCriticalIssues: 1
     });
   });
 });
@@ -430,10 +437,22 @@ describe("profile configuration guidance", () => {
       profileActionSuggestions(
         baseProfile,
         [
-          { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
-          { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
-          { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 },
-          { ownerLogin: "carol", ownerScope: "watched", criticalIssues: 4, averageAgeHours: 6 }
+          { ownerLogin: null, ownerScope: "unowned", workflowSkipped: false, criticalIssues: 3, averageAgeHours: 12 },
+          {
+            ownerLogin: "alice",
+            ownerScope: "non_watched",
+            workflowSkipped: false,
+            criticalIssues: 5,
+            averageAgeHours: 8
+          },
+          {
+            ownerLogin: "bob",
+            ownerScope: "non_watched",
+            workflowSkipped: false,
+            criticalIssues: 2,
+            averageAgeHours: 20
+          },
+          { ownerLogin: "carol", ownerScope: "watched", workflowSkipped: false, criticalIssues: 4, averageAgeHours: 6 }
         ],
         [],
         []
@@ -461,8 +480,20 @@ describe("profile configuration guidance", () => {
         }
       },
       [
-        { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
-        { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 }
+        {
+          ownerLogin: "alice",
+          ownerScope: "non_watched",
+          workflowSkipped: false,
+          criticalIssues: 5,
+          averageAgeHours: 8
+        },
+        {
+          ownerLogin: "bob",
+          ownerScope: "non_watched",
+          workflowSkipped: false,
+          criticalIssues: 2,
+          averageAgeHours: 20
+        }
       ],
       [
         { login: "qa-a", openPrs: 8 },
@@ -539,8 +570,20 @@ describe("profile configuration guidance", () => {
       profileActionSuggestions(
         profile,
         [
-          { ownerLogin: "skip-me", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
-          { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 }
+          {
+            ownerLogin: "skip-me",
+            ownerScope: "non_watched",
+            workflowSkipped: true,
+            criticalIssues: 5,
+            averageAgeHours: 8
+          },
+          {
+            ownerLogin: "alice",
+            ownerScope: "non_watched",
+            workflowSkipped: false,
+            criticalIssues: 2,
+            averageAgeHours: 20
+          }
         ],
         [
           { login: "qa-skip", openPrs: 8 },
@@ -589,8 +632,8 @@ describe("profile configuration guidance", () => {
       profileActionSuggestions(
         baseProfile,
         [
-          { ownerLogin: null, ownerScope: "unowned", criticalIssues: 3, averageAgeHours: 12 },
-          { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 5, averageAgeHours: 8 }
+          { ownerLogin: null, ownerScope: "unowned", workflowSkipped: false, criticalIssues: 3, averageAgeHours: 12 },
+          { ownerLogin: "alice", ownerScope: "watched", workflowSkipped: false, criticalIssues: 5, averageAgeHours: 8 }
         ],
         [],
         []
