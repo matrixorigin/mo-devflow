@@ -4,7 +4,8 @@ import type {
   DailyMetricPoint,
   PersonalActionView,
   PersonalIssueView,
-  PersonalPullRequestView
+  PersonalPullRequestView,
+  TestingIssueQueueView
 } from "@mo-devflow/shared";
 import {
   criticalIssueReasons,
@@ -19,6 +20,7 @@ import {
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
+  sortTestingIssuesForAction,
   sortPeopleByWorkload
 } from "./workbench";
 
@@ -203,6 +205,35 @@ describe("flow efficiency summary", () => {
       testingQueuePrs: 1,
       averageTestingQueueAgeHours: 30
     });
+  });
+
+  it("can summarize issue-level testing queues when the repo uses issue assignment handoff", () => {
+    const summary = flowEfficiencySummary({
+      points: [],
+      pendingPrs: [],
+      activeIssues: [],
+      testingQueuePrs: 5,
+      averageTestingQueueAgeHours: 30
+    });
+
+    expect(summary.testingQueuePrs).toBe(5);
+    expect(summary.averageTestingQueueAgeHours).toBe(30);
+  });
+});
+
+describe("testing issue action order", () => {
+  it("puts stale issues and linked PR blockers before routine test assignments", () => {
+    const sorted = sortTestingIssuesForAction([
+      testingIssue({ number: 30, queueAgeHours: 4, linkedPullRequests: [linkedPullRequest()] }),
+      testingIssue({
+        number: 20,
+        queueAgeHours: 6,
+        linkedPullRequests: [{ ...linkedPullRequest(), attentionFlags: ["ci_failed"], ciState: "failure" }]
+      }),
+      testingIssue({ number: 10, queueAgeHours: 30, linkedPullRequests: [] })
+    ]);
+
+    expect(sorted.map((issue) => issue.number)).toEqual([10, 20, 30]);
   });
 });
 
@@ -500,6 +531,21 @@ function linkedPullRequest(): CriticalIssueView["linkedPullRequests"][number] {
     attentionFlags: [],
     linkedIssueNumbers: [10],
     isComplete: true
+  };
+}
+
+function testingIssue(input: Partial<TestingIssueQueueView>): TestingIssueQueueView {
+  return {
+    number: input.number ?? 50,
+    title: input.title ?? "issue in test",
+    htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/issues/50",
+    testers: input.testers ?? ["tester-a"],
+    queueAgeHours: input.queueAgeHours ?? 12,
+    queueAgeEvidence: input.queueAgeEvidence ?? "issue_assignment_event",
+    linkedPullRequests: input.linkedPullRequests ?? [],
+    isComplete: input.isComplete ?? true,
+    syncError: input.syncError ?? null,
+    lastSyncedAt: input.lastSyncedAt ?? "2026-07-04T01:00:00Z"
   };
 }
 

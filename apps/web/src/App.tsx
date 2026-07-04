@@ -107,6 +107,8 @@ import {
   personWorkloadStatus,
   personalIssueReasons,
   prAttentionReasons,
+  sortTestingIssuesForAction,
+  testingIssueLinkedBlockerCount,
   sortPeopleByWorkload,
   type FlowEfficiencySummary,
   type PersonalActionQueueFilter,
@@ -1520,7 +1522,7 @@ function TeamRotationOverview({
     filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
   );
   const prRisks = sortPendingPrsForAction(data.pendingPrs);
-  const testingPrs = sortTestingQueuePrs(data.pendingPrs.filter(isTestingQueuePr));
+  const testingIssues = sortTestingIssuesForAction(data.testing.issues);
   const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
@@ -1592,7 +1594,7 @@ function TeamRotationOverview({
             value={data.testing.queueIssues}
             detail={`${data.testing.staleQueueIssues} stale | avg ${optionalHours(data.testing.averageIssueQueueAgeHours)}`}
             tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
-            onClick={() => onOpenPrsFilter("testing")}
+            onClick={() => onNavigate("PRs")}
           />
           <TeamMonitorTile
             label="People focus"
@@ -1650,15 +1652,15 @@ function TeamRotationOverview({
           </TeamRotationLane>
           <TeamRotationLane
             title="Issues Waiting For Test"
-            count={data.testing.queuePrs}
-            visibleCount={Math.min(testingPrs.length, 5)}
-            overflowLabel="PRs linked to test issues"
-            actionLabel="Open PRs"
-            tone={data.testing.staleQueuePrs > 0 ? "critical" : "attention"}
-            onAction={() => onOpenPrsFilter("testing")}
+            count={data.testing.queueIssues}
+            visibleCount={Math.min(testingIssues.length, 5)}
+            overflowLabel="issues in test"
+            actionLabel="Open Testing"
+            tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
+            onAction={() => onNavigate("PRs")}
           >
-            {testingPrs.slice(0, 5).map((pr) => (
-              <TeamPrRiskRow pr={pr} key={pr.number} />
+            {testingIssues.slice(0, 5).map((issue) => (
+              <TeamTestingIssueRow issue={issue} key={issue.number} />
             ))}
           </TeamRotationLane>
         </div>
@@ -1714,7 +1716,6 @@ function TeamFlowRiskStrip({
       prHasConflict(pr) ||
       pr.attentionFlags.includes("no_human_action_24h")
   );
-  const staleTestingPrs = data.pendingPrs.filter(isTestingStalePr);
   const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
   const dataRiskTone = data.sync.worker.status === "failed" || data.sync.staleObjects > 0 ? "attention" : "normal";
 
@@ -1742,7 +1743,7 @@ function TeamFlowRiskStrip({
         detail={`${data.testing.queueIssues} issues in test | max ${optionalHours(maxTestingIssueAge(data.testing.issues))}`}
         tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
         action="Open test queue"
-        onClick={() => onOpenPrsFilter(staleTestingPrs.length > 0 ? "stale_testing" : "testing")}
+        onClick={() => onNavigate("PRs")}
       />
       <TeamFlowRiskCard
         label="Data risk"
@@ -2003,6 +2004,65 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
         <Text type="secondary">Next</Text>
         <Text strong>{teamPrNextAction(pr)}</Text>
         <small>{prActionContext(pr)}</small>
+      </div>
+    </article>
+  );
+}
+
+function TeamTestingIssueRow({ issue }: { issue: TestingIssueQueueView }) {
+  const linkedPrs = issue.linkedPullRequests.slice(0, 4);
+  const blockerCount = testingIssueLinkedBlockerCount(issue);
+
+  return (
+    <article className="team-work-row">
+      <div className="team-work-object">
+        <div className="team-work-title-row">
+          <WorkObjectLink href={issue.htmlUrl} icon={<ClipboardCheck size={15} aria-hidden="true" />}>
+            Issue #{issue.number}
+          </WorkObjectLink>
+          <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
+          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
+            {issue.queueAgeEvidence === "issue_assignment_event" ? "tester assignment" : "issue update time"}
+          </Tag>
+          {!issue.isComplete ? <Tag color="gold">issue sync pending</Tag> : null}
+        </div>
+        <a className="team-work-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <div className="team-work-tags">
+          {issue.testers.slice(0, 4).map((tester) => (
+            <Tag key={tester}>{tester}</Tag>
+          ))}
+          <Tag>{issue.linkedPullRequests.length} linked PR</Tag>
+          {blockerCount > 0 ? <Tag color="orange">{blockerCount} PR blockers</Tag> : null}
+          {issue.syncError ? (
+            <Tooltip title={issue.syncError}>
+              <Tag color="red">sync error</Tag>
+            </Tooltip>
+          ) : null}
+        </div>
+        {linkedPrs.length > 0 ? (
+          <div className="team-linked-row">
+            <span>PRs</span>
+            {linkedPrs.map((pr) => (
+              <Tooltip title={pr.title} key={pr.number}>
+                <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                  #{pr.number}
+                </a>
+              </Tooltip>
+            ))}
+            {issue.linkedPullRequests.length > linkedPrs.length ? (
+              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="team-linked-row team-linked-row-missing">No linked PR visible</div>
+        )}
+      </div>
+      <div className="team-work-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{teamTestingIssueNextAction(issue, blockerCount)}</Text>
+        <small>{issue.testers.length} tester assignment</small>
       </div>
     </article>
   );
@@ -2500,6 +2560,22 @@ function teamPrNextAction(pr: PendingPrView): string {
     isComplete: pr.isComplete
   };
   return personalActivityNextAction(syntheticItem);
+}
+
+function teamTestingIssueNextAction(issue: TestingIssueQueueView, blockerCount: number): string {
+  if (blockerCount > 0) {
+    return "Clear linked PR blockers";
+  }
+  if (issue.linkedPullRequests.length === 0) {
+    return "Link execution PR";
+  }
+  if (isTestingIssueStale(issue)) {
+    return "Ask tester for update";
+  }
+  if (issue.queueAgeEvidence === "issue_cache_timestamp") {
+    return "Backfill assignment time";
+  }
+  return "Track test result";
 }
 
 function sortPeopleForTeamFocus(people: PersonSummary[], personalViews: PersonalActionView[]): PersonSummary[] {
@@ -3883,13 +3959,7 @@ function TestingCommandBoard({
 function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] }) {
   const [expanded, setExpanded] = useState(false);
   const visibleLimit = 8;
-  const sortedIssues = [...issues].sort(
-    (left, right) =>
-      Number(isTestingIssueStale(right)) - Number(isTestingIssueStale(left)) ||
-      (right.queueAgeHours ?? 0) - (left.queueAgeHours ?? 0) ||
-      right.linkedPullRequests.length - left.linkedPullRequests.length ||
-      left.number - right.number
-  );
+  const sortedIssues = sortTestingIssuesForAction(issues);
   const visibleIssues = expanded ? sortedIssues : sortedIssues.slice(0, visibleLimit);
   const hiddenCount = Math.max(0, sortedIssues.length - visibleIssues.length);
 
@@ -3931,14 +4001,7 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
 }
 
 function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
-  const linkedBlockers = issue.linkedPullRequests.filter(
-    (pr) =>
-      pr.attentionFlags.length > 0 ||
-      pr.reviewDecision === "changes_requested" ||
-      pr.mergeStateStatus === "dirty" ||
-      (pr.ciState !== null &&
-        ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState))
-  );
+  const linkedBlockers = testingIssueLinkedBlockerCount(issue);
 
   return (
     <article className={`testing-issue-row ${isTestingIssueStale(issue) ? "testing-issue-row-critical" : ""}`}>
@@ -3964,7 +4027,7 @@ function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
         <div className="testing-issue-meta">
           <span>testers {issue.testers.slice(0, 4).join(", ")}</span>
           <span>{issue.linkedPullRequests.length} linked PRs</span>
-          {linkedBlockers.length > 0 ? <span>{linkedBlockers.length} PR blockers</span> : null}
+          {linkedBlockers > 0 ? <span>{linkedBlockers} PR blockers</span> : null}
         </div>
       </div>
       <div className="testing-issue-prs">
@@ -7667,8 +7730,8 @@ export default function App() {
         points: teamTrendPoints,
         pendingPrs: data.pendingPrs,
         activeIssues: data.criticalIssues,
-        testingQueuePrs: data.testing.queuePrs,
-        averageTestingQueueAgeHours: data.testing.averageQueueAgeHours
+        testingQueuePrs: data.testing.queueIssues,
+        averageTestingQueueAgeHours: data.testing.averageIssueQueueAgeHours
       })
     : null;
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;

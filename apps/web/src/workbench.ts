@@ -5,6 +5,7 @@ import type {
   PersonalActionView,
   PersonalIssueView,
   PersonalPullRequestView,
+  TestingIssueQueueView,
   TestingFlowState
 } from "@mo-devflow/shared";
 
@@ -192,6 +193,32 @@ export function flowEfficiencySummary(input: {
         ? input.averageTestingQueueAgeHours
         : average(testingPrs.map((pr) => pr.testingQueueAgeHours).filter((age): age is number => age !== null))
   };
+}
+
+export function sortTestingIssuesForAction(issues: TestingIssueQueueView[]): TestingIssueQueueView[] {
+  return [...issues].sort(
+    (left, right) =>
+      Number(testingIssueNeedsAttention(right)) - Number(testingIssueNeedsAttention(left)) ||
+      (right.queueAgeHours ?? 0) - (left.queueAgeHours ?? 0) ||
+      testingIssueLinkedBlockerCount(right) - testingIssueLinkedBlockerCount(left) ||
+      right.linkedPullRequests.length - left.linkedPullRequests.length ||
+      left.number - right.number
+  );
+}
+
+export function testingIssueNeedsAttention(issue: TestingIssueQueueView): boolean {
+  return (issue.queueAgeHours ?? 0) >= 24 || testingIssueLinkedBlockerCount(issue) > 0 || issue.syncError !== null;
+}
+
+export function testingIssueLinkedBlockerCount(issue: TestingIssueQueueView): number {
+  return issue.linkedPullRequests.filter(
+    (pr) =>
+      pr.attentionFlags.length > 0 ||
+      pr.reviewDecision === "changes_requested" ||
+      pr.mergeStateStatus === "dirty" ||
+      (pr.ciState !== null &&
+        ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState))
+  ).length;
 }
 
 export function personWorkloadScore(person: PersonSummary): number {
