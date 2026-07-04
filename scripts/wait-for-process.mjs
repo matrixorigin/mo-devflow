@@ -14,6 +14,7 @@ if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
   console.error("timeout-ms must be a positive number");
   process.exit(2);
 }
+const stableMs = 750;
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -36,6 +37,7 @@ function isAlive(pid) {
 }
 
 const startedAt = Date.now();
+let firstAliveAt = null;
 let lastError = "pid file not found";
 
 while (Date.now() - startedAt < timeoutMs) {
@@ -53,10 +55,16 @@ while (Date.now() - startedAt < timeoutMs) {
   }
 
   if (isAlive(pid)) {
-    console.log(`${label} process ready (PID ${pid})`);
-    process.exit(0);
+    firstAliveAt ??= Date.now();
+    if (Date.now() - firstAliveAt >= stableMs) {
+      console.log(`${label} process ready (PID ${pid})`);
+      process.exit(0);
+    }
+    await sleep(100);
+    continue;
   }
 
+  firstAliveAt = null;
   lastError = `PID ${pid} is not running`;
   await sleep(100);
 }
