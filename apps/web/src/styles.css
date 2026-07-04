@@ -543,6 +543,40 @@ button.team-monitor-tile:hover,
   min-width: 0;
 }
 
+.team-rotation-more {
+  align-items: center;
+  appearance: none;
+  background: #f9fafb;
+  border: 0;
+  border-top: 1px dashed #d1d5db;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  justify-content: space-between;
+  line-height: 1.2;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.team-rotation-more strong {
+  color: #1d4ed8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.team-rotation-more:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.team-rotation-more:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: -2px;
+}
+
 .team-work-row {
   border-bottom: 1px solid #f3f4f6;
   display: grid;
@@ -934,12 +968,17 @@ button.critical-board-stat:hover {
 }
 
 .critical-lane-more {
+  align-items: center;
   appearance: none;
-  background: #f9fafb;
+  background: #eff6ff;
   border: 0;
   border-top: 1px dashed #d1d5db;
-  color: #6b7280;
+  color: #1d4ed8;
   cursor: pointer;
+  display: inline-flex;
+  font-weight: 650;
+  gap: 6px;
+  justify-content: center;
   font-size: 12px;
   padding: 8px 10px;
   text-align: center;
@@ -951,8 +990,8 @@ button.critical-board-stat:hover {
 .action-queue-more:hover,
 .flow-pr-more:hover,
 .flow-thread-more:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 .critical-lane-more:focus-visible,

@@ -912,6 +912,25 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   return "all active";
 }
 
+function criticalOverflowLabel(filter: CriticalIssueScopeFilter): string {
+  if (filter === "s-1") {
+    return "s-1 issues";
+  }
+  if (filter === "s0") {
+    return "s0 issues";
+  }
+  if (filter === "no_pr") {
+    return "issues without linked PRs";
+  }
+  if (filter === "owner_gap") {
+    return "owner-gap issues";
+  }
+  if (filter === "timeline_missing") {
+    return "issues missing timeline evidence";
+  }
+  return "active issues";
+}
+
 function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "attention") {
     return "PR attention";
@@ -1276,6 +1295,8 @@ function TeamRotationOverview({
           <TeamRotationLane
             title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
             count={criticalIssues.length}
+            visibleCount={Math.min(criticalIssues.length, 6)}
+            overflowLabel={criticalOverflowLabel(criticalScopeFilter)}
             actionLabel="Open Issues"
             tone="critical"
             onAction={() => onOpenIssuesFilter({})}
@@ -1296,6 +1317,8 @@ function TeamRotationOverview({
           <TeamRotationLane
             title="PR Rotation Risks"
             count={data.counts.attentionPrs}
+            visibleCount={Math.min(prRisks.length, 6)}
+            overflowLabel="PRs needing attention"
             actionLabel="Open PRs"
             tone="attention"
             onAction={() => onOpenPrsFilter("attention")}
@@ -1307,6 +1330,8 @@ function TeamRotationOverview({
           <TeamRotationLane
             title="Testing Handoff"
             count={data.testing.queuePrs}
+            visibleCount={Math.min(testingPrs.length, 5)}
+            overflowLabel="testing PRs"
             actionLabel="Open PRs"
             tone={data.testing.staleQueuePrs > 0 ? "critical" : "attention"}
             onAction={() => onOpenPrsFilter("testing")}
@@ -1382,6 +1407,8 @@ function TeamMonitorTile({
 function TeamRotationLane({
   title,
   count,
+  visibleCount,
+  overflowLabel,
   actionLabel,
   tone,
   onAction,
@@ -1390,12 +1417,16 @@ function TeamRotationLane({
 }: {
   title: string;
   count: number;
+  visibleCount?: number;
+  overflowLabel?: string;
   actionLabel: string;
   tone: "critical" | "attention";
   onAction: () => void;
   children: ReactNode;
   controls?: ReactNode;
 }) {
+  const hiddenCount = Math.max(0, count - (visibleCount ?? count));
+
   return (
     <section className={`team-rotation-lane team-rotation-lane-${tone}`}>
       <div className="team-rotation-lane-heading">
@@ -1411,6 +1442,14 @@ function TeamRotationLane({
         </Button>
       </div>
       <div className="team-rotation-list">{children}</div>
+      {hiddenCount > 0 ? (
+        <button type="button" className="team-rotation-more" onClick={onAction}>
+          <span>
+            +{hiddenCount} additional {overflowLabel ?? "items"}
+          </span>
+          <strong>{actionLabel}</strong>
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -2357,6 +2396,7 @@ function CriticalIssueBoard({
           issues={sZeroIssues}
           tone="attention"
           emptyText="No active s0 issues"
+          overflowLabel="s0 issues"
           visibleLimit={10}
         />
         {otherCriticalIssues.length > 0 ? (
@@ -2583,6 +2623,7 @@ function CriticalIssueLane({
   issues,
   tone,
   emptyText,
+  overflowLabel = "issues",
   visibleLimit
 }: {
   title: string;
@@ -2590,6 +2631,7 @@ function CriticalIssueLane({
   issues: CriticalIssueView[];
   tone: "critical" | "attention" | "normal";
   emptyText: string;
+  overflowLabel?: string;
   visibleLimit?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -2617,7 +2659,10 @@ function CriticalIssueLane({
       )}
       {hiddenCount > 0 ? (
         <button type="button" className="critical-lane-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} additional s0 issues. Show all in this lane
+          <ChevronDown size={14} aria-hidden="true" />
+          <span>
+            Show {hiddenCount} more {overflowLabel}
+          </span>
         </button>
       ) : hasOverflow && expanded ? (
         <button
@@ -2625,7 +2670,8 @@ function CriticalIssueLane({
           className="critical-lane-more critical-lane-more-muted"
           onClick={() => setExpanded(false)}
         >
-          Show compact list
+          <ChevronUp size={14} aria-hidden="true" />
+          <span>Show compact list</span>
         </button>
       ) : null}
     </section>
