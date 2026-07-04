@@ -2382,7 +2382,14 @@ function TeamCriticalFlowRow({
           ) : (
             <span className="team-critical-flow-no-pr">No visible execution PR</span>
           )}
-          {prs.length > visiblePrs.length ? <Tag>{prs.length - visiblePrs.length} more</Tag> : null}
+          {prs.length > visiblePrs.length ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview issue ${issue.number} with ${prs.length - visiblePrs.length} more linked PRs`}
+              count={prs.length - visiblePrs.length}
+              label="more PRs"
+              onClick={() => onPreviewIssue(issue)}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -2667,7 +2674,11 @@ function TeamCriticalIssueRow({
               </Tooltip>
             ))}
             {issue.linkedPullRequests.length > linkedPrs.length ? (
-              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+              <LinkedOverflowButton
+                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
+                count={issue.linkedPullRequests.length - linkedPrs.length}
+                onClick={() => onPreview({ objectType: "issue", issue })}
+              />
             ) : null}
           </div>
         ) : (
@@ -2762,7 +2773,16 @@ function TeamPrRiskRow({
               </Tooltip>
             ))}
             {activeIssues.length > visibleActiveIssues.length ? (
-              <span>+{activeIssues.length - visibleActiveIssues.length}</span>
+              onPreview ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview PR ${pr.number} with ${activeIssues.length - visibleActiveIssues.length} more active issues`}
+                  count={activeIssues.length - visibleActiveIssues.length}
+                  label="more active"
+                  onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
+                />
+              ) : (
+                <span>+{activeIssues.length - visibleActiveIssues.length}</span>
+              )
             ) : null}
           </div>
         ) : null}
@@ -2775,7 +2795,18 @@ function TeamPrRiskRow({
                   #{link.number}
                 </a>
               ))}
-              {hiddenIssueLinks > 0 ? <span>+{hiddenIssueLinks}</span> : null}
+              {hiddenIssueLinks > 0 ? (
+                onPreview ? (
+                  <LinkedOverflowButton
+                    ariaLabel={`Preview PR ${pr.number} with ${hiddenIssueLinks} more linked issues`}
+                    count={hiddenIssueLinks}
+                    label="more issues"
+                    onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
+                  />
+                ) : (
+                  <span>+{hiddenIssueLinks}</span>
+                )
+              ) : null}
             </>
           </div>
         ) : activeIssues.length === 0 ? (
@@ -2790,6 +2821,24 @@ function TeamPrRiskRow({
         <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
       </div>
     </article>
+  );
+}
+
+function LinkedOverflowButton({
+  ariaLabel,
+  count,
+  label = "more",
+  onClick
+}: {
+  ariaLabel: string;
+  count: number;
+  label?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="linked-overflow-button" aria-label={ariaLabel} onClick={onClick}>
+      +{count} {label}
+    </button>
   );
 }
 
