@@ -1071,12 +1071,19 @@ describe("pull request testing transition events", () => {
       ...reviewerTransition,
       testingSignals: ["issue_assignee:#42:tester-a"]
     };
+    const issueLabelTransition: TestingTransitionView = {
+      ...reviewerTransition,
+      testingTesters: [],
+      testingSignals: ["issue_label:#42:testing"]
+    };
     const issueScopedProfile: RepoProfile = {
       ...baseProfile,
-      people: { ...baseProfile.people, testers: ["tester-a"] }
+      people: { ...baseProfile.people, testers: ["tester-a"] },
+      testing: { handoffSignals: { labels: ["testing"], reviewerUsers: [], assigneeUsers: [], comments: [] } }
     };
     expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
     expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
+    expect(testingTransitionBelongsToProfile(issueScopedProfile, issueLabelTransition)).toBe(true);
   });
 
   test("selects recent testing transitions after filtering by current workflow", () => {
@@ -1117,6 +1124,7 @@ describe("pull request testing transition events", () => {
         title: "issue in test",
         htmlUrl: "https://github.com/example/repo/issues/42",
         testers: ["tester-a", "tester-a"],
+        testingSignals: ["issue_assignee:#42:tester-a", "issue_assignee:#42:tester-a"],
         queueAgeHours: 8,
         queueStartedAt: "2026-07-03T08:00:00.000Z",
         queueAgeEvidence: "issue_assignment_event",
@@ -1130,6 +1138,7 @@ describe("pull request testing transition events", () => {
         title: "issue with partial cache",
         htmlUrl: "https://github.com/example/repo/issues/43",
         testers: ["tester-b"],
+        testingSignals: ["issue_assignee:#43:tester-b"],
         queueAgeHours: 2,
         queueStartedAt: null,
         queueAgeEvidence: "issue_cache_timestamp",
@@ -1160,6 +1169,38 @@ describe("pull request testing transition events", () => {
         testingSignals: ["issue_assignee:#42:tester-a"],
         occurredAt: "2026-07-03T08:00:00.000Z",
         sourceCompleteness: "complete_cache"
+      }
+    ]);
+  });
+
+  test("keeps issue label testing handoff signals in issue-derived transitions", () => {
+    const issues: TestingIssueQueueView[] = [
+      {
+        number: 44,
+        title: "labeled issue in test",
+        htmlUrl: "https://github.com/example/repo/issues/44",
+        testers: [],
+        testingSignals: ["issue_label:#44:testing"],
+        queueAgeHours: 3,
+        queueStartedAt: "2026-07-03T09:00:00.000Z",
+        queueAgeEvidence: "issue_cache_timestamp",
+        linkedPullRequests: [],
+        isComplete: true,
+        syncError: null,
+        lastSyncedAt: "2026-07-03T12:00:00.000Z"
+      }
+    ];
+
+    expect(testingIssueTransitionsFromQueueIssues(issues)).toEqual([
+      {
+        id: -44,
+        issueNumber: 44,
+        fromState: "not_ready",
+        toState: "testing",
+        testingTesters: [],
+        testingSignals: ["issue_label:#44:testing"],
+        occurredAt: "2026-07-03T09:00:00.000Z",
+        sourceCompleteness: "partial_cache"
       }
     ]);
   });

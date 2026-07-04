@@ -715,6 +715,7 @@ function testingIssue(input: Partial<TestingIssueQueueView>): TestingIssueQueueV
     title: input.title ?? "issue in test",
     htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/issues/50",
     testers: input.testers ?? ["tester-a"],
+    testingSignals: input.testingSignals ?? ["issue_assignee:#50:tester-a"],
     queueAgeHours: input.queueAgeHours ?? 12,
     queueStartedAt: input.queueStartedAt ?? "2026-07-03T13:00:00Z",
     queueAgeEvidence: input.queueAgeEvidence ?? "issue_assignment_event",

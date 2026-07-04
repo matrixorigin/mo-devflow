@@ -434,6 +434,7 @@ export interface TestingIssueQueueView {
   title: string;
   htmlUrl: string;
   testers: string[];
+  testingSignals: string[];
   queueAgeHours: number | null;
   queueStartedAt: string | null;
   queueAgeEvidence: "issue_assignment_event" | "issue_cache_timestamp";

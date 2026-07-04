@@ -296,7 +296,10 @@ export function testingIssueTransitionsFromQueueIssues(
         fromState: "not_ready" as const,
         toState: "testing" as const,
         testingTesters: testers,
-        testingSignals: testers.map((tester) => `issue_assignee:#${issue.number}:${tester}`),
+        testingSignals:
+          issue.testingSignals.length > 0
+            ? uniqueValues(issue.testingSignals)
+            : testers.map((tester) => `issue_assignee:#${issue.number}:${tester}`),
         occurredAt: issue.queueStartedAt ?? issue.lastSyncedAt,
         sourceCompleteness:
           issue.queueAgeEvidence === "issue_assignment_event" ? ("complete_cache" as const) : ("partial_cache" as const)
@@ -314,7 +317,11 @@ export function testingIssueTransitionsFromQueueIssues(
 
 function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
   const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
-  return Boolean(issueAssignee && testingAssigneeLoginSet(profile).has(normalizedLogin(issueAssignee[1])));
+  if (issueAssignee) {
+    return testingAssigneeLoginSet(profile).has(normalizedLogin(issueAssignee[1]));
+  }
+  const issueLabel = signal.match(/^issue_label:#\d+:(.+)$/);
+  return Boolean(issueLabel && testingLabelSet(profile).has(normalizedLabel(issueLabel[1])));
 }
 
 type TestingTurnoverMetrics = Pick<
@@ -662,7 +669,7 @@ export function criticalIssueOwnerCoverage(
 }
 
 function hasTestingHandoffSignal(profile: RepoProfile): boolean {
-  return testingAssigneeLogins(profile).length > 0;
+  return testingAssigneeLogins(profile).length > 0 || testingLabelNames(profile).length > 0;
 }
 
 function testingAssigneeLogins(profile: RepoProfile): string[] {
@@ -671,6 +678,18 @@ function testingAssigneeLogins(profile: RepoProfile): string[] {
 
 function testingAssigneeLoginSet(profile: RepoProfile): Set<string> {
   return normalizedLoginSet(testingAssigneeLogins(profile));
+}
+
+function testingLabelNames(profile: RepoProfile): string[] {
+  return uniqueValues(profile.testing.handoffSignals?.labels ?? []);
+}
+
+function testingLabelSet(profile: RepoProfile): Set<string> {
+  return new Set(testingLabelNames(profile).map(normalizedLabel).filter(Boolean));
+}
+
+function normalizedLabel(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 const attentionSeverityRank: Record<AttentionSeverity, number> = {
@@ -879,8 +898,9 @@ export function profileConfigurationWarnings(input: {
       severity: "warning",
       title: "Testing handoff rules are not configured",
       description:
-        "Testing queue and tester turnover views cannot reflect the real workflow until tester assignee signals are configured. Issue assignees matching those testers are treated as sent to test.",
-      action: "Configure people.testers or testing.handoff_signals.assignee_users for the repo workflow."
+        "Testing queue and tester turnover views cannot reflect the real workflow until tester assignee or issue label signals are configured.",
+      action:
+        "Configure people.testers, testing.handoff_signals.assignee_users, or testing.handoff_signals.labels for the repo workflow."
     });
   }
 
@@ -2179,8 +2199,9 @@ function uniqueValues(values: string[]): string[] {
 
 function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Map<number, TestingIssueContext> {
   const testerLogins = testingAssigneeLoginSet(profile);
+  const testingLabels = testingLabelSet(profile);
   const contexts = new Map<number, TestingIssueContext>();
-  if (testerLogins.size === 0) {
+  if (testerLogins.size === 0 && testingLabels.size === 0) {
     return contexts;
   }
 
@@ -2191,15 +2212,22 @@ function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Ma
     const testers = parseJsonArray(asString(row.assignees_json)).filter((login) =>
       testerLogins.has(normalizedLogin(login))
     );
-    if (testers.length === 0) {
+    const matchedLabels = parseJsonArray(asString(row.labels_json)).filter((label) =>
+      testingLabels.has(normalizedLabel(label))
+    );
+    if (testers.length === 0 && matchedLabels.length === 0) {
       continue;
     }
     const issueNumber = asNumber(row.number);
     const queueStartedAt = fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at);
+    const signals = [
+      ...testers.map((tester) => `issue_assignee:#${issueNumber}:${tester}`),
+      ...matchedLabels.map((label) => `issue_label:#${issueNumber}:${label}`)
+    ];
     contexts.set(issueNumber, {
       issueNumber,
       testers: uniqueValues(testers),
-      signals: uniqueValues(testers.map((tester) => `issue_assignee:#${issueNumber}:${tester}`)),
+      signals: uniqueValues(signals),
       queueAgeHours: hoursSince(queueStartedAt),
       queueStartedAt,
       queueAgeEvidence: "issue_cache_timestamp"
@@ -2364,6 +2392,7 @@ function testingIssueQueueViews(
         title: asString(row.title),
         htmlUrl: asString(row.html_url),
         testers: context.testers,
+        testingSignals: context.signals,
         queueAgeHours: context.queueAgeHours,
         queueStartedAt: context.queueStartedAt,
         queueAgeEvidence: context.queueAgeEvidence,
