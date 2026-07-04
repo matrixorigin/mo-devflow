@@ -324,6 +324,8 @@ export function buildSyncHealthSummary(input: {
         status: "not_started",
         lastSuccessfulAt: null,
         lastAttemptedAt: null,
+        lastFailedAt: null,
+        lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null
       };
@@ -334,6 +336,8 @@ export function buildSyncHealthSummary(input: {
       status: asString(row.status) as SyncHealthStatus,
       lastSuccessfulAt: fromSqlDate(row.last_successful_at),
       lastAttemptedAt: fromSqlDate(row.started_at),
+      lastFailedAt: fromSqlDate(row.last_failed_at),
+      lastFailureMessage: row.last_failure_message ? asString(row.last_failure_message) : null,
       errorMessage: row.error_message ? asString(row.error_message) : null,
       rateLimitRemaining:
         row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
@@ -2285,7 +2289,9 @@ export async function getDashboardSummary(
             latest.started_at,
             latest.error_message,
             latest.rate_limit_remaining,
-            summary.last_successful_at
+            summary.last_successful_at,
+            failure.last_failed_at,
+            failure.last_failure_message
      FROM sync_runs latest
      JOIN (
        SELECT sync_layer,
@@ -2295,10 +2301,23 @@ export async function getDashboardSummary(
        WHERE repo_id = ?
        GROUP BY sync_layer
      ) summary ON summary.latest_id = latest.id
+     LEFT JOIN (
+       SELECT failed_latest.sync_layer,
+              failed_latest.finished_at AS last_failed_at,
+              failed_latest.error_message AS last_failure_message
+       FROM sync_runs failed_latest
+       JOIN (
+         SELECT sync_layer,
+                MAX(id) AS last_failed_id
+         FROM sync_runs
+         WHERE repo_id = ? AND status IN ('failed', 'blocked')
+         GROUP BY sync_layer
+       ) failed_summary ON failed_summary.last_failed_id = failed_latest.id
+     ) failure ON failure.sync_layer = latest.sync_layer
      WHERE latest.repo_id = ?
      ORDER BY latest.id DESC
      LIMIT 20`,
-    [repoId, repoId]
+    [repoId, repoId, repoId]
   );
   const [partialRows] = await pool.execute<RowData[]>(
     `SELECT

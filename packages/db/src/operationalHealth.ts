@@ -89,7 +89,9 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
             latest.started_at,
             latest.error_message,
             latest.rate_limit_remaining,
-            summary.last_successful_at
+            summary.last_successful_at,
+            failure.last_failed_at,
+            failure.last_failure_message
      FROM sync_runs latest
      JOIN (
        SELECT sync_layer,
@@ -99,10 +101,23 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
        WHERE repo_id = ?
        GROUP BY sync_layer
      ) summary ON summary.latest_id = latest.id
+     LEFT JOIN (
+       SELECT failed_latest.sync_layer,
+              failed_latest.finished_at AS last_failed_at,
+              failed_latest.error_message AS last_failure_message
+       FROM sync_runs failed_latest
+       JOIN (
+         SELECT sync_layer,
+                MAX(id) AS last_failed_id
+         FROM sync_runs
+         WHERE repo_id = ? AND status IN ('failed', 'blocked')
+         GROUP BY sync_layer
+       ) failed_summary ON failed_summary.last_failed_id = failed_latest.id
+     ) failure ON failure.sync_layer = latest.sync_layer
      WHERE latest.repo_id = ?
      ORDER BY latest.id DESC
      LIMIT 20`,
-    [repoId, repoId]
+    [repoId, repoId, repoId]
   );
   const syncHealth = buildSyncHealthSummary({ rows: syncRows, expectedLayers: syncHealthLayers });
   const [cacheRows] = await pool.execute<RowData[]>(

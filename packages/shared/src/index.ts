@@ -714,6 +714,8 @@ export interface SyncHealth {
   status: SyncHealthStatus;
   lastSuccessfulAt: string | null;
   lastAttemptedAt: string | null;
+  lastFailedAt: string | null;
+  lastFailureMessage: string | null;
   errorMessage: string | null;
   rateLimitRemaining: number | null;
 }

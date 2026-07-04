@@ -8,6 +8,8 @@ function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHeal
     status: input.status ?? "success",
     lastSuccessfulAt: input.lastSuccessfulAt ?? "2026-07-04T01:00:00.000Z",
     lastAttemptedAt: input.lastAttemptedAt ?? "2026-07-04T01:00:00.000Z",
+    lastFailedAt: input.lastFailedAt ?? null,
+    lastFailureMessage: input.lastFailureMessage ?? null,
     errorMessage: input.errorMessage ?? null,
     rateLimitRemaining: input.rateLimitRemaining ?? null
   };

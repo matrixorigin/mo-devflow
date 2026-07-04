@@ -247,7 +247,7 @@ describe("cache freshness", () => {
 });
 
 describe("sync health summary", () => {
-  test("keeps one row per sync layer with latest attempt and latest success", () => {
+  test("keeps one row per sync layer with latest attempt, latest success, and latest failure", () => {
     expect(
       buildSyncHealthSummary({
         expectedLayers: ["github_sync", "metrics"],
@@ -259,7 +259,9 @@ describe("sync health summary", () => {
             finished_at: "2026-07-04 10:01:00",
             error_message: "rate limited",
             rate_limit_remaining: 0,
-            last_successful_at: "2026-07-04 08:01:00"
+            last_successful_at: "2026-07-04 08:01:00",
+            last_failed_at: "2026-07-04 10:01:00",
+            last_failure_message: "rate limited"
           },
           {
             sync_layer: "metrics",
@@ -268,7 +270,9 @@ describe("sync health summary", () => {
             finished_at: "2026-07-04 09:00:05",
             error_message: null,
             rate_limit_remaining: null,
-            last_successful_at: "2026-07-04 09:00:05"
+            last_successful_at: "2026-07-04 09:00:05",
+            last_failed_at: "2026-07-03 11:10:00",
+            last_failure_message: "network timeout"
           }
         ]
       })
@@ -278,6 +282,8 @@ describe("sync health summary", () => {
         status: "failed",
         lastSuccessfulAt: "2026-07-04T08:01:00Z",
         lastAttemptedAt: "2026-07-04T10:00:00Z",
+        lastFailedAt: "2026-07-04T10:01:00Z",
+        lastFailureMessage: "rate limited",
         errorMessage: "rate limited",
         rateLimitRemaining: 0
       },
@@ -286,6 +292,8 @@ describe("sync health summary", () => {
         status: "success",
         lastSuccessfulAt: "2026-07-04T09:00:05Z",
         lastAttemptedAt: "2026-07-04T09:00:00Z",
+        lastFailedAt: "2026-07-03T11:10:00Z",
+        lastFailureMessage: "network timeout",
         errorMessage: null,
         rateLimitRemaining: null
       }
@@ -303,7 +311,9 @@ describe("sync health summary", () => {
             started_at: "2026-07-04 09:00:00",
             error_message: null,
             rate_limit_remaining: null,
-            last_successful_at: "2026-07-04 09:00:05"
+            last_successful_at: "2026-07-04 09:00:05",
+            last_failed_at: null,
+            last_failure_message: null
           }
         ]
       })
@@ -313,6 +323,8 @@ describe("sync health summary", () => {
         status: "not_started",
         lastSuccessfulAt: null,
         lastAttemptedAt: null,
+        lastFailedAt: null,
+        lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null
       },
@@ -321,6 +333,8 @@ describe("sync health summary", () => {
         status: "success",
         lastSuccessfulAt: "2026-07-04T09:00:05Z",
         lastAttemptedAt: "2026-07-04T09:00:00Z",
+        lastFailedAt: null,
+        lastFailureMessage: null,
         errorMessage: null,
         rateLimitRemaining: null
       },
@@ -329,6 +343,8 @@ describe("sync health summary", () => {
         status: "not_started",
         lastSuccessfulAt: null,
         lastAttemptedAt: null,
+        lastFailedAt: null,
+        lastFailureMessage: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null
       }

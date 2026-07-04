@@ -141,6 +141,8 @@ function syncHealthTooltip(item: DashboardSummary["sync"]["health"][number]) {
     <div>
       <div>Last attempt: {formatDate(item.lastAttemptedAt)}</div>
       <div>Last success: {formatDate(item.lastSuccessfulAt)}</div>
+      {item.lastFailedAt ? <div>Last failure: {formatDate(item.lastFailedAt)}</div> : null}
+      {item.lastFailureMessage ? <div>Failure reason: {item.lastFailureMessage}</div> : null}
       {item.errorMessage ? <div>Latest error: {item.errorMessage}</div> : null}
     </div>
   );
@@ -2260,6 +2262,9 @@ export default function App() {
                       <Tag color={item.lastSuccessfulAt ? "default" : "red"}>
                         success {formatDate(item.lastSuccessfulAt)}
                       </Tag>
+                      {item.lastFailedAt ? (
+                        <Tag color="orange">failure {formatDate(item.lastFailedAt)}</Tag>
+                      ) : null}
                       {item.rateLimitRemaining === null ? null : (
                         <Tag color={rateLimitHealthTagColor(item.rateLimitRemaining)}>
                           rate {item.rateLimitRemaining}
