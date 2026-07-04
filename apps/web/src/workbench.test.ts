@@ -161,7 +161,7 @@ describe("work item attention reasons", () => {
       "Changes requested",
       "CI failed",
       "Merge conflict",
-      "Test changes requested"
+      "Issue test changes requested"
     ]);
   });
 
@@ -504,6 +504,13 @@ describe("personal activity feed", () => {
       "issue:10",
       "pull_request:22"
     ]);
+    expect(items.find((item) => item.id === "pull_request:21")).toMatchObject({
+      phase: "Linked issue test evidence",
+      reasons: ["Linked issue test wait visible"]
+    });
+    expect(personalActivityNextAction(items.find((item) => item.id === "pull_request:21")!)).toBe(
+      "Check linked issue test status"
+    );
   });
 
   it("shows issue label timeline evidence for issue-level testing activity", () => {

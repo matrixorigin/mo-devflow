@@ -702,19 +702,19 @@ function testingStateColor(state: TestingFlowState): string {
 
 function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "test_requested") {
-    return "PR-only signal";
+    return "PR evidence only";
   }
   if (state === "testing") {
-    return "issue in test";
+    return "linked issue in test";
   }
   if (state === "dev_done") {
-    return "development done";
+    return "dev ready signal";
   }
   if (state === "test_changes_requested") {
-    return "tester requested changes";
+    return "issue test changes";
   }
   if (state === "test_passed") {
-    return "test passed";
+    return "issue test passed";
   }
   if (state === "closed_or_merged") {
     return "closed";
@@ -1318,13 +1318,13 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "issue in test";
+    return "linked issue in test";
   }
   if (filter === "stale_testing") {
-    return "waiting on test";
+    return "linked issue test wait";
   }
   if (filter === "testing_evidence_gap") {
-    return "test evidence pending";
+    return "issue test evidence gap";
   }
   if (filter === "ci_failed") {
     return "CI failed";
@@ -3027,8 +3027,8 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
-          {pr.testingQueueAgeHours !== null ? <Tag>issue test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+          <Tag color={testingStateColor(pr.testingState)}>linked issue in test</Tag>
+          {pr.testingQueueAgeHours !== null ? <Tag>linked issue wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
     </Space>
@@ -3601,7 +3601,9 @@ function prActiveIssueRiskScore(activeIssues: PrCriticalIssueContext[]): number 
 
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
-    return pr.testingTesters.length > 0 ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "issue in test";
+    return pr.testingTesters.length > 0
+      ? `linked issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
+      : "linked issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -3625,7 +3627,7 @@ function teamPrNextAction(pr: PendingPrView): string {
     title: pr.title,
     htmlUrl: pr.htmlUrl,
     ownerLogin: pr.ownerLogin,
-    phase: isTestingQueuePr(pr) ? "Testing PR evidence" : "Pending PR",
+    phase: isTestingQueuePr(pr) ? "Linked issue test evidence" : "Pending PR",
     tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
     priority: 0,
     ageHours: pr.ageHours,
@@ -4763,21 +4765,21 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="issue in test"
+        label="linked issue in test"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
-        label="issue test wait >24h"
+        label="linked issue wait >24h"
         value={staleTestingPrs}
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
         onClick={() => onScopeFilterChange("stale_testing")}
       />
       <CriticalBoardStat
-        label="test evidence pending"
+        label="issue test evidence gap"
         value={testingEvidenceGapPrs}
         tone={testingEvidenceGapPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing_evidence_gap"}
@@ -5309,7 +5311,7 @@ function TestingCommandBoard({
             prs={stalePrs}
             visibleLimit={8}
             tone="critical"
-            emptyText="No issue in test has waited more than a day"
+            emptyText="No linked issue in test has waited more than a day"
           />
           <TestingQueueLane
             title="Linked PR Data Gaps"

@@ -446,7 +446,7 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Test changes requested");
+    reasons.push("Issue test changes requested");
   }
 
   return [...new Set(reasons)];
@@ -939,7 +939,7 @@ function prReasons(pr: GanttPullRequestSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Test changes requested");
+    reasons.push("Issue test changes requested");
   }
   if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
     reasons.push("Issue test wait over 24h");
@@ -1046,9 +1046,9 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   }
   for (const pr of person.testingPrs) {
     add(
-      activityFromPullRequest(pr, "Testing PR evidence", "attention", 780, [
+      activityFromPullRequest(pr, "Linked issue test evidence", "attention", 780, [
         ...prAttentionReasons(pr),
-        pr.testingQueueAgeHours !== null ? "Issue test wait visible" : "Issue test status visible"
+        pr.testingQueueAgeHours !== null ? "Linked issue test wait visible" : "Linked issue test status visible"
       ])
     );
   }
@@ -1203,7 +1203,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     item.testingQueueAgeHours !== null ||
     ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
   ) {
-    return "Check issue test status";
+    return "Check linked issue test status";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -1288,7 +1288,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Check issue test status";
+    return "Check linked issue test status";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";
@@ -1314,7 +1314,7 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     row.issue.durationKind !== "testing_queue" &&
     row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)
   ) {
-    warnings.push("test wait over 24h");
+    warnings.push("linked issue test wait over 24h");
   }
   if (row.issue.durationKind === "testing_queue" && (row.issue.durationHours ?? 0) >= 24) {
     warnings.push("issue test wait over 24h");
