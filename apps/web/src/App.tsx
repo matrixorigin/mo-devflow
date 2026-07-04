@@ -1723,7 +1723,7 @@ export default function App() {
     data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const criticalOwnerCoverageRows =
-    data?.criticalOwnerCoverage?.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) ?? [];
+    data ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) : [];
 
   return (
     <Layout className="app-shell">
@@ -1946,7 +1946,7 @@ export default function App() {
               </div>
             </section>
 
-            {(data.profileWarnings ?? []).map((warning) => (
+            {data.profileWarnings.map((warning) => (
               <Alert
                 key={warning.key}
                 className="band"
@@ -1957,14 +1957,14 @@ export default function App() {
               />
             ))}
 
-            {(data.profileActions ?? []).length > 0 ? (
+            {data.profileActions.length > 0 ? (
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>Profile Actions</Title>
                   <Tag color="orange">{data.profileActions.length}</Tag>
                 </div>
                 <Space direction="vertical" size={12} className="full-width">
-                  {(data.profileActions ?? []).map((suggestion) => (
+                  {data.profileActions.map((suggestion) => (
                     <Alert
                       key={suggestion.key}
                       type={profileWarningAlertType(suggestion.severity)}
