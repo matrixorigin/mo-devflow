@@ -1215,21 +1215,51 @@ function PullRequestCardList({
   );
 }
 
-function PersonalActivityFeed({ items }: { items: PersonalActivityItem[] }) {
+function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   if (items.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
   }
+  const groups = [
+    { key: "critical", title: "Critical", items: items.filter((item) => item.tone === "critical") },
+    { key: "attention", title: "Needs Attention", items: items.filter((item) => item.tone === "attention") },
+    {
+      key: "context",
+      title: "Context",
+      items: items.filter((item) => item.tone !== "critical" && item.tone !== "attention")
+    }
+  ];
 
   return (
-    <div className="activity-feed-list">
-      {items.slice(0, 24).map((item) => (
-        <PersonalActivityCard item={item} key={item.id} />
+    <div className="action-queue-grid">
+      {groups.map((group) => (
+        <section className={`action-queue-column action-queue-${group.key}`} key={group.key}>
+          <div className="action-queue-heading">
+            <Text strong>{group.title}</Text>
+            <Tag color={group.key === "critical" ? "red" : group.key === "attention" ? "orange" : "blue"}>
+              {group.items.length}
+            </Tag>
+          </div>
+          <div className="action-queue-list">
+            {group.items.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Clear" />
+            ) : (
+              <>
+                {group.items.slice(0, 8).map((item) => (
+                  <PersonalActionQueueItem item={item} key={item.id} />
+                ))}
+                {group.items.length > 8 ? (
+                  <div className="action-queue-more">+{group.items.length - 8} more</div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </section>
       ))}
     </div>
   );
 }
 
-function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
+function PersonalActionQueueItem({ item }: { item: PersonalActivityItem }) {
   const icon =
     item.objectType === "pull_request" ? (
       <GitPullRequest size={15} aria-hidden="true" />
@@ -1245,25 +1275,24 @@ function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
     number,
     url: linkedObjectUrl(item.htmlUrl, "pull", number)
   }));
+  const primaryReason = item.reasons[0] ?? item.phase;
 
   return (
-    <article className={`activity-card activity-card-${item.tone}`}>
-      <div className="activity-card-main">
-        <div className="activity-object-row">
-          <WorkObjectLink href={item.htmlUrl} icon={icon}>
-            {objectLabel}
-          </WorkObjectLink>
-          <Tag color={activityToneColor(item.tone)}>{item.phase}</Tag>
-          <Tag>{hours(item.ageHours)}</Tag>
-          {!item.isComplete ? <Tag color="gold">partial</Tag> : null}
-        </div>
+    <article className={`action-queue-item action-queue-item-${item.tone}`}>
+      <div className="action-queue-item-main">
+        <WorkObjectLink href={item.htmlUrl} icon={icon}>
+          {objectLabel}
+        </WorkObjectLink>
         <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
           {item.title}
         </a>
-        <div className="activity-meta-row">
+        <div className="action-queue-meta">
+          <Tag color={activityToneColor(item.tone)}>{item.phase}</Tag>
+          <Tag>{hours(item.ageHours)}</Tag>
+          {!item.isComplete ? <Tag color="gold">partial</Tag> : null}
           <span>
             <TimerReset size={13} aria-hidden="true" />
-            age {hours(item.ageHours)}
+            {primaryReason}
           </span>
           {item.lastHumanActionAt ? (
             <span>
@@ -1278,7 +1307,7 @@ function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
             </span>
           ) : null}
         </div>
-        <div className="activity-tag-row">
+        <div className="action-queue-tags">
           {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
           {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
           {item.reviewDecision ? (
@@ -1293,69 +1322,85 @@ function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
           {item.testingState ? (
             <Tag color={testingStateColor(item.testingState as TestingFlowState)}>{labelText(item.testingState)}</Tag>
           ) : null}
-        </div>
-        {linkedIssueUrls.length > 0 || linkedPrUrls.length > 0 ? (
-          <div className="activity-link-row">
-            {linkedIssueUrls.map((link) => (
-              <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
-                issue #{link.number}
-              </a>
-            ))}
-            {linkedPrUrls.map((link) => (
-              <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
-                PR #{link.number}
-              </a>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      {item.reasons.length > 0 ? (
-        <div className="activity-reason-row">
-          {item.reasons.slice(0, 5).map((reason) => (
+          {item.reasons.slice(0, 3).map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
             </Tag>
           ))}
+        </div>
+      </div>
+      {linkedIssueUrls.length > 0 || linkedPrUrls.length > 0 ? (
+        <div className="action-queue-links">
+          {linkedIssueUrls.length > 0 ? (
+            <span>
+              issue
+              <span>
+                {linkedIssueUrls.map((link) => (
+                  <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                    #{link.number}
+                  </a>
+                ))}
+              </span>
+            </span>
+          ) : null}
+          {linkedPrUrls.length > 0 ? (
+            <span>
+              PR
+              <span>
+                {linkedPrUrls.map((link) => (
+                  <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
+                    #{link.number}
+                  </a>
+                ))}
+              </span>
+            </span>
+          ) : null}
         </div>
       ) : null}
     </article>
   );
 }
 
-function PersonalGanttTimeline({ chart }: { chart: PersonalGanttChart }) {
+function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
   if (chart.rows.length === 0) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR timeline data" />;
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR flow data" />;
   }
   const ticks = [1, 0.75, 0.5, 0.25, 0];
 
   return (
-    <div className="gantt-timeline">
-      <div className="gantt-axis">
-        <div className="gantt-axis-spacer" />
-        <div className="gantt-axis-track">
+    <div className="flow-map">
+      <div className="flow-map-axis">
+        <div className="flow-map-axis-label">Work thread</div>
+        <div className="flow-map-axis-track">
           {ticks.map((tick) => (
-            <span className="gantt-axis-tick" style={{ left: `${(1 - tick) * 100}%` }} key={tick}>
+            <span className="flow-map-axis-tick" style={{ left: `${(1 - tick) * 100}%` }} key={tick}>
               {tick === 0 ? "now" : hours(chart.maxAgeHours * tick)}
             </span>
           ))}
         </div>
+        <div className="flow-map-axis-label">Current signals</div>
       </div>
-      <div className="gantt-row-list">
+      <div className="flow-thread-list">
         {chart.rows.map((row) => (
-          <PersonalGanttRowView row={row} key={row.id} />
+          <PersonalFlowThread row={row} key={row.id} />
         ))}
       </div>
     </div>
   );
 }
 
-function PersonalGanttRowView({ row }: { row: PersonalGanttRow }) {
-  const rowStyle: CSSProperties = { minHeight: 64 + Math.max(1, row.prs.length) * 28 };
+function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
+  const rowStyle: CSSProperties = { minHeight: 86 + Math.max(0, row.prs.length - 1) * 26 };
+  const reasons = flowThreadReasons(row);
+  const sourceUrl = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
+  const linkedIssueUrls = sourceUrl
+    ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
+    : [];
 
   return (
-    <div className={`gantt-row gantt-row-${row.tone}`} style={rowStyle}>
-      <div className="gantt-row-meta">
-        <div className="gantt-row-title">
+    <article className={`flow-thread flow-thread-${row.tone}`} style={rowStyle}>
+      <div className="flow-thread-meta">
+        <div className="flow-thread-object">
           {row.issue.htmlUrl ? (
             <WorkObjectLink href={row.issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
               {row.title}
@@ -1363,63 +1408,77 @@ function PersonalGanttRowView({ row }: { row: PersonalGanttRow }) {
           ) : (
             <span>{row.title}</span>
           )}
-          <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue lane" : "PR lane"}</Tag>
+          <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue" : "PR group"}</Tag>
         </div>
         {row.issue.htmlUrl ? (
-          <a className="gantt-row-subtitle" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
+          <a className="flow-thread-title" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
             {row.issue.title}
           </a>
         ) : (
-          <span className="gantt-row-subtitle gantt-row-subtitle-muted">{row.issue.title}</span>
+          <span className="flow-thread-title flow-thread-title-muted">{row.issue.title}</span>
         )}
-        <div className="gantt-row-tags">
+        <div className="flow-thread-tags">
           {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
           {row.issue.lifecycleState ? <Tag>{labelText(row.issue.lifecycleState)}</Tag> : null}
           {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
           <Tag>{hours(row.issue.startAgeHours)}</Tag>
-          {row.prs.length > 0 ? <Tag>{row.prs.length} PRs</Tag> : null}
-          {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared PR</Tag> : null}
+          {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
+          {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared</Tag> : null}
         </div>
       </div>
-      <div className="gantt-row-bars">
-        <GanttIssueBar row={row} />
+
+      <div className="flow-thread-rail">
+        <Tooltip title={`${row.issue.title} | ${hours(row.issue.startAgeHours)} elapsed`}>
+          {row.issue.htmlUrl ? (
+            <a
+              className={`flow-segment flow-issue-segment flow-tone-${row.issue.tone}`}
+              href={row.issue.htmlUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={flowSegmentStyle(row.issue, 9)}
+            >
+              issue
+            </a>
+          ) : (
+            <span
+              className={`flow-segment flow-issue-segment flow-tone-${row.issue.tone}`}
+              style={flowSegmentStyle(row.issue, 9)}
+            >
+              PR group
+            </span>
+          )}
+        </Tooltip>
         {row.prs.map((pr, index) => (
-          <GanttPrBar pr={pr} index={index} key={pr.number} />
+          <FlowPrSegment pr={pr} index={index} key={pr.number} />
         ))}
       </div>
-    </div>
+
+      <div className="flow-thread-signals">
+        <div className="flow-signal-tags">
+          {reasons.length === 0 ? <Tag color="green">clear</Tag> : null}
+          {reasons.slice(0, 5).map((reason) => (
+            <Tag color={activityReasonColor(reason)} key={reason}>
+              {reason}
+            </Tag>
+          ))}
+        </div>
+        {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
+          <div className="flow-linked-row">
+            <span>Issues</span>
+            {linkedIssueUrls.map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                #{link.number}
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </article>
   );
 }
 
-function GanttIssueBar({ row }: { row: PersonalGanttRow }) {
-  const style = ganttBarStyle(row.issue, 10);
-  const title = `${row.issue.title} | age ${hours(row.issue.startAgeHours)}${
-    row.issue.reasons.length > 0 ? ` | ${row.issue.reasons.join(", ")}` : ""
-  }`;
-
-  return (
-    <Tooltip title={title}>
-      {row.issue.htmlUrl ? (
-        <a
-          className={`gantt-bar gantt-issue-bar gantt-tone-${row.issue.tone}`}
-          href={row.issue.htmlUrl}
-          target="_blank"
-          rel="noreferrer"
-          style={style}
-        >
-          issue
-        </a>
-      ) : (
-        <span className={`gantt-bar gantt-issue-bar gantt-tone-${row.issue.tone}`} style={style}>
-          lane
-        </span>
-      )}
-    </Tooltip>
-  );
-}
-
-function GanttPrBar({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
-  const style = ganttBarStyle(pr, 38 + index * 28);
+function FlowPrSegment({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
+  const style = flowSegmentStyle(pr, 38 + index * 26);
   const title = [
     `PR #${pr.number}`,
     pr.title,
@@ -1434,7 +1493,7 @@ function GanttPrBar({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
   return (
     <Tooltip title={title}>
       <a
-        className={`gantt-bar gantt-pr-bar gantt-tone-${pr.tone}`}
+        className={`flow-segment flow-pr-segment flow-tone-${pr.tone}`}
         href={pr.htmlUrl}
         target="_blank"
         rel="noreferrer"
@@ -1450,12 +1509,18 @@ function GanttPrBar({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
   );
 }
 
-function ganttBarStyle(bar: { offsetPercent: number; widthPercent: number }, top: number): CSSProperties {
+function flowSegmentStyle(bar: { offsetPercent: number; widthPercent: number }, top: number): CSSProperties {
   return {
     left: `${bar.offsetPercent}%`,
     top,
     width: `${bar.widthPercent}%`
   };
+}
+
+function flowThreadReasons(row: PersonalGanttRow): string[] {
+  return Array.from(new Set([...row.issue.reasons, ...row.prs.flatMap((pr) => pr.reasons)])).filter(
+    (reason) => !["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"].includes(reason)
+  );
 }
 
 function ganttToneColor(tone: PersonalGanttRow["tone"]): string {
@@ -1551,7 +1616,7 @@ function SelectedPersonWorkbench({
 
       <section className="activity-panel">
         <div className="subsection-heading">
-          <Title level={5}>Current Activity</Title>
+          <Title level={5}>Action Queue</Title>
           <Space size={[6, 6]} wrap>
             <Tag color={activityItems.some((item) => item.tone === "critical") ? "red" : "default"}>
               {activityItems.filter((item) => item.tone === "critical").length} active s-1/s0
@@ -1562,14 +1627,14 @@ function SelectedPersonWorkbench({
             <Tag>{activityItems.filter((item) => item.linkedIssueNumbers.length > 0).length} linked issues</Tag>
           </Space>
         </div>
-        <PersonalActivityFeed items={activityItems} />
+        <PersonalActionQueue items={activityItems} />
       </section>
 
-      <section className="gantt-panel">
+      <section className="flow-map-panel">
         <div className="subsection-heading">
-          <Title level={5}>Issue / PR Timeline</Title>
+          <Title level={5}>Work Threads</Title>
           <Space size={[6, 6]} wrap>
-            <Tag>{gantt.rows.length} lanes</Tag>
+            <Tag>{gantt.rows.length} threads</Tag>
             <Tag color={gantt.sharedPrCount > 0 ? "purple" : "default"}>{gantt.sharedPrCount} shared PR</Tag>
             <Tag color={gantt.unlinkedPrCount > 0 ? "orange" : "default"}>{gantt.unlinkedPrCount} unlinked PR</Tag>
             <Tag color={gantt.outsideIssuePrCount > 0 ? "blue" : "default"}>
@@ -1577,7 +1642,7 @@ function SelectedPersonWorkbench({
             </Tag>
           </Space>
         </div>
-        <PersonalGanttTimeline chart={gantt} />
+        <PersonalFlowMap chart={gantt} />
       </section>
 
       <div className="work-lane-grid work-lane-grid-priority">

@@ -459,53 +459,76 @@ body {
   padding: 12px;
 }
 
-.activity-feed-list {
+.action-queue-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 0.95fr);
 }
 
-.activity-card {
+.action-queue-column {
   border: 1px solid #e5e7eb;
-  border-left-width: 3px;
   border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.38fr);
   min-width: 0;
-  padding: 10px;
+  overflow: hidden;
 }
 
-.activity-card-critical {
-  border-left-color: #dc2626;
+.action-queue-critical {
+  border-top: 3px solid #dc2626;
 }
 
-.activity-card-attention {
-  border-left-color: #d97706;
+.action-queue-attention {
+  border-top: 3px solid #d97706;
 }
 
-.activity-card-normal {
-  border-left-color: #2563eb;
+.action-queue-context {
+  border-top: 3px solid #2563eb;
 }
 
-.activity-card-muted {
-  border-left-color: #94a3b8;
-}
-
-.activity-card-main {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.activity-object-row,
-.activity-meta-row,
-.activity-tag-row,
-.activity-link-row,
-.activity-reason-row {
+.action-queue-heading {
   align-items: center;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.action-queue-list {
+  display: grid;
+  gap: 0;
+}
+
+.action-queue-item {
+  border-bottom: 1px solid #f3f4f6;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.action-queue-item:last-child {
+  border-bottom: 0;
+}
+
+.action-queue-item-critical {
+  background: #fff7f7;
+}
+
+.action-queue-item-attention {
+  background: #fffaf3;
+}
+
+.action-queue-more {
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.action-queue-item-main {
+  display: grid;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -513,7 +536,7 @@ body {
   color: #111827;
   display: -webkit-box;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -526,79 +549,105 @@ body {
   text-decoration: underline;
 }
 
-.activity-meta-row {
+.action-queue-meta,
+.action-queue-tags,
+.action-queue-links,
+.flow-thread-object,
+.flow-thread-tags,
+.flow-signal-tags,
+.flow-linked-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.action-queue-meta {
   color: #6b7280;
   font-size: 12px;
 }
 
-.activity-meta-row span {
+.action-queue-meta span {
   align-items: center;
   display: inline-flex;
   gap: 4px;
+  min-width: 0;
 }
 
-.activity-link-row a {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 999px;
-  color: #1d4ed8;
-  font-size: 12px;
-  line-height: 1.2;
-  padding: 4px 8px;
-  text-decoration: none;
-}
-
-.activity-link-row a:hover {
-  text-decoration: underline;
-}
-
-.activity-tag-row .ant-tag,
-.activity-reason-row .ant-tag {
+.action-queue-tags .ant-tag,
+.flow-thread-tags .ant-tag,
+.flow-signal-tags .ant-tag {
   margin-inline-end: 0;
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
-.gantt-panel {
+.action-queue-links {
+  border-top: 1px dashed #e5e7eb;
+  color: #6b7280;
+  font-size: 12px;
+  padding-top: 6px;
+}
+
+.action-queue-links > span,
+.flow-linked-row {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.action-queue-links a,
+.flow-linked-row a {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  line-height: 1.15;
+  padding: 3px 7px;
+  text-decoration: none;
+}
+
+.flow-map-panel {
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
 }
 
-.gantt-timeline {
+.flow-map {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
 
-.gantt-axis {
+.flow-map-axis {
   align-items: end;
+  color: #6b7280;
   display: grid;
+  font-size: 12px;
   gap: 12px;
-  grid-template-columns: minmax(220px, 0.34fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(250px, 0.32fr) minmax(420px, 1fr) minmax(220px, 0.28fr);
 }
 
-.gantt-axis-spacer {
-  min-height: 22px;
+.flow-map-axis-label {
+  font-weight: 600;
 }
 
-.gantt-axis-track {
+.flow-map-axis-track {
   border-bottom: 1px solid #d1d5db;
   height: 24px;
   position: relative;
 }
 
-.gantt-axis-tick {
-  color: #6b7280;
-  font-size: 11px;
+.flow-map-axis-tick {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
   white-space: nowrap;
 }
 
-.gantt-axis-tick::after {
+.flow-map-axis-tick::after {
   background: #d1d5db;
   content: "";
   height: 7px;
@@ -608,49 +657,41 @@ body {
   width: 1px;
 }
 
-.gantt-row-list {
+.flow-thread-list {
   border-top: 1px solid #f3f4f6;
   display: grid;
 }
 
-.gantt-row {
+.flow-thread {
   border-bottom: 1px solid #f3f4f6;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(220px, 0.34fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(250px, 0.32fr) minmax(420px, 1fr) minmax(220px, 0.28fr);
   min-width: 0;
   padding: 10px 0;
 }
 
-.gantt-row-critical {
-  background: linear-gradient(90deg, rgba(220, 38, 38, 0.06), transparent 46%);
+.flow-thread-critical {
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.055), transparent 58%);
 }
 
-.gantt-row-attention {
-  background: linear-gradient(90deg, rgba(217, 119, 6, 0.07), transparent 46%);
+.flow-thread-attention {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.06), transparent 58%);
 }
 
-.gantt-row-meta {
+.flow-thread-meta,
+.flow-thread-signals {
+  align-content: start;
   display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding-left: 2px;
-}
-
-.gantt-row-title,
-.gantt-row-tags {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
 }
 
-.gantt-row-subtitle {
+.flow-thread-title {
   color: #111827;
   display: -webkit-box;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.35;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -659,22 +700,15 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.gantt-row-subtitle:hover {
+.flow-thread-title:hover {
   text-decoration: underline;
 }
 
-.gantt-row-subtitle-muted {
+.flow-thread-title-muted {
   color: #4b5563;
-  pointer-events: none;
 }
 
-.gantt-row-tags .ant-tag {
-  margin-inline-end: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.gantt-row-bars {
+.flow-thread-rail {
   background-image: linear-gradient(to right, #f3f4f6 1px, transparent 1px);
   background-size: 25% 100%;
   min-height: 100%;
@@ -682,29 +716,29 @@ body {
   position: relative;
 }
 
-.gantt-bar {
+.flow-segment {
   align-items: center;
   border: 1px solid transparent;
   border-radius: 6px;
   display: inline-flex;
   font-size: 12px;
   gap: 6px;
-  height: 20px;
-  min-width: 26px;
+  height: 21px;
+  min-width: 30px;
   overflow: hidden;
-  padding: 0 7px;
+  padding: 0 8px;
   position: absolute;
   text-decoration: none;
   white-space: nowrap;
 }
 
-.gantt-bar span {
+.flow-segment span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.gantt-bar em {
-  background: rgba(255, 255, 255, 0.72);
+.flow-segment em {
+  background: rgba(255, 255, 255, 0.74);
   border-radius: 999px;
   color: inherit;
   flex: 0 0 auto;
@@ -714,34 +748,34 @@ body {
   padding: 3px 5px;
 }
 
-.gantt-issue-bar {
-  font-weight: 700;
-  opacity: 0.82;
+.flow-issue-segment {
+  font-weight: 750;
+  opacity: 0.88;
 }
 
-.gantt-pr-bar {
+.flow-pr-segment {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
-.gantt-tone-critical {
+.flow-tone-critical {
   background: #fee2e2;
   border-color: #fca5a5;
   color: #991b1b;
 }
 
-.gantt-tone-attention {
+.flow-tone-attention {
   background: #ffedd5;
   border-color: #fdba74;
   color: #9a3412;
 }
 
-.gantt-tone-normal {
+.flow-tone-normal {
   background: #dbeafe;
   border-color: #93c5fd;
   color: #1e3a8a;
 }
 
-.gantt-tone-muted {
+.flow-tone-muted {
   background: #f1f5f9;
   border-color: #cbd5e1;
   color: #475569;
@@ -1071,30 +1105,27 @@ body {
   .work-lane-grid-priority,
   .work-lane-grid-secondary,
   .flow-efficiency-strip,
+  .action-queue-grid,
   .flow-chart-grid {
     grid-template-columns: 1fr;
   }
 
-  .gantt-axis,
-  .gantt-row {
+  .flow-map-axis,
+  .flow-thread {
     grid-template-columns: 1fr;
   }
 
-  .gantt-axis-spacer {
+  .flow-map-axis-label:last-child {
     display: none;
   }
 
-  .gantt-axis-track,
-  .gantt-row-bars {
+  .flow-map-axis-track,
+  .flow-thread-rail {
     min-width: 320px;
   }
 
-  .gantt-row {
+  .flow-thread {
     overflow-x: auto;
-  }
-
-  .activity-card {
-    grid-template-columns: 1fr;
   }
 
   .work-item-list {
