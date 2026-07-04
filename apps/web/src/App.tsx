@@ -106,12 +106,14 @@ import {
   criticalIssueContextsByPullRequest,
   criticalIssueReasons,
   effectiveAiEffortLabel,
+  filterPeopleByScope,
   flowThreadDurationWarnings,
   flowThreadNextAction,
   flowThreadStatusCounts,
   flowEfficiencySummary,
   observedPeopleFromDashboard,
   observedOwnerThreads,
+  peopleBoardScopeCounts,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalGanttChart,
@@ -123,6 +125,7 @@ import {
   personalDurationText,
   personalFlowThreadCounts,
   personalFlowThreadMatchesFilter,
+  personalTestingWorkCount,
   personPrimaryReasons,
   personWorkloadStatus,
   personalIssueReasons,
@@ -139,6 +142,7 @@ import {
   type PersonalGanttChart,
   type PersonalGanttPrBar,
   type PersonalGanttRow,
+  type PeopleScopeFilter,
   type PrCriticalIssueContext,
   type WorkloadStatus
 } from "./workbench";
@@ -177,8 +181,6 @@ type PrScopeFilter =
   | "evidence_pending"
   | "no_action_24h";
 type PrBoardTab = "rotation" | "testing";
-type PeopleScopeFilter =
-  "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
 type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
@@ -1791,55 +1793,8 @@ function peopleScopeLabel(filter: PeopleScopeFilter): string {
   return "all watched";
 }
 
-function testingCountForPeople(login: string, personalByLogin: Map<string, PersonalActionView>): number {
-  const person = personalByLogin.get(login);
-  return person ? personalTestingWorkCount(person) : 0;
-}
-
-function personalTestingWorkCount(person: PersonalActionView): number {
-  return person.testingIssues.length;
-}
-
 function personalTestingStaleCount(person: PersonalActionView): number {
   return person.testingIssues.filter(isTestingIssueStale).length;
-}
-
-function personMatchesScope(
-  person: PersonSummary,
-  personalByLogin: Map<string, PersonalActionView>,
-  scopeFilter: PeopleScopeFilter
-): boolean {
-  if (scopeFilter === "critical") {
-    return person.activeCriticalIssues > 0;
-  }
-  if (scopeFilter === "attention") {
-    return person.attentionPrs > 0;
-  }
-  if (scopeFilter === "triage") {
-    return person.needsTriageIssues > 0;
-  }
-  if (scopeFilter === "deferred") {
-    return person.deferredIssues > 0;
-  }
-  if (scopeFilter === "pending_pr") {
-    return person.pendingPrs > 0;
-  }
-  if (scopeFilter === "testing") {
-    return testingCountForPeople(person.login, personalByLogin) > 0;
-  }
-  if (scopeFilter === "yesterday_pr") {
-    return person.prsCreatedYesterday + person.prsMergedYesterday > 0;
-  }
-  return true;
-}
-
-function filterPeople(
-  people: PersonSummary[],
-  personalViews: PersonalActionView[],
-  scopeFilter: PeopleScopeFilter
-): PersonSummary[] {
-  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
-  return people.filter((person) => personMatchesScope(person, personalByLogin, scopeFilter));
 }
 
 function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
@@ -5262,16 +5217,7 @@ function PeopleBoardSummary({
   scopeFilter: PeopleScopeFilter;
   onScopeFilterChange: (value: PeopleScopeFilter) => void;
 }) {
-  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
-  const criticalPeople = people.filter((person) => person.activeCriticalIssues > 0).length;
-  const attentionPeople = people.filter((person) => person.attentionPrs > 0).length;
-  const triagePeople = people.filter((person) => person.needsTriageIssues > 0).length;
-  const deferredPeople = people.filter((person) => person.deferredIssues > 0).length;
-  const pendingPrPeople = people.filter((person) => person.pendingPrs > 0).length;
-  const testingPeople = people.filter((person) => testingCountForPeople(person.login, personalByLogin) > 0).length;
-  const yesterdayPrPeople = people.filter(
-    (person) => person.prsCreatedYesterday + person.prsMergedYesterday > 0
-  ).length;
+  const counts = peopleBoardScopeCounts(people, personalViews);
 
   return (
     <div className="critical-board-summary people-board-summary" aria-label="People summary">
@@ -5284,50 +5230,50 @@ function PeopleBoardSummary({
       />
       <CriticalBoardStat
         label="s-1/s0"
-        value={criticalPeople}
-        tone={criticalPeople > 0 ? "critical" : "good"}
+        value={counts.critical}
+        tone={counts.critical > 0 ? "critical" : "good"}
         active={scopeFilter === "critical"}
         onClick={() => onScopeFilterChange("critical")}
       />
       <CriticalBoardStat
         label="PR attention"
-        value={attentionPeople}
-        tone={attentionPeople > 0 ? "attention" : "good"}
+        value={counts.attention}
+        tone={counts.attention > 0 ? "attention" : "good"}
         active={scopeFilter === "attention"}
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
         label="triage"
-        value={triagePeople}
-        tone={triagePeople > 0 ? "attention" : "good"}
+        value={counts.triage}
+        tone={counts.triage > 0 ? "attention" : "good"}
         active={scopeFilter === "triage"}
         onClick={() => onScopeFilterChange("triage")}
       />
       <CriticalBoardStat
         label="deferred"
-        value={deferredPeople}
-        tone={deferredPeople > 0 ? "attention" : "good"}
+        value={counts.deferred}
+        tone={counts.deferred > 0 ? "attention" : "good"}
         active={scopeFilter === "deferred"}
         onClick={() => onScopeFilterChange("deferred")}
       />
       <CriticalBoardStat
         label="pending PR"
-        value={pendingPrPeople}
-        tone={pendingPrPeople > 0 ? "attention" : "good"}
+        value={counts.pending_pr}
+        tone={counts.pending_pr > 0 ? "attention" : "good"}
         active={scopeFilter === "pending_pr"}
         onClick={() => onScopeFilterChange("pending_pr")}
       />
       <CriticalBoardStat
         label="issue testing"
-        value={testingPeople}
-        tone={testingPeople > 0 ? "attention" : "good"}
+        value={counts.testing}
+        tone={counts.testing > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
         label="yesterday PR"
-        value={yesterdayPrPeople}
-        tone={yesterdayPrPeople > 0 ? "attention" : "good"}
+        value={counts.yesterday_pr}
+        tone={counts.yesterday_pr > 0 ? "attention" : "good"}
         active={scopeFilter === "yesterday_pr"}
         onClick={() => onScopeFilterChange("yesterday_pr")}
       />
@@ -11537,22 +11483,7 @@ export default function App() {
     data && selectedObservedLogin ? observedPersonPreview(data, selectedObservedLogin) : null;
   const peopleBoardUsesObserved = Boolean(data && data.people.length === 0 && observedPeople.length > 0);
   const peopleBoardPeople = data ? (data.people.length > 0 ? data.people : observedPeople) : [];
-  const peopleBoardPersonalByLogin = new Map((data?.personalViews ?? []).map((person) => [person.login, person]));
-  const peopleBoardStats = {
-    criticalIssues: peopleBoardPeople.reduce((sum, person) => sum + person.activeCriticalIssues, 0),
-    attentionPrs: peopleBoardPeople.reduce((sum, person) => sum + person.attentionPrs, 0),
-    needsTriageIssues: peopleBoardPeople.reduce((sum, person) => sum + person.needsTriageIssues, 0),
-    deferredIssues: peopleBoardPeople.reduce((sum, person) => sum + person.deferredIssues, 0),
-    pendingPrs: peopleBoardPeople.reduce((sum, person) => sum + person.pendingPrs, 0),
-    testingWork: peopleBoardPeople.reduce(
-      (sum, person) => sum + testingCountForPeople(person.login, peopleBoardPersonalByLogin),
-      0
-    ),
-    yesterdayPrs: peopleBoardPeople.reduce(
-      (sum, person) => sum + person.prsCreatedYesterday + person.prsMergedYesterday,
-      0
-    )
-  };
+  const peopleBoardCounts = peopleBoardScopeCounts(peopleBoardPeople, data?.personalViews ?? []);
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
@@ -11563,7 +11494,7 @@ export default function App() {
         filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter)
       )
     : [];
-  const filteredPeople = data ? filterPeople(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
+  const filteredPeople = data ? filterPeopleByScope(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
   const teamFlowSummary = data
     ? flowEfficiencySummary({
         points: teamTrendPoints,
@@ -12605,71 +12536,71 @@ export default function App() {
                       onClick={() => setPeopleScopeFilter("all")}
                     >
                       {peopleBoardUsesObserved
-                        ? `${peopleBoardPeople.length} observed`
-                        : `${data.people.length} watched`}
+                        ? `${peopleBoardCounts.all} observed`
+                        : `${peopleBoardCounts.all} watched`}
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.criticalIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+                        peopleBoardCounts.critical > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("critical")}
                     >
-                      {peopleBoardStats.criticalIssues} s-1/s0
+                      {peopleBoardCounts.critical} people s-1/s0
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.attentionPrs > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.attention > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("attention")}
                     >
-                      {peopleBoardStats.attentionPrs} PR attention
+                      {peopleBoardCounts.attention} people PR attention
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.needsTriageIssues > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.triage > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "triage" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("triage")}
                     >
-                      {peopleBoardStats.needsTriageIssues} triage
+                      {peopleBoardCounts.triage} people triage
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.deferredIssues > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.deferred > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("deferred")}
                     >
-                      {peopleBoardStats.deferredIssues} deferred
+                      {peopleBoardCounts.deferred} people deferred
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.pendingPrs > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.pending_pr > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "pending_pr" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("pending_pr")}
                     >
-                      {peopleBoardStats.pendingPrs} pending PR
+                      {peopleBoardCounts.pending_pr} people pending PR
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.testingWork > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.testing > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "testing" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("testing")}
                     >
-                      {peopleBoardStats.testingWork} testing
+                      {peopleBoardCounts.testing} people issue testing
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardStats.yesterdayPrs > 0 ? "" : "inline-filter-chip-muted"
+                        peopleBoardCounts.yesterday_pr > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("yesterday_pr")}
                     >
-                      {peopleBoardStats.yesterdayPrs} PR yday
+                      {peopleBoardCounts.yesterday_pr} people PR yday
                     </button>
                   </Space>
                 </div>

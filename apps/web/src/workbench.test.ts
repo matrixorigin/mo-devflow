@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CriticalIssueView,
   DailyMetricPoint,
+  PersonSummary,
   PersonalActionView,
   PersonalIssueView,
   PersonalPullRequestView,
@@ -11,11 +12,14 @@ import {
   criticalIssueReasons,
   criticalIssueContextsByPullRequest,
   effectiveAiEffortLabel,
+  filterPeopleByScope,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
   flowThreadStatusCounts,
   observedPeopleFromDashboard,
   observedOwnerThreads,
+  peopleBoardScopeCounts,
+  peopleScopeFilters,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalFlowThreadCounts,
@@ -138,6 +142,44 @@ describe("person workload summaries", () => {
         pendingPrs: 2,
         attentionPrs: 1
       }
+    ]);
+  });
+
+  it("keeps people board scope counts aligned with filtered people rows", () => {
+    const people: PersonSummary[] = [
+      personSummary({ login: "critical-owner", activeCriticalIssues: 2 }),
+      personSummary({ login: "attention-owner", attentionPrs: 3 }),
+      personSummary({ login: "triage-owner", needsTriageIssues: 4 }),
+      personSummary({ login: "deferred-owner", deferredIssues: 1 }),
+      personSummary({ login: "pending-owner", pendingPrs: 5 }),
+      personSummary({ login: "testing-owner" }),
+      personSummary({ login: "yesterday-owner", prsCreatedYesterday: 1 }),
+      personSummary({ login: "clear-owner" })
+    ];
+    const personalViews = [
+      personalView({
+        login: "testing-owner",
+        testingIssues: [testingIssue({ number: 90 })]
+      })
+    ];
+
+    const counts = peopleBoardScopeCounts(people, personalViews);
+
+    for (const scopeFilter of peopleScopeFilters) {
+      expect(counts[scopeFilter]).toBe(filterPeopleByScope(people, personalViews, scopeFilter).length);
+    }
+    expect(counts).toEqual({
+      all: 8,
+      critical: 1,
+      attention: 1,
+      triage: 1,
+      deferred: 1,
+      pending_pr: 1,
+      testing: 1,
+      yesterday_pr: 1
+    });
+    expect(filterPeopleByScope(people, personalViews, "testing").map((person) => person.login)).toEqual([
+      "testing-owner"
     ]);
   });
 });
@@ -837,10 +879,11 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
 }
 
 function personalView(input: Partial<PersonalActionView>): PersonalActionView {
+  const login = input.login ?? "alice";
   return {
-    login: "alice",
+    login,
     summary: {
-      login: "alice",
+      login,
       activeCriticalIssues: input.activeCriticalIssues?.length ?? 0,
       needsTriageIssues: input.needsTriageIssues?.length ?? 0,
       deferredIssues: input.deferredIssues?.length ?? 0,
@@ -861,6 +904,19 @@ function personalView(input: Partial<PersonalActionView>): PersonalActionView {
     analytics: [],
     analyticsWeekly: [],
     analyticsMonthly: []
+  };
+}
+
+function personSummary(input: Partial<PersonSummary> & { login: string }): PersonSummary {
+  return {
+    login: input.login,
+    activeCriticalIssues: input.activeCriticalIssues ?? 0,
+    needsTriageIssues: input.needsTriageIssues ?? 0,
+    deferredIssues: input.deferredIssues ?? 0,
+    prsCreatedYesterday: input.prsCreatedYesterday ?? 0,
+    prsMergedYesterday: input.prsMergedYesterday ?? 0,
+    pendingPrs: input.pendingPrs ?? 0,
+    attentionPrs: input.attentionPrs ?? 0
   };
 }
 

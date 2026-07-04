@@ -47,6 +47,22 @@ export interface PersonalActivityItem {
 
 export type PersonalActionQueueCounts = Record<PersonalActionQueueFilter, number>;
 
+export type PeopleScopeFilter =
+  "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
+
+export const peopleScopeFilters: PeopleScopeFilter[] = [
+  "all",
+  "critical",
+  "attention",
+  "triage",
+  "deferred",
+  "pending_pr",
+  "testing",
+  "yesterday_pr"
+];
+
+export type PeopleBoardScopeCounts = Record<PeopleScopeFilter, number>;
+
 export type PersonalGanttTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalGanttRowKind = "issue" | "other_prs";
 
@@ -341,6 +357,67 @@ export function sortPeopleByWorkload(people: PersonSummary[]): PersonSummary[] {
     const scoreDelta = personWorkloadScore(right) - personWorkloadScore(left);
     return scoreDelta === 0 ? left.login.localeCompare(right.login) : scoreDelta;
   });
+}
+
+export function personalTestingWorkCount(person: PersonalActionView): number {
+  return person.testingIssues.length;
+}
+
+function testingCountForPerson(login: string, personalByLogin: Map<string, PersonalActionView>): number {
+  const person = personalByLogin.get(login);
+  return person ? personalTestingWorkCount(person) : 0;
+}
+
+export function peopleScopeMatchesPerson(
+  person: PersonSummary,
+  personalByLogin: Map<string, PersonalActionView>,
+  scopeFilter: PeopleScopeFilter
+): boolean {
+  if (scopeFilter === "critical") {
+    return person.activeCriticalIssues > 0;
+  }
+  if (scopeFilter === "attention") {
+    return person.attentionPrs > 0;
+  }
+  if (scopeFilter === "triage") {
+    return person.needsTriageIssues > 0;
+  }
+  if (scopeFilter === "deferred") {
+    return person.deferredIssues > 0;
+  }
+  if (scopeFilter === "pending_pr") {
+    return person.pendingPrs > 0;
+  }
+  if (scopeFilter === "testing") {
+    return testingCountForPerson(person.login, personalByLogin) > 0;
+  }
+  if (scopeFilter === "yesterday_pr") {
+    return person.prsCreatedYesterday + person.prsMergedYesterday > 0;
+  }
+  return true;
+}
+
+export function filterPeopleByScope(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  scopeFilter: PeopleScopeFilter
+): PersonSummary[] {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return people.filter((person) => peopleScopeMatchesPerson(person, personalByLogin, scopeFilter));
+}
+
+export function peopleBoardScopeCounts(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[]
+): PeopleBoardScopeCounts {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return peopleScopeFilters.reduce((counts, scopeFilter) => {
+    counts[scopeFilter] =
+      scopeFilter === "all"
+        ? people.length
+        : people.filter((person) => peopleScopeMatchesPerson(person, personalByLogin, scopeFilter)).length;
+    return counts;
+  }, {} as PeopleBoardScopeCounts);
 }
 
 export function observedPeopleFromDashboard(input: {
