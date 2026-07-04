@@ -7,6 +7,7 @@ import type {
   CriticalIssueView,
   CriticalIssueLinkedPullRequestView,
   CriticalIssueOwnerScope,
+  CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardVisibility,
   DashboardSummary,
@@ -152,6 +153,66 @@ export function criticalIssueOwnershipCounts(
       (issue) => criticalIssueOwnerScopeFromSet(issue.ownerLogin, watchedLogins) === "non_watched"
     ).length
   };
+}
+
+const criticalOwnerScopeRank: Record<CriticalIssueOwnerScope, number> = {
+  unowned: 0,
+  non_watched: 1,
+  watched: 2
+};
+
+export function criticalIssueOwnerCoverage(
+  criticalIssues: Array<{ ownerLogin: string | null; ownerScope: CriticalIssueOwnerScope; ageHours: number }>
+): CriticalOwnerCoverageView[] {
+  const owners = new Map<
+    string,
+    {
+      ownerLogin: string | null;
+      ownerScope: CriticalIssueOwnerScope;
+      criticalIssues: number;
+      totalAgeHours: number;
+    }
+  >();
+
+  for (const issue of criticalIssues) {
+    const ownerKey = issue.ownerLogin ? normalizedLogin(issue.ownerLogin) : "";
+    const ownerScope = issue.ownerScope === "unowned" || !ownerKey ? "unowned" : issue.ownerScope;
+    const key = ownerScope === "unowned" ? "unowned" : ownerKey;
+    const existing = owners.get(key);
+    if (existing) {
+      existing.criticalIssues += 1;
+      existing.totalAgeHours += issue.ageHours;
+    } else {
+      owners.set(key, {
+        ownerLogin: ownerScope === "unowned" ? null : issue.ownerLogin,
+        ownerScope,
+        criticalIssues: 1,
+        totalAgeHours: issue.ageHours
+      });
+    }
+  }
+
+  return Array.from(owners.values())
+    .map((owner) => ({
+      ownerLogin: owner.ownerLogin,
+      ownerScope: owner.ownerScope,
+      criticalIssues: owner.criticalIssues,
+      averageAgeHours:
+        owner.criticalIssues === 0 ? null : Math.round((owner.totalAgeHours / owner.criticalIssues) * 10) / 10
+    }))
+    .sort((left, right) => {
+      const scopeRank = criticalOwnerScopeRank[left.ownerScope] - criticalOwnerScopeRank[right.ownerScope];
+      if (scopeRank !== 0) {
+        return scopeRank;
+      }
+      if (right.criticalIssues !== left.criticalIssues) {
+        return right.criticalIssues - left.criticalIssues;
+      }
+      if ((right.averageAgeHours ?? 0) !== (left.averageAgeHours ?? 0)) {
+        return (right.averageAgeHours ?? 0) - (left.averageAgeHours ?? 0);
+      }
+      return (left.ownerLogin ?? "").localeCompare(right.ownerLogin ?? "");
+    });
 }
 
 export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
@@ -1830,6 +1891,7 @@ export async function getDashboardSummary(
       criticalAiDriftSignals: aiDriftSignals.filter((signal) => signal.severity === "critical").length
     },
     criticalIssues,
+    criticalOwnerCoverage: criticalIssueOwnerCoverage(criticalIssues),
     people,
     personalViews,
     pendingPrs,

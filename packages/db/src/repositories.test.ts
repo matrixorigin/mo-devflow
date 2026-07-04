@@ -8,6 +8,7 @@ import {
   cacheStaleHoursFromEnv,
   calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
+  criticalIssueOwnerCoverage,
   criticalIssueOwnershipCounts,
   criticalIssueOwnerScope,
   dateKeyInTimezone,
@@ -167,6 +168,24 @@ describe("personal issue buckets", () => {
 });
 
 describe("critical issue ownership counts", () => {
+  test("summarizes critical owner coverage for configuration follow-up", () => {
+    expect(
+      criticalIssueOwnerCoverage([
+        { ownerLogin: "alice", ownerScope: "watched", ageHours: 2 },
+        { ownerLogin: "Carol", ownerScope: "non_watched", ageHours: 4 },
+        { ownerLogin: "carol", ownerScope: "non_watched", ageHours: 8 },
+        { ownerLogin: null, ownerScope: "unowned", ageHours: 10 },
+        { ownerLogin: null, ownerScope: "unowned", ageHours: 2 },
+        { ownerLogin: "bob", ownerScope: "non_watched", ageHours: 20 }
+      ])
+    ).toEqual([
+      { ownerLogin: null, ownerScope: "unowned", criticalIssues: 2, averageAgeHours: 6 },
+      { ownerLogin: "Carol", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 6 },
+      { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 1, averageAgeHours: 20 },
+      { ownerLogin: "alice", ownerScope: "watched", criticalIssues: 1, averageAgeHours: 2 }
+    ]);
+  });
+
   test("classifies critical issue owners against the watched user set", () => {
     expect(criticalIssueOwnerScope(null, ["alice"])).toBe("unowned");
     expect(criticalIssueOwnerScope("  ", ["alice"])).toBe("unowned");

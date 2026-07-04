@@ -214,6 +214,13 @@ export interface CriticalIssueView {
   blockers: CriticalIssueBlockerView[];
 }
 
+export interface CriticalOwnerCoverageView {
+  ownerLogin: string | null;
+  ownerScope: CriticalIssueOwnerScope;
+  criticalIssues: number;
+  averageAgeHours: number | null;
+}
+
 export interface PersonSummary {
   login: string;
   activeCriticalIssues: number;
@@ -644,6 +651,7 @@ export interface DashboardSummary {
     criticalAiDriftSignals: number;
   };
   criticalIssues: CriticalIssueView[];
+  criticalOwnerCoverage: CriticalOwnerCoverageView[];
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   pendingPrs: PendingPrView[];

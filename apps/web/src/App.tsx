@@ -354,6 +354,13 @@ interface ProfileConfigurationWarning {
   action: string;
 }
 
+interface CriticalOwnerCoverageView {
+  ownerLogin: string | null;
+  ownerScope: CriticalIssueOwnerScope;
+  criticalIssues: number;
+  averageAgeHours: number | null;
+}
+
 interface DashboardSummary {
   repo: {
     key: string;
@@ -421,6 +428,7 @@ interface DashboardSummary {
     criticalAiDriftSignals: number;
   };
   criticalIssues: CriticalIssueView[];
+  criticalOwnerCoverage: CriticalOwnerCoverageView[];
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   pendingPrs: PendingPrView[];
@@ -1048,6 +1056,36 @@ export default function App() {
     }
   }, [data, selectedPerson]);
 
+  const criticalOwnerCoverageColumns: ColumnsType<CriticalOwnerCoverageView> = useMemo(
+    () => [
+      {
+        title: "Owner",
+        dataIndex: "ownerLogin",
+        render: (owner, row) => (
+          <Space size={[4, 4]} wrap>
+            {owner ? <Tag>{owner}</Tag> : <Tag color="red">unowned</Tag>}
+            <Tooltip title={ownerScopeTooltip(row.ownerScope)}>
+              <Tag color={ownerScopeColor(row.ownerScope)}>{labelText(row.ownerScope)}</Tag>
+            </Tooltip>
+          </Space>
+        )
+      },
+      {
+        title: "Critical",
+        dataIndex: "criticalIssues",
+        width: 110,
+        render: (value) => <Text strong>{value}</Text>
+      },
+      {
+        title: "Avg Age",
+        dataIndex: "averageAgeHours",
+        width: 120,
+        render: (value) => (value === null ? "-" : hours(value))
+      }
+    ],
+    []
+  );
+
   const criticalColumns: ColumnsType<CriticalIssueView> = useMemo(
     () => [
       {
@@ -1659,6 +1697,8 @@ export default function App() {
   const latestRateLimitHealth =
     data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
+  const criticalOwnerCoverageRows =
+    data?.criticalOwnerCoverage?.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) ?? [];
 
   return (
     <Layout className="app-shell">
@@ -1891,6 +1931,25 @@ export default function App() {
                 showIcon
               />
             ))}
+
+            {criticalOwnerCoverageRows.length > 0 ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Title level={4}>Critical Owner Coverage</Title>
+                  <Space size={[4, 4]} wrap>
+                    <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
+                    <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
+                  </Space>
+                </div>
+                <Table
+                  size="small"
+                  rowKey={(owner) => owner.ownerLogin ?? "unowned"}
+                  columns={criticalOwnerCoverageColumns}
+                  dataSource={criticalOwnerCoverageRows}
+                  pagination={false}
+                />
+              </section>
+            ) : null}
 
             {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
               <Alert
