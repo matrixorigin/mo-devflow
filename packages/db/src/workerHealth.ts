@@ -55,6 +55,19 @@ export function workerHeartbeatStaleSecondsFromEnv(env: Record<string, string | 
   return Math.max(120, Math.floor(effectiveTickSeconds * 3));
 }
 
+export function workerHealthRecommendedAction(status: WorkerHealth["status"]): string | null {
+  if (status === "active") {
+    return null;
+  }
+  if (status === "offline") {
+    return "Start the worker process; in local development run `make dev-worker-start`.";
+  }
+  if (status === "stale") {
+    return "Check worker.log for a stalled process, then restart the worker process.";
+  }
+  return "Inspect worker.log for the last failure, fix the cause, then restart the worker process.";
+}
+
 export async function recordWorkerHeartbeat(input: WorkerHeartbeatInput): Promise<void> {
   const now = nowSql();
   const values = [
@@ -135,6 +148,7 @@ export async function getWorkerHealth(staleAfterSeconds = workerHeartbeatStaleSe
       secondsSinceHeartbeat: null,
       staleAfterSeconds,
       lastError: null,
+      recommendedAction: workerHealthRecommendedAction("offline"),
       details: null
     };
   }
@@ -165,6 +179,7 @@ export async function getWorkerHealth(staleAfterSeconds = workerHeartbeatStaleSe
     secondsSinceHeartbeat,
     staleAfterSeconds,
     lastError: row.last_error ? asString(row.last_error) : null,
+    recommendedAction: workerHealthRecommendedAction(status),
     details: parseJsonRecord<Record<string, unknown> | null>(asString(row.details_json), null)
   };
 }

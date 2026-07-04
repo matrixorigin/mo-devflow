@@ -7,6 +7,7 @@ WORKER_LOG := worker.log
 WEB_PID := web_server.pid
 WEB_LOG := web_server.log
 START_BG := node scripts/run-background.mjs
+STOP_BG := node scripts/stop-background.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
@@ -60,8 +61,7 @@ dev-api-start:
 	@echo "API starting (PID $$(cat $(API_PID)), log $(API_LOG))"
 
 dev-api-stop:
-	@if [ -f $(API_PID) ]; then kill -TERM -$$(cat $(API_PID)) 2>/dev/null || kill $$(cat $(API_PID)) 2>/dev/null || true; rm -f $(API_PID); fi
-	@echo "API stopped"
+	@$(STOP_BG) $(API_PID) API
 
 dev-api-logs:
 	@tail -f $(API_LOG)
@@ -75,8 +75,7 @@ dev-worker-start:
 	@echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"
 
 dev-worker-stop:
-	@if [ -f $(WORKER_PID) ]; then kill -TERM -$$(cat $(WORKER_PID)) 2>/dev/null || kill $$(cat $(WORKER_PID)) 2>/dev/null || true; rm -f $(WORKER_PID); fi
-	@echo "Worker stopped"
+	@$(STOP_BG) $(WORKER_PID) Worker
 
 dev-worker-logs:
 	@tail -f $(WORKER_LOG)
@@ -90,8 +89,7 @@ dev-web-start:
 	@echo "Web starting (PID $$(cat $(WEB_PID)), log $(WEB_LOG))"
 
 dev-web-stop:
-	@if [ -f $(WEB_PID) ]; then kill -TERM -$$(cat $(WEB_PID)) 2>/dev/null || kill $$(cat $(WEB_PID)) 2>/dev/null || true; rm -f $(WEB_PID); fi
-	@echo "Web stopped"
+	@$(STOP_BG) $(WEB_PID) Web
 
 dev-web-logs:
 	@tail -f $(WEB_LOG)

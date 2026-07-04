@@ -577,6 +577,7 @@ export interface WorkerHealth {
   secondsSinceHeartbeat: number | null;
   staleAfterSeconds: number;
   lastError: string | null;
+  recommendedAction: string | null;
   details: Record<string, unknown> | null;
 }
 

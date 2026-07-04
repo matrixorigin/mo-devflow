@@ -413,6 +413,7 @@ interface DashboardSummary {
       secondsSinceHeartbeat: number | null;
       staleAfterSeconds: number;
       lastError: string | null;
+      recommendedAction: string | null;
       details: Record<string, unknown> | null;
     };
   };
@@ -690,16 +691,19 @@ function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
 }
 
 function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): string {
+  const action = worker.recommendedAction ? ` ${worker.recommendedAction}` : "";
   if (worker.status === "offline") {
-    return "No worker heartbeat has been recorded.";
+    return `No worker heartbeat has been recorded.${action}`;
   }
   if (worker.status === "stale") {
-    return `Last heartbeat was ${worker.secondsSinceHeartbeat ?? "unknown"}s ago; stale threshold is ${worker.staleAfterSeconds}s.`;
+    return `Last heartbeat was ${worker.secondsSinceHeartbeat ?? "unknown"}s ago; stale threshold is ${
+      worker.staleAfterSeconds
+    }s.${action}`;
   }
   if (worker.status === "failed") {
-    return worker.lastError ?? "The latest worker tick failed.";
+    return `${worker.lastError ?? "The latest worker tick failed."}${action}`;
   }
-  return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.`;
+  return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.${action}`;
 }
 
 const metricPeriodOptions = [
