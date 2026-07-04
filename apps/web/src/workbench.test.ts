@@ -10,8 +10,10 @@ import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
   flowEfficiencySummary,
+  flowThreadDurationWarnings,
   personalGanttChart,
   personalActivityItems,
+  personalDurationText,
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
@@ -115,6 +117,9 @@ describe("work item attention reasons", () => {
       lifecycleState: "active",
       aiEffortLabel: "ai-easy",
       ageHours: 48,
+      criticalStartedAt: "2026-07-02T00:00:00Z",
+      criticalAgeHours: 48,
+      criticalAgeEvidence: "webhook_label_event",
       lastHumanActionAt: "2026-07-03T00:00:00Z",
       lastHumanActionEvidence: "complete_cache",
       sourceUpdatedAt: "2026-07-04T00:00:00Z",
@@ -237,6 +242,18 @@ describe("personal activity feed", () => {
     expect(items[1]?.reasons).toContain("Changes requested");
     expect(items[1]?.reasons).toContain("CI failed");
   });
+
+  it("uses s-1/s0 activation duration for active critical issues", () => {
+    const person = personalView({
+      activeCriticalIssues: [criticalIssue({ ageHours: 240, criticalAgeHours: 18 })]
+    });
+
+    const [item] = personalActivityItems(person);
+
+    expect(item?.durationKind).toBe("critical_active");
+    expect(item?.durationHours).toBe(18);
+    expect(personalDurationText(item!)).toBe("s0/s-1 18h");
+  });
 });
 
 describe("personal gantt chart", () => {
@@ -292,6 +309,27 @@ describe("personal gantt chart", () => {
     expect(chart.sharedPrCount).toBe(1);
     expect(chart.unlinkedPrCount).toBe(1);
     expect(chart.outsideIssuePrCount).toBe(1);
+  });
+
+  it("does not use issue created age as active severity duration when timeline evidence is missing", () => {
+    const person = personalView({
+      activeCriticalIssues: [
+        criticalIssue({
+          number: 10,
+          ageHours: 240,
+          criticalStartedAt: null,
+          criticalAgeHours: null,
+          criticalAgeEvidence: "missing_timeline"
+        })
+      ]
+    });
+
+    const chart = personalGanttChart(person, "2026-07-04T00:00:00.000Z");
+    const issue = chart.rows.find((row) => row.id === "issue:10")?.issue;
+
+    expect(issue?.durationHours).toBeNull();
+    expect(issue?.startAgeHours).toBe(0);
+    expect(flowThreadDurationWarnings(chart.rows[0]!)).toContain("missing severity timeline");
   });
 });
 
@@ -378,6 +416,9 @@ function criticalIssue(input: Partial<CriticalIssueView>): CriticalIssueView {
     aiEffortLabel: input.aiEffortLabel ?? "ai-easy",
     lastHumanActionAt: input.lastHumanActionAt ?? "2026-07-03T00:00:00Z",
     lastHumanActionEvidence: input.lastHumanActionEvidence ?? "complete_cache",
+    criticalStartedAt: input.criticalStartedAt === undefined ? "2026-07-03T00:00:00Z" : input.criticalStartedAt,
+    criticalAgeHours: input.criticalAgeHours === undefined ? 24 : input.criticalAgeHours,
+    criticalAgeEvidence: input.criticalAgeEvidence ?? "webhook_label_event",
     sourceUpdatedAt: input.sourceUpdatedAt ?? "2026-07-04T00:00:00Z",
     syncError: input.syncError ?? null,
     linkedPullRequests: input.linkedPullRequests ?? [],

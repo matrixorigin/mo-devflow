@@ -4,12 +4,14 @@ import type {
   PersonSummary,
   PersonalActionView,
   PersonalIssueView,
-  PersonalPullRequestView
+  PersonalPullRequestView,
+  TestingFlowState
 } from "@mo-devflow/shared";
 
 export type WorkloadStatus = "critical" | "attention" | "triage" | "active" | "clear";
 export type PersonalActivityTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalActivityObjectType = "issue" | "pull_request";
+export type PersonalDurationKind = "critical_active" | "issue_age" | "pr_age" | "unknown";
 
 export interface PersonalActivityItem {
   id: string;
@@ -17,10 +19,14 @@ export interface PersonalActivityItem {
   number: number;
   title: string;
   htmlUrl: string;
+  ownerLogin: string | null;
   phase: string;
   tone: PersonalActivityTone;
   priority: number;
   ageHours: number;
+  durationHours: number | null;
+  durationKind: PersonalDurationKind;
+  durationEvidence: string;
   lastHumanActionAt: string | null;
   testingQueueAgeHours: number | null;
   severity: string | null;
@@ -55,7 +61,7 @@ export interface PersonalGanttPrBar extends PersonalGanttBarLayout {
   reviewDecision: string | null;
   mergeStateStatus: string | null;
   ciState: string | null;
-  testingState: string;
+  testingState: TestingFlowState;
   testingQueueAgeHours: number | null;
   attentionFlags: string[];
   linkedIssueNumbers: number[];
@@ -72,6 +78,9 @@ export interface PersonalGanttIssueBar extends PersonalGanttBarLayout {
   severity: string | null;
   lifecycleState: string | null;
   aiEffortLabel: string | null;
+  durationHours: number | null;
+  durationKind: PersonalDurationKind;
+  durationEvidence: string;
   reasons: string[];
   isComplete: boolean;
 }
@@ -396,6 +405,9 @@ export function personalGanttChart(
         severity: null,
         lifecycleState: null,
         aiEffortLabel: null,
+        durationHours: maxOtherAge,
+        durationKind: "pr_age",
+        durationEvidence: "Pull request created time",
         reasons: [`${otherPrs.length} PRs`],
         isComplete: otherPrs.every((pr) => pr.isComplete),
         startAgeHours: maxOtherAge,
@@ -487,6 +499,7 @@ function mergePersonalPullRequest(
 
 function issueDraft(issue: CriticalIssueView | PersonalIssueView, nowIso: string): PersonalGanttIssueDraft {
   const criticalIssue = isCriticalIssue(issue);
+  const duration = issueDuration(issue);
   return {
     number: issue.number,
     title: issue.title,
@@ -495,9 +508,12 @@ function issueDraft(issue: CriticalIssueView | PersonalIssueView, nowIso: string
     severity: issue.severity,
     lifecycleState: issue.lifecycleState,
     aiEffortLabel: criticalIssue ? effectiveAiEffortLabel(issue.aiEffortLabel) : null,
+    durationHours: duration.hours,
+    durationKind: duration.kind,
+    durationEvidence: duration.evidence,
     reasons: criticalIssue ? criticalIssueReasons(issue) : personalIssueReasons(issue),
     isComplete: issue.isComplete,
-    startAgeHours: Math.max(issue.ageHours, 0),
+    startAgeHours: Math.max(duration.hours ?? 0, 0),
     endAgeHours: 0
   };
 }
@@ -713,6 +729,138 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   });
 }
 
+export function personalActivityNextAction(item: PersonalActivityItem): string {
+  if (item.objectType === "issue") {
+    if (item.lifecycleState === "needs-triage") {
+      return "Decide s-1/s0 or defer";
+    }
+    if (item.lifecycleState === "deferred") {
+      return "Check defer reason";
+    }
+    if (item.tone === "critical" && item.linkedPullRequestNumbers.length === 0) {
+      return "Link an execution PR";
+    }
+    if (item.tone === "critical") {
+      return "Drive linked PRs";
+    }
+    return "Review issue state";
+  }
+
+  const reasons = item.reasons.map((reason) => reason.toLowerCase());
+  if (reasons.some((reason) => reason.includes("ci failed"))) {
+    return "Fix failing CI";
+  }
+  if (reasons.some((reason) => reason.includes("changes requested"))) {
+    return "Address requested changes";
+  }
+  if (reasons.some((reason) => reason.includes("merge conflict"))) {
+    return "Resolve merge conflict";
+  }
+  if (item.testingState === "test_changes_requested") {
+    return "Respond to testing feedback";
+  }
+  if (
+    item.testingQueueAgeHours !== null ||
+    ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
+  ) {
+    return "Push testing closure";
+  }
+  if (reasons.some((reason) => reason.includes("review waiting"))) {
+    return "Request review response";
+  }
+  if (reasons.some((reason) => reason.includes("no human action"))) {
+    return "Refresh owner action";
+  }
+  if (item.phase === "Merged yesterday") {
+    return "Verify linked issue closure";
+  }
+  if (item.phase === "Created yesterday") {
+    return "Confirm review path";
+  }
+  return "Keep PR moving";
+}
+
+export function personalActivityPrimarySignal(item: PersonalActivityItem): string {
+  if (item.reasons.length > 0) {
+    return item.reasons[0];
+  }
+  if (item.linkedIssueNumbers.length > 0) {
+    return `${item.linkedIssueNumbers.length} linked issue${item.linkedIssueNumbers.length === 1 ? "" : "s"}`;
+  }
+  if (item.linkedPullRequestNumbers.length > 0) {
+    return `${item.linkedPullRequestNumbers.length} linked PR${item.linkedPullRequestNumbers.length === 1 ? "" : "s"}`;
+  }
+  return item.phase;
+}
+
+export function personalDurationText(input: {
+  durationHours: number | null;
+  durationKind: PersonalDurationKind;
+}): string {
+  if (input.durationHours === null) {
+    return input.durationKind === "critical_active" ? "s0/s-1 unknown" : "unknown";
+  }
+  if (input.durationKind === "critical_active") {
+    return `s0/s-1 ${durationHoursText(input.durationHours)}`;
+  }
+  if (input.durationKind === "pr_age") {
+    return `PR ${durationHoursText(input.durationHours)}`;
+  }
+  return `issue ${durationHoursText(input.durationHours)}`;
+}
+
+export function flowThreadNextAction(row: PersonalGanttRow): string {
+  const prReasons = row.prs.flatMap((pr) => pr.reasons.map((reason) => reason.toLowerCase()));
+  if (row.issue.lifecycleState === "needs-triage") {
+    return "Decide s-1/s0 or defer";
+  }
+  if (row.issue.lifecycleState === "deferred") {
+    return "Check defer reason";
+  }
+  if (row.kind === "issue" && row.prs.length === 0) {
+    return "Link an execution PR";
+  }
+  if (prReasons.some((reason) => reason.includes("ci failed"))) {
+    return "Fix failing CI";
+  }
+  if (prReasons.some((reason) => reason.includes("changes requested"))) {
+    return "Address requested changes";
+  }
+  if (prReasons.some((reason) => reason.includes("merge conflict"))) {
+    return "Resolve merge conflict";
+  }
+  if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
+    return "Push testing closure";
+  }
+  if (row.prs.length > 0) {
+    return "Move PR toward merge";
+  }
+  return "Monitor";
+}
+
+export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
+  const warnings: string[] = [];
+  if (row.issue.durationKind === "critical_active" && row.issue.durationHours === null) {
+    warnings.push("missing severity timeline");
+  }
+  if (row.issue.aiEffortLabel === "ai-easy" && (row.issue.durationHours ?? 0) >= 168) {
+    warnings.push("ai-easy over 7d");
+  }
+  if (row.issue.tone === "critical" && (row.issue.durationHours ?? 0) >= 72) {
+    warnings.push("critical over 3d");
+  }
+  if (row.prs.some((pr) => pr.startAgeHours >= 24 && pr.attentionFlags.includes("no_human_action_24h"))) {
+    warnings.push("PR idle over 24h");
+  }
+  if (row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)) {
+    warnings.push("testing over 24h");
+  }
+  if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
+    warnings.push("unlinked PR");
+  }
+  return uniqueStrings(warnings);
+}
+
 function activityFromIssue(
   issue: CriticalIssueView | PersonalIssueView,
   phase: string,
@@ -721,16 +869,21 @@ function activityFromIssue(
 ): PersonalActivityItem {
   const criticalIssue = isCriticalIssue(issue);
   const reasons = criticalIssue ? criticalIssueReasons(issue) : personalIssueReasons(issue);
+  const duration = issueDuration(issue);
   return {
     id: `issue:${issue.number}`,
     objectType: "issue",
     number: issue.number,
     title: issue.title,
     htmlUrl: issue.htmlUrl,
+    ownerLogin: criticalIssue ? issue.ownerLogin : null,
     phase,
     tone,
     priority,
     ageHours: issue.ageHours,
+    durationHours: duration.hours,
+    durationKind: duration.kind,
+    durationEvidence: duration.evidence,
     lastHumanActionAt: criticalIssue ? issue.lastHumanActionAt : null,
     testingQueueAgeHours: null,
     severity: issue.severity,
@@ -759,10 +912,14 @@ function activityFromPullRequest(
     number: pr.number,
     title: pr.title,
     htmlUrl: pr.htmlUrl,
+    ownerLogin: pr.ownerLogin,
     phase,
     tone,
     priority,
     ageHours: pr.ageHours,
+    durationHours: pr.ageHours,
+    durationKind: "pr_age",
+    durationEvidence: "pull_request_created_at",
     lastHumanActionAt: pr.lastHumanActionAt,
     testingQueueAgeHours: pr.testingQueueAgeHours,
     severity: null,
@@ -780,6 +937,35 @@ function activityFromPullRequest(
 
 function isCriticalIssue(issue: CriticalIssueView | PersonalIssueView): issue is CriticalIssueView {
   return "linkedPullRequests" in issue;
+}
+
+function issueDuration(issue: CriticalIssueView | PersonalIssueView): {
+  hours: number | null;
+  kind: PersonalDurationKind;
+  evidence: string;
+} {
+  if (isCriticalIssue(issue)) {
+    return {
+      hours: issue.criticalAgeHours,
+      kind: "critical_active",
+      evidence:
+        issue.criticalAgeEvidence === "webhook_label_event"
+          ? "GitHub issue label webhook"
+          : "Missing severity timeline evidence"
+    };
+  }
+  return {
+    hours: issue.ageHours,
+    kind: "issue_age",
+    evidence: "Issue created time"
+  };
+}
+
+function durationHoursText(value: number): string {
+  if (value < 24) {
+    return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
+  }
+  return `${(value / 24).toFixed(1)}d`;
 }
 
 function severityPriority(severity: string | null): number {

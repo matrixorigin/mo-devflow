@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -83,9 +83,14 @@ import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
+  flowThreadDurationWarnings,
+  flowThreadNextAction,
   flowEfficiencySummary,
   personalGanttChart,
   personalActivityItems,
+  personalActivityNextAction,
+  personalActivityPrimarySignal,
+  personalDurationText,
   personPrimaryReasons,
   personWorkloadStatus,
   personalIssueReasons,
@@ -1025,6 +1030,9 @@ function isCriticalIssueView(issue: CriticalIssueView | PersonalIssueView): issu
 function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView }) {
   const critical = isCriticalIssueView(issue);
   const reasons = critical ? criticalIssueReasons(issue) : personalIssueReasons(issue);
+  const durationText = critical
+    ? personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" })
+    : hours(issue.ageHours);
 
   return (
     <article className={`work-item-card ${critical ? "work-item-critical" : ""}`}>
@@ -1032,7 +1040,7 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
         <WorkObjectLink href={issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
           Issue #{issue.number}
         </WorkObjectLink>
-        <Tag>{hours(issue.ageHours)}</Tag>
+        <Tag color={critical && issue.criticalAgeHours === null ? "gold" : undefined}>{durationText}</Tag>
       </div>
       <a className="work-item-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
         {issue.title}
@@ -1041,6 +1049,7 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
         <Tag>{labelText(issue.lifecycleState)}</Tag>
         {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
         {critical ? <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag> : null}
+        {critical && issue.criticalAgeEvidence === "missing_timeline" ? <Tag color="gold">timeline missing</Tag> : null}
         {critical && issue.lastHumanActionAt ? (
           <Tag color={issue.lastHumanActionEvidence === "complete_cache" ? "green" : "gold"}>
             last action {formatDate(issue.lastHumanActionAt)}
@@ -1219,47 +1228,89 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   if (items.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
   }
-  const groups = [
-    { key: "critical", title: "Critical", items: items.filter((item) => item.tone === "critical") },
-    { key: "attention", title: "Needs Attention", items: items.filter((item) => item.tone === "attention") },
-    {
-      key: "context",
-      title: "Context",
-      items: items.filter((item) => item.tone !== "critical" && item.tone !== "attention")
-    }
-  ];
+  const criticalItems = items.filter((item) => item.tone === "critical");
+  const attentionItems = items.filter((item) => item.tone === "attention");
+  const prItems = items.filter((item) => item.objectType === "pull_request");
+  const issueItems = items.filter((item) => item.objectType === "issue");
+  const oldestCritical = maxDuration(criticalItems);
+  const oldestPr = maxAge(prItems);
+  const testingItems = items.filter((item) => item.testingQueueAgeHours !== null);
+  const linkedObjects = items.filter(
+    (item) => item.linkedIssueNumbers.length > 0 || item.linkedPullRequestNumbers.length > 0
+  ).length;
 
   return (
-    <div className="action-queue-grid">
-      {groups.map((group) => (
-        <section className={`action-queue-column action-queue-${group.key}`} key={group.key}>
-          <div className="action-queue-heading">
-            <Text strong>{group.title}</Text>
-            <Tag color={group.key === "critical" ? "red" : group.key === "attention" ? "orange" : "blue"}>
-              {group.items.length}
-            </Tag>
-          </div>
-          <div className="action-queue-list">
-            {group.items.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Clear" />
-            ) : (
-              <>
-                {group.items.slice(0, 8).map((item) => (
-                  <PersonalActionQueueItem item={item} key={item.id} />
-                ))}
-                {group.items.length > 8 ? (
-                  <div className="action-queue-more">+{group.items.length - 8} more</div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </section>
-      ))}
+    <div className="activity-command-center">
+      <div className="activity-summary-strip" aria-label="Personal activity summary">
+        <ActivitySummaryTile
+          label="Active s-1/s0"
+          value={criticalItems.length}
+          detail={optionalHours(oldestCritical)}
+          tone="critical"
+        />
+        <ActivitySummaryTile
+          label="Attention PRs"
+          value={attentionItems.length}
+          detail={`${prItems.length} PR total`}
+          tone="attention"
+        />
+        <ActivitySummaryTile
+          label="Issue threads"
+          value={issueItems.length}
+          detail={`${linkedObjects} linked`}
+          tone="normal"
+        />
+        <ActivitySummaryTile
+          label="Testing handoff"
+          value={testingItems.length}
+          detail={optionalHours(maxTestingAge(testingItems))}
+          tone="normal"
+        />
+        <ActivitySummaryTile
+          label="Oldest PR"
+          value={oldestPr === null ? "-" : hours(oldestPr)}
+          detail="pending/active"
+          tone="muted"
+        />
+      </div>
+      <div className="next-action-list" role="table" aria-label="Personal action queue">
+        <div className="next-action-header" role="row">
+          <span>Object</span>
+          <span>Next action</span>
+          <span>Signal</span>
+          <span>Duration</span>
+          <span>Links</span>
+        </div>
+        {items.slice(0, 12).map((item, index) => (
+          <PersonalActionQueueItem index={index + 1} item={item} key={item.id} />
+        ))}
+        {items.length > 12 ? <div className="action-queue-more">+{items.length - 12} more current objects</div> : null}
+      </div>
     </div>
   );
 }
 
-function PersonalActionQueueItem({ item }: { item: PersonalActivityItem }) {
+function ActivitySummaryTile({
+  label,
+  value,
+  detail,
+  tone
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "muted";
+}) {
+  return (
+    <div className={`activity-summary-tile activity-summary-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; index: number }) {
   const icon =
     item.objectType === "pull_request" ? (
       <GitPullRequest size={15} aria-hidden="true" />
@@ -1275,110 +1326,135 @@ function PersonalActionQueueItem({ item }: { item: PersonalActivityItem }) {
     number,
     url: linkedObjectUrl(item.htmlUrl, "pull", number)
   }));
-  const primaryReason = item.reasons[0] ?? item.phase;
+  const nextAction = personalActivityNextAction(item);
+  const primarySignal = personalActivityPrimarySignal(item);
+  const actionTone = item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue";
+  const duration = personalDurationText(item);
 
   return (
-    <article className={`action-queue-item action-queue-item-${item.tone}`}>
-      <div className="action-queue-item-main">
-        <WorkObjectLink href={item.htmlUrl} icon={icon}>
-          {objectLabel}
-        </WorkObjectLink>
+    <article className={`action-queue-item action-queue-item-${item.tone}`} role="row">
+      <div className="action-queue-object" role="cell">
+        <div className="action-queue-title-row">
+          <WorkObjectLink href={item.htmlUrl} icon={icon}>
+            {objectLabel}
+          </WorkObjectLink>
+          {item.ownerLogin ? <Tag>{item.ownerLogin}</Tag> : null}
+        </div>
         <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
           {item.title}
         </a>
-        <div className="action-queue-meta">
-          <Tag color={activityToneColor(item.tone)}>{item.phase}</Tag>
-          <Tag>{hours(item.ageHours)}</Tag>
-          {!item.isComplete ? <Tag color="gold">partial</Tag> : null}
-          <span>
-            <TimerReset size={13} aria-hidden="true" />
-            {primaryReason}
-          </span>
-          {item.lastHumanActionAt ? (
-            <span>
-              <UserRound size={13} aria-hidden="true" />
-              human {formatDate(item.lastHumanActionAt)}
-            </span>
-          ) : null}
-          {item.testingQueueAgeHours !== null ? (
-            <span>
-              <ClipboardCheck size={13} aria-hidden="true" />
-              testing {hours(item.testingQueueAgeHours)}
-            </span>
-          ) : null}
-        </div>
+      </div>
+      <div className="action-queue-next" role="cell">
+        <span className="action-index">{index}</span>
+        <span className="action-command">
+          <TimerReset size={14} aria-hidden="true" />
+          {nextAction}
+        </span>
+        <Tag color={actionTone}>{item.phase}</Tag>
+      </div>
+      <div className="action-queue-signal" role="cell">
+        <Text strong>{primarySignal}</Text>
         <div className="action-queue-tags">
-          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
-          {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
-          {item.reviewDecision ? (
-            <Tag color={item.reviewDecision === "changes_requested" ? "red" : "blue"}>
-              {labelText(item.reviewDecision)}
-            </Tag>
-          ) : null}
-          {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
-          {item.mergeStateStatus ? (
-            <Tag color={mergeColor(item.mergeStateStatus)}>merge {labelText(item.mergeStateStatus)}</Tag>
-          ) : null}
-          {item.testingState ? (
-            <Tag color={testingStateColor(item.testingState as TestingFlowState)}>{labelText(item.testingState)}</Tag>
-          ) : null}
-          {item.reasons.slice(0, 3).map((reason) => (
+          {item.reasons.slice(0, 2).map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
             </Tag>
           ))}
+          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
+          {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
+          {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+          {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
+          {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
         </div>
       </div>
-      {linkedIssueUrls.length > 0 || linkedPrUrls.length > 0 ? (
-        <div className="action-queue-links">
-          {linkedIssueUrls.length > 0 ? (
+      <div className="action-queue-duration" role="cell">
+        <strong>{duration}</strong>
+        <small>{item.durationEvidence}</small>
+        {item.lastHumanActionAt ? (
+          <span>
+            <UserRound size={13} aria-hidden="true" />
+            {formatDate(item.lastHumanActionAt)}
+          </span>
+        ) : null}
+        {item.testingQueueAgeHours !== null ? (
+          <span>
+            <ClipboardCheck size={13} aria-hidden="true" />
+            testing {hours(item.testingQueueAgeHours)}
+          </span>
+        ) : null}
+      </div>
+      <div className="action-queue-links" role="cell">
+        {linkedIssueUrls.length === 0 && linkedPrUrls.length === 0 ? <span className="action-no-links">-</span> : null}
+        {linkedIssueUrls.length > 0 ? (
+          <span>
+            issue
             <span>
-              issue
-              <span>
-                {linkedIssueUrls.map((link) => (
-                  <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
-                    #{link.number}
-                  </a>
-                ))}
-              </span>
+              {linkedIssueUrls.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                  #{link.number}
+                </a>
+              ))}
             </span>
-          ) : null}
-          {linkedPrUrls.length > 0 ? (
+          </span>
+        ) : null}
+        {linkedPrUrls.length > 0 ? (
+          <span>
+            PR
             <span>
-              PR
-              <span>
-                {linkedPrUrls.map((link) => (
-                  <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
-                    #{link.number}
-                  </a>
-                ))}
-              </span>
+              {linkedPrUrls.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
+                  #{link.number}
+                </a>
+              ))}
             </span>
-          ) : null}
-        </div>
-      ) : null}
+          </span>
+        ) : null}
+      </div>
     </article>
   );
+}
+
+function maxAge(items: Array<Pick<PersonalActivityItem, "ageHours">>): number | null {
+  if (items.length === 0) {
+    return null;
+  }
+  return Math.max(...items.map((item) => item.ageHours));
+}
+
+function maxDuration(items: Array<Pick<PersonalActivityItem, "durationHours">>): number | null {
+  const values = items
+    .map((item) => item.durationHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(...values);
+}
+
+function maxTestingAge(items: Array<Pick<PersonalActivityItem, "testingQueueAgeHours">>): number | null {
+  const values = items
+    .map((item) => item.testingQueueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(...values);
 }
 
 function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
   if (chart.rows.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR flow data" />;
   }
-  const ticks = [1, 0.75, 0.5, 0.25, 0];
 
   return (
     <div className="flow-map">
-      <div className="flow-map-axis">
-        <div className="flow-map-axis-label">Work thread</div>
-        <div className="flow-map-axis-track">
-          {ticks.map((tick) => (
-            <span className="flow-map-axis-tick" style={{ left: `${(1 - tick) * 100}%` }} key={tick}>
-              {tick === 0 ? "now" : hours(chart.maxAgeHours * tick)}
-            </span>
-          ))}
-        </div>
-        <div className="flow-map-axis-label">Current signals</div>
+      <div className="flow-map-summary">
+        <span>
+          <strong>{chart.rows.length}</strong> threads
+        </span>
+        <span>
+          <strong>{hours(chart.maxAgeHours)}</strong> oldest visible work
+        </span>
+        <span>
+          <strong>{chart.sharedPrCount}</strong> shared PR
+        </span>
+        <span>
+          <strong>{chart.unlinkedPrCount}</strong> unlinked PR
+        </span>
       </div>
       <div className="flow-thread-list">
         {chart.rows.map((row) => (
@@ -1390,15 +1466,16 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
 }
 
 function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
-  const rowStyle: CSSProperties = { minHeight: 86 + Math.max(0, row.prs.length - 1) * 26 };
   const reasons = flowThreadReasons(row);
+  const nextAction = flowThreadNextAction(row);
+  const durationWarnings = flowThreadDurationWarnings(row);
   const sourceUrl = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
 
   return (
-    <article className={`flow-thread flow-thread-${row.tone}`} style={rowStyle}>
+    <article className={`flow-thread flow-thread-${row.tone}`}>
       <div className="flow-thread-meta">
         <div className="flow-thread-object">
           {row.issue.htmlUrl ? (
@@ -1425,37 +1502,63 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
           {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
           {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared</Tag> : null}
         </div>
+        <div className="flow-thread-next">
+          <TimerReset size={14} aria-hidden="true" />
+          {nextAction}
+        </div>
       </div>
 
-      <div className="flow-thread-rail">
-        <Tooltip title={`${row.issue.title} | ${hours(row.issue.startAgeHours)} elapsed`}>
-          {row.issue.htmlUrl ? (
-            <a
-              className={`flow-segment flow-issue-segment flow-tone-${row.issue.tone}`}
-              href={row.issue.htmlUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={flowSegmentStyle(row.issue, 9)}
-            >
-              issue
-            </a>
-          ) : (
+      <div className="flow-thread-body">
+        <div className="flow-age-row">
+          <span className="flow-age-label">
+            {row.issue.durationKind === "critical_active" ? "s0/s-1 active" : "issue age"}
+          </span>
+          <div className="flow-age-track" aria-label={`${row.issue.title} elapsed ${personalDurationText(row.issue)}`}>
             <span
-              className={`flow-segment flow-issue-segment flow-tone-${row.issue.tone}`}
-              style={flowSegmentStyle(row.issue, 9)}
-            >
-              PR group
-            </span>
+              className={`flow-age-fill flow-tone-${row.issue.tone}`}
+              style={{ width: `${Math.max(4, row.issue.widthPercent)}%` }}
+            />
+          </div>
+          <span className="flow-age-value">
+            {row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}
+          </span>
+        </div>
+        <div className="flow-pr-stack">
+          {row.prs.length === 0 ? (
+            <div className="flow-pr-empty">No linked PR visible</div>
+          ) : (
+            <>
+              {row.prs.slice(0, 6).map((pr) => (
+                <FlowPrRow pr={pr} key={pr.number} />
+              ))}
+              {row.prs.length > 6 ? <div className="flow-pr-more">+{row.prs.length - 6} more PRs</div> : null}
+            </>
           )}
-        </Tooltip>
-        {row.prs.map((pr, index) => (
-          <FlowPrSegment pr={pr} index={index} key={pr.number} />
-        ))}
+        </div>
       </div>
 
       <div className="flow-thread-signals">
+        <div className="flow-thread-kpis">
+          <span>
+            <strong>{row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}</strong>
+            <small>{row.issue.durationKind === "critical_active" ? "s0/s-1" : "issue age"}</small>
+          </span>
+          <span>
+            <strong>{row.prs.length}</strong>
+            <small>PRs</small>
+          </span>
+          <span>
+            <strong>{row.prs.filter((pr) => pr.tone === "attention").length}</strong>
+            <small>blocked</small>
+          </span>
+        </div>
         <div className="flow-signal-tags">
           {reasons.length === 0 ? <Tag color="green">clear</Tag> : null}
+          {durationWarnings.map((warning) => (
+            <Tag color="red" key={warning}>
+              {warning}
+            </Tag>
+          ))}
           {reasons.slice(0, 5).map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
@@ -1477,8 +1580,7 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
   );
 }
 
-function FlowPrSegment({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
-  const style = flowSegmentStyle(pr, 38 + index * 26);
+function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
   const title = [
     `PR #${pr.number}`,
     pr.title,
@@ -1489,32 +1591,53 @@ function FlowPrSegment({ pr, index }: { pr: PersonalGanttPrBar; index: number })
   ]
     .filter((value): value is string => value !== null)
     .join(" | ");
+  const linkedIssues = pr.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(pr.htmlUrl, "issues", number)
+  }));
 
   return (
-    <Tooltip title={title}>
-      <a
-        className={`flow-segment flow-pr-segment flow-tone-${pr.tone}`}
-        href={pr.htmlUrl}
-        target="_blank"
-        rel="noreferrer"
-        style={style}
-      >
-        <span>PR #{pr.number}</span>
-        {pr.isShared ? <em>shared</em> : null}
-        {pr.ciState ? <em>ci {labelText(pr.ciState)}</em> : null}
-        {pr.reviewDecision ? <em>{labelText(pr.reviewDecision)}</em> : null}
-        {pr.testingState !== "not_ready" ? <em>{labelText(pr.testingState)}</em> : null}
-      </a>
-    </Tooltip>
+    <div className={`flow-pr-row flow-pr-row-${pr.tone}`}>
+      <div className="flow-pr-row-main">
+        <Tooltip title={title}>
+          <a className="flow-pr-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+            PR #{pr.number} {pr.title}
+          </a>
+        </Tooltip>
+        <div className="flow-pr-meta">
+          <span>{pr.ownerLogin}</span>
+          <span>{hours(pr.startAgeHours)}</span>
+          {pr.isShared ? <Tag color="purple">shared</Tag> : null}
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {pr.reviewDecision ? (
+            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          ) : null}
+          {pr.testingState !== "not_ready" ? (
+            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+          ) : null}
+        </div>
+        {linkedIssues.length > 0 ? (
+          <div className="flow-pr-links">
+            <span>issues</span>
+            {linkedIssues.slice(0, 4).map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                #{link.number}
+              </a>
+            ))}
+            {linkedIssues.length > 4 ? <span>+{linkedIssues.length - 4}</span> : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="flow-pr-age">
+        <div className="flow-age-track" aria-label={`PR ${pr.number} elapsed ${hours(pr.startAgeHours)}`}>
+          <span
+            className={`flow-age-fill flow-tone-${pr.tone}`}
+            style={{ width: `${Math.max(4, pr.widthPercent)}%` }}
+          />
+        </div>
+      </div>
+    </div>
   );
-}
-
-function flowSegmentStyle(bar: { offsetPercent: number; widthPercent: number }, top: number): CSSProperties {
-  return {
-    left: `${bar.offsetPercent}%`,
-    top,
-    width: `${bar.widthPercent}%`
-  };
 }
 
 function flowThreadReasons(row: PersonalGanttRow): string[] {
@@ -2119,10 +2242,22 @@ export default function App() {
         )
       },
       {
-        title: "Age",
-        dataIndex: "ageHours",
-        width: 96,
-        render: (age) => hours(age)
+        title: "s0/s-1 Duration",
+        dataIndex: "criticalAgeHours",
+        width: 140,
+        render: (value, issue) => (
+          <Tooltip
+            title={
+              issue.criticalAgeEvidence === "webhook_label_event"
+                ? `From GitHub issue label webhook at ${formatDate(issue.criticalStartedAt)}.`
+                : "Missing severity timeline evidence; issue created age is not used as active severity duration."
+            }
+          >
+            <Tag color={value === null ? "gold" : "red"}>
+              {personalDurationText({ durationHours: value, durationKind: "critical_active" })}
+            </Tag>
+          </Tooltip>
+        )
       },
       {
         title: "Last action",

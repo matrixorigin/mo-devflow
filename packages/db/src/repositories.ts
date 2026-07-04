@@ -1790,6 +1790,63 @@ function issueAgeHours(row: RowData): number {
   );
 }
 
+function hoursSince(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return Math.max(0, Math.round(((Date.now() - timestamp) / 3_600_000) * 10) / 10);
+}
+
+async function criticalStartedAtByIssueNumber(
+  repoId: number,
+  currentSeverityByIssueNumber: Map<number, string>
+): Promise<Map<number, string>> {
+  if (currentSeverityByIssueNumber.size === 0) {
+    return new Map();
+  }
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT action, payload_json, received_at, processed_at
+     FROM github_webhook_deliveries
+     WHERE repo_id = ?
+       AND event_name = 'issues'
+       AND action IN ('labeled', 'unlabeled')
+       AND status = 'processed'
+     ORDER BY COALESCE(processed_at, received_at) ASC, id ASC
+     LIMIT 5000`,
+    [repoId]
+  );
+  const startedAtByIssueNumber = new Map<number, string>();
+  for (const row of rows) {
+    const payload = parseJsonRecord<Record<string, unknown>>(asString(row.payload_json), {});
+    const issue = objectRecord(payload.issue);
+    const label = objectRecord(payload.label);
+    const issueNumber = asNumber(issue.number);
+    const currentSeverity = currentSeverityByIssueNumber.get(issueNumber);
+    const labelName = typeof label.name === "string" ? label.name : null;
+    if (!currentSeverity || labelName !== currentSeverity) {
+      continue;
+    }
+    const occurredAt = fromSqlDate(row.processed_at) ?? fromSqlDate(row.received_at);
+    if (!occurredAt) {
+      continue;
+    }
+    if (asString(row.action) === "labeled") {
+      startedAtByIssueNumber.set(issueNumber, occurredAt);
+    } else if (asString(row.action) === "unlabeled") {
+      startedAtByIssueNumber.delete(issueNumber);
+    }
+  }
+  return startedAtByIssueNumber;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
   const rawPayload = parseJsonRecord<Record<string, unknown>>(asString(row.raw_payload), {});
   const body = typeof rawPayload.body === "string" ? rawPayload.body : "";
@@ -1980,7 +2037,8 @@ function toCriticalIssueView(
   row: RowData,
   linkedPullRequests: CriticalIssueLinkedPullRequestView[] = [],
   watchedUsers: string[] = [],
-  commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>
+  commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>,
+  criticalStartedAt: string | null = null
 ): CriticalIssueView {
   const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
   const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy";
@@ -1998,6 +2056,9 @@ function toCriticalIssueView(
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
     aiEffortLabel,
     ageHours: issueAgeHours(row),
+    criticalStartedAt,
+    criticalAgeHours: hoursSince(criticalStartedAt),
+    criticalAgeEvidence: criticalStartedAt ? "webhook_label_event" : "missing_timeline",
     lastHumanActionAt: lastHumanAction.lastHumanActionAt,
     lastHumanActionEvidence: lastHumanAction.lastHumanActionEvidence,
     sourceUpdatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
@@ -2870,6 +2931,15 @@ export async function getDashboardSummary(
       .filter((row) => profile.labels.critical.includes(asString(row.severity)))
       .map((row) => asNumber(row.number))
   ]);
+  const criticalSeverityByIssueNumber = new Map<number, string>();
+  for (const row of [...criticalRows, ...personalIssueRows]) {
+    const issueNumber = asNumber(row.number);
+    const severity = row.severity ? asString(row.severity) : null;
+    if (issueNumber > 0 && severity && profile.labels.critical.includes(severity)) {
+      criticalSeverityByIssueNumber.set(issueNumber, severity);
+    }
+  }
+  const criticalStartedAtMap = await criticalStartedAtByIssueNumber(repoId, criticalSeverityByIssueNumber);
   const [linkedPrCandidateRows] =
     criticalIssueNumbers.size === 0
       ? [[] as RowData[]]
@@ -2892,7 +2962,8 @@ export async function getDashboardSummary(
       row,
       linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
       profile.people.watchedUsers,
-      criticalIssueCommentEvidence.get(asNumber(row.number))
+      criticalIssueCommentEvidence.get(asNumber(row.number)),
+      criticalStartedAtMap.get(asNumber(row.number)) ?? null
     )
   );
   const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
@@ -3033,7 +3104,8 @@ export async function getDashboardSummary(
             row,
             linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
             profile.people.watchedUsers,
-            criticalIssueCommentEvidence.get(asNumber(row.number))
+            criticalIssueCommentEvidence.get(asNumber(row.number)),
+            criticalStartedAtMap.get(asNumber(row.number)) ?? null
           )
         ),
       needsTriageIssues: ownedIssues

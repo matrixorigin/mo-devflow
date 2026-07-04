@@ -249,6 +249,7 @@ export interface CriticalIssueBlockerView {
 }
 
 export type CriticalIssueOwnerScope = "unowned" | "watched" | "non_watched";
+export type CriticalIssueAgeEvidence = "webhook_label_event" | "missing_timeline";
 
 export interface CriticalIssueView {
   number: number;
@@ -261,6 +262,9 @@ export interface CriticalIssueView {
   lifecycleState: LifecycleState;
   aiEffortLabel: string | null;
   ageHours: number;
+  criticalStartedAt: string | null;
+  criticalAgeHours: number | null;
+  criticalAgeEvidence: CriticalIssueAgeEvidence;
   lastHumanActionAt: string | null;
   lastHumanActionEvidence: MetricSourceCompleteness;
   sourceUpdatedAt: string;
