@@ -1647,6 +1647,10 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
   if (chart.rows.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR flow data" />;
   }
+  const criticalRows = chart.rows.filter((row) => row.tone === "critical");
+  const attentionRows = chart.rows.filter((row) => row.tone === "attention");
+  const routineRows = chart.rows.filter((row) => row.tone !== "critical" && row.tone !== "attention");
+  const visibleRoutineRows = routineRows.slice(0, 8);
 
   return (
     <div className="flow-map">
@@ -1664,12 +1668,68 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           <strong>{chart.unlinkedPrCount}</strong> unlinked PR
         </span>
       </div>
-      <div className="flow-thread-list">
-        {chart.rows.map((row) => (
-          <PersonalFlowThread row={row} key={row.id} />
-        ))}
+      <div className="flow-thread-sections" role="list" aria-label="Personal work threads">
+        <FlowThreadSection
+          title="Critical issue threads"
+          description="Active s-1/s0 issue lanes and their visible execution PRs."
+          rows={criticalRows}
+          tone="critical"
+        />
+        <FlowThreadSection
+          title="Attention threads"
+          description="PR or issue lanes with blocker, testing, review, CI, or linking risks."
+          rows={attentionRows}
+          tone="attention"
+        />
+        <FlowThreadSection
+          title="Routine threads"
+          description="Open movement that should keep rotating after critical and blocked work."
+          rows={visibleRoutineRows}
+          tone="normal"
+          hiddenCount={Math.max(0, routineRows.length - visibleRoutineRows.length)}
+        />
       </div>
     </div>
+  );
+}
+
+function FlowThreadSection({
+  title,
+  description,
+  rows,
+  tone,
+  hiddenCount = 0
+}: {
+  title: string;
+  description: string;
+  rows: PersonalGanttRow[];
+  tone: "critical" | "attention" | "normal";
+  hiddenCount?: number;
+}) {
+  if (rows.length === 0 && hiddenCount === 0) {
+    return null;
+  }
+
+  return (
+    <section className={`flow-thread-section flow-thread-section-${tone}`} role="listitem" aria-label={title}>
+      <div className="flow-thread-section-heading">
+        <div>
+          <Text strong>{title}</Text>
+          <Text type="secondary">{description}</Text>
+        </div>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
+          {rows.length + hiddenCount}
+        </Tag>
+      </div>
+      {rows.length > 0 ? (
+        <div className="flow-thread-list" role="list">
+          {rows.map((row) => (
+            <PersonalFlowThread row={row} key={row.id} />
+          ))}
+        </div>
+      ) : null}
+      {hiddenCount > 0 ? <div className="flow-thread-more">+{hiddenCount} routine threads hidden</div> : null}
+    </section>
   );
 }
 
@@ -1683,8 +1743,8 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
     : [];
 
   return (
-    <article className={`flow-thread flow-thread-${row.tone}`}>
-      <div className="flow-thread-meta">
+    <article className={`flow-thread flow-thread-${row.tone}`} role="listitem">
+      <div className="flow-thread-header">
         <div className="flow-thread-object">
           {row.issue.htmlUrl ? (
             <WorkObjectLink href={row.issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
@@ -1695,6 +1755,13 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
           )}
           <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue" : "PR group"}</Tag>
         </div>
+        <div className="flow-thread-next">
+          <TimerReset size={14} aria-hidden="true" />
+          {nextAction}
+        </div>
+      </div>
+
+      <div className="flow-thread-meta">
         {row.issue.htmlUrl ? (
           <a className="flow-thread-title" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
             {row.issue.title}
@@ -1706,13 +1773,10 @@ function PersonalFlowThread({ row }: { row: PersonalGanttRow }) {
           {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
           {row.issue.lifecycleState ? <Tag>{labelText(row.issue.lifecycleState)}</Tag> : null}
           {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
-          <Tag>{hours(row.issue.startAgeHours)}</Tag>
+          <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{personalDurationText(row.issue)}</Tag>
+          <Tag>{labelText(row.issue.durationEvidence)}</Tag>
           {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
           {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared</Tag> : null}
-        </div>
-        <div className="flow-thread-next">
-          <TimerReset size={14} aria-hidden="true" />
-          {nextAction}
         </div>
       </div>
 
