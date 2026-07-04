@@ -3426,6 +3426,20 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
           { name: "Merge conflict", type: "bar", color: "#7f1d1d", data: (point) => point.mergeConflictPrs }
         ]}
       />
+      <MetricFlowChart
+        title="Testing Flow"
+        points={points}
+        series={[
+          { name: "Testing queue", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
+          {
+            name: "Avg wait h",
+            type: "line",
+            color: "#d97706",
+            data: (point) => point.averageTestingQueueAgeHours ?? 0
+          },
+          { name: "PR attention", type: "line", color: "#dc2626", data: (point) => point.attentionPrs }
+        ]}
+      />
     </div>
   );
 }
