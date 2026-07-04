@@ -5851,25 +5851,59 @@ function PullRequestCardList({
   );
 }
 
+type PersonalActionQueueSort = "risk" | "duration" | "last_action";
+
+function sortPersonalActionItemsForDisplay(
+  items: PersonalActivityItem[],
+  sort: PersonalActionQueueSort
+): PersonalActivityItem[] {
+  if (sort === "duration") {
+    return [...items].sort((left, right) => {
+      const leftDuration = left.durationHours ?? left.testingQueueAgeHours ?? left.ageHours;
+      const rightDuration = right.durationHours ?? right.testingQueueAgeHours ?? right.ageHours;
+      return rightDuration - leftDuration;
+    });
+  }
+  if (sort === "last_action") {
+    return [...items].sort((left, right) => {
+      const leftTime = left.lastHumanActionAt ? Date.parse(left.lastHumanActionAt) : 0;
+      const rightTime = right.lastHumanActionAt ? Date.parse(right.lastHumanActionAt) : 0;
+      return leftTime - rightTime;
+    });
+  }
+  return items;
+}
+
 function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   const [queueFilter, setQueueFilter] = useState<PersonalActionQueueFilter>("all");
+  const [queueSort, setQueueSort] = useState<PersonalActionQueueSort>("risk");
   const [previewItem, setPreviewItem] = useState<PersonalActivityItem | null>(null);
 
   if (items.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
   }
   const counts = personalActionQueueCounts(items);
-  const criticalItems = items.filter((item) => item.tone === "critical");
-  const attentionItems = items.filter((item) => item.tone === "attention");
-  const routineItems = items.filter((item) => item.tone !== "critical" && item.tone !== "attention");
+  const criticalItems = sortPersonalActionItemsForDisplay(
+    items.filter((item) => item.tone === "critical"),
+    queueSort
+  );
+  const attentionItems = sortPersonalActionItemsForDisplay(
+    items.filter((item) => item.tone === "attention"),
+    queueSort
+  );
+  const routineItems = sortPersonalActionItemsForDisplay(
+    items.filter((item) => item.tone !== "critical" && item.tone !== "attention"),
+    queueSort
+  );
   const prItems = items.filter((item) => item.objectType === "pull_request");
-  const issueItems = items.filter((item) => item.objectType === "issue");
-  const oldestPr = maxAge(prItems);
   const testingItems = items.filter(
     (item) => item.durationKind === "testing_queue" || item.testingQueueAgeHours !== null
   );
   const blockedPrItems = prItems.filter(personalActivityHasBlockingSignal);
-  const selectedItems = personalActionQueueItemsForFilter(items, queueFilter);
+  const selectedItems = sortPersonalActionItemsForDisplay(
+    personalActionQueueItemsForFilter(items, queueFilter),
+    queueSort
+  );
   const selectedTone = actionQueueToneForItems(selectedItems);
 
   return (
@@ -5884,7 +5918,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("all")}
         />
         <ActivitySummaryTile
-          label="Now"
+          label="S0/S-1"
           value={criticalItems.length}
           detail={criticalActivitySummary(criticalItems)}
           tone="critical"
@@ -5900,14 +5934,6 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("pr_blockers")}
         />
         <ActivitySummaryTile
-          label="Issue threads"
-          value={issueItems.length}
-          detail={`${counts.needs_link} need links`}
-          tone="normal"
-          active={queueFilter === "issues"}
-          onSelect={() => setQueueFilter("issues")}
-        />
-        <ActivitySummaryTile
           label="Testing work"
           value={testingItems.length}
           detail={optionalHours(maxTestingAge(testingItems))}
@@ -5916,20 +5942,27 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("testing")}
         />
         <ActivitySummaryTile
-          label="PR age"
-          value={oldestPr === null ? "-" : hours(oldestPr)}
-          detail={`${counts.prs} PRs`}
-          tone="muted"
-          active={queueFilter === "prs"}
-          onSelect={() => setQueueFilter("prs")}
-        />
-        <ActivitySummaryTile
-          label="Needs link"
+          label="Link gaps"
           value={counts.needs_link}
           detail="issue-PR gaps"
           tone={counts.needs_link > 0 ? "attention" : "muted"}
           active={queueFilter === "needs_link"}
           onSelect={() => setQueueFilter("needs_link")}
+        />
+      </div>
+      <div className="action-queue-toolbar">
+        <Text type="secondary">
+          Showing {selectedItems.length} of {items.length} objects for {actionQueueFilterLabel(queueFilter)}
+        </Text>
+        <Segmented
+          size="small"
+          value={queueSort}
+          onChange={(value) => setQueueSort(value as PersonalActionQueueSort)}
+          options={[
+            { label: "Risk", value: "risk" },
+            { label: "Duration", value: "duration" },
+            { label: "Last action", value: "last_action" }
+          ]}
         />
       </div>
       {queueFilter === "all" ? (
@@ -6215,9 +6248,10 @@ function PersonalActionQueueItem({
                   aria-label={`Preview ${objectLabel}`}
                   icon={<Eye size={14} />}
                   size="small"
-                  type="text"
                   onClick={() => onPreview(item)}
-                />
+                >
+                  Preview
+                </Button>
               </Tooltip>
             </div>
             <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
@@ -6259,8 +6293,13 @@ function PersonalActionQueueItem({
             <small>{labelText(item.durationEvidence)}</small>
           </div>
           <div className="action-queue-command-card">
-            <Text type="secondary">Signal</Text>
-            <strong>{primarySignal}</strong>
+            <Text type="secondary">Links</Text>
+            <strong>
+              {item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length === 0
+                ? "No visible link"
+                : `${item.linkedIssueNumbers.length} issue / ${item.linkedPullRequestNumbers.length} PR`}
+            </strong>
+            <small>{primarySignal}</small>
           </div>
         </div>
         <div className="action-queue-footer">
@@ -6470,15 +6509,31 @@ function maxTestingAge(items: Array<Pick<PersonalActivityItem, "testingQueueAgeH
   return values.length === 0 ? null : Math.max(...values);
 }
 
+type PersonalFlowThreadSort = "risk" | "duration" | "pr_count";
+
+function sortPersonalFlowThreads(rows: PersonalGanttRow[], sort: PersonalFlowThreadSort): PersonalGanttRow[] {
+  if (sort === "duration") {
+    return [...rows].sort((left, right) => (right.issue.durationHours ?? 0) - (left.issue.durationHours ?? 0));
+  }
+  if (sort === "pr_count") {
+    return [...rows].sort((left, right) => right.prs.length - left.prs.length);
+  }
+  return rows;
+}
+
 function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
   const [threadFilter, setThreadFilter] = useState<PersonalFlowThreadFilter>("all");
+  const [threadSort, setThreadSort] = useState<PersonalFlowThreadSort>("risk");
   const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
 
   if (chart.rows.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR flow data" />;
   }
   const counts = personalFlowThreadCounts(chart.rows);
-  const filteredRows = chart.rows.filter((row) => personalFlowThreadMatchesFilter(row, threadFilter));
+  const filteredRows = sortPersonalFlowThreads(
+    chart.rows.filter((row) => personalFlowThreadMatchesFilter(row, threadFilter)),
+    threadSort
+  );
   const criticalRows = filteredRows.filter((row) => row.tone === "critical");
   const attentionRows = filteredRows.filter((row) => row.tone === "attention");
   const routineRows = filteredRows.filter((row) => row.tone !== "critical" && row.tone !== "attention");
@@ -6521,16 +6576,19 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
         >
           <strong>{counts.needs_link}</strong> needs link
         </button>
-        <button
-          type="button"
-          className={`flow-map-summary-button ${threadFilter === "shared" ? "flow-map-summary-active" : ""}`}
-          onClick={() => setThreadFilter("shared")}
-        >
-          <strong>{counts.shared}</strong> shared PR
-        </button>
         <span className="flow-map-summary-static">
           <strong>{hours(chart.maxAgeHours)}</strong> oldest visible work
         </span>
+        <Segmented
+          size="small"
+          value={threadSort}
+          onChange={(value) => setThreadSort(value as PersonalFlowThreadSort)}
+          options={[
+            { label: "Risk", value: "risk" },
+            { label: "Duration", value: "duration" },
+            { label: "PR count", value: "pr_count" }
+          ]}
+        />
       </div>
       <div className="flow-map-filter-status">
         <Text type="secondary">
@@ -6692,9 +6750,10 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               aria-label={`Preview ${row.title}`}
               icon={<Eye size={14} />}
               size="small"
-              type="text"
               onClick={() => onPreview(row)}
-            />
+            >
+              Preview
+            </Button>
           </Tooltip>
         </div>
         <div className="flow-thread-next">
@@ -6769,13 +6828,14 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
         ) : null}
       </div>
 
+      <FlowThreadTimeline row={row} />
+
       <button type="button" className="flow-thread-toggle" onClick={() => setDetailsOpen((open) => !open)}>
-        {detailsOpen ? "Hide timeline and PR details" : "Show timeline and PR details"}
+        {detailsOpen ? "Hide PR details" : "Show PR details"}
       </button>
 
       {detailsOpen ? (
-        <div className="flow-thread-body">
-          <FlowThreadTimeline row={row} />
+        <div className="flow-thread-body flow-thread-body-pr-only">
           <div className="flow-pr-stack">
             {row.prs.length === 0 ? (
               <div className="flow-pr-empty">No linked PR visible</div>
@@ -6879,6 +6939,11 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
         <section className="team-object-preview-section">
           <Text strong>Next action</Text>
           <Text>{nextAction}</Text>
+        </section>
+
+        <section className="team-object-preview-section">
+          <Text strong>Timeline</Text>
+          <FlowThreadTimeline row={row} />
         </section>
 
         {warnings.length > 0 || reasons.length > 0 ? (
@@ -7407,9 +7472,10 @@ function PersonalRotationThreadRow({
               aria-label={`Preview ${row.title}`}
               icon={<Eye size={14} />}
               size="small"
-              type="text"
               onClick={() => onPreview(row)}
-            />
+            >
+              Preview
+            </Button>
           </Tooltip>
         </div>
         <div className="personal-thread-title">{row.issue.title}</div>
@@ -7443,6 +7509,7 @@ function PersonalRotationThreadRow({
             <span className="team-linked-row-missing">No linked PR visible</span>
           )}
         </div>
+        <FlowThreadTimeline row={row} />
       </div>
       <div className="team-work-action">
         <Text type="secondary">Next</Text>

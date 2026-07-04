@@ -158,11 +158,17 @@ body {
 
 .freshness-main,
 .freshness-layers {
+  max-width: 100%;
   min-width: 0;
 }
 
 .freshness-layers {
   justify-content: flex-end;
+}
+
+.freshness-bar .ant-space-item {
+  max-width: 100%;
+  min-width: 0;
 }
 
 .freshness-bar .ant-tag {
@@ -177,12 +183,17 @@ body {
 }
 
 .full-width > .ant-space-item,
+.band .ant-space,
+.band .ant-space-item,
 .band .ant-alert-content,
 .band .ant-alert-description,
-.band .ant-alert-message {
+.band .ant-alert-message,
+.band .ant-typography {
   max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .band .ant-tag {
@@ -206,10 +217,19 @@ body {
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .evidence-alert-summary .ant-btn {
   align-self: start;
+}
+
+.evidence-alert-summary .ant-typography {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .evidence-alert-compact {
@@ -2276,15 +2296,20 @@ button.testing-board-stat:focus-visible {
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   margin-bottom: 18px;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .person-board-compact {
   grid-auto-columns: minmax(248px, 300px);
   grid-auto-flow: column;
   grid-template-columns: none;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 4px;
+  width: 100%;
 }
 
 .person-card {
@@ -2680,6 +2705,18 @@ button.testing-board-stat:focus-visible {
 
 .activity-summary-normal {
   border-left-color: #2563eb;
+}
+
+.action-queue-toolbar {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
 }
 
 .action-queue-sections {
@@ -3177,6 +3214,10 @@ button.testing-board-stat:focus-visible {
   gap: 8px;
   grid-template-columns: minmax(280px, 0.46fr) minmax(0, 1fr);
   min-width: 0;
+}
+
+.flow-thread-body-pr-only {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .flow-thread-timeline {
@@ -4089,11 +4130,19 @@ button.testing-board-stat:focus-visible {
     width: 100%;
   }
 
+  .freshness-main,
+  .freshness-layers,
+  .evidence-alert-summary {
+    overflow: hidden;
+  }
+
   .cache-evidence-row {
     grid-template-columns: 1fr;
   }
 
   .evidence-alert-summary {
+    display: flex;
+    flex-direction: column;
     grid-template-columns: 1fr;
   }
 
@@ -4228,6 +4277,11 @@ button.testing-board-stat:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .action-queue-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .action-queue-section-stats,
   .action-queue-object-meta,
   .action-queue-links {
@@ -4269,6 +4323,21 @@ button.testing-board-stat:focus-visible {
 @media (max-width: 560px) {
   .kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .band,
+  .freshness-bar {
+    max-width: calc(100vw - 20px);
+    width: calc(100vw - 20px);
+  }
+
+  .band .ant-alert-content {
+    max-width: calc(100vw - 84px);
+  }
+
+  .band .ant-alert-description,
+  .band .ant-alert-message {
+    white-space: normal;
   }
 
   .activity-summary-strip {
