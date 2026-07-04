@@ -27,6 +27,7 @@ import {
   profileSetupPlan,
   pullRequestWithPreservedInsight,
   pullRequestTestingTransitionForUpsert,
+  recentTestingTransitionsForProfile,
   testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
   testingTransitionBelongsToProfile,
@@ -1182,6 +1183,37 @@ describe("pull request testing transition events", () => {
     expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
     expect(testingTransitionBelongsToProfile(pullRequestScopedProfile, reviewerTransition)).toBe(false);
     expect(testingTransitionBelongsToProfile(explicitReviewerProfile, reviewerTransition)).toBe(true);
+  });
+
+  test("selects recent testing transitions after filtering by current workflow", () => {
+    const issueScopedProfile: RepoProfile = {
+      ...baseProfile,
+      people: { ...baseProfile.people, testers: ["tester-a"] }
+    };
+    const staleReviewerTransition: TestingTransitionView = {
+      id: 10,
+      prNumber: 25453,
+      fromState: "not_ready",
+      toState: "test_requested",
+      testingTesters: ["tester-a"],
+      testingSignals: ["reviewer:tester-a"],
+      occurredAt: "2026-07-04T08:00:00.000Z",
+      sourceCompleteness: "complete_cache"
+    };
+    const issueAssigneeTransition: TestingTransitionView = {
+      id: 9,
+      prNumber: 101,
+      fromState: "not_ready",
+      toState: "test_requested",
+      testingTesters: ["tester-a"],
+      testingSignals: ["issue_assignee:#42:tester-a"],
+      occurredAt: "2026-07-03T08:00:00.000Z",
+      sourceCompleteness: "complete_cache"
+    };
+
+    expect(
+      recentTestingTransitionsForProfile(issueScopedProfile, [staleReviewerTransition, issueAssigneeTransition], 1)
+    ).toEqual([issueAssigneeTransition]);
   });
 
   test("summarizes testing turnover only from completed transition pairs", () => {

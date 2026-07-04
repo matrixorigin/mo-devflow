@@ -613,7 +613,7 @@ function testingStateBusinessLabel(state: TestingFlowState): string {
     return "linked issue in test";
   }
   if (state === "test_changes_requested") {
-    return "test requested changes";
+    return "tester requested changes";
   }
   if (state === "test_passed") {
     return "test passed";
@@ -630,7 +630,7 @@ function testingSignalBusinessLabel(signal: string): string {
     return `issue #${issueAssignee[1]} assigned to ${issueAssignee[2]}`;
   }
   if (signal.startsWith("reviewer:")) {
-    return `PR review request: ${signal.slice("reviewer:".length)}`;
+    return `configured PR handoff reviewer: ${signal.slice("reviewer:".length)}`;
   }
   if (signal.startsWith("assignee:")) {
     return `PR assigned to ${signal.slice("assignee:".length)}`;

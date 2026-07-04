@@ -256,6 +256,29 @@ export function testingTransitionBelongsToProfile(profile: RepoProfile, transiti
   return transition.testingSignals.some((signal) => testingSignalBelongsToProfile(profile, signal));
 }
 
+export function testingTransitionsForProfile(
+  profile: RepoProfile,
+  transitions: TestingTransitionView[]
+): TestingTransitionView[] {
+  return transitions.filter((transition) => testingTransitionBelongsToProfile(profile, transition));
+}
+
+export function recentTestingTransitionsForProfile(
+  profile: RepoProfile,
+  transitions: TestingTransitionView[],
+  limit = 12
+): TestingTransitionView[] {
+  return testingTransitionsForProfile(profile, transitions)
+    .sort((left, right) => {
+      const occurredDelta = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
+      if (occurredDelta !== 0) {
+        return occurredDelta;
+      }
+      return right.id - left.id;
+    })
+    .slice(0, limit);
+}
+
 function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
   if ((profile.testing.handoffScope ?? "issue") === "issue") {
     const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
@@ -3359,7 +3382,7 @@ export async function getDashboardSummary(
      FROM pr_testing_events e
      WHERE e.repo_id = ? AND ${testingEventVisibility.sql}
      ORDER BY e.occurred_at DESC, e.id DESC
-     LIMIT 12`,
+     LIMIT 200`,
     [repoId, ...testingEventVisibility.params]
   );
   const [testingTurnoverRows] = await pool.execute<RowData[]>(
@@ -3959,12 +3982,14 @@ export async function getDashboardSummary(
     ...testingIssueViews.flatMap((issue) => issue.testers),
     ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
   ]);
-  const testingTurnoverTransitions = testingTurnoverRows
-    .map(testingTransitionViewFromRow)
-    .filter((transition) => testingTransitionBelongsToProfile(profile, transition));
-  const recentTestingTransitions = recentTestingEventRows
-    .map(testingTransitionViewFromRow)
-    .filter((transition) => testingTransitionBelongsToProfile(profile, transition));
+  const testingTurnoverTransitions = testingTransitionsForProfile(
+    profile,
+    testingTurnoverRows.map(testingTransitionViewFromRow)
+  );
+  const recentTestingTransitions = recentTestingTransitionsForProfile(
+    profile,
+    recentTestingEventRows.map(testingTransitionViewFromRow)
+  );
   const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
   const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
