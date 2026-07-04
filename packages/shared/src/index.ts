@@ -603,8 +603,9 @@ export interface WorkflowFixPreview {
 }
 
 export type WorkflowFixExecutionStatus = "success" | "failed" | "stale_preview" | "blocked" | "token_unavailable";
-export type WriteActionKey = WorkflowFixActionKey | "acknowledge_notification" | "retry_notification";
-export type WriteActionObjectType = WorkflowViolationObjectType | "notification_delivery";
+export type WriteActionKey =
+  WorkflowFixActionKey | "acknowledge_notification" | "retry_notification" | "send_test_notification";
+export type WriteActionObjectType = WorkflowViolationObjectType | "notification_delivery" | "notification_probe";
 export type WriteActionStatus = WorkflowFixExecutionStatus;
 
 export interface WorkflowFixPostWriteRefresh {

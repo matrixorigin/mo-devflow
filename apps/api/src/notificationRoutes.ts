@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
+import { sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
   acknowledgeNotificationDelivery,
   enqueueJobsNow,
@@ -18,6 +19,86 @@ const acknowledgeParamsSchema = z.object({
 });
 
 export async function registerNotificationRoutes(app: FastifyInstance): Promise<void> {
+  app.post("/api/notifications/test", async (request, reply) => {
+    const session = await getSessionRecordFromRequest(request, reply);
+    if (!session) {
+      return reply.status(401).send({
+        error: "login_required",
+        message: "Connect a GitHub token before sending notification tests."
+      });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
+    }
+
+    const profile = loadRepoProfile();
+    const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
+    if (!profile.notifications.wecom.enabled) {
+      return reply.status(409).send({
+        error: "notification_channel_disabled",
+        message: "WeCom notifications are disabled in the repository profile."
+      });
+    }
+
+    const webhookUrlEnv = profile.notifications.wecom.webhookUrlEnv;
+    const webhookUrl = webhookUrlEnv ? process.env[webhookUrlEnv] : undefined;
+    if (!webhookUrl) {
+      return reply.status(409).send({
+        error: "notification_webhook_unconfigured",
+        message: webhookUrlEnv
+          ? `WeCom webhook environment variable ${webhookUrlEnv} is not configured.`
+          : "Repository profile does not define a WeCom webhook environment variable."
+      });
+    }
+
+    const attemptedAt = new Date().toISOString();
+    const markdown = [
+      "## mo-devflow notification test",
+      `> Repo: ${profile.key}`,
+      `> Actor: ${session.githubLogin}`,
+      `> Time: ${attemptedAt}`,
+      "",
+      "This message verifies the configured Enterprise WeChat webhook for mo-devflow notifications."
+    ].join("\n");
+
+    try {
+      const providerResponse = await sendWeComMarkdown(webhookUrl, markdown);
+      const auditRecorded = await recordNotificationTestAudit({
+        app,
+        repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        status: "success",
+        occurredAt: attemptedAt
+      });
+      return {
+        status: "sent",
+        channel: "wecom",
+        attemptedAt,
+        providerStatus: providerResponse.status,
+        auditRecorded
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const auditRecorded = await recordNotificationTestAudit({
+        app,
+        repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        status: "failed",
+        errorMessage: message,
+        occurredAt: attemptedAt
+      });
+      return reply.status(502).send({
+        error: "notification_test_send_failed",
+        message: "WeCom notification test failed.",
+        detail: message,
+        auditRecorded,
+        attemptedAt
+      });
+    }
+  });
+
   app.post("/api/notifications/deliveries/:deliveryId/retry", async (request, reply) => {
     const session = await getSessionRecordFromRequest(request, reply);
     if (!session) {
@@ -165,4 +246,32 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
       acknowledgedBy: acknowledgement.acknowledgedBy
     };
   });
+}
+
+async function recordNotificationTestAudit(input: {
+  app: FastifyInstance;
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  status: "success" | "failed";
+  errorMessage?: string | null;
+  occurredAt: string;
+}): Promise<boolean> {
+  try {
+    await recordProductWriteActionExecution({
+      repoId: input.repoId,
+      userId: input.userId,
+      githubLogin: input.githubLogin,
+      actionKey: "send_test_notification",
+      objectType: "notification_probe",
+      objectNumber: 0,
+      status: input.status,
+      errorMessage: input.errorMessage ?? null,
+      occurredAt: input.occurredAt
+    });
+    return true;
+  } catch (error) {
+    input.app.log.error({ error, repoId: input.repoId }, "notification test audit recording failed");
+    return false;
+  }
 }

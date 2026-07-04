@@ -366,7 +366,10 @@ export async function listWriteActionExecutionsForDashboard(input: {
        e.error_message,
        e.started_at,
        e.finished_at,
-       COALESCE(i.title, p.title, CONCAT(e.object_type, ' #', e.object_number)) AS object_title,
+       CASE
+         WHEN e.object_type = 'notification_probe' THEN 'Notification test'
+         ELSE COALESCE(i.title, p.title, CONCAT(e.object_type, ' #', e.object_number))
+       END AS object_title,
        COALESCE(i.html_url, p.html_url) AS object_html_url
      FROM write_action_executions e
      LEFT JOIN issues i
@@ -391,6 +394,7 @@ export async function listWriteActionExecutionsForDashboard(input: {
              AND d.repo_id = e.repo_id
              AND ${notificationVisibility.sql}
          ))
+         OR e.object_type = 'notification_probe'
        )
      ORDER BY e.finished_at DESC, e.id DESC
      LIMIT ${limit}`,

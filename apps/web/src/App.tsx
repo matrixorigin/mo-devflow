@@ -200,6 +200,14 @@ interface WebhookRetryResult {
   queuedJobs: ManualRefreshResult["queuedJobs"];
   requestedAt: string;
 }
+
+interface NotificationTestResult {
+  status: "sent";
+  channel: "wecom";
+  attemptedAt: string;
+  providerStatus: number;
+  auditRecorded: boolean;
+}
 const viewOptions = [
   "Overview",
   "Issues",
@@ -1020,6 +1028,9 @@ function writeActionObjectLabel(objectType: WriteActionExecutionView["objectType
   if (objectType === "pull_request") {
     return "PR";
   }
+  if (objectType === "notification_probe") {
+    return "Notification test";
+  }
   return labelText(objectType);
 }
 
@@ -1648,7 +1659,11 @@ function writeAuditMatchesScope(action: WriteActionExecutionView, filter: WriteA
     return action.actionKey === "add_needs_triage" || action.actionKey === "move_to_deferred";
   }
   if (filter === "notification") {
-    return action.actionKey === "acknowledge_notification" || action.actionKey === "retry_notification";
+    return (
+      action.actionKey === "acknowledge_notification" ||
+      action.actionKey === "retry_notification" ||
+      action.actionKey === "send_test_notification"
+    );
   }
   return true;
 }
@@ -9980,6 +9995,8 @@ export default function App() {
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
+  const [notificationTestSaving, setNotificationTestSaving] = useState(false);
+  const [notificationTestResult, setNotificationTestResult] = useState<NotificationTestResult | null>(null);
   const dashboardRefreshInFlight = useRef(false);
   const latestDataRef = useRef<DashboardSummary | null>(null);
   const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
@@ -10374,6 +10391,32 @@ export default function App() {
       setNotificationAckError(displayError(err));
     } finally {
       setNotificationRetrySavingId(null);
+    }
+  }
+
+  async function sendNotificationTest() {
+    if (!session?.authenticated) {
+      setNotificationAckError("Connect GitHub token before sending notification tests.");
+      return;
+    }
+    setNotificationTestSaving(true);
+    setNotificationAckError(null);
+    setNotificationTestResult(null);
+    try {
+      const response = await fetch("/api/notifications/test", {
+        method: "POST",
+        headers: csrfHeaders(),
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setNotificationTestResult((await response.json()) as NotificationTestResult);
+      await load();
+    } catch (err) {
+      setNotificationAckError(displayError(err));
+    } finally {
+      setNotificationTestSaving(false);
     }
   }
 
@@ -11128,8 +11171,11 @@ export default function App() {
       {
         title: "Object",
         width: 132,
-        render: (_, execution) =>
-          execution.htmlUrl ? (
+        render: (_, execution) => {
+          if (execution.objectType === "notification_probe") {
+            return <Text>{writeActionObjectLabel(execution.objectType)}</Text>;
+          }
+          return execution.htmlUrl ? (
             <a href={execution.htmlUrl} target="_blank" rel="noreferrer">
               {writeActionObjectLabel(execution.objectType)} #{execution.objectNumber}
             </a>
@@ -11137,7 +11183,8 @@ export default function App() {
             <Text>
               {writeActionObjectLabel(execution.objectType)} #{execution.objectNumber}
             </Text>
-          )
+          );
+        }
       },
       {
         title: "Title",
@@ -11944,6 +11991,25 @@ export default function App() {
                     <Tag color={data.notifications.escalationPendingDeliveries > 0 ? "red" : "green"}>
                       {data.notifications.escalationPendingDeliveries} escalation pending
                     </Tag>
+                    <Tooltip
+                      title={
+                        session?.authenticated
+                          ? "Send a controlled Enterprise WeChat test message"
+                          : "Connect GitHub token before sending notification tests"
+                      }
+                    >
+                      <span>
+                        <Button
+                          size="small"
+                          icon={<BellRing size={14} />}
+                          disabled={!session?.authenticated}
+                          loading={notificationTestSaving}
+                          onClick={() => void sendNotificationTest()}
+                        >
+                          Send test
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </Space>
                 </div>
                 {notificationAckError ? (
@@ -11952,6 +12018,17 @@ export default function App() {
                     type="error"
                     title="Notification action failed"
                     description={notificationAckError}
+                    showIcon
+                  />
+                ) : null}
+                {notificationTestResult ? (
+                  <Alert
+                    className="band"
+                    type={notificationTestResult.auditRecorded ? "success" : "warning"}
+                    title="Notification test sent"
+                    description={`WeCom returned HTTP ${notificationTestResult.providerStatus} at ${formatDate(
+                      notificationTestResult.attemptedAt
+                    )}.${notificationTestResult.auditRecorded ? " Audit recorded." : " Audit recording failed; inspect API logs."}`}
                     showIcon
                   />
                 ) : null}
