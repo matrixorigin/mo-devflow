@@ -278,7 +278,12 @@ const attentionFlagLabels: Record<string, string> = {
 
 const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
 
-export function prAttentionReasons(pr: PersonalPullRequestView): string[] {
+type PrAttentionReasonSource = Pick<
+  PersonalPullRequestView,
+  "attentionFlags" | "reviewDecision" | "ciState" | "mergeStateStatus" | "testingState"
+>;
+
+export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
   const reasons = pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
   if (pr.reviewDecision === "changes_requested" && !reasons.includes(attentionFlagLabels.requested_changes)) {

@@ -9,11 +9,9 @@ import {
   Input,
   Layout,
   Modal,
-  Progress,
   Segmented,
   Skeleton,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -118,6 +116,7 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 const viewOptions = [
   "Overview",
+  "Issues",
   "Personal",
   "Analytics",
   "People",
@@ -131,6 +130,7 @@ type DashboardView = (typeof viewOptions)[number];
 
 const hashViewMap: Record<string, DashboardView> = {
   overview: "Overview",
+  issues: "Issues",
   personal: "Personal",
   analytics: "Analytics",
   people: "People",
@@ -818,6 +818,550 @@ function FlowEfficiencyItem({
       <span>{detail}</span>
     </div>
   );
+}
+
+function TeamRotationOverview({
+  data,
+  flowSummary,
+  trendPoints,
+  analyticsPeriod,
+  onAnalyticsPeriodChange,
+  onNavigate,
+  onPersonSelect
+}: {
+  data: DashboardSummary;
+  flowSummary: FlowEfficiencySummary | null;
+  trendPoints: TrendMetricPoint[];
+  analyticsPeriod: MetricPeriod;
+  onAnalyticsPeriodChange: (period: MetricPeriod) => void;
+  onNavigate: (view: DashboardView) => void;
+  onPersonSelect: (login: string) => void;
+}) {
+  const criticalIssues = sortCriticalIssuesForAction(data.criticalIssues);
+  const prRisks = sortPendingPrsForAction(data.pendingPrs);
+  const testingPrs = sortTestingQueuePrs(data.pendingPrs.filter(isTestingQueuePr));
+  const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
+  const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
+  const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
+
+  return (
+    <div className="team-overview">
+      <section className="team-command-panel">
+        <div className="team-command-heading">
+          <div>
+            <Title level={4}>Team Flow Monitor</Title>
+            <Text type="secondary">
+              Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
+            </Text>
+          </div>
+          <Space size={[6, 6]} wrap>
+            <Tag color={sMinusOneIssues > 0 ? "red" : "default"}>{sMinusOneIssues} s-1</Tag>
+            <Tag color={data.counts.criticalIssues > 0 ? "red" : "default"}>
+              {data.counts.criticalIssues} active s-1/s0
+            </Tag>
+            <Tag color={data.counts.attentionPrs > 0 ? "orange" : "default"}>
+              {data.counts.attentionPrs} PR attention
+            </Tag>
+          </Space>
+        </div>
+        <div className="team-focus-callout">
+          <ShieldAlert size={18} aria-hidden="true" />
+          <div>
+            <Text strong>{teamFocus.title}</Text>
+            <span>{teamFocus.detail}</span>
+          </div>
+        </div>
+        <div className="team-monitor-grid" aria-label="Team flow monitor">
+          <TeamMonitorTile
+            label="Critical issues"
+            value={data.counts.criticalIssues}
+            detail={`${sMinusOneIssues} s-1 | ${data.counts.unownedCriticalIssues} unowned`}
+            tone={data.counts.criticalIssues > 0 ? "critical" : "good"}
+            onClick={() => onNavigate("Issues")}
+          />
+          <TeamMonitorTile
+            label="PR blockers"
+            value={data.counts.attentionPrs}
+            detail={`${data.counts.pendingPrs} pending | ${oldestPendingPrText(data.pendingPrs)}`}
+            tone={data.counts.attentionPrs > 0 ? "attention" : "good"}
+            onClick={() => onNavigate("PRs")}
+          />
+          <TeamMonitorTile
+            label="Testing handoff"
+            value={data.testing.queuePrs}
+            detail={`${data.testing.staleQueuePrs} stale | avg ${optionalHours(data.testing.averageQueueAgeHours)}`}
+            tone={data.testing.staleQueuePrs > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
+            onClick={() => onNavigate("PRs")}
+          />
+          <TeamMonitorTile
+            label="People focus"
+            value={data.people.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0).length}
+            detail={`${data.people.length} watched | ${data.people.reduce((sum, person) => sum + person.needsTriageIssues, 0)} triage`}
+            tone={peopleFocus.length > 0 ? "attention" : "good"}
+            onClick={() => onNavigate("People")}
+          />
+          <TeamMonitorTile
+            label="Data confidence"
+            value={data.sync.partialObjects}
+            detail={`${data.sync.staleObjects} stale | worker ${labelText(data.sync.worker.status)}`}
+            tone={data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "attention" : "good"}
+            onClick={() => onNavigate("Analytics")}
+          />
+        </div>
+      </section>
+
+      <div className="team-rotation-grid">
+        <div className="team-rotation-main">
+          <TeamRotationLane
+            title="Critical Issue Rotation"
+            count={data.counts.criticalIssues}
+            actionLabel="Open Issues"
+            tone="critical"
+            onAction={() => onNavigate("Issues")}
+          >
+            {criticalIssues.slice(0, 6).map((issue) => (
+              <TeamCriticalIssueRow issue={issue} key={issue.number} />
+            ))}
+          </TeamRotationLane>
+          <TeamRotationLane
+            title="PR Rotation Risks"
+            count={data.counts.attentionPrs}
+            actionLabel="Open PRs"
+            tone="attention"
+            onAction={() => onNavigate("PRs")}
+          >
+            {prRisks.slice(0, 6).map((pr) => (
+              <TeamPrRiskRow pr={pr} key={pr.number} />
+            ))}
+          </TeamRotationLane>
+          <TeamRotationLane
+            title="Testing Handoff"
+            count={data.testing.queuePrs}
+            actionLabel="Open PRs"
+            tone={data.testing.staleQueuePrs > 0 ? "critical" : "attention"}
+            onAction={() => onNavigate("PRs")}
+          >
+            {testingPrs.slice(0, 5).map((pr) => (
+              <TeamPrRiskRow pr={pr} key={pr.number} />
+            ))}
+          </TeamRotationLane>
+        </div>
+
+        <aside className="team-rotation-side">
+          <TeamPeopleFocus people={peopleFocus} personalViews={data.personalViews} onPersonSelect={onPersonSelect} />
+          <TeamOpsStatus data={data} />
+        </aside>
+      </div>
+
+      <section className="section team-flow-section">
+        <div className="section-heading">
+          <div>
+            <Title level={4}>Flow Efficiency</Title>
+            <Text type="secondary">
+              Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)}
+            </Text>
+          </div>
+          <Space size={[6, 6]} wrap>
+            <Segmented
+              value={analyticsPeriod}
+              onChange={(value) => onAnalyticsPeriodChange(value as MetricPeriod)}
+              options={metricPeriodOptions}
+            />
+            <Button size="small" onClick={() => onNavigate("Analytics")}>
+              Open Analytics
+            </Button>
+          </Space>
+        </div>
+        {flowSummary ? <FlowEfficiencyStrip summary={flowSummary} /> : null}
+        <TrendChart points={trendPoints} />
+      </section>
+    </div>
+  );
+}
+
+function TeamMonitorTile({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  tone: "critical" | "attention" | "good";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`team-monitor-tile team-monitor-${tone}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
+  );
+}
+
+function TeamRotationLane({
+  title,
+  count,
+  actionLabel,
+  tone,
+  onAction,
+  children
+}: {
+  title: string;
+  count: number;
+  actionLabel: string;
+  tone: "critical" | "attention";
+  onAction: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`team-rotation-lane team-rotation-lane-${tone}`}>
+      <div className="team-rotation-lane-heading">
+        <Space size={[6, 6]} wrap>
+          <Text strong>{title}</Text>
+          <Tag color={tone === "critical" ? "red" : "orange"}>{count}</Tag>
+        </Space>
+        <Button size="small" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      </div>
+      <div className="team-rotation-list">{children}</div>
+    </section>
+  );
+}
+
+function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
+  const riskTags = criticalIssueRiskTags(issue);
+  const linkedPrs = issue.linkedPullRequests.slice(0, 4);
+  return (
+    <article className="team-work-row">
+      <div className="team-work-object">
+        <div className="team-work-title-row">
+          <WorkObjectLink href={issue.htmlUrl} icon={<ShieldAlert size={15} aria-hidden="true" />}>
+            Issue #{issue.number}
+          </WorkObjectLink>
+          <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
+          <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
+        </div>
+        <a className="team-work-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <div className="team-work-tags">
+          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
+          {riskTags.slice(0, 4).map((tag) => (
+            <Tooltip title={tag.tooltip} key={tag.key}>
+              <Tag color={tag.color}>{tag.label}</Tag>
+            </Tooltip>
+          ))}
+        </div>
+        {linkedPrs.length > 0 ? (
+          <div className="team-linked-row">
+            <span>PRs</span>
+            {linkedPrs.map((pr) => (
+              <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
+                <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                  #{pr.number} {labelText(pr.testingState)}
+                </a>
+              </Tooltip>
+            ))}
+            {issue.linkedPullRequests.length > linkedPrs.length ? (
+              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="team-linked-row team-linked-row-missing">No linked PR visible</div>
+        )}
+      </div>
+      <div className="team-work-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{criticalIssueNextAction(issue)}</Text>
+        <small>{issue.linkedPullRequests.length} linked PR</small>
+      </div>
+    </article>
+  );
+}
+
+function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
+  const reasons = prAttentionReasons(pr);
+  const visibleReasons = reasons.slice(0, 4);
+  const linkedIssues = pr.linkedIssueNumbers.slice(0, 4).map((number) => ({
+    number,
+    url: linkedObjectUrl(pr.htmlUrl, "issues", number)
+  }));
+
+  return (
+    <article className="team-work-row">
+      <div className="team-work-object">
+        <div className="team-work-title-row">
+          <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
+            PR #{pr.number}
+          </WorkObjectLink>
+          <Tag>{hours(pr.ageHours)}</Tag>
+          {pr.testingState !== "not_ready" ? (
+            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+          ) : null}
+        </div>
+        <a className="team-work-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+          {pr.title}
+        </a>
+        <div className="team-work-tags">
+          <Tag>{pr.ownerLogin}</Tag>
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {pr.reviewDecision ? (
+            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          ) : null}
+          {pr.mergeStateStatus ? (
+            <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
+          {visibleReasons.map((reason) => (
+            <Tag color={activityReasonColor(reason)} key={reason}>
+              {reason}
+            </Tag>
+          ))}
+          {pr.testingState !== "not_ready" && pr.testingTesters.length === 0 ? (
+            <Tag color="red">no tester owner</Tag>
+          ) : null}
+        </div>
+        <div className={`team-linked-row ${linkedIssues.length === 0 ? "team-linked-row-missing" : ""}`}>
+          {linkedIssues.length > 0 ? (
+            <>
+              <span>Issues</span>
+              {linkedIssues.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                  #{link.number}
+                </a>
+              ))}
+              {pr.linkedIssueNumbers.length > linkedIssues.length ? (
+                <span>+{pr.linkedIssueNumbers.length - linkedIssues.length}</span>
+              ) : null}
+            </>
+          ) : (
+            "No linked issue visible"
+          )}
+        </div>
+      </div>
+      <div className="team-work-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{teamPrNextAction(pr)}</Text>
+        <small>
+          {pr.testingTesters.length > 0 ? `testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "no tester owner"}
+        </small>
+      </div>
+    </article>
+  );
+}
+
+function TeamPeopleFocus({
+  people,
+  personalViews,
+  onPersonSelect
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  onPersonSelect: (login: string) => void;
+}) {
+  return (
+    <section className="team-side-panel">
+      <div className="team-side-heading">
+        <Text strong>People Focus</Text>
+        <Tag>{people.length}</Tag>
+      </div>
+      <div className="team-people-list">
+        {people.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No watched people with active risk" />
+        ) : (
+          people.map((person) => (
+            <button
+              type="button"
+              className="team-person-row"
+              onClick={() => onPersonSelect(person.login)}
+              key={person.login}
+            >
+              <span className="person-avatar" aria-hidden="true">
+                {person.login.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="team-person-main">
+                <strong>{person.login}</strong>
+                <small>
+                  {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention |{" "}
+                  {testingCountForPerson(person.login, personalViews)} testing
+                </small>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TeamOpsStatus({ data }: { data: DashboardSummary }) {
+  const notificationRisk =
+    data.notifications.failedDeliveries +
+    data.notifications.unacknowledgedDeliveries +
+    data.notifications.escalationPendingDeliveries;
+  return (
+    <section className="team-side-panel">
+      <div className="team-side-heading">
+        <Text strong>Data And Automation</Text>
+        <Tag color={data.sync.worker.status === "active" ? "green" : "orange"}>
+          {labelText(data.sync.worker.status)}
+        </Tag>
+      </div>
+      <div className="team-status-list">
+        <TeamStatusRow label="Cache" value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} partial`} />
+        <TeamStatusRow
+          label="Worker"
+          value={`${labelText(data.sync.worker.phase ?? data.sync.worker.status)} | queue ${data.sync.jobQueue.queueDepth}`}
+        />
+        <TeamStatusRow
+          label="Webhook"
+          value={`${data.webhooks.pendingDeliveries} pending / ${data.webhooks.failedDeliveries} failed`}
+        />
+        <TeamStatusRow label="Notifications" value={`${notificationRisk} active delivery risk`} />
+      </div>
+    </section>
+  );
+}
+
+function TeamStatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="team-status-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { title: string; detail: string } {
+  if (sMinusOneIssues > 0) {
+    return {
+      title: `${sMinusOneIssues} active s-1 issues are the first queue.`,
+      detail: `${data.counts.criticalIssues} active s-1/s0 total; ${data.counts.attentionPrs} PRs also need attention.`
+    };
+  }
+  if (data.testing.staleQueuePrs > 0) {
+    return {
+      title: `${data.testing.staleQueuePrs} testing handoffs are stale.`,
+      detail: `${data.testing.queuePrs} PRs are currently in testing flow.`
+    };
+  }
+  if (data.counts.attentionPrs > 0) {
+    return {
+      title: `${data.counts.attentionPrs} pending PRs need attention.`,
+      detail: `${data.counts.pendingPrs} pending PRs are visible in cache.`
+    };
+  }
+  if (data.counts.workflowViolations + data.counts.aiDriftSignals > 0) {
+    return {
+      title: `${data.counts.workflowViolations + data.counts.aiDriftSignals} workflow or AI drift signals are open.`,
+      detail: `${data.counts.workflowViolations} workflow violations; ${data.counts.aiDriftSignals} AI drift signals.`
+    };
+  }
+  return {
+    title: "No high-priority rotation blockers in cached data.",
+    detail: `${data.counts.pendingPrs} pending PRs and ${data.counts.criticalIssues} active s-1/s0 issues remain visible.`
+  };
+}
+
+function oldestPendingPrText(prs: PendingPrView[]): string {
+  const oldest = maxPrAge(prs);
+  return oldest === null ? "no PR age" : `oldest ${hours(oldest)}`;
+}
+
+function maxPrAge(prs: PendingPrView[]): number | null {
+  if (prs.length === 0) {
+    return null;
+  }
+  return Math.max(...prs.map((pr) => pr.ageHours));
+}
+
+function sortPendingPrsForAction(prs: PendingPrView[]): PendingPrView[] {
+  return [...prs].sort((left, right) => {
+    const riskDelta = pendingPrRiskScore(right) - pendingPrRiskScore(left);
+    if (riskDelta !== 0) {
+      return riskDelta;
+    }
+    return right.ageHours - left.ageHours || left.number - right.number;
+  });
+}
+
+function pendingPrRiskScore(pr: PendingPrView): number {
+  return (
+    prAttentionReasons(pr).length * 80 +
+    (pr.reviewDecision === "changes_requested" ? 180 : 0) +
+    (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
+      ? 160
+      : 0) +
+    (pr.mergeStateStatus === "dirty" ? 160 : 0) +
+    (isTestingStalePr(pr) ? 150 : 0) +
+    (pr.testingQueueAgeHours !== null ? 80 : 0) +
+    (pr.ageHours >= 24 ? 60 : 0) +
+    (pr.linkedIssueNumbers.length === 0 ? 45 : 0) +
+    (!pr.isComplete ? 30 : 0)
+  );
+}
+
+function teamPrNextAction(pr: PendingPrView): string {
+  const syntheticItem: PersonalActivityItem = {
+    id: `pull_request:${pr.number}`,
+    objectType: "pull_request",
+    number: pr.number,
+    title: pr.title,
+    htmlUrl: pr.htmlUrl,
+    ownerLogin: pr.ownerLogin,
+    phase: isTestingQueuePr(pr) ? "Testing handoff" : "Pending PR",
+    tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
+    priority: 0,
+    ageHours: pr.ageHours,
+    durationHours: pr.ageHours,
+    durationKind: "pr_age",
+    durationEvidence: "pull_request_created_at",
+    lastHumanActionAt: pr.lastHumanActionAt,
+    testingQueueAgeHours: pr.testingQueueAgeHours,
+    severity: null,
+    lifecycleState: null,
+    reviewDecision: pr.reviewDecision,
+    ciState: pr.ciState,
+    mergeStateStatus: pr.mergeStateStatus,
+    testingState: pr.testingState,
+    linkedIssueNumbers: pr.linkedIssueNumbers,
+    linkedPullRequestNumbers: [],
+    reasons: prAttentionReasons(pr),
+    isComplete: pr.isComplete
+  };
+  return personalActivityNextAction(syntheticItem);
+}
+
+function sortPeopleForTeamFocus(people: PersonSummary[], personalViews: PersonalActionView[]): PersonSummary[] {
+  const testingByLogin = new Map(personalViews.map((person) => [person.login, person.testingPrs.length]));
+  return [...people]
+    .filter(
+      (person) =>
+        person.activeCriticalIssues > 0 ||
+        person.attentionPrs > 0 ||
+        person.needsTriageIssues > 0 ||
+        (testingByLogin.get(person.login) ?? 0) > 0
+    )
+    .sort((left, right) => {
+      const leftTesting = testingByLogin.get(left.login) ?? 0;
+      const rightTesting = testingByLogin.get(right.login) ?? 0;
+      const leftScore =
+        left.activeCriticalIssues * 1_000 + left.attentionPrs * 120 + leftTesting * 80 + left.needsTriageIssues * 20;
+      const rightScore =
+        right.activeCriticalIssues * 1_000 +
+        right.attentionPrs * 120 +
+        rightTesting * 80 +
+        right.needsTriageIssues * 20;
+      return rightScore - leftScore || left.login.localeCompare(right.login);
+    });
+}
+
+function testingCountForPerson(login: string, personalViews: PersonalActionView[]): number {
+  return personalViews.find((person) => person.login === login)?.testingPrs.length ?? 0;
 }
 
 function TrendChart({ points }: { points: TrendMetricPoint[] }) {
@@ -2962,7 +3506,7 @@ export default function App() {
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
-  const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(() => initialDashboardView() === "Overview");
+  const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(false);
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
@@ -3057,7 +3601,6 @@ export default function App() {
 
   function selectView(nextView: DashboardView, personLogin: string | null = selectedPerson) {
     setView(nextView);
-    setCacheEvidenceExpanded(nextView === "Overview");
     replaceDashboardHash(nextView, personLogin);
   }
 
@@ -3240,7 +3783,6 @@ export default function App() {
     const syncViewFromHash = () => {
       const nextView = dashboardViewFromHash(window.location.hash);
       setView(nextView);
-      setCacheEvidenceExpanded(nextView === "Overview");
       if (nextView === "Personal") {
         setSelectedPerson(selectedPersonFromHash(window.location.hash));
       }
@@ -4215,227 +4757,100 @@ export default function App() {
             ) : null}
 
             {view === "Overview" ? (
-              <>
-                <section className="kpi-grid">
-                  <div className="metric">
-                    <Statistic title="Active s-1/s0" value={data.counts.criticalIssues} />
-                    <Progress
-                      percent={Math.min(100, data.counts.criticalIssues * 10)}
-                      showInfo={false}
-                      strokeColor="#dc2626"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Unowned s-1/s0" value={data.counts.unownedCriticalIssues} />
-                    <Progress
-                      percent={Math.min(100, data.counts.unownedCriticalIssues * 20)}
-                      showInfo={false}
-                      strokeColor="#d97706"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Non-watched s-1/s0" value={data.counts.nonWatchedCriticalIssues} />
-                    <Progress
-                      percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)}
-                      showInfo={false}
-                      strokeColor="#ca8a04"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Skipped s-1/s0" value={data.counts.skippedCriticalIssues} />
-                    <Progress
-                      percent={Math.min(100, data.counts.skippedCriticalIssues * 20)}
-                      showInfo={false}
-                      strokeColor={data.counts.skippedCriticalIssues > 0 ? "#6b7280" : "#16a34a"}
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
-                    <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Stale Cache" value={data.sync.staleObjects} />
-                    <Progress
-                      percent={Math.min(100, data.sync.staleObjects * 5)}
-                      showInfo={false}
-                      strokeColor={data.sync.staleObjects > 0 ? "#d97706" : "#16a34a"}
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
-                    <Progress
-                      percent={Math.min(100, data.counts.attentionPrs * 10)}
-                      showInfo={false}
-                      strokeColor="#ca8a04"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Testing Queue" value={data.testing.queuePrs} />
-                    <Progress
-                      percent={Math.min(100, data.testing.queuePrs * 20 + data.testing.staleQueuePrs * 25)}
-                      showInfo={false}
-                      strokeColor={data.testing.staleQueuePrs > 0 ? "#dc2626" : "#2563eb"}
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
-                    <Progress
-                      percent={Math.min(
-                        100,
-                        data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations
-                      )}
-                      showInfo={false}
-                      strokeColor="#7c3aed"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="AI Drift Signals" value={data.counts.aiDriftSignals} />
-                    <Progress
-                      percent={Math.min(100, data.counts.criticalAiDriftSignals * 25 + data.counts.aiDriftSignals)}
-                      showInfo={false}
-                      strokeColor="#9333ea"
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Active Notification Failures" value={data.notifications.failedDeliveries} />
-                    <Progress
-                      percent={Math.min(100, data.notifications.failedDeliveries * 20)}
-                      showInfo={false}
-                      strokeColor={data.notifications.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Job Queue" value={data.sync.jobQueue.queueDepth} />
-                    <Progress
-                      percent={Math.min(
-                        100,
-                        data.sync.jobQueue.queueDepth * 20 +
-                          data.sync.jobQueue.failedJobs * 25 +
-                          data.sync.jobQueue.blockedJobs * 30
-                      )}
-                      showInfo={false}
-                      strokeColor={
-                        data.sync.jobQueue.failedJobs > 0 ||
-                        data.sync.jobQueue.blockedJobs > 0 ||
-                        data.sync.jobQueue.staleLeases > 0
-                          ? "#dc2626"
-                          : "#16a34a"
-                      }
-                    />
-                  </div>
-                  <div className="metric">
-                    <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
-                    <Progress
-                      percent={Math.min(
-                        100,
-                        data.webhooks.pendingDeliveries * 20 +
-                          data.webhooks.failedDeliveries * 25 +
-                          data.webhooks.normalizationFailedDeliveries * 25 +
-                          data.webhooks.ignoredDeliveries * 5
-                      )}
-                      showInfo={false}
-                      strokeColor={data.webhooks.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
-                    />
-                  </div>
-                </section>
+              <TeamRotationOverview
+                data={data}
+                flowSummary={teamFlowSummary}
+                trendPoints={teamTrendPoints}
+                analyticsPeriod={analyticsPeriod}
+                onAnalyticsPeriodChange={setAnalyticsPeriod}
+                onNavigate={selectView}
+                onPersonSelect={openPersonWorkbench}
+              />
+            ) : null}
 
-                {data.profileWarnings.map((warning) => (
-                  <Alert
-                    key={warning.key}
-                    className="band"
-                    type={profileWarningAlertType(warning.severity)}
-                    title={warning.title}
-                    description={`${warning.description} ${warning.action}`}
-                    showIcon
-                  />
-                ))}
+            {view === "Overview" && (data.profileWarnings.length > 0 || data.profileActions.length > 0) ? (
+              <details className="secondary-disclosure">
+                <summary>
+                  <span>Profile setup</span>
+                  <Tag color="orange">{data.profileWarnings.length + data.profileActions.length}</Tag>
+                </summary>
+                <div className="secondary-disclosure-body">
+                  {data.profileWarnings.map((warning) => (
+                    <Alert
+                      key={warning.key}
+                      className="band"
+                      type={profileWarningAlertType(warning.severity)}
+                      title={warning.title}
+                      description={`${warning.description} ${warning.action}`}
+                      showIcon
+                    />
+                  ))}
 
-                {data.profileActions.length > 0 ? (
-                  <section className="section">
-                    <div className="section-heading">
-                      <Title level={4}>Profile Actions</Title>
-                      <Tag color="orange">{data.profileActions.length}</Tag>
-                    </div>
-                    {data.profileSetup.status === "action_required" && data.profileSetup.yamlPatch ? (
-                      <div className="profile-setup-summary">
-                        <div className="subsection-heading">
-                          <Title level={5}>Setup Patch</Title>
-                          <Space size={[4, 4]} wrap>
-                            {data.profileSetup.missingCapabilities.map((capability) => (
-                              <Tag color="orange" key={capability}>
-                                {profileSetupCapabilityLabel(capability)}
-                              </Tag>
-                            ))}
-                          </Space>
-                        </div>
-                        {data.profileSetup.candidateLogins.length > 0 ? (
-                          <Space size={[4, 4]} wrap>
-                            {data.profileSetup.candidateLogins.map((login) => (
-                              <Tag key={login}>{login}</Tag>
-                            ))}
-                          </Space>
-                        ) : null}
-                        <Paragraph className="config-snippet" copyable={{ text: data.profileSetup.yamlPatch }}>
-                          {data.profileSetup.yamlPatch}
-                        </Paragraph>
+                  {data.profileActions.length > 0 ? (
+                    <section className="section">
+                      <div className="section-heading">
+                        <Title level={4}>Profile Actions</Title>
+                        <Tag color="orange">{data.profileActions.length}</Tag>
                       </div>
-                    ) : null}
-                    <Space orientation="vertical" size={12} className="full-width">
-                      {data.profileActions.map((suggestion) => (
-                        <Alert
-                          key={suggestion.key}
-                          type={profileWarningAlertType(suggestion.severity)}
-                          title={suggestion.title}
-                          description={
-                            <Space orientation="vertical" size={8} className="full-width">
-                              <Text>
-                                {suggestion.description} {suggestion.action}
-                              </Text>
-                              {suggestion.relatedLogins.length > 0 ? (
-                                <Space size={[4, 4]} wrap>
-                                  {suggestion.relatedLogins.map((login) => (
-                                    <Tag color={attentionSeverityColor(suggestion.severity)} key={login}>
-                                      {login}
-                                    </Tag>
-                                  ))}
-                                </Space>
-                              ) : null}
-                              {suggestion.yamlSnippet ? (
-                                <Paragraph className="config-snippet" copyable={{ text: suggestion.yamlSnippet }}>
-                                  {suggestion.yamlSnippet}
-                                </Paragraph>
-                              ) : null}
+                      {data.profileSetup.status === "action_required" && data.profileSetup.yamlPatch ? (
+                        <div className="profile-setup-summary">
+                          <div className="subsection-heading">
+                            <Title level={5}>Setup Patch</Title>
+                            <Space size={[4, 4]} wrap>
+                              {data.profileSetup.missingCapabilities.map((capability) => (
+                                <Tag color="orange" key={capability}>
+                                  {profileSetupCapabilityLabel(capability)}
+                                </Tag>
+                              ))}
                             </Space>
-                          }
-                          showIcon
-                        />
-                      ))}
-                    </Space>
-                  </section>
-                ) : null}
-
-                {criticalOwnerCoverageRows.length > 0 ? (
-                  <section className="section">
-                    <div className="section-heading">
-                      <Title level={4}>Active s-1/s0 Owner Coverage</Title>
-                      <Space size={[4, 4]} wrap>
-                        <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
-                        <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
-                        <Tooltip title={workflowSkipTooltip()}>
-                          <Tag>{data.counts.skippedCriticalIssues} skip automation</Tag>
-                        </Tooltip>
+                          </div>
+                          {data.profileSetup.candidateLogins.length > 0 ? (
+                            <Space size={[4, 4]} wrap>
+                              {data.profileSetup.candidateLogins.map((login) => (
+                                <Tag key={login}>{login}</Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          <Paragraph className="config-snippet" copyable={{ text: data.profileSetup.yamlPatch }}>
+                            {data.profileSetup.yamlPatch}
+                          </Paragraph>
+                        </div>
+                      ) : null}
+                      <Space orientation="vertical" size={12} className="full-width">
+                        {data.profileActions.map((suggestion) => (
+                          <Alert
+                            key={suggestion.key}
+                            type={profileWarningAlertType(suggestion.severity)}
+                            title={suggestion.title}
+                            description={
+                              <Space orientation="vertical" size={8} className="full-width">
+                                <Text>
+                                  {suggestion.description} {suggestion.action}
+                                </Text>
+                                {suggestion.relatedLogins.length > 0 ? (
+                                  <Space size={[4, 4]} wrap>
+                                    {suggestion.relatedLogins.map((login) => (
+                                      <Tag color={attentionSeverityColor(suggestion.severity)} key={login}>
+                                        {login}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                ) : null}
+                                {suggestion.yamlSnippet ? (
+                                  <Paragraph className="config-snippet" copyable={{ text: suggestion.yamlSnippet }}>
+                                    {suggestion.yamlSnippet}
+                                  </Paragraph>
+                                ) : null}
+                              </Space>
+                            }
+                            showIcon
+                          />
+                        ))}
                       </Space>
-                    </div>
-                    <Table
-                      size="small"
-                      rowKey={(owner) => owner.ownerLogin ?? "unowned"}
-                      columns={criticalOwnerCoverageColumns}
-                      dataSource={criticalOwnerCoverageRows}
-                      pagination={false}
-                    />
-                  </section>
-                ) : null}
-              </>
+                    </section>
+                  ) : null}
+                </div>
+              </details>
             ) : null}
 
             {data.sync.jobQueue.status === "attention" ? (
@@ -4494,101 +4909,7 @@ export default function App() {
               />
             ) : null}
 
-            {view === "Overview" ? (
-              <section className="section">
-                <div className="section-heading">
-                  <Title level={4}>Operational Health</Title>
-                  <Text type="secondary">
-                    Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
-                  </Text>
-                </div>
-                <div className="health-grid">
-                  <Statistic
-                    title="Worker"
-                    value={labelText(data.sync.worker.status)}
-                    styles={{ content: { color: workerStatusColor(data.sync.worker.status) } }}
-                  />
-                  <Statistic
-                    title="Worker Phase"
-                    value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"}
-                  />
-                  <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
-                  <Statistic title="Last Tick" value={formatDate(data.sync.worker.lastTickFinishedAt)} />
-                  <Statistic
-                    title="GitHub Rate"
-                    value={latestRateLimitRemaining === null ? "-" : latestRateLimitRemaining}
-                    styles={{ content: { color: rateLimitColor(latestRateLimitRemaining) } }}
-                  />
-                  <Statistic title="Stale Objects" value={data.sync.staleObjects} />
-                  <Statistic
-                    title="Oldest Cache"
-                    value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)}
-                  />
-                  <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
-                  <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
-                  <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />
-                  <Statistic title="Blocked Jobs" value={data.sync.jobQueue.blockedJobs} />
-                  <Statistic title="Stale Leases" value={data.sync.jobQueue.staleLeases} />
-                  <Statistic
-                    title="Oldest Due"
-                    value={
-                      data.sync.jobQueue.oldestPendingAgeHours === null
-                        ? "-"
-                        : hours(data.sync.jobQueue.oldestPendingAgeHours)
-                    }
-                  />
-                  <Statistic title="Next Run" value={formatDate(data.sync.jobQueue.nextRunAt)} />
-                  <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
-                  <Statistic title="Webhook Normalization" value={data.webhooks.normalizationFailedDeliveries} />
-                  <Statistic title="Webhook Ignored" value={data.webhooks.ignoredDeliveries} />
-                  <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
-                  <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
-                  <Statistic title="Testing Queue" value={data.testing.queuePrs} />
-                  <Statistic
-                    title="Avg Testing Age"
-                    value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)}
-                  />
-                  <Statistic
-                    title="Req To Pass"
-                    value={
-                      data.testing.averageRequestToPassHours === null
-                        ? "-"
-                        : hours(data.testing.averageRequestToPassHours)
-                    }
-                  />
-                  <Statistic
-                    title="Pass To Close"
-                    value={
-                      data.testing.averagePassToCloseHours === null ? "-" : hours(data.testing.averagePassToCloseHours)
-                    }
-                  />
-                  <Statistic title="Testing Events" value={data.testing.transitionEvents} />
-                  <Statistic title="Last Testing Event" value={formatDate(data.testing.lastTransitionAt)} />
-                </div>
-                <Space className="sync-health-tags" size={[6, 6]} wrap>
-                  {data.sync.health.map((item) => (
-                    <Space className="sync-health-layer" key={item.layer} size={2}>
-                      <Tooltip title={syncHealthTooltip(item)}>
-                        <Tag color={syncHealthTagColor(item.status)}>
-                          {item.layer}: {item.status}
-                        </Tag>
-                      </Tooltip>
-                      <Tag color={item.lastSuccessfulAt ? "default" : "red"}>
-                        success {formatDate(item.lastSuccessfulAt)}
-                      </Tag>
-                      {item.lastFailedAt ? <Tag color="orange">failure {formatDate(item.lastFailedAt)}</Tag> : null}
-                      {item.rateLimitRemaining === null ? null : (
-                        <Tag color={rateLimitHealthTagColor(item.rateLimitRemaining)}>
-                          rate {item.rateLimitRemaining}
-                        </Tag>
-                      )}
-                    </Space>
-                  ))}
-                </Space>
-              </section>
-            ) : null}
-
-            {view === "Notifications" || view === "Overview" ? (
+            {view === "Notifications" ? (
               <section className="section">
                 <div className="section-heading">
                   <Space>
@@ -4673,7 +4994,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "Audit" || view === "Overview" ? (
+            {view === "Audit" ? (
               <section className="section">
                 <div className="section-heading">
                   <Space>
@@ -4704,7 +5025,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "PRs" || view === "Overview" ? (
+            {view === "PRs" ? (
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>Testing Flow</Title>
@@ -4779,7 +5100,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "Analytics" || view === "Overview" ? (
+            {view === "Analytics" ? (
               <section className="section">
                 <div className="section-heading">
                   <div>
@@ -4801,7 +5122,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "Drift" || view === "Overview" ? (
+            {view === "Drift" ? (
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>AI Drift</Title>
@@ -4819,7 +5140,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "Violations" || view === "Overview" ? (
+            {view === "Violations" ? (
               <section className="section">
                 <div className="section-heading">
                   <Space>
@@ -4840,29 +5161,52 @@ export default function App() {
               </section>
             ) : null}
 
-            <section className="section">
-              <div className="section-heading">
-                <Space>
-                  <ShieldAlert size={18} />
-                  <Title level={4}>Active s-1/s0 Issues</Title>
-                </Space>
-                <Text type="secondary">
-                  Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
-                </Text>
-              </div>
-              <CriticalIssueBoard issues={data.criticalIssues} />
-              <Table
-                rowKey="number"
-                size="middle"
-                columns={criticalColumns}
-                dataSource={data.criticalIssues}
-                scroll={{ x: 1700 }}
-                pagination={{ pageSize: 8 }}
-                locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
-              />
-            </section>
+            {view === "Issues" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Space>
+                    <ShieldAlert size={18} />
+                    <Title level={4}>Active s-1/s0 Issues</Title>
+                  </Space>
+                  <Text type="secondary">
+                    Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
+                  </Text>
+                </div>
+                <CriticalIssueBoard issues={data.criticalIssues} />
+                {criticalOwnerCoverageRows.length > 0 ? (
+                  <div className="owner-coverage-strip">
+                    <div className="subsection-heading">
+                      <Title level={5}>Owner Coverage</Title>
+                      <Space size={[4, 4]} wrap>
+                        <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
+                        <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
+                        <Tooltip title={workflowSkipTooltip()}>
+                          <Tag>{data.counts.skippedCriticalIssues} skip automation</Tag>
+                        </Tooltip>
+                      </Space>
+                    </div>
+                    <Table
+                      size="small"
+                      rowKey={(owner) => owner.ownerLogin ?? "unowned"}
+                      columns={criticalOwnerCoverageColumns}
+                      dataSource={criticalOwnerCoverageRows}
+                      pagination={false}
+                    />
+                  </div>
+                ) : null}
+                <Table
+                  rowKey="number"
+                  size="middle"
+                  columns={criticalColumns}
+                  dataSource={data.criticalIssues}
+                  scroll={{ x: 1700 }}
+                  pagination={{ pageSize: 8 }}
+                  locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
+                />
+              </section>
+            ) : null}
 
-            {view === "People" || view === "Overview" ? (
+            {view === "People" ? (
               <section className="workbench-section">
                 <div className="section-heading">
                   <Title level={4}>People Workbench</Title>
@@ -4885,7 +5229,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "PRs" || view === "Overview" ? (
+            {view === "PRs" ? (
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>Pending PRs</Title>
