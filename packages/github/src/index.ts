@@ -784,6 +784,16 @@ function issueCommentFetchLimit(sourceAuthType: SourceAuthType): number {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : defaultLimit;
 }
 
+function issueCommentBackfillCandidates(profile: RepoProfile, issues: IssueListItem[]): IssueListItem[] {
+  const testingCommentSignalsConfigured = profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0);
+  return issues.filter((issue) => {
+    if (issue.pull_request) {
+      return testingCommentSignalsConfigured;
+    }
+    return issueHasLabel(issue, profile.labels.deferred);
+  });
+}
+
 async function fetchIssueComments(input: {
   octokit: Octokit;
   owner: string;
@@ -793,10 +803,7 @@ async function fetchIssueComments(input: {
   sourceAuthType: SourceAuthType;
 }): Promise<{ comments: Map<number, GitHubIssueComments>; rateLimitRemaining: number | null }> {
   const limit = issueCommentFetchLimit(input.sourceAuthType);
-  const selected = input.issues
-    .filter((issue) => !issue.pull_request)
-    .filter((issue) => issueHasLabel(issue, input.profile.labels.deferred))
-    .slice(0, limit);
+  const selected = issueCommentBackfillCandidates(input.profile, input.issues).slice(0, limit);
   const comments = new Map<number, GitHubIssueComments>();
   let rateLimitRemaining: number | null = null;
   const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_ISSUE_COMMENT_MAX_PAGES ?? "2"));

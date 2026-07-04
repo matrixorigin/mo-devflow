@@ -735,12 +735,49 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
     await replaceAiDriftSignals(repoId, aiDriftSignals);
 
     for (const rawPr of snapshot.pullRequests) {
+      const commentResult = snapshot.issueComments.get(rawPr.number);
+      const comments = commentResult
+        ? commentResult.comments.map((comment) =>
+            normalizeIssueComment(profile, rawPr.number, comment, {
+              authType: snapshot.sourceAuthType,
+              userId: null
+            })
+          )
+        : [];
       const pr = normalizePullRequest(
         profile,
         rawPr,
         { authType: snapshot.sourceAuthType, userId: null },
-        snapshot.pullRequestInsights.get(rawPr.number)
+        snapshot.pullRequestInsights.get(rawPr.number),
+        commentResult
+          ? {
+              isComplete: commentResult.isComplete,
+              lastSyncedAt: commentResult.syncedAt,
+              syncError: commentResult.syncError,
+              comments
+            }
+          : undefined
       );
+      if (commentResult) {
+        await replaceIssueComments({
+          repoId,
+          issueNumber: rawPr.number,
+          comments,
+          sourceAuthType: snapshot.sourceAuthType,
+          sourceUserId: null,
+          visibilityClass: pr.visibilityClass,
+          isComplete: commentResult.isComplete,
+          syncError: commentResult.syncError,
+          raw: {
+            issueNumber: rawPr.number,
+            comments: comments.length,
+            isComplete: commentResult.isComplete,
+            syncError: commentResult.syncError,
+            objectType: "pull_request"
+          },
+          syncedAt: commentResult.syncedAt
+        });
+      }
       const cachedPr = await upsertPullRequest(repoId, pr);
       prCount += 1;
       const prActiveAttentionDedupeKeys = new Set<string>();

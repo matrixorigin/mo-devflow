@@ -1,5 +1,6 @@
 import type {
   AiDriftSignal,
+  IssueCommentEvidence,
   LifecycleState,
   NormalizedIssueComment,
   NormalizedIssue,
@@ -200,7 +201,8 @@ function deriveTestingFlow(
   labels: string[],
   assignees: string[],
   requestedReviewers: string[],
-  insight?: PullRequestInsight
+  insight?: PullRequestInsight,
+  commentEvidence?: IssueCommentEvidence
 ): TestingFlowDerivation {
   if (pr.state === "closed") {
     return {
@@ -234,6 +236,18 @@ function deriveTestingFlow(
     if (configuredTesters.has(assignee)) {
       signals.push(`assignee:${assignee}`);
       testers.push(assignee);
+    }
+  }
+  if (commentEvidence?.isComplete) {
+    for (const signal of profile.testing.handoffSignals.comments) {
+      const normalizedSignal = signal.trim().toLowerCase();
+      if (!normalizedSignal) {
+        continue;
+      }
+      const matched = commentEvidence.comments.some((comment) => comment.body.toLowerCase().includes(normalizedSignal));
+      if (matched) {
+        signals.push(`comment:${signal}`);
+      }
     }
   }
 
@@ -340,7 +354,8 @@ export function normalizePullRequest(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
   source: CacheSource,
-  insight?: PullRequestInsight
+  insight?: PullRequestInsight,
+  commentEvidence?: IssueCommentEvidence
 ): NormalizedPullRequest {
   const labels = labelNames(pr.labels);
   const assignees = userLogins(pr.assignees);
@@ -353,10 +368,11 @@ export function normalizePullRequest(
   const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
   const ciState = normalizeState(insight?.ciState);
   const latestReviewState = normalizeState(insight?.latestReviewState);
-  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight);
+  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight, commentEvidence);
+  const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
   const lastHumanActionAt = insight
-    ? maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt]) ?? createdAt
-    : updatedAt;
+    ? maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt
+    : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
   const attentionFlags: string[] = [];
   if (pr.state !== "closed" && hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours) {
     attentionFlags.push("no_human_action_24h");
@@ -419,6 +435,22 @@ export function normalizePullRequest(
     isComplete: Boolean(insight?.detailSyncedAt && !insight.detailError),
     rawPayload: pr
   };
+}
+
+function latestHumanCommentTimestamp(commentEvidence: IssueCommentEvidence | undefined): string | null {
+  if (!commentEvidence?.isComplete) {
+    return null;
+  }
+  return maxIso(
+    commentEvidence.comments
+      .filter((comment) => !isBotLogin(comment.authorLogin))
+      .map((comment) => comment.updatedAt || comment.createdAt)
+  );
+}
+
+function isBotLogin(login: string): boolean {
+  const normalized = login.toLowerCase();
+  return normalized.endsWith("[bot]") || normalized.includes("bot");
 }
 
 export function criticalAttentionForIssue(profile: RepoProfile, issue: NormalizedIssue): string[] {

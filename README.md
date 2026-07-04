@@ -77,6 +77,11 @@ rule instead of producing a misleading alert. Anonymous GitHub sync does not
 fetch comments by default; set `MO_DEVFLOW_ISSUE_COMMENT_MAX_ITEMS` or configure
 a service read token before relying on comment-backed workflow checks.
 
+The same GitHub issue-comment cache supports configured PR testing handoff
+comments. When `testing.handoff_signals.comments` is configured, matching
+complete PR comment evidence can move a PR into the testing queue and refresh
+its human-action timestamp.
+
 Repository behavior is driven by `config/repos/matrixone.yaml`. The MatrixOne
 profile includes `workflow.skip_users` from the local `mo-bug-triage` skill; a
 skipped user can still appear in cached dashboards, but the rule engine will not

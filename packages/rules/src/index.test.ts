@@ -489,6 +489,53 @@ describe("rules", () => {
     expect(pr.testingSignals).toEqual(expect.arrayContaining(["label:testing/requested", "assignee:qa-owner"]));
   });
 
+  test("testing flow supports configured comment handoff signals", () => {
+    const pr = normalizePullRequest(
+      {
+        ...profile,
+        testing: {
+          handoffSignals: {
+            labels: [],
+            reviewerUsers: [],
+            assigneeUsers: [],
+            comments: ["ready for testing"]
+          }
+        }
+      },
+      {
+        id: 18,
+        number: 24,
+        title: "comment handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/24",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      undefined,
+      {
+        isComplete: true,
+        lastSyncedAt: "2026-07-02T00:30:00Z",
+        syncError: null,
+        comments: [
+          {
+            authorLogin: "alice",
+            body: "Ready for testing after latest BVT run.",
+            createdAt: "2026-07-02T00:30:00Z",
+            updatedAt: "2026-07-02T00:30:00Z"
+          }
+        ]
+      }
+    );
+
+    expect(pr.testingState).toBe("test_requested");
+    expect(pr.testingSignals).toContain("comment:ready for testing");
+    expect(pr.lastHumanActionAt).toBe("2026-07-02T00:30:00Z");
+  });
+
   test("testing flow reflects requested changes, approval, and close states", () => {
     const testProfile = { ...profile, people: { ...profile.people, testers: ["tester-a"] } };
     const basePr = {

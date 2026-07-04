@@ -407,6 +407,8 @@ The repo profile must define how a PR is considered transferred to testing. Poss
 - A project field state.
 - A standardized comment or command.
 
+Comment or command based handoff should use cached PR issue comments and must only be treated as confirmed when the relevant comment backfill is complete. A matching human comment can also update `last_human_action_at` for the PR.
+
 The testing flow should be modeled as a state machine:
 
 - `not_ready`: PR is still under development.

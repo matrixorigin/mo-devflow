@@ -463,6 +463,8 @@ PR stale detection should use `last_human_action_at` by default. System-only eve
 
 Testing state derivation should be event-sourced from normalized PR timeline facts. State transitions should be persisted with the trigger event so ambiguous or incorrect handoff rules can be debugged.
 
+Until full PR timeline events are available, configured testing comment signals can be derived from cached PR issue comments. This path should only use complete comment evidence; partial comment evidence must not create a confirmed testing handoff. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.
+
 ## 13. Development Environment
 
 Use `/Users/xupeng/github/astra` as a reference for local development ergonomics, especially:
