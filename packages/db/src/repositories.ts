@@ -4,6 +4,7 @@ import type {
   AiDriftSignalView,
   AnalyticsSummary,
   AttentionSeverity,
+  CacheObjectEvidenceView,
   CriticalIssueBlockerView,
   CriticalIssueView,
   CriticalIssueLinkedPullRequestView,
@@ -1942,6 +1943,33 @@ function hoursSince(value: string | null): number | null {
   return Math.max(0, Math.round(((Date.now() - timestamp) / 3_600_000) * 10) / 10);
 }
 
+function cacheObjectEvidenceFromRow(row: RowData, staleCutoff: string): CacheObjectEvidenceView {
+  const lastSyncedAt = fromSqlDate(row.last_synced_at) ?? new Date(0).toISOString();
+  const sourceUpdatedAt = fromSqlDate(row.source_updated_at) ?? lastSyncedAt;
+  const staleCutoffAt = new Date(fromSqlDate(staleCutoff) ?? staleCutoff).getTime();
+  const isStale = new Date(lastSyncedAt).getTime() < staleCutoffAt;
+  const isPartial = !asBoolean(row.is_complete);
+  const reason: CacheObjectEvidenceView["reason"] =
+    isStale && isPartial ? "stale_and_partial" : isStale ? "stale" : "partial";
+
+  return {
+    objectType: asString(row.object_type) === "pull_request" ? "pull_request" : "issue",
+    number: asNumber(row.number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    state: asString(row.state) === "closed" ? "closed" : "open",
+    visibilityClass: asString(row.visibility_class) as CacheObjectEvidenceView["visibilityClass"],
+    sourceAuthType: asString(row.source_auth_type) as CacheObjectEvidenceView["sourceAuthType"],
+    lastSyncedAt,
+    sourceUpdatedAt,
+    cacheAgeHours: hoursSince(lastSyncedAt) ?? 0,
+    isComplete: !isPartial,
+    syncError: row.sync_error ? asString(row.sync_error) : null,
+    reason
+  };
+}
+
 async function criticalStartedAtByIssueNumber(
   repoId: number,
   currentSeverityByIssueNumber: Map<number, string>,
@@ -2898,6 +2926,94 @@ export async function getDashboardSummary(
     }),
     [repoId, ...staleIssueVisibility.params, repoId, ...stalePrVisibility.params]
   );
+  const [staleSampleRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM (
+       SELECT 'issue' AS object_type,
+              i.number,
+              i.title,
+              i.html_url,
+              i.owner_login,
+              i.state,
+              i.visibility_class,
+              i.source_auth_type,
+              i.last_synced_at,
+              i.updated_at AS source_updated_at,
+              i.is_complete,
+              i.sync_error
+       FROM issues i
+       WHERE i.repo_id = ?
+         AND i.state = 'open'
+         AND i.is_pull_request = 0
+         AND i.last_synced_at < ?
+         AND ${staleIssueVisibility.sql}
+       UNION ALL
+       SELECT 'pull_request' AS object_type,
+              p.number,
+              p.title,
+              p.html_url,
+              p.owner_login,
+              p.state,
+              p.visibility_class,
+              p.source_auth_type,
+              p.last_synced_at,
+              p.updated_at AS source_updated_at,
+              p.is_complete,
+              p.sync_error
+       FROM pull_requests p
+       WHERE p.repo_id = ?
+         AND p.state = 'open'
+         AND p.last_synced_at < ?
+         AND ${stalePrVisibility.sql}
+     ) cache_samples
+     ORDER BY last_synced_at ASC
+     LIMIT 12`,
+    [repoId, staleCutoff, ...staleIssueVisibility.params, repoId, staleCutoff, ...stalePrVisibility.params]
+  );
+  const [partialSampleRows] = await pool.execute<RowData[]>(
+    `SELECT *
+     FROM (
+       SELECT 'issue' AS object_type,
+              i.number,
+              i.title,
+              i.html_url,
+              i.owner_login,
+              i.state,
+              i.visibility_class,
+              i.source_auth_type,
+              i.last_synced_at,
+              i.updated_at AS source_updated_at,
+              i.is_complete,
+              i.sync_error
+       FROM issues i
+       WHERE i.repo_id = ?
+         AND i.state = 'open'
+         AND i.is_pull_request = 0
+         AND i.is_complete = 0
+         AND ${partialIssueVisibility.sql}
+       UNION ALL
+       SELECT 'pull_request' AS object_type,
+              p.number,
+              p.title,
+              p.html_url,
+              p.owner_login,
+              p.state,
+              p.visibility_class,
+              p.source_auth_type,
+              p.last_synced_at,
+              p.updated_at AS source_updated_at,
+              p.is_complete,
+              p.sync_error
+       FROM pull_requests p
+       WHERE p.repo_id = ?
+         AND p.state = 'open'
+         AND p.is_complete = 0
+         AND ${partialPrVisibility.sql}
+     ) cache_samples
+     ORDER BY last_synced_at ASC
+     LIMIT 12`,
+    [repoId, ...partialIssueVisibility.params, repoId, ...partialPrVisibility.params]
+  );
   const [hiddenIssueRows] = await pool.execute<RowData[]>(
     `SELECT ${hiddenIssueExpression} AS hidden_issues FROM issues i WHERE i.repo_id = ?`,
     [...hiddenIssueVisibility.params, repoId]
@@ -3409,7 +3525,9 @@ export async function getDashboardSummary(
       staleObjects: asNumber(staleRows[0]?.stale_count),
       staleThresholdHours,
       oldestCacheAgeHours,
+      staleSamples: staleSampleRows.map((row) => cacheObjectEvidenceFromRow(row, staleCutoff)),
       partialObjects: asNumber(partialRows[0]?.partial_count),
+      partialSamples: partialSampleRows.map((row) => cacheObjectEvidenceFromRow(row, staleCutoff)),
       jobQueue,
       worker
     },

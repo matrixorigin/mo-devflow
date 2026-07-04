@@ -834,6 +834,25 @@ export interface OperationalHealthSummary {
   webhooks: WebhookIngestionHealth;
 }
 
+export type CacheObjectEvidenceReason = "stale" | "partial" | "stale_and_partial";
+
+export interface CacheObjectEvidenceView {
+  objectType: "issue" | "pull_request";
+  number: number;
+  title: string;
+  htmlUrl: string;
+  ownerLogin: string | null;
+  state: "open" | "closed";
+  visibilityClass: VisibilityClass;
+  sourceAuthType: SourceAuthType;
+  lastSyncedAt: string;
+  sourceUpdatedAt: string;
+  cacheAgeHours: number;
+  isComplete: boolean;
+  syncError: string | null;
+  reason: CacheObjectEvidenceReason;
+}
+
 export type ManualRefreshLayer = SyncHealthLayer;
 
 export interface ManualRefreshResult {
@@ -865,7 +884,9 @@ export interface DashboardSummary {
     staleObjects: number;
     staleThresholdHours: number;
     oldestCacheAgeHours: number | null;
+    staleSamples: CacheObjectEvidenceView[];
     partialObjects: number;
+    partialSamples: CacheObjectEvidenceView[];
     jobQueue: JobQueueHealth;
     worker: WorkerHealth;
   };

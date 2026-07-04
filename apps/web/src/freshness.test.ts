@@ -25,7 +25,9 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
     staleObjects: 0,
     staleThresholdHours: 6,
     oldestCacheAgeHours: 1,
+    staleSamples: [],
     partialObjects: 0,
+    partialSamples: [],
     jobQueue: {
       status: "healthy",
       queueDepth: 0,

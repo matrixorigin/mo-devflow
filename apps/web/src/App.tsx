@@ -929,6 +929,133 @@ function WorkObjectLink({ href, children, icon }: { href: string; children: Reac
   );
 }
 
+type CacheEvidenceSample = DashboardSummary["sync"]["staleSamples"][number];
+
+function cacheEvidenceObjectLabel(sample: CacheEvidenceSample): string {
+  return sample.objectType === "pull_request" ? `PR #${sample.number}` : `Issue #${sample.number}`;
+}
+
+function cacheEvidenceReasonLabel(sample: CacheEvidenceSample): string {
+  if (sample.reason === "stale_and_partial") {
+    return "stale + partial";
+  }
+  return sample.reason;
+}
+
+function cacheEvidenceReasonColor(sample: CacheEvidenceSample): string {
+  if (sample.reason === "stale_and_partial") {
+    return "red";
+  }
+  return sample.reason === "stale" ? "orange" : "gold";
+}
+
+function CacheEvidenceSampleRow({ sample }: { sample: CacheEvidenceSample }) {
+  const icon =
+    sample.objectType === "pull_request" ? (
+      <GitPullRequest size={15} aria-hidden="true" />
+    ) : (
+      <CircleAlert size={15} aria-hidden="true" />
+    );
+
+  return (
+    <div className="cache-evidence-row">
+      <div className="cache-evidence-object">
+        <WorkObjectLink href={sample.htmlUrl} icon={icon}>
+          {cacheEvidenceObjectLabel(sample)}
+        </WorkObjectLink>
+        <a className="cache-evidence-title" href={sample.htmlUrl} target="_blank" rel="noreferrer">
+          {sample.title || "(untitled)"}
+        </a>
+      </div>
+      <div className="cache-evidence-meta">
+        <span>{sample.ownerLogin ?? "unowned"}</span>
+        <span>cache {hours(sample.cacheAgeHours)}</span>
+        <span>synced {formatDate(sample.lastSyncedAt)}</span>
+        <span>source {formatDate(sample.sourceUpdatedAt)}</span>
+      </div>
+      <div className="cache-evidence-tags">
+        <Tag color={cacheEvidenceReasonColor(sample)}>{cacheEvidenceReasonLabel(sample)}</Tag>
+        <Tag>{labelText(sample.sourceAuthType)}</Tag>
+        <Tag>{labelText(sample.visibilityClass)}</Tag>
+        {!sample.isComplete ? <Tag color="gold">incomplete</Tag> : null}
+        {sample.syncError ? (
+          <Tooltip title={sample.syncError}>
+            <Tag color="red">sync error</Tag>
+          </Tooltip>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CacheEvidenceSampleGroup({
+  title,
+  total,
+  samples,
+  emptyText
+}: {
+  title: string;
+  total: number;
+  samples: CacheEvidenceSample[];
+  emptyText: string;
+}) {
+  if (total <= 0) {
+    return null;
+  }
+  const visibleSamples = samples.slice(0, 6);
+  const hiddenFetchedSamples = Math.max(0, samples.length - visibleSamples.length);
+  const notFetchedSamples = Math.max(0, total - samples.length);
+
+  return (
+    <div className="cache-evidence-sample-group">
+      <div className="cache-evidence-group-heading">
+        <Text strong>{title}</Text>
+        <Text type="secondary">
+          {visibleSamples.length > 0 ? `${visibleSamples.length} shown` : "no open sample"} / {total} total
+        </Text>
+      </div>
+      {visibleSamples.length > 0 ? (
+        <div className="cache-evidence-list">
+          {visibleSamples.map((sample) => (
+            <CacheEvidenceSampleRow sample={sample} key={`${sample.objectType}-${sample.number}`} />
+          ))}
+        </div>
+      ) : (
+        <Text type="secondary">{emptyText}</Text>
+      )}
+      {hiddenFetchedSamples > 0 || notFetchedSamples > 0 ? (
+        <Text type="secondary" className="cache-evidence-overflow">
+          {hiddenFetchedSamples > 0 ? `+${hiddenFetchedSamples} sampled objects hidden in this compact view. ` : ""}
+          {notFetchedSamples > 0 ? `+${notFetchedSamples} other visible objects outside the sample.` : ""}
+        </Text>
+      ) : null}
+    </div>
+  );
+}
+
+function CacheEvidenceSamples({ sync }: { sync: DashboardSummary["sync"] }) {
+  if (sync.staleObjects <= 0 && sync.partialObjects <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="cache-evidence-samples">
+      <CacheEvidenceSampleGroup
+        title="Stale active cache"
+        total={sync.staleObjects}
+        samples={sync.staleSamples}
+        emptyText="No open visible stale objects were returned in the diagnostic sample."
+      />
+      <CacheEvidenceSampleGroup
+        title="Partial workflow evidence"
+        total={sync.partialObjects}
+        samples={sync.partialSamples}
+        emptyText="Partial objects exist in the cache, but no open visible objects were returned in the sample."
+      />
+    </div>
+  );
+}
+
 function PersonWorkloadBoard({
   people,
   personalViews,
@@ -3042,6 +3169,7 @@ export default function App() {
                         ))}
                       </Space>
                     ) : null}
+                    <CacheEvidenceSamples sync={data.sync} />
                     {cacheEvidence.affectedConclusions.length > 0 ? (
                       <div className="evidence-detail-list">
                         <Text type="secondary">Affected conclusions</Text>
