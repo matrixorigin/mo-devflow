@@ -4331,6 +4331,17 @@ button.testing-board-stat:focus-visible {
     width: calc(100vw - 20px);
   }
 
+  .band {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .band .ant-alert-action {
+    flex-basis: 100%;
+    margin-inline-start: 34px;
+    margin-top: 8px;
+  }
+
   .band .ant-alert-content {
     max-width: calc(100vw - 84px);
   }

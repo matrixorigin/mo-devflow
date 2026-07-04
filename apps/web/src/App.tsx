@@ -3801,6 +3801,15 @@ function CacheEvidenceBanner({
   onPrepare: (layers: ManualRefreshLayer[]) => void;
   onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
+  const compactFacts = cacheEvidence.facts.filter(
+    (fact) =>
+      !fact.startsWith("Skipped sync layers:") &&
+      !fact.startsWith("Incomplete sync layers:") &&
+      !fact.startsWith("Blocked or failed sync layers:")
+  );
+  const visibleCompactFacts = compactFacts.slice(0, 3);
+  const detailFactCount = Math.max(0, cacheEvidence.facts.length - visibleCompactFacts.length);
+
   return (
     <Alert
       className={`band evidence-alert ${expanded ? "evidence-alert-expanded" : "evidence-alert-compact"}`}
@@ -3819,27 +3828,38 @@ function CacheEvidenceBanner({
               {expanded ? "Hide evidence" : "Show evidence"}
             </Button>
           </div>
-          {cacheEvidence.facts.length > 0 ? (
+          {!expanded && visibleCompactFacts.length > 0 ? (
             <Space size={[4, 4]} wrap>
-              {cacheEvidence.facts.map((fact) => (
+              {visibleCompactFacts.map((fact) => (
                 <Tag key={fact}>{fact}</Tag>
               ))}
+              {detailFactCount > 0 ? <Tag>+{detailFactCount} evidence details</Tag> : null}
             </Space>
-          ) : null}
-          {cacheEvidence.affectedConclusions.length > 0 ? (
-            <div className="evidence-detail-list">
-              <Text type="secondary">Affected conclusions</Text>
-              <Space size={[4, 4]} wrap>
-                {cacheEvidence.affectedConclusions.map((item) => (
-                  <Tag color={cacheEvidence.severity === "critical" ? "red" : "orange"} key={item}>
-                    {item}
-                  </Tag>
-                ))}
-              </Space>
-            </div>
           ) : null}
           {expanded ? (
             <>
+              {cacheEvidence.facts.length > 0 ? (
+                <div className="evidence-detail-list">
+                  <Text type="secondary">Evidence details</Text>
+                  <Space size={[4, 4]} wrap>
+                    {cacheEvidence.facts.map((fact) => (
+                      <Tag key={fact}>{fact}</Tag>
+                    ))}
+                  </Space>
+                </div>
+              ) : null}
+              {cacheEvidence.affectedConclusions.length > 0 ? (
+                <div className="evidence-detail-list">
+                  <Text type="secondary">Affected conclusions</Text>
+                  <Space size={[4, 4]} wrap>
+                    {cacheEvidence.affectedConclusions.map((item) => (
+                      <Tag color={cacheEvidence.severity === "critical" ? "red" : "orange"} key={item}>
+                        {item}
+                      </Tag>
+                    ))}
+                  </Space>
+                </div>
+              ) : null}
               <CacheEvidenceSamples sync={sync} />
               <CacheEvidenceImpactBoard items={impactItems} onSelect={onImpactSelect} />
               <CacheRepairPlan
@@ -3849,9 +3869,62 @@ function CacheEvidenceBanner({
                 onPrepare={onPrepare}
                 onQueue={onQueue}
               />
+              {cacheEvidence.recommendedAction ? <Text type="secondary">{cacheEvidence.recommendedAction}</Text> : null}
             </>
           ) : null}
-          {cacheEvidence.recommendedAction ? <Text type="secondary">{cacheEvidence.recommendedAction}</Text> : null}
+        </Space>
+      }
+      showIcon
+    />
+  );
+}
+
+function UpdateRuntimeBanner({ data, onOpenHealth }: { data: DashboardSummary; onOpenHealth: () => void }) {
+  const issues: Array<{ key: string; label: string; detail: string; color: string }> = [];
+  if (data.sync.jobQueue.status === "attention") {
+    issues.push({
+      key: "queue",
+      label: "queue",
+      detail:
+        data.sync.jobQueue.recommendedAction ??
+        data.sync.jobQueue.latestFailure ??
+        `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.blockedJobs} blocked jobs, ${data.sync.jobQueue.staleLeases} stale leases.`,
+      color: "orange"
+    });
+  }
+  if (data.sync.worker.status !== "active") {
+    issues.push({
+      key: "worker",
+      label: "worker",
+      detail: workerStatusDescription(data.sync.worker),
+      color: data.sync.worker.status === "failed" ? "red" : "orange"
+    });
+  }
+
+  if (issues.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert
+      className="band"
+      type={issues.some((issue) => issue.color === "red") ? "error" : "warning"}
+      title={issues.length === 1 ? `${issues[0].label} needs attention` : "Update pipeline needs attention"}
+      description={
+        <Space orientation="vertical" size={6} className="full-width">
+          <Text>{issues[0].detail}</Text>
+          {issues.length > 1 ? (
+            <Space size={[4, 4]} wrap>
+              {issues.map((issue) => (
+                <Tooltip title={issue.detail} key={issue.key}>
+                  <Tag color={issue.color}>{issue.label}</Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          ) : null}
+          <Button size="small" onClick={onOpenHealth}>
+            Open Health
+          </Button>
         </Space>
       }
       showIcon
@@ -10201,29 +10274,7 @@ export default function App() {
               />
             ) : null}
 
-            {data.sync.jobQueue.status === "attention" && view !== "Health" ? (
-              <Alert
-                className="band"
-                type="warning"
-                title="Worker job queue needs attention"
-                description={
-                  data.sync.jobQueue.recommendedAction ??
-                  data.sync.jobQueue.latestFailure ??
-                  `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.blockedJobs} blocked jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
-                }
-                showIcon
-              />
-            ) : null}
-
-            {data.sync.worker.status !== "active" && view !== "Health" ? (
-              <Alert
-                className="band"
-                type={data.sync.worker.status === "failed" ? "error" : "warning"}
-                title="Worker heartbeat needs attention"
-                description={workerStatusDescription(data.sync.worker)}
-                showIcon
-              />
-            ) : null}
+            {view !== "Health" ? <UpdateRuntimeBanner data={data} onOpenHealth={() => selectView("Health")} /> : null}
 
             {latestRateLimitRemaining !== null && latestRateLimitRemaining <= 10 && view !== "Health" ? (
               <Alert
