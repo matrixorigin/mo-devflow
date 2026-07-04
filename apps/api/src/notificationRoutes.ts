@@ -36,7 +36,9 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
       repoId,
       deliveryId: parsed.data.deliveryId,
       userId: session.userId,
-      githubLogin: session.githubLogin
+      githubLogin: session.githubLogin,
+      profile,
+      viewer: { authenticated: true, userId: session.userId }
     });
 
     if (acknowledgement.outcome === "not_found") {

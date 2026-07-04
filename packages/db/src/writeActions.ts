@@ -9,7 +9,7 @@ import type {
 import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
-import { dashboardVisibilityFilter, type DashboardViewer } from "./repositories";
+import { dashboardVisibilityFilter, type DashboardViewer } from "./visibility";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;

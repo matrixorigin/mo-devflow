@@ -10,6 +10,7 @@ import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql } from "./client";
 import { addDaysToDateKey, dateKeyInTimezone } from "./time";
+import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -86,6 +87,32 @@ export function activeNotificationDeliverySourceWhereSql(deliveryAlias: "d" = "d
     `OR (${deliveryAlias}.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = ${deliveryAlias}.repo_id AND ad.id = ${deliveryAlias}.source_id AND ad.resolved_at IS NULL))`,
     ")"
   ].join(" ");
+}
+
+export function notificationDeliveryVisibilityWhereSql(
+  deliveryAlias: "d",
+  profile: RepoProfile,
+  viewer: DashboardViewer
+): { sql: string; params: number[] } {
+  const visibleClasses = visibleClassesForDashboard(profile, viewer);
+  if (visibleClasses.length === 0) {
+    return { sql: "1 = 0", params: [] };
+  }
+
+  const issueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", profile, viewer);
+
+  return {
+    sql: [
+      "(",
+      `${deliveryAlias}.source_type = 'daily_digest'`,
+      `OR ${deliveryAlias}.object_number IS NULL`,
+      `OR (${deliveryAlias}.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = ${deliveryAlias}.repo_id AND i.number = ${deliveryAlias}.object_number AND ${issueVisibility.sql}))`,
+      `OR (${deliveryAlias}.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = ${deliveryAlias}.repo_id AND p.number = ${deliveryAlias}.object_number AND ${pullRequestVisibility.sql}))`,
+      ")"
+    ].join(" "),
+    params: [...issueVisibility.params, ...pullRequestVisibility.params]
+  };
 }
 
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
@@ -401,14 +428,17 @@ export async function acknowledgeNotificationDelivery(input: {
   deliveryId: number;
   userId: number;
   githubLogin: string;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
 }): Promise<NotificationAcknowledgementResult> {
   const pool = getPool();
+  const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [deliveryRows] = await pool.execute<RowData[]>(
     `SELECT *
-     FROM notification_deliveries
-     WHERE id = ? AND repo_id = ?
+     FROM notification_deliveries d
+     WHERE d.id = ? AND d.repo_id = ? AND ${visibility.sql}
      LIMIT 1`,
-    [input.deliveryId, input.repoId]
+    [input.deliveryId, input.repoId, ...visibility.params]
   );
   const delivery = deliveryRows[0];
   if (!delivery) {
@@ -455,8 +485,13 @@ export async function acknowledgeNotificationDelivery(input: {
   };
 }
 
-export async function getNotificationHealth(repoId: number, profile: RepoProfile): Promise<NotificationHealth> {
+export async function getNotificationHealth(input: {
+  repoId: number;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
+}): Promise<NotificationHealth> {
   const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
+  const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
        d.*,
@@ -464,17 +499,18 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
        a.github_login AS acknowledged_by
      FROM notification_deliveries d
      LEFT JOIN notification_acknowledgements a ON a.notification_delivery_id = d.id
-     WHERE d.repo_id = ?
+     WHERE d.repo_id = ? AND ${visibility.sql}
      ORDER BY d.attempted_at DESC
      LIMIT 20`,
-    [repoId]
+    [input.repoId, ...visibility.params]
   );
   const [deliveryFailureRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS failed_count
      FROM notification_deliveries d
      WHERE d.repo_id = ? AND d.status = 'failed'
-       AND ${activeSourceWhere}`,
-    [repoId]
+       AND ${activeSourceWhere}
+       AND ${visibility.sql}`,
+    [input.repoId, ...visibility.params]
   );
   const [unacknowledgedRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS unacknowledged_count
@@ -483,8 +519,9 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
      WHERE d.repo_id = ?
        AND d.status = 'sent'
        AND a.id IS NULL
-       AND ${activeSourceWhere}`,
-    [repoId]
+       AND ${activeSourceWhere}
+       AND ${visibility.sql}`,
+    [input.repoId, ...visibility.params]
   );
 
   const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
@@ -493,7 +530,7 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
     ruleKey: asString(row.rule_key),
     objectType: asString(row.object_type),
     objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
-    recipientScope: recipientScope(profile, row.recipient),
+    recipientScope: recipientScope(input.profile, row.recipient),
     channel: asString(row.channel),
     status: asString(row.status) as NotificationDeliveryView["status"],
     errorMessage: row.error_message ? asString(row.error_message) : null,
@@ -503,10 +540,12 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
   }));
 
   return {
-    enabled: profile.notifications.wecom.enabled,
+    enabled: input.profile.notifications.wecom.enabled,
     channel: "wecom",
-    webhookConfigured: Boolean(profile.notifications.wecom.webhookUrlEnv && process.env[profile.notifications.wecom.webhookUrlEnv]),
-    cooldownHours: profile.notifications.routing.cooldownHours,
+    webhookConfigured: Boolean(
+      input.profile.notifications.wecom.webhookUrlEnv && process.env[input.profile.notifications.wecom.webhookUrlEnv]
+    ),
+    cooldownHours: input.profile.notifications.routing.cooldownHours,
     failedDeliveries: asNumber(deliveryFailureRows[0]?.failed_count),
     unacknowledgedDeliveries: asNumber(unacknowledgedRows[0]?.unacknowledged_count),
     lastDeliveries

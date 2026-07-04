@@ -26,7 +26,6 @@ import type {
   SyncHealthLayer,
   SyncHealthStatus,
   TestingSummary,
-  VisibilityClass,
   WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView
@@ -37,11 +36,13 @@ import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth } from "./notifications";
 import { addDaysToDateKey, dateKeyInTimezone, previousCalendarDayRange } from "./time";
+import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 import { getWebhookIngestionHealth } from "./webhooks";
 import { getWorkerHealth } from "./workerHealth";
 
 export { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 export { calendarDayRangeInTimezone, dateKeyInTimezone, previousCalendarDayRange } from "./time";
+export { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -72,11 +73,6 @@ function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
 
-export interface DashboardViewer {
-  authenticated: boolean;
-  userId: number | null;
-}
-
 function mergeUnique(left: string[], right: string[]): string[] {
   return Array.from(new Set([...left, ...right]));
 }
@@ -84,18 +80,6 @@ function mergeUnique(left: string[], right: string[]): string[] {
 function isDuplicateError(error: unknown): boolean {
   const err = error as { code?: string; errno?: number; message?: string };
   return err.code === "ER_DUP_ENTRY" || err.errno === 1062 || (err.message ?? "").includes("Duplicate entry");
-}
-
-export function visibleClassesForDashboard(profile: RepoProfile, viewer: DashboardViewer): VisibilityClass[] {
-  if (!viewer.authenticated && !profile.access.anonymousRead) {
-    return [];
-  }
-  if (!viewer.authenticated) {
-    return ["anonymous_readable"];
-  }
-  return viewer.userId === null
-    ? ["anonymous_readable", "logged_in_readable"]
-    : ["anonymous_readable", "logged_in_readable", "token_owner_only"];
 }
 
 export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> = process.env): number {
@@ -464,41 +448,6 @@ export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfi
   }
 
   return warnings;
-}
-
-export function dashboardVisibilityFilter(
-  alias: string,
-  profile: RepoProfile,
-  viewer: DashboardViewer
-): { sql: string; params: number[] } {
-  const visibleClasses = visibleClassesForDashboard(profile, viewer);
-  const classVisibleWithoutOwner = visibleClasses.filter((value) => value !== "token_owner_only");
-  const clauses: string[] = [];
-  const params: number[] = [];
-
-  if (classVisibleWithoutOwner.length > 0) {
-    clauses.push(`${alias}.visibility_class IN (${visibilityClassListSql(classVisibleWithoutOwner)})`);
-  }
-
-  if (visibleClasses.includes("token_owner_only")) {
-    if (viewer.userId === null) {
-      throw new Error("token_owner_only dashboard visibility requires viewer user id");
-    }
-    clauses.push(`(${alias}.visibility_class = 'token_owner_only' AND ${alias}.source_user_id = ?)`);
-    params.push(viewer.userId);
-  }
-
-  if (clauses.length === 0) {
-    return { sql: "1 = 0", params: [] };
-  }
-  return {
-    sql: clauses.length === 1 ? clauses[0] ?? "1 = 0" : `(${clauses.join(" OR ")})`,
-    params
-  };
-}
-
-function visibilityClassListSql(classes: VisibilityClass[]): string {
-  return classes.map((value) => `'${value}'`).join(", ");
 }
 
 function sqlStringLiteral(value: string): string {
@@ -2115,7 +2064,7 @@ export async function getDashboardSummary(
   };
   const jobQueue = await getJobQueueHealth();
   const worker: WorkerHealth = await getWorkerHealth();
-  const notifications = await getNotificationHealth(repoId, profile);
+  const notifications = await getNotificationHealth({ repoId, profile, viewer });
   const webhooks = await getWebhookIngestionHealth(repoId);
   const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
   const criticalOwnerCoverage = criticalIssueOwnerCoverage(criticalIssues);

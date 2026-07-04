@@ -5,6 +5,7 @@ import {
   activeNotificationDeliverySourceWhereSql,
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
+  notificationDeliveryVisibilityWhereSql,
   notificationRecipient
 } from "./notifications";
 
@@ -115,6 +116,32 @@ describe("notification acknowledgement health", () => {
         ")"
       ].join(" ")
     );
+  });
+
+  test("builds notification delivery visibility filter from the underlying cached object", () => {
+    expect(notificationDeliveryVisibilityWhereSql("d", profile, { authenticated: false, userId: null })).toEqual({
+      sql: [
+        "(",
+        "d.source_type = 'daily_digest'",
+        "OR d.object_number IS NULL",
+        "OR (d.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = d.repo_id AND i.number = d.object_number AND i.visibility_class IN ('anonymous_readable')))",
+        "OR (d.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = d.repo_id AND p.number = d.object_number AND p.visibility_class IN ('anonymous_readable')))",
+        ")"
+      ].join(" "),
+      params: []
+    });
+
+    expect(notificationDeliveryVisibilityWhereSql("d", profile, { authenticated: true, userId: 42 })).toEqual({
+      sql: [
+        "(",
+        "d.source_type = 'daily_digest'",
+        "OR d.object_number IS NULL",
+        "OR (d.object_type = 'issue' AND EXISTS (SELECT 1 FROM issues i WHERE i.repo_id = d.repo_id AND i.number = d.object_number AND (i.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (i.visibility_class = 'token_owner_only' AND i.source_user_id = ?))))",
+        "OR (d.object_type = 'pull_request' AND EXISTS (SELECT 1 FROM pull_requests p WHERE p.repo_id = d.repo_id AND p.number = d.object_number AND (p.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (p.visibility_class = 'token_owner_only' AND p.source_user_id = ?))))",
+        ")"
+      ].join(" "),
+      params: [42, 42]
+    });
   });
 });
 
