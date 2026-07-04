@@ -164,6 +164,7 @@ type PrScopeFilter =
   | "issue_link_pending"
   | "evidence_pending"
   | "no_action_24h";
+type PrBoardTab = "rotation" | "testing";
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
@@ -1264,6 +1265,17 @@ function prScopeLabel(filter: PrScopeFilter): string {
   return "all pending";
 }
 
+function prBoardTabForScope(scope: PrScopeFilter): PrBoardTab {
+  if (scope === "testing" || scope === "stale_testing" || scope === "testing_evidence_gap") {
+    return "testing";
+  }
+  return "rotation";
+}
+
+function isTestingPrScope(scope: PrScopeFilter): boolean {
+  return prBoardTabForScope(scope) === "testing";
+}
+
 function webhookScopeLabel(filter: WebhookDeliveryScopeFilter): string {
   if (filter === "pending") {
     return "pending";
@@ -1797,7 +1809,7 @@ function TeamRotationOverview({
             value={data.testing.queueIssues}
             detail={`${data.testing.staleQueueIssues} stale | avg ${optionalHours(data.testing.averageIssueQueueAgeHours)}`}
             tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("PRs")}
+            onClick={() => onOpenPrsFilter("testing")}
           />
           <TeamMonitorTile
             label="People focus"
@@ -1865,7 +1877,7 @@ function TeamRotationOverview({
             overflowLabel="issues in test"
             actionLabel="Open Testing"
             tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
-            onAction={() => onNavigate("PRs")}
+            onAction={() => onOpenPrsFilter("testing")}
           >
             {testingIssues.slice(0, 5).map((issue) => (
               <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
@@ -8539,6 +8551,7 @@ export default function App() {
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
+  const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
@@ -8757,7 +8770,15 @@ export default function App() {
 
   function openPrsWithFilter(scope: PrScopeFilter) {
     setPrScopeFilter(scope);
+    setPrBoardTab(prBoardTabForScope(scope));
     selectView("PRs");
+  }
+
+  function switchPrBoardTab(nextTab: PrBoardTab) {
+    setPrBoardTab(nextTab);
+    if (nextTab === "rotation" && isTestingPrScope(prScopeFilter)) {
+      setPrScopeFilter("all");
+    }
   }
 
   function openCacheEvidenceImpact(target: CacheEvidenceImpactTarget) {
@@ -10426,90 +10447,157 @@ export default function App() {
             ) : null}
 
             {view === "PRs" ? (
-              <section className="section">
-                <div className="section-heading">
-                  <Title level={4}>Issue Testing Flow</Title>
-                  <Space size={[6, 6]} wrap>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${data.testing.queueIssues > 0 ? "" : "inline-filter-chip-muted"}`}
-                      onClick={scrollToTestingIssueQueue}
-                    >
-                      {data.testing.queueIssues} issues in test
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        data.testing.staleQueueIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-                      }`}
-                      onClick={scrollToTestingIssueQueue}
-                    >
-                      {data.testing.staleQueueIssues} stale
-                    </button>
-                    <Tag>issue assignment starts test</Tag>
-                    {testingHasIssueTransitions ? (
-                      <Tag>{data.testing.issueTransitionEvents} issue test starts</Tag>
-                    ) : null}
-                    {testingHasIssueTransitions ? (
-                      <Tag>last test start {formatDate(data.testing.lastIssueTransitionAt)}</Tag>
-                    ) : null}
-                    {testingHasTurnoverHistory ? <Tag>{data.testing.transitionEvents} PR test transitions</Tag> : null}
-                    {testingHasTurnoverHistory ? (
-                      <Tag>{data.testing.requestToPassSamples} test pass samples</Tag>
-                    ) : null}
-                    {testingHasTurnoverHistory ? <Tag>{data.testing.passToCloseSamples} close samples</Tag> : null}
-                    {testingHasTurnoverHistory ? (
+              <section className="section pr-workflow-section">
+                <div className="section-heading pr-workflow-heading">
+                  <div>
+                    <Title level={4}>{prBoardTab === "testing" ? "Testing Handoffs" : "PR Rotation"}</Title>
+                    <Text type="secondary">
+                      {prBoardTab === "testing"
+                        ? "Issue assignment or configured issue label starts testing; linked PRs show execution blockers."
+                        : `${prScopeLabel(prScopeFilter)} | Stale checks use last human action.`}
+                    </Text>
+                  </div>
+                  <Segmented
+                    value={prBoardTab}
+                    onChange={(value) => switchPrBoardTab(value as PrBoardTab)}
+                    options={[
+                      { label: "PR Rotation", value: "rotation" },
+                      { label: "Testing Handoffs", value: "testing" }
+                    ]}
+                  />
+                </div>
+
+                {prBoardTab === "testing" ? (
+                  <>
+                    <div className="pr-workflow-status-row" aria-label="Testing handoff shortcuts">
                       <button
                         type="button"
                         className={`inline-filter-chip ${
-                          data.testing.closedWithoutPassSignalSamples > 0 ? "" : "inline-filter-chip-muted"
+                          data.testing.queueIssues > 0 ? "" : "inline-filter-chip-muted"
                         }`}
+                        onClick={scrollToTestingIssueQueue}
+                      >
+                        {data.testing.queueIssues} issues in test
+                      </button>
+                      <button
+                        type="button"
+                        className={`inline-filter-chip ${
+                          data.testing.staleQueueIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+                        }`}
+                        onClick={scrollToTestingIssueQueue}
+                      >
+                        {data.testing.staleQueueIssues} waiting &gt;24h
+                      </button>
+                      <button
+                        type="button"
+                        className={`inline-filter-chip ${data.testing.queuePrs > 0 ? "" : "inline-filter-chip-muted"}`}
                         onClick={() => openPrsWithFilter("testing")}
                       >
-                        {data.testing.closedWithoutPassSignalSamples} closed without pass
+                        {data.testing.queuePrs} linked PRs
                       </button>
-                    ) : null}
-                    {testingHasTurnoverHistory ? <Tag>last {formatDate(data.testing.lastTransitionAt)}</Tag> : null}
-                  </Space>
-                </div>
-                <TestingCommandBoard
-                  pendingPrs={data.pendingPrs}
-                  testing={data.testing}
-                  onOpenPrsFilter={openPrsWithFilter}
-                />
-                <Table
-                  rowKey="login"
-                  size="middle"
-                  columns={testerColumns}
-                  dataSource={data.testing.testers}
-                  scroll={{ x: 760 }}
-                  pagination={false}
-                  locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
-                />
-                {testingHasIssueTransitions ? (
-                  <Table
-                    className="testing-transition-table"
-                    rowKey="id"
-                    size="middle"
-                    columns={testingIssueTransitionColumns}
-                    dataSource={data.testing.recentIssueTransitions}
-                    scroll={{ x: 1040 }}
-                    pagination={{ pageSize: 6 }}
-                    locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
-                  />
-                ) : null}
-                {testingHasTurnoverHistory ? (
-                  <Table
-                    className="testing-transition-table"
-                    rowKey="id"
-                    size="middle"
-                    columns={testingTransitionColumns}
-                    dataSource={data.testing.recentTransitions}
-                    scroll={{ x: 1040 }}
-                    pagination={{ pageSize: 6 }}
-                    locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
-                  />
-                ) : null}
+                      {testingHasIssueTransitions ? (
+                        <Tag>{data.testing.issueTransitionEvents} issue test starts</Tag>
+                      ) : null}
+                      {testingHasIssueTransitions ? (
+                        <Tag>last start {formatDate(data.testing.lastIssueTransitionAt)}</Tag>
+                      ) : null}
+                    </div>
+                    <TestingCommandBoard
+                      pendingPrs={data.pendingPrs}
+                      testing={data.testing}
+                      onOpenPrsFilter={openPrsWithFilter}
+                    />
+                    <details className="secondary-disclosure pr-diagnostic-disclosure">
+                      <summary>
+                        <span>Testing evidence details</span>
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{data.testing.testers.length} testers</Tag>
+                          <Tag>{data.testing.recentIssueTransitions.length} issue events</Tag>
+                          {testingHasTurnoverHistory ? (
+                            <Tag>{data.testing.recentTransitions.length} PR history</Tag>
+                          ) : null}
+                        </Space>
+                      </summary>
+                      <div className="secondary-disclosure-body">
+                        <Table
+                          rowKey="login"
+                          size="middle"
+                          columns={testerColumns}
+                          dataSource={data.testing.testers}
+                          scroll={{ x: 760 }}
+                          pagination={false}
+                          locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
+                        />
+                        {testingHasIssueTransitions ? (
+                          <Table
+                            className="testing-transition-table"
+                            rowKey="id"
+                            size="middle"
+                            columns={testingIssueTransitionColumns}
+                            dataSource={data.testing.recentIssueTransitions}
+                            scroll={{ x: 1040 }}
+                            pagination={{ pageSize: 6 }}
+                            locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
+                          />
+                        ) : null}
+                        {testingHasTurnoverHistory ? (
+                          <>
+                            <Alert
+                              className="band"
+                              type="info"
+                              title="Legacy PR transition history"
+                              description="This table is kept for audit/debugging. Current testing handoff is issue-scoped, so reviewer-only PR signals should not be treated as test requests."
+                              showIcon
+                            />
+                            <Table
+                              className="testing-transition-table"
+                              rowKey="id"
+                              size="middle"
+                              columns={testingTransitionColumns}
+                              dataSource={data.testing.recentTransitions}
+                              scroll={{ x: 1040 }}
+                              pagination={{ pageSize: 6 }}
+                              locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
+                            />
+                          </>
+                        ) : null}
+                      </div>
+                    </details>
+                  </>
+                ) : (
+                  <>
+                    <PrFilterBar
+                      scopeFilter={prScopeFilter}
+                      onScopeFilterChange={(scope) => {
+                        setPrScopeFilter(scope);
+                        if (isTestingPrScope(scope)) {
+                          setPrBoardTab("testing");
+                        }
+                      }}
+                    />
+                    <PrBoardSummary
+                      prs={data.pendingPrs}
+                      filteredPrs={filteredPendingPrs}
+                      criticalIssuesByPr={criticalIssuesByPr}
+                      scopeFilter={prScopeFilter}
+                      onScopeFilterChange={(scope) => {
+                        setPrScopeFilter(scope);
+                        if (isTestingPrScope(scope)) {
+                          setPrBoardTab("testing");
+                        }
+                      }}
+                    />
+                    <Table
+                      rowKey="number"
+                      size="middle"
+                      columns={prColumns}
+                      dataSource={filteredPendingPrs}
+                      scroll={{ x: 1720 }}
+                      pagination={{ pageSize: 10 }}
+                      locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
+                    />
+                  </>
+                )}
               </section>
             ) : null}
 
@@ -10732,34 +10820,6 @@ export default function App() {
                   selectedLogin={selectedPersonalView?.login ?? null}
                   onSelect={openPersonWorkbench}
                   onMetricSelect={openPersonalDrilldown}
-                />
-              </section>
-            ) : null}
-
-            {view === "PRs" ? (
-              <section className="section">
-                <div className="section-heading">
-                  <div>
-                    <Title level={4}>Pending PRs</Title>
-                    <Text type="secondary">{prScopeLabel(prScopeFilter)} | Stale checks use last human action</Text>
-                  </div>
-                </div>
-                <PrFilterBar scopeFilter={prScopeFilter} onScopeFilterChange={setPrScopeFilter} />
-                <PrBoardSummary
-                  prs={data.pendingPrs}
-                  filteredPrs={filteredPendingPrs}
-                  criticalIssuesByPr={criticalIssuesByPr}
-                  scopeFilter={prScopeFilter}
-                  onScopeFilterChange={setPrScopeFilter}
-                />
-                <Table
-                  rowKey="number"
-                  size="middle"
-                  columns={prColumns}
-                  dataSource={filteredPendingPrs}
-                  scroll={{ x: 1720 }}
-                  pagination={{ pageSize: 10 }}
-                  locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
                 />
               </section>
             ) : null}

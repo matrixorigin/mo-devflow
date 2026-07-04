@@ -1461,6 +1461,40 @@ button.team-status-row:focus-visible {
   margin: 0 !important;
 }
 
+.pr-workflow-section {
+  display: grid;
+  gap: 12px;
+}
+
+.pr-workflow-heading {
+  align-items: start;
+  border-bottom: 1px solid #eef2f7;
+  display: grid;
+  gap: 10px;
+  justify-content: start;
+  justify-items: start;
+  margin-bottom: 0;
+  padding-bottom: 12px;
+}
+
+.pr-workflow-heading > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pr-workflow-status-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr-diagnostic-disclosure {
+  margin-bottom: 0;
+}
+
 .subsection-heading {
   align-items: center;
   display: flex;
