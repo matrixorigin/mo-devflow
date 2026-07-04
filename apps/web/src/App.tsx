@@ -125,6 +125,8 @@ type PrScopeFilter =
   | "attention"
   | "testing"
   | "stale_testing"
+  | "testing_owner_gap"
+  | "testing_evidence_gap"
   | "ci_failed"
   | "request_changes"
   | "conflict"
@@ -994,6 +996,12 @@ function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "stale_testing") {
     return "stale testing";
   }
+  if (filter === "testing_owner_gap") {
+    return "testing owner gaps";
+  }
+  if (filter === "testing_evidence_gap") {
+    return "testing evidence gaps";
+  }
   if (filter === "ci_failed") {
     return "CI failed";
   }
@@ -1138,6 +1146,12 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
   }
   if (scopeFilter === "stale_testing") {
     return isTestingStalePr(pr);
+  }
+  if (scopeFilter === "testing_owner_gap") {
+    return isTestingOwnerGapPr(pr);
+  }
+  if (scopeFilter === "testing_evidence_gap") {
+    return isTestingEvidenceGapPr(pr);
   }
   if (scopeFilter === "ci_failed") {
     return prHasFailedCi(pr);
@@ -2642,6 +2656,8 @@ function PrBoardSummary({
   const attentionPrs = prs.filter((pr) => pr.attentionFlags.length > 0).length;
   const testingPrs = prs.filter(isTestingQueuePr).length;
   const staleTestingPrs = prs.filter(isTestingStalePr).length;
+  const testingOwnerGapPrs = prs.filter(isTestingOwnerGapPr).length;
+  const testingEvidenceGapPrs = prs.filter(isTestingEvidenceGapPr).length;
   const ciFailedPrs = prs.filter(prHasFailedCi).length;
   const requestedChangePrs = prs.filter(prHasRequestChanges).length;
   const conflictPrs = prs.filter(prHasConflict).length;
@@ -2677,6 +2693,20 @@ function PrBoardSummary({
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
         onClick={() => onScopeFilterChange("stale_testing")}
+      />
+      <CriticalBoardStat
+        label="test owner gap"
+        value={testingOwnerGapPrs}
+        tone={testingOwnerGapPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "testing_owner_gap"}
+        onClick={() => onScopeFilterChange("testing_owner_gap")}
+      />
+      <CriticalBoardStat
+        label="test evidence gap"
+        value={testingEvidenceGapPrs}
+        tone={testingEvidenceGapPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "testing_evidence_gap"}
+        onClick={() => onScopeFilterChange("testing_evidence_gap")}
       />
       <CriticalBoardStat
         label="CI failed"
@@ -2922,6 +2952,17 @@ function isTestingStalePr(pr: PendingPrView): boolean {
   return pr.attentionFlags.includes("testing_stalled") || (pr.testingQueueAgeHours ?? 0) >= 24;
 }
 
+function isTestingOwnerGapPr(pr: PendingPrView): boolean {
+  return isTestingQueuePr(pr) && pr.testingTesters.length === 0;
+}
+
+function isTestingEvidenceGapPr(pr: PendingPrView): boolean {
+  return (
+    isTestingQueuePr(pr) &&
+    (pr.testingQueueAgeHours === null || !pr.isComplete || !pr.detailSyncedAt || pr.detailError !== null)
+  );
+}
+
 function sortTestingQueuePrs<T extends PendingPrView>(prs: T[]): T[] {
   return [...prs].sort((left, right) => {
     const staleDelta = Number(isTestingStalePr(right)) - Number(isTestingStalePr(left));
@@ -3013,8 +3054,11 @@ function TestingCommandBoard({
 }) {
   const queuePrs = sortTestingQueuePrs(pendingPrs.filter(isTestingQueuePr));
   const stalePrs = queuePrs.filter(isTestingStalePr);
-  const missingTesterPrs = queuePrs.filter((pr) => pr.testingTesters.length === 0);
-  const activePrs = queuePrs.filter((pr) => !isTestingStalePr(pr) && pr.testingTesters.length > 0);
+  const missingTesterPrs = queuePrs.filter(isTestingOwnerGapPr);
+  const evidenceGapPrs = queuePrs.filter(isTestingEvidenceGapPr);
+  const activePrs = queuePrs.filter(
+    (pr) => !isTestingStalePr(pr) && !isTestingOwnerGapPr(pr) && !isTestingEvidenceGapPr(pr)
+  );
   const partialTransitions = testing.recentTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
@@ -3059,6 +3103,18 @@ function TestingCommandBoard({
           onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
+          label="owner gaps"
+          value={missingTesterPrs.length}
+          tone={missingTesterPrs.length > 0 ? "attention" : "normal"}
+          onClick={() => onOpenPrsFilter("testing_owner_gap")}
+        />
+        <TestingBoardStat
+          label="evidence gaps"
+          value={evidenceGapPrs.length}
+          tone={evidenceGapPrs.length > 0 ? "attention" : "normal"}
+          onClick={() => onOpenPrsFilter("testing_evidence_gap")}
+        />
+        <TestingBoardStat
           label="closed no pass"
           value={testing.closedWithoutPassSignalSamples}
           tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
@@ -3068,7 +3124,7 @@ function TestingCommandBoard({
           label="partial events"
           value={partialTransitions}
           tone={partialTransitions > 0 ? "attention" : "normal"}
-          onClick={() => onOpenPrsFilter("testing")}
+          onClick={() => onOpenPrsFilter("testing_evidence_gap")}
         />
       </div>
 
@@ -3105,8 +3161,16 @@ function TestingCommandBoard({
           emptyText="All visible testing PRs have tester owners"
         />
         <TestingQueueLane
+          title="Evidence Gaps"
+          description="Testing-state PRs with unknown queue age, partial cache, or detail sync errors."
+          prs={evidenceGapPrs}
+          visibleLimit={6}
+          tone="attention"
+          emptyText="No testing evidence gaps in cached pending PRs"
+        />
+        <TestingQueueLane
           title="Active Testing Movement"
-          description="Recently active testing handoffs without stale attention flags."
+          description="Recently active testing handoffs without stale, owner, or evidence gaps."
           prs={activePrs}
           visibleLimit={6}
           tone="normal"
