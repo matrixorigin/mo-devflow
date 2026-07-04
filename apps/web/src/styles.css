@@ -2783,6 +2783,36 @@ button.testing-board-stat:focus-visible {
   padding-bottom: 14px;
 }
 
+.profile-capability-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  min-width: 0;
+}
+
+.profile-capability-item {
+  align-items: start;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px;
+}
+
+.profile-capability-item > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-capability-item .ant-tag {
+  margin-inline-end: 0;
+  white-space: nowrap;
+}
+
 .person-board {
   display: grid;
   gap: 12px;

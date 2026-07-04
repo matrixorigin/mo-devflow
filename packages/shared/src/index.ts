@@ -123,6 +123,49 @@ export interface ProfileSetupPlan {
   yamlPatch: string | null;
 }
 
+export interface RepoProfileConfigurationStatus {
+  localCheckoutConfigured: boolean;
+  watchedUsersConfigured: boolean;
+  watchedUserCount: number;
+  testersConfigured: boolean;
+  testerCount: number;
+  testingHandoffConfigured: boolean;
+  workflowSkipUsersConfigured: boolean;
+  workflowSkipUserCount: number;
+  notificationEmployeesConfigured: boolean;
+  notificationEmployeeCount: number;
+  webhookSecretConfigured: boolean;
+}
+
+export function repoProfileConfigurationStatus(
+  profile: RepoProfile,
+  env: Record<string, string | undefined> = {}
+): RepoProfileConfigurationStatus {
+  const watchedUserCount = profile.people.watchedUsers.length;
+  const testerCount = profile.people.testers.length;
+  const workflowSkipUserCount = profile.workflow.skipUsers.length;
+  const notificationEmployeeCount = Object.keys(profile.notifications.employees).length;
+  const issueHandoffSignals = [
+    ...(profile.people.testers ?? []),
+    ...(profile.testing.handoffSignals?.assigneeUsers ?? []),
+    ...(profile.testing.handoffSignals?.labels ?? [])
+  ].filter((value) => value.trim().length > 0);
+
+  return {
+    localCheckoutConfigured: Boolean(profile.repo.localPath),
+    watchedUsersConfigured: watchedUserCount > 0,
+    watchedUserCount,
+    testersConfigured: testerCount > 0,
+    testerCount,
+    testingHandoffConfigured: issueHandoffSignals.length > 0,
+    workflowSkipUsersConfigured: workflowSkipUserCount > 0,
+    workflowSkipUserCount,
+    notificationEmployeesConfigured: notificationEmployeeCount > 0,
+    notificationEmployeeCount,
+    webhookSecretConfigured: Boolean(env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET?.trim())
+  };
+}
+
 export interface NormalizedIssue {
   githubId: number;
   number: number;
@@ -977,6 +1020,7 @@ export interface DashboardSummary {
     name: string;
     timezone: string;
   };
+  profileConfiguration: RepoProfileConfigurationStatus;
   profileWarnings: ProfileConfigurationWarning[];
   profileActions: ProfileActionSuggestion[];
   profileSetup: ProfileSetupPlan;

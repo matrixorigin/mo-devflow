@@ -41,7 +41,13 @@ import type {
   WorkflowViolationView,
   WriteActionExecutionView
 } from "@mo-devflow/shared";
-import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthLayers } from "@mo-devflow/shared";
+import {
+  extractLinkedIssueNumbers,
+  parseJsonArray,
+  parseJsonRecord,
+  repoProfileConfigurationStatus,
+  syncHealthLayers
+} from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { createHash } from "node:crypto";
 import { activeCacheStaleSummarySql } from "./cacheHealthSql";
@@ -689,10 +695,6 @@ export function criticalIssueOwnerCoverage(
     });
 }
 
-function hasTestingHandoffSignal(profile: RepoProfile): boolean {
-  return testingAssigneeLogins(profile).length > 0 || testingLabelNames(profile).length > 0;
-}
-
 function testingAssigneeLogins(profile: RepoProfile): string[] {
   return uniqueValues([...(profile.people.testers ?? []), ...(profile.testing.handoffSignals?.assigneeUsers ?? [])]);
 }
@@ -926,8 +928,9 @@ export function profileConfigurationWarnings(input: {
   env: Record<string, string | undefined>;
 }): ProfileConfigurationWarning[] {
   const { profile, env } = input;
+  const configuration = repoProfileConfigurationStatus(profile, env);
   const warnings: ProfileConfigurationWarning[] = [];
-  if (profile.people.watchedUsers.length === 0) {
+  if (!configuration.watchedUsersConfigured) {
     warnings.push({
       key: "profile:watched_users_empty",
       severity: "warning",
@@ -938,7 +941,7 @@ export function profileConfigurationWarnings(input: {
     });
   }
 
-  if (!hasTestingHandoffSignal(profile)) {
+  if (!configuration.testingHandoffConfigured) {
     warnings.push({
       key: "profile:testing_handoff_unconfigured",
       severity: "warning",
@@ -950,7 +953,7 @@ export function profileConfigurationWarnings(input: {
     });
   }
 
-  if (!env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET?.trim()) {
+  if (!configuration.webhookSecretConfigured) {
     warnings.push({
       key: "webhook:secret_unconfigured",
       severity: "warning",
@@ -4244,6 +4247,7 @@ export async function getDashboardSummary(
       name: profile.repo.name,
       timezone: profile.reporting.timezone
     },
+    profileConfiguration: repoProfileConfigurationStatus(profile, process.env),
     profileWarnings: profileConfigurationWarnings({ profile, env: process.env }),
     profileActions,
     profileSetup,

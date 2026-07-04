@@ -1,4 +1,4 @@
-import type { RepoProfile } from "@mo-devflow/shared";
+import { repoProfileConfigurationStatus, type RepoProfile } from "@mo-devflow/shared";
 
 export function publicRepoProfileView(profile: RepoProfile) {
   return {
@@ -16,16 +16,6 @@ export function publicRepoProfileView(profile: RepoProfile) {
     },
     labels: profile.labels,
     thresholds: profile.thresholds,
-    configuration: {
-      localCheckoutConfigured: Boolean(profile.repo.localPath),
-      watchedUsersConfigured: profile.people.watchedUsers.length > 0,
-      watchedUserCount: profile.people.watchedUsers.length,
-      testersConfigured: profile.people.testers.length > 0,
-      testerCount: profile.people.testers.length,
-      workflowSkipUsersConfigured: profile.workflow.skipUsers.length > 0,
-      workflowSkipUserCount: profile.workflow.skipUsers.length,
-      notificationEmployeesConfigured: Object.keys(profile.notifications.employees).length > 0,
-      notificationEmployeeCount: Object.keys(profile.notifications.employees).length
-    }
+    configuration: repoProfileConfigurationStatus(profile, process.env)
   };
 }

@@ -652,6 +652,67 @@ function profileSetupCapabilityLabel(value: DashboardSummary["profileSetup"]["mi
   return "notification employees";
 }
 
+interface ProfileCapabilityCard {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  configured: boolean;
+}
+
+function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[] {
+  const configuration = data.profileConfiguration;
+  return [
+    {
+      key: "watched-users",
+      label: "People",
+      value: configuration.watchedUsersConfigured ? `${configuration.watchedUserCount} watched` : "not configured",
+      detail: configuration.watchedUsersConfigured
+        ? "Personal boards, triage, deferred, and trends use the configured people set."
+        : "Personal boards fall back to observed active owners only.",
+      configured: configuration.watchedUsersConfigured
+    },
+    {
+      key: "issue-testing",
+      label: "Issue testing",
+      value: configuration.testingHandoffConfigured ? `${configuration.testerCount} testers` : "not configured",
+      detail: configuration.testingHandoffConfigured
+        ? "Testing queue is driven by issue assignee or issue label handoff signals."
+        : "Testing turnover cannot be trusted until issue handoff signals are configured.",
+      configured: configuration.testingHandoffConfigured
+    },
+    {
+      key: "local-checkout",
+      label: "Local checkout",
+      value: configuration.localCheckoutConfigured ? "available" : "not configured",
+      detail: configuration.localCheckoutConfigured
+        ? "Local source context can enrich diagnostics without being exposed in API responses."
+        : "Dashboards work from GitHub cache only.",
+      configured: configuration.localCheckoutConfigured
+    },
+    {
+      key: "notification-employees",
+      label: "Notification mappings",
+      value: configuration.notificationEmployeesConfigured
+        ? `${configuration.notificationEmployeeCount} mapped`
+        : "not configured",
+      detail: configuration.notificationEmployeesConfigured
+        ? "Owner-routed notification delivery can use employee mappings."
+        : "Owner-routed notifications will use fallback routing.",
+      configured: configuration.notificationEmployeesConfigured
+    },
+    {
+      key: "webhook-ingest",
+      label: "Webhook ingest",
+      value: configuration.webhookSecretConfigured ? "enabled" : "polling only",
+      detail: configuration.webhookSecretConfigured
+        ? "Signed GitHub deliveries can update the cache near real time."
+        : "Worker polling and manual refresh are the update path.",
+      configured: configuration.webhookSecretConfigured
+    }
+  ];
+}
+
 function attentionSeverityColor(severity: "info" | "warning" | "critical"): string {
   if (severity === "critical") {
     return "red";
@@ -11244,6 +11305,12 @@ export default function App() {
     ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped).slice(0, 8)
     : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
+  const profileSetupIssueCount = data ? data.profileWarnings.length + data.profileActions.length : 0;
+  const profileSetupCapabilities = data ? profileCapabilityCards(data) : [];
+  const showProfileSetup =
+    Boolean(data) &&
+    view === "Overview" &&
+    (profileSetupIssueCount > 0 || profileSetupCapabilities.some((capability) => capability.configured));
   const freshness = data ? summarizeFreshness(data.sync) : null;
   const cacheEvidence = data ? summarizeCacheEvidence({ sync: data.sync, visibility: data.visibility }) : null;
   const cacheImpactItems = data ? cacheEvidenceImpactItems(data) : [];
@@ -11510,13 +11577,29 @@ export default function App() {
               />
             ) : null}
 
-            {view === "Overview" && (data.profileWarnings.length > 0 || data.profileActions.length > 0) ? (
+            {showProfileSetup ? (
               <details className="secondary-disclosure">
                 <summary>
                   <span>Profile setup</span>
-                  <Tag color="orange">{data.profileWarnings.length + data.profileActions.length}</Tag>
+                  <Tag color={profileSetupIssueCount > 0 ? "orange" : "green"}>
+                    {profileSetupIssueCount > 0
+                      ? `${profileSetupIssueCount} ${profileSetupIssueCount === 1 ? "action" : "actions"}`
+                      : "configured"}
+                  </Tag>
                 </summary>
                 <div className="secondary-disclosure-body">
+                  <div className="profile-capability-grid" aria-label="Repository profile capabilities">
+                    {profileSetupCapabilities.map((capability) => (
+                      <div className="profile-capability-item" key={capability.key}>
+                        <div>
+                          <Text strong>{capability.label}</Text>
+                          <Text type="secondary">{capability.detail}</Text>
+                        </div>
+                        <Tag color={capability.configured ? "green" : "default"}>{capability.value}</Tag>
+                      </div>
+                    ))}
+                  </div>
+
                   {data.profileWarnings.map((warning) => (
                     <Alert
                       key={warning.key}

@@ -85,10 +85,12 @@ describe("public repo profile view", () => {
       watchedUserCount: 1,
       testersConfigured: true,
       testerCount: 1,
+      testingHandoffConfigured: true,
       workflowSkipUsersConfigured: true,
       workflowSkipUserCount: 1,
       notificationEmployeesConfigured: true,
-      notificationEmployeeCount: 1
+      notificationEmployeeCount: 1,
+      webhookSecretConfigured: false
     });
     expect(view.access.userTokenPrivateDataProtected).toBe(true);
     expect(serialized).not.toContain("/Users/private");
