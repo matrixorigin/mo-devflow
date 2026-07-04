@@ -114,6 +114,8 @@ const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
+type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing";
+type CriticalIssueAiFilter = "all" | string;
 const viewOptions = [
   "Overview",
   "Issues",
@@ -820,6 +822,118 @@ function FlowEfficiencyItem({
   );
 }
 
+const defaultCriticalIssueAiLabels = ["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"];
+
+function criticalIssueAiOptions(issues: CriticalIssueView[]): Array<{ label: string; value: string }> {
+  const labels = new Set(defaultCriticalIssueAiLabels);
+  for (const issue of issues) {
+    labels.add(effectiveAiEffortLabel(issue.aiEffortLabel));
+  }
+  return [
+    { label: "All AI", value: "all" },
+    ...Array.from(labels).map((label) => ({
+      label,
+      value: label
+    }))
+  ];
+}
+
+function criticalIssueMatchesAi(issue: CriticalIssueView, aiFilter: CriticalIssueAiFilter): boolean {
+  return aiFilter === "all" || effectiveAiEffortLabel(issue.aiEffortLabel) === aiFilter;
+}
+
+function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: CriticalIssueScopeFilter): boolean {
+  if (scopeFilter === "s-1") {
+    return issue.severity === "severity/s-1";
+  }
+  if (scopeFilter === "s0") {
+    return issue.severity === "severity/s0";
+  }
+  if (scopeFilter === "no_pr") {
+    return issue.linkedPullRequests.length === 0;
+  }
+  if (scopeFilter === "owner_gap") {
+    return issue.ownerScope !== "watched";
+  }
+  if (scopeFilter === "timeline_missing") {
+    return issue.criticalAgeEvidence === "missing_timeline";
+  }
+  return true;
+}
+
+function filterCriticalIssues(
+  issues: CriticalIssueView[],
+  aiFilter: CriticalIssueAiFilter,
+  scopeFilter: CriticalIssueScopeFilter
+): CriticalIssueView[] {
+  return issues.filter(
+    (issue) => criticalIssueMatchesAi(issue, aiFilter) && criticalIssueMatchesScope(issue, scopeFilter)
+  );
+}
+
+function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
+  if (filter === "s-1") {
+    return "s-1";
+  }
+  if (filter === "s0") {
+    return "s0";
+  }
+  if (filter === "no_pr") {
+    return "no linked PR";
+  }
+  if (filter === "owner_gap") {
+    return "owner gaps";
+  }
+  if (filter === "timeline_missing") {
+    return "timeline missing";
+  }
+  return "all active";
+}
+
+function CriticalIssueFilterBar({
+  issues,
+  aiFilter,
+  scopeFilter,
+  onAiFilterChange,
+  onScopeFilterChange
+}: {
+  issues: CriticalIssueView[];
+  aiFilter: CriticalIssueAiFilter;
+  scopeFilter: CriticalIssueScopeFilter;
+  onAiFilterChange: (value: CriticalIssueAiFilter) => void;
+  onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+}) {
+  return (
+    <div className="board-filter-bar" aria-label="Critical issue filters">
+      <div className="board-filter-group">
+        <Text type="secondary">Scope</Text>
+        <Segmented
+          size="small"
+          value={scopeFilter}
+          onChange={(value) => onScopeFilterChange(value as CriticalIssueScopeFilter)}
+          options={[
+            { label: "All", value: "all" },
+            { label: "s-1", value: "s-1" },
+            { label: "s0", value: "s0" },
+            { label: "No PR", value: "no_pr" },
+            { label: "Owner gap", value: "owner_gap" },
+            { label: "No timeline", value: "timeline_missing" }
+          ]}
+        />
+      </div>
+      <div className="board-filter-group">
+        <Text type="secondary">AI</Text>
+        <Segmented
+          size="small"
+          value={aiFilter}
+          onChange={(value) => onAiFilterChange(String(value))}
+          options={criticalIssueAiOptions(issues)}
+        />
+      </div>
+    </div>
+  );
+}
+
 function TeamRotationOverview({
   data,
   flowSummary,
@@ -827,7 +941,12 @@ function TeamRotationOverview({
   analyticsPeriod,
   onAnalyticsPeriodChange,
   onNavigate,
-  onPersonSelect
+  onPersonSelect,
+  criticalAiFilter,
+  criticalScopeFilter,
+  onCriticalAiFilterChange,
+  onCriticalScopeFilterChange,
+  onOpenIssuesFilter
 }: {
   data: DashboardSummary;
   flowSummary: FlowEfficiencySummary | null;
@@ -836,8 +955,15 @@ function TeamRotationOverview({
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
   onNavigate: (view: DashboardView) => void;
   onPersonSelect: (login: string) => void;
+  criticalAiFilter: CriticalIssueAiFilter;
+  criticalScopeFilter: CriticalIssueScopeFilter;
+  onCriticalAiFilterChange: (value: CriticalIssueAiFilter) => void;
+  onCriticalScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
 }) {
-  const criticalIssues = sortCriticalIssuesForAction(data.criticalIssues);
+  const criticalIssues = sortCriticalIssuesForAction(
+    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
+  );
   const prRisks = sortPendingPrsForAction(data.pendingPrs);
   const testingPrs = sortTestingQueuePrs(data.pendingPrs.filter(isTestingQueuePr));
   const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
@@ -855,10 +981,20 @@ function TeamRotationOverview({
             </Text>
           </div>
           <Space size={[6, 6]} wrap>
-            <Tag color={sMinusOneIssues > 0 ? "red" : "default"}>{sMinusOneIssues} s-1</Tag>
-            <Tag color={data.counts.criticalIssues > 0 ? "red" : "default"}>
+            <button
+              type="button"
+              className={`inline-filter-chip ${sMinusOneIssues > 0 ? "inline-filter-chip-red" : ""}`}
+              onClick={() => onOpenIssuesFilter({ scope: "s-1" })}
+            >
+              {sMinusOneIssues} s-1
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${data.counts.criticalIssues > 0 ? "inline-filter-chip-red" : ""}`}
+              onClick={() => onOpenIssuesFilter({ scope: "all" })}
+            >
               {data.counts.criticalIssues} active s-1/s0
-            </Tag>
+            </button>
             <Tag color={data.counts.attentionPrs > 0 ? "orange" : "default"}>
               {data.counts.attentionPrs} PR attention
             </Tag>
@@ -877,7 +1013,7 @@ function TeamRotationOverview({
             value={data.counts.criticalIssues}
             detail={`${sMinusOneIssues} s-1 | ${data.counts.unownedCriticalIssues} unowned`}
             tone={data.counts.criticalIssues > 0 ? "critical" : "good"}
-            onClick={() => onNavigate("Issues")}
+            onClick={() => onOpenIssuesFilter({ scope: "all" })}
           />
           <TeamMonitorTile
             label="PR blockers"
@@ -913,11 +1049,20 @@ function TeamRotationOverview({
       <div className="team-rotation-grid">
         <div className="team-rotation-main">
           <TeamRotationLane
-            title="Critical Issue Rotation"
-            count={data.counts.criticalIssues}
+            title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
+            count={criticalIssues.length}
             actionLabel="Open Issues"
             tone="critical"
-            onAction={() => onNavigate("Issues")}
+            onAction={() => onOpenIssuesFilter({})}
+            controls={
+              <CriticalIssueFilterBar
+                issues={data.criticalIssues}
+                aiFilter={criticalAiFilter}
+                scopeFilter={criticalScopeFilter}
+                onAiFilterChange={onCriticalAiFilterChange}
+                onScopeFilterChange={onCriticalScopeFilterChange}
+              />
+            }
           >
             {criticalIssues.slice(0, 6).map((issue) => (
               <TeamCriticalIssueRow issue={issue} key={issue.number} />
@@ -990,13 +1135,21 @@ function TeamMonitorTile({
   value: number;
   detail: string;
   tone: "critical" | "attention" | "good";
-  onClick: () => void;
+  onClick?: () => void;
 }) {
-  return (
-    <button type="button" className={`team-monitor-tile team-monitor-${tone}`} onClick={onClick}>
+  const content = (
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
+    </>
+  );
+  if (!onClick) {
+    return <div className={`team-monitor-tile team-monitor-${tone}`}>{content}</div>;
+  }
+  return (
+    <button type="button" className={`team-monitor-tile team-monitor-${tone}`} onClick={onClick}>
+      {content}
     </button>
   );
 }
@@ -1007,7 +1160,8 @@ function TeamRotationLane({
   actionLabel,
   tone,
   onAction,
-  children
+  children,
+  controls
 }: {
   title: string;
   count: number;
@@ -1015,14 +1169,18 @@ function TeamRotationLane({
   tone: "critical" | "attention";
   onAction: () => void;
   children: ReactNode;
+  controls?: ReactNode;
 }) {
   return (
     <section className={`team-rotation-lane team-rotation-lane-${tone}`}>
       <div className="team-rotation-lane-heading">
-        <Space size={[6, 6]} wrap>
-          <Text strong>{title}</Text>
-          <Tag color={tone === "critical" ? "red" : "orange"}>{count}</Tag>
-        </Space>
+        <div className="team-rotation-lane-title">
+          <Space size={[6, 6]} wrap>
+            <Text strong>{title}</Text>
+            <Tag color={tone === "critical" ? "red" : "orange"}>{count}</Tag>
+          </Space>
+          {controls}
+        </div>
         <Button size="small" onClick={onAction}>
           {actionLabel}
         </Button>
@@ -1146,9 +1304,7 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
       <div className="team-work-action">
         <Text type="secondary">Next</Text>
         <Text strong>{teamPrNextAction(pr)}</Text>
-        <small>
-          {pr.testingTesters.length > 0 ? `testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "no tester owner"}
-        </small>
+        <small>{prActionContext(pr)}</small>
       </div>
     </article>
   );
@@ -1303,6 +1459,16 @@ function pendingPrRiskScore(pr: PendingPrView): number {
     (pr.linkedIssueNumbers.length === 0 ? 45 : 0) +
     (!pr.isComplete ? 30 : 0)
   );
+}
+
+function prActionContext(pr: PendingPrView): string {
+  if (isTestingQueuePr(pr)) {
+    return pr.testingTesters.length > 0 ? `testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "no tester owner";
+  }
+  if (pr.linkedIssueNumbers.length > 0) {
+    return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
+  }
+  return "no linked issue";
 }
 
 function teamPrNextAction(pr: PendingPrView): string {
@@ -1866,14 +2032,29 @@ function criticalIssueNextAction(issue: CriticalIssueView): string {
   return issue.severity === "severity/s-1" ? "Drive emergency closure" : "Drive active execution";
 }
 
-function CriticalIssueBoard({ issues }: { issues: CriticalIssueView[] }) {
+function CriticalIssueBoard({
+  issues,
+  aiFilter,
+  scopeFilter,
+  onAiFilterChange,
+  onScopeFilterChange
+}: {
+  issues: CriticalIssueView[];
+  aiFilter: CriticalIssueAiFilter;
+  scopeFilter: CriticalIssueScopeFilter;
+  onAiFilterChange: (value: CriticalIssueAiFilter) => void;
+  onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+}) {
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
   }
-  const sMinusOneIssues = sortCriticalIssuesForAction(issues.filter((issue) => issue.severity === "severity/s-1"));
-  const sZeroIssues = sortCriticalIssuesForAction(issues.filter((issue) => issue.severity === "severity/s0"));
+  const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter);
+  const sMinusOneIssues = sortCriticalIssuesForAction(
+    filteredIssues.filter((issue) => issue.severity === "severity/s-1")
+  );
+  const sZeroIssues = sortCriticalIssuesForAction(filteredIssues.filter((issue) => issue.severity === "severity/s0"));
   const otherCriticalIssues = sortCriticalIssuesForAction(
-    issues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0")
+    filteredIssues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0")
   );
   const missingTimeline = issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length;
   const noLinkedPr = issues.filter((issue) => issue.linkedPullRequests.length === 0).length;
@@ -1882,16 +2063,59 @@ function CriticalIssueBoard({ issues }: { issues: CriticalIssueView[] }) {
 
   return (
     <div className="critical-board">
+      <CriticalIssueFilterBar
+        issues={issues}
+        aiFilter={aiFilter}
+        scopeFilter={scopeFilter}
+        onAiFilterChange={onAiFilterChange}
+        onScopeFilterChange={onScopeFilterChange}
+      />
       <div className="critical-board-summary" aria-label="Active critical issue summary">
-        <CriticalBoardStat label="s-1" value={sMinusOneIssues.length} tone="critical" />
-        <CriticalBoardStat label="s0" value={sZeroIssues.length} tone="attention" />
-        <CriticalBoardStat label="no linked PR" value={noLinkedPr} tone={noLinkedPr > 0 ? "attention" : "good"} />
+        <CriticalBoardStat
+          label="shown"
+          value={filteredIssues.length}
+          tone={filteredIssues.length > 0 ? "attention" : "good"}
+          active={scopeFilter !== "all" || aiFilter !== "all"}
+          onClick={() => {
+            onScopeFilterChange("all");
+            onAiFilterChange("all");
+          }}
+        />
+        <CriticalBoardStat
+          label="s-1"
+          value={issues.filter((issue) => issue.severity === "severity/s-1").length}
+          tone="critical"
+          active={scopeFilter === "s-1"}
+          onClick={() => onScopeFilterChange("s-1")}
+        />
+        <CriticalBoardStat
+          label="s0"
+          value={issues.filter((issue) => issue.severity === "severity/s0").length}
+          tone="attention"
+          active={scopeFilter === "s0"}
+          onClick={() => onScopeFilterChange("s0")}
+        />
+        <CriticalBoardStat
+          label="no linked PR"
+          value={noLinkedPr}
+          tone={noLinkedPr > 0 ? "attention" : "good"}
+          active={scopeFilter === "no_pr"}
+          onClick={() => onScopeFilterChange("no_pr")}
+        />
         <CriticalBoardStat
           label="timeline missing"
           value={missingTimeline}
           tone={missingTimeline > 0 ? "attention" : "good"}
+          active={scopeFilter === "timeline_missing"}
+          onClick={() => onScopeFilterChange("timeline_missing")}
         />
-        <CriticalBoardStat label="owner gaps" value={ownerGaps} tone={ownerGaps > 0 ? "attention" : "good"} />
+        <CriticalBoardStat
+          label="owner gaps"
+          value={ownerGaps}
+          tone={ownerGaps > 0 ? "attention" : "good"}
+          active={scopeFilter === "owner_gap"}
+          onClick={() => onScopeFilterChange("owner_gap")}
+        />
         <CriticalBoardStat label="skip automation" value={skipped} tone={skipped > 0 ? "muted" : "good"} />
       </div>
       <div className="critical-board-lanes">
@@ -1927,16 +2151,36 @@ function CriticalIssueBoard({ issues }: { issues: CriticalIssueView[] }) {
 function CriticalBoardStat({
   label,
   value,
-  tone
+  tone,
+  active = false,
+  onClick
 }: {
   label: string;
   value: number;
   tone: "critical" | "attention" | "good" | "muted";
+  active?: boolean;
+  onClick?: () => void;
 }) {
-  return (
-    <span className={`critical-board-stat critical-board-stat-${tone}`}>
+  const content = (
+    <>
       <strong>{value}</strong>
       <small>{label}</small>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`critical-board-stat critical-board-stat-${tone} ${active ? "critical-board-stat-active" : ""}`}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <span className={`critical-board-stat critical-board-stat-${tone} ${active ? "critical-board-stat-active" : ""}`}>
+      {content}
     </span>
   );
 }
@@ -3345,6 +3589,260 @@ function activityReasonColor(reason: string): string {
   return "orange";
 }
 
+function PersonalRotationOverview({
+  person,
+  chart,
+  activityItems
+}: {
+  person: PersonalActionView;
+  chart: PersonalGanttChart;
+  activityItems: PersonalActivityItem[];
+}) {
+  const criticalItems = activityItems.filter((item) => item.tone === "critical");
+  const attentionItems = activityItems.filter((item) => item.tone === "attention");
+  const blockedPrItems = activityItems.filter(
+    (item) => item.objectType === "pull_request" && actionItemHasBlockingSignal(item)
+  );
+  const [aiFilter, setAiFilter] = useState<CriticalIssueAiFilter>("all");
+  const testingStalePrs = person.testingPrs.filter(isTestingStalePr);
+  const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
+  const focusRows = filteredRows.slice(0, 6);
+  const primaryFocus = personalPrimaryFocus(person, chart, blockedPrItems.length, testingStalePrs.length);
+
+  return (
+    <div className="personal-rotation-overview">
+      <section className="team-command-panel personal-command-panel">
+        <div className="team-command-heading">
+          <div>
+            <Title level={5}>Personal Flow Monitor</Title>
+            <Text type="secondary">Issue and PR rotation for {person.login}</Text>
+          </div>
+          <Space size={[6, 6]} wrap>
+            <Tag color={criticalItems.length > 0 ? "red" : "default"}>{criticalItems.length} active s-1/s0</Tag>
+            <Tag color={attentionItems.length > 0 ? "orange" : "default"}>{attentionItems.length} attention</Tag>
+            <Tag>{chart.rows.length} threads</Tag>
+          </Space>
+        </div>
+        <div className="team-focus-callout personal-focus-callout">
+          <UserRound size={18} aria-hidden="true" />
+          <div>
+            <Text strong>{primaryFocus.title}</Text>
+            <span>{primaryFocus.detail}</span>
+          </div>
+        </div>
+        <div className="team-monitor-grid personal-monitor-grid" aria-label="Personal flow monitor">
+          <TeamMonitorTile
+            label="Active issues"
+            value={person.activeCriticalIssues.length}
+            detail={criticalActivitySummary(criticalItems)}
+            tone={person.activeCriticalIssues.length > 0 ? "critical" : "good"}
+          />
+          <TeamMonitorTile
+            label="PR blockers"
+            value={blockedPrItems.length}
+            detail={`${person.attentionPrs.length} attention | ${oldestPersonalPrText(person.pendingPrs)}`}
+            tone={blockedPrItems.length > 0 ? "attention" : "good"}
+          />
+          <TeamMonitorTile
+            label="Testing handoff"
+            value={person.testingPrs.length}
+            detail={`${testingStalePrs.length} stale | ${personalTestingOwnerGaps(person.testingPrs)} owner gaps`}
+            tone={testingStalePrs.length > 0 ? "critical" : person.testingPrs.length > 0 ? "attention" : "good"}
+          />
+          <TeamMonitorTile
+            label="Triage"
+            value={person.needsTriageIssues.length}
+            detail={`${person.deferredIssues.length} deferred`}
+            tone={person.needsTriageIssues.length > 0 ? "attention" : "good"}
+          />
+          <TeamMonitorTile
+            label="Yesterday PR"
+            value={person.prsCreatedYesterday.length + person.prsMergedYesterday.length}
+            detail={`${person.prsCreatedYesterday.length} created | ${person.prsMergedYesterday.length} merged`}
+            tone="good"
+          />
+        </div>
+      </section>
+
+      <div className="personal-rotation-grid">
+        <section className="personal-rotation-lane personal-rotation-lane-critical">
+          <div className="team-rotation-lane-heading">
+            <Space size={[6, 6]} wrap>
+              <Text strong>Issue-PR Threads</Text>
+              <Tag color="red">{filteredRows.length}</Tag>
+            </Space>
+            <div className="board-filter-group board-filter-group-inline">
+              <Text type="secondary">AI</Text>
+              <Segmented
+                size="small"
+                value={aiFilter}
+                onChange={(value) => setAiFilter(String(value))}
+                options={criticalIssueAiOptions(person.activeCriticalIssues)}
+              />
+            </div>
+          </div>
+          <div className="team-rotation-list">
+            {focusRows.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible personal work threads" />
+            ) : (
+              focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} />)
+            )}
+          </div>
+        </section>
+
+        <section className="personal-rotation-lane personal-rotation-lane-attention">
+          <div className="team-rotation-lane-heading">
+            <Space size={[6, 6]} wrap>
+              <Text strong>PR Rotation</Text>
+              <Tag color="orange">{person.attentionPrs.length}</Tag>
+            </Space>
+            <Text type="secondary">review, CI, merge, testing</Text>
+          </div>
+          <div className="team-rotation-list">
+            {person.attentionPrs.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PR blockers" />
+            ) : (
+              person.attentionPrs.slice(0, 5).map((pr) => <TeamPrRiskRow pr={pr} key={pr.number} />)
+            )}
+          </div>
+        </section>
+
+        <section className="personal-rotation-lane personal-rotation-lane-attention">
+          <div className="team-rotation-lane-heading">
+            <Space size={[6, 6]} wrap>
+              <Text strong>Testing Handoff</Text>
+              <Tag color={testingStalePrs.length > 0 ? "red" : "blue"}>{person.testingPrs.length}</Tag>
+            </Space>
+            <Text type="secondary">assigned tester flow</Text>
+          </div>
+          <div className="team-rotation-list">
+            {person.testingPrs.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No testing handoff PRs" />
+            ) : (
+              sortTestingQueuePrs(person.testingPrs)
+                .slice(0, 4)
+                .map((pr) => <TeamPrRiskRow pr={pr} key={pr.number} />)
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function PersonalRotationThreadRow({ row }: { row: PersonalGanttRow }) {
+  const nextAction = flowThreadNextAction(row);
+  const warnings = flowThreadDurationWarnings(row);
+  const reasons = flowThreadReasons(row);
+
+  return (
+    <article className={`personal-thread-row personal-thread-${row.tone}`}>
+      <div className="personal-thread-main">
+        <div className="team-work-title-row">
+          {row.issue.htmlUrl ? (
+            <WorkObjectLink href={row.issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
+              {row.title}
+            </WorkObjectLink>
+          ) : (
+            <Text strong>{row.title}</Text>
+          )}
+          <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue" : "PR group"}</Tag>
+          {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
+          <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{personalDurationText(row.issue)}</Tag>
+        </div>
+        <div className="personal-thread-title">{row.issue.title}</div>
+        <div className="team-work-tags">
+          {warnings.map((warning) => (
+            <Tag color="red" key={warning}>
+              {warning}
+            </Tag>
+          ))}
+          {reasons.slice(0, 4).map((reason) => (
+            <Tag color={activityReasonColor(reason)} key={reason}>
+              {reason}
+            </Tag>
+          ))}
+          {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
+          {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared PR</Tag> : null}
+        </div>
+        <div className="team-linked-row">
+          {row.prs.length > 0 ? (
+            <>
+              <span>PRs</span>
+              {row.prs.slice(0, 5).map((pr) => (
+                <a href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
+                  #{pr.number} {labelText(pr.testingState)}
+                </a>
+              ))}
+              {row.prs.length > 5 ? <span>+{row.prs.length - 5}</span> : null}
+            </>
+          ) : (
+            <span className="team-linked-row-missing">No linked PR visible</span>
+          )}
+        </div>
+      </div>
+      <div className="team-work-action">
+        <Text type="secondary">Next</Text>
+        <Text strong>{nextAction}</Text>
+        <small>
+          {row.issue.durationHours === null ? "duration unknown" : `${hours(row.issue.durationHours)} current lane`}
+        </small>
+      </div>
+    </article>
+  );
+}
+
+function personalThreadMatchesAi(row: PersonalGanttRow, aiFilter: CriticalIssueAiFilter): boolean {
+  if (aiFilter === "all") {
+    return true;
+  }
+  if (!row.issue.aiEffortLabel) {
+    return row.kind === "issue" && aiFilter === "ai-easy";
+  }
+  return row.issue.aiEffortLabel === aiFilter;
+}
+
+function personalPrimaryFocus(
+  person: PersonalActionView,
+  chart: PersonalGanttChart,
+  blockedPrs: number,
+  staleTestingPrs: number
+): { title: string; detail: string } {
+  if (person.activeCriticalIssues.length > 0) {
+    return {
+      title: `${person.activeCriticalIssues.length} active s-1/s0 issues should drive the day.`,
+      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} stale testing handoffs, ${chart.rows.length} issue/PR threads.`
+    };
+  }
+  if (blockedPrs > 0) {
+    return {
+      title: `${blockedPrs} PRs need owner movement.`,
+      detail: `${person.pendingPrs.length} pending PRs; ${person.testingPrs.length} are in testing handoff.`
+    };
+  }
+  if (person.needsTriageIssues.length > 0) {
+    return {
+      title: `${person.needsTriageIssues.length} issues need triage decisions.`,
+      detail: "Decide active s-1/s0 execution or defer with a clear reason."
+    };
+  }
+  return {
+    title: "No high-priority personal blockers in cached data.",
+    detail: `${person.pendingPrs.length} pending PRs and ${chart.rows.length} visible issue/PR threads remain.`
+  };
+}
+
+function oldestPersonalPrText(prs: PersonalPullRequestView[]): string {
+  if (prs.length === 0) {
+    return "no pending PR";
+  }
+  return `oldest ${hours(Math.max(...prs.map((pr) => pr.ageHours)))}`;
+}
+
+function personalTestingOwnerGaps(prs: PersonalPullRequestView[]): number {
+  return prs.filter((pr) => isTestingQueuePr(pr) && pr.testingTesters.length === 0).length;
+}
+
 function SelectedPersonWorkbench({
   person,
   analyticsPeriod,
@@ -3395,76 +3893,92 @@ function SelectedPersonWorkbench({
         </div>
       </div>
 
-      <section className="activity-panel">
-        <div className="subsection-heading">
-          <Title level={5}>Action Queue</Title>
-          <Space size={[6, 6]} wrap>
+      <PersonalRotationOverview person={person} chart={gantt} activityItems={activityItems} />
+
+      <details className="secondary-disclosure personal-detail-disclosure">
+        <summary>
+          <span>Action queue and full work threads</span>
+          <Space size={[4, 4]} wrap>
             <Tag color={activityItems.some((item) => item.tone === "critical") ? "red" : "default"}>
-              {activityItems.filter((item) => item.tone === "critical").length} active s-1/s0
+              {activityItems.filter((item) => item.tone === "critical").length} critical
             </Tag>
             <Tag color={activityItems.some((item) => item.tone === "attention") ? "orange" : "default"}>
               {activityItems.filter((item) => item.tone === "attention").length} attention
             </Tag>
-            <Tag>
-              {
-                activityItems.filter(
-                  (item) => item.linkedIssueNumbers.length > 0 || item.linkedPullRequestNumbers.length > 0
-                ).length
-              }{" "}
-              linked objects
-            </Tag>
-          </Space>
-        </div>
-        <PersonalActionQueue items={activityItems} />
-      </section>
-
-      <section className="flow-map-panel">
-        <div className="subsection-heading">
-          <Title level={5}>Work Threads</Title>
-          <Space size={[6, 6]} wrap>
             <Tag>{gantt.rows.length} threads</Tag>
-            <Tag color={gantt.sharedPrCount > 0 ? "purple" : "default"}>{gantt.sharedPrCount} shared PR</Tag>
-            <Tag color={gantt.unlinkedPrCount > 0 ? "orange" : "default"}>{gantt.unlinkedPrCount} unlinked PR</Tag>
-            <Tag color={gantt.outsideIssuePrCount > 0 ? "blue" : "default"}>
-              {gantt.outsideIssuePrCount} outside issue lane
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
+          <section className="activity-panel">
+            <div className="subsection-heading">
+              <Title level={5}>Action Queue</Title>
+              <Space size={[6, 6]} wrap>
+                <Tag>{gantt.sharedPrCount} shared PR</Tag>
+                <Tag color={gantt.unlinkedPrCount > 0 ? "orange" : "default"}>{gantt.unlinkedPrCount} unlinked PR</Tag>
+                <Tag color={gantt.outsideIssuePrCount > 0 ? "blue" : "default"}>
+                  {gantt.outsideIssuePrCount} outside issue lane
+                </Tag>
+              </Space>
+            </div>
+            <PersonalActionQueue items={activityItems} />
+          </section>
+
+          <section className="flow-map-panel">
+            <div className="subsection-heading">
+              <Title level={5}>Work Threads</Title>
+              <Text type="secondary">Issue and PR lanes, including many-to-many links.</Text>
+            </div>
+            <PersonalFlowMap chart={gantt} />
+          </section>
+        </div>
+      </details>
+
+      <details className="secondary-disclosure personal-detail-disclosure">
+        <summary>
+          <span>Object lists</span>
+          <Space size={[4, 4]} wrap>
+            <Tag>{routinePendingPrs.length} routine PR</Tag>
+            <Tag>{person.deferredIssues.length} deferred</Tag>
+            <Tag>
+              yesterday {person.prsCreatedYesterday.length}/{person.prsMergedYesterday.length}
             </Tag>
           </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
+          <div className="work-lane-grid work-lane-grid-priority">
+            <WorkLane title="Active s-1/s0 Issues" count={person.activeCriticalIssues.length} tone="critical">
+              <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
+            </WorkLane>
+            <WorkLane title="PR Attention" count={person.attentionPrs.length} tone="attention">
+              <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
+            </WorkLane>
+            <WorkLane title="Needs Triage" count={person.needsTriageIssues.length} tone="attention">
+              <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
+            </WorkLane>
+          </div>
+
+          <div className="work-lane-grid">
+            <WorkLane title="Pending PRs" count={routinePendingPrs.length} tone="normal">
+              <PullRequestCardList prs={routinePendingPrs} emptyText="No routine pending PRs" />
+            </WorkLane>
+            <WorkLane title="Testing Handoff" count={person.testingPrs.length} tone="normal">
+              <PullRequestCardList prs={person.testingPrs} emptyText="No testing handoff PRs" />
+            </WorkLane>
+            <WorkLane title="Deferred Issues" count={person.deferredIssues.length} tone="normal">
+              <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" />
+            </WorkLane>
+          </div>
+
+          <div className="work-lane-grid work-lane-grid-secondary">
+            <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
+              <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
+            </WorkLane>
+            <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
+              <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
+            </WorkLane>
+          </div>
         </div>
-        <PersonalFlowMap chart={gantt} />
-      </section>
-
-      <div className="work-lane-grid work-lane-grid-priority">
-        <WorkLane title="Active s-1/s0 Issues" count={person.activeCriticalIssues.length} tone="critical">
-          <IssueCardList issues={person.activeCriticalIssues} emptyText="No active s-1/s0 issues" />
-        </WorkLane>
-        <WorkLane title="PR Attention" count={person.attentionPrs.length} tone="attention">
-          <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
-        </WorkLane>
-        <WorkLane title="Needs Triage" count={person.needsTriageIssues.length} tone="attention">
-          <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
-        </WorkLane>
-      </div>
-
-      <div className="work-lane-grid">
-        <WorkLane title="Pending PRs" count={routinePendingPrs.length} tone="normal">
-          <PullRequestCardList prs={routinePendingPrs} emptyText="No routine pending PRs" />
-        </WorkLane>
-        <WorkLane title="Testing Handoff" count={person.testingPrs.length} tone="normal">
-          <PullRequestCardList prs={person.testingPrs} emptyText="No testing handoff PRs" />
-        </WorkLane>
-        <WorkLane title="Deferred Issues" count={person.deferredIssues.length} tone="normal">
-          <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" />
-        </WorkLane>
-      </div>
-
-      <div className="work-lane-grid work-lane-grid-secondary">
-        <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
-          <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
-        </WorkLane>
-        <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
-          <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
-        </WorkLane>
-      </div>
+      </details>
 
       <section className="trend-panel">
         <div className="subsection-heading">
@@ -3495,6 +4009,8 @@ export default function App() {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(initialSelectedPerson);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
+  const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
+  const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
@@ -3614,6 +4130,16 @@ export default function App() {
   function openPersonWorkbench(login: string) {
     setSelectedPerson(login);
     selectView("Personal", login);
+  }
+
+  function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
+    if (filters.ai) {
+      setCriticalIssueAiFilter(filters.ai);
+    }
+    if (filters.scope) {
+      setCriticalIssueScopeFilter(filters.scope);
+    }
+    selectView("Issues");
   }
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
@@ -4765,6 +5291,11 @@ export default function App() {
                 onAnalyticsPeriodChange={setAnalyticsPeriod}
                 onNavigate={selectView}
                 onPersonSelect={openPersonWorkbench}
+                criticalAiFilter={criticalIssueAiFilter}
+                criticalScopeFilter={criticalIssueScopeFilter}
+                onCriticalAiFilterChange={setCriticalIssueAiFilter}
+                onCriticalScopeFilterChange={setCriticalIssueScopeFilter}
+                onOpenIssuesFilter={openIssuesWithFilter}
               />
             ) : null}
 
@@ -5172,7 +5703,13 @@ export default function App() {
                     Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
                   </Text>
                 </div>
-                <CriticalIssueBoard issues={data.criticalIssues} />
+                <CriticalIssueBoard
+                  issues={data.criticalIssues}
+                  aiFilter={criticalIssueAiFilter}
+                  scopeFilter={criticalIssueScopeFilter}
+                  onAiFilterChange={setCriticalIssueAiFilter}
+                  onScopeFilterChange={setCriticalIssueScopeFilter}
+                />
                 {criticalOwnerCoverageRows.length > 0 ? (
                   <div className="owner-coverage-strip">
                     <div className="subsection-heading">
