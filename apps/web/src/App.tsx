@@ -991,7 +991,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "linked issue sent to test";
+    return "issue in test";
   }
   if (filter === "stale_testing") {
     return "waiting on test";
@@ -1310,7 +1310,7 @@ function PrFilterBar({
           options={[
             { label: "All", value: "all" },
             { label: "Attention", value: "attention" },
-            { label: "Test issue", value: "testing" },
+            { label: "Issue in test", value: "testing" },
             { label: "Stale test", value: "stale_testing" },
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
@@ -1345,7 +1345,7 @@ function PeopleFilterBar({
             { label: "PR attention", value: "attention" },
             { label: "Triage", value: "triage" },
             { label: "Pending PR", value: "pending_pr" },
-            { label: "Test issue", value: "testing" },
+            { label: "Issue in test", value: "testing" },
             { label: "Yesterday PR", value: "yesterday_pr" }
           ]}
         />
@@ -1451,7 +1451,7 @@ function TeamRotationOverview({
             onClick={() => onOpenPrsFilter("attention")}
           />
           <TeamMonitorTile
-            label="Linked issue in test"
+            label="Issues in test"
             value={data.testing.queuePrs}
             detail={`${data.testing.staleQueuePrs} stale | avg ${optionalHours(data.testing.averageQueueAgeHours)}`}
             tone={data.testing.staleQueuePrs > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
@@ -1949,7 +1949,7 @@ function teamPrNextAction(pr: PendingPrView): string {
     title: pr.title,
     htmlUrl: pr.htmlUrl,
     ownerLogin: pr.ownerLogin,
-    phase: isTestingQueuePr(pr) ? "Linked issue in test" : "Pending PR",
+    phase: isTestingQueuePr(pr) ? "Issue in test" : "Pending PR",
     tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
     priority: 0,
     ageHours: pr.ageHours,
@@ -3719,7 +3719,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           tone="normal"
         />
         <ActivitySummaryTile
-          label="Linked issue in test"
+          label="Issues in test"
           value={testingItems.length}
           detail={optionalHours(maxTestingAge(testingItems))}
           tone="normal"
@@ -3745,6 +3745,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           items={attentionItems}
           offset={criticalItems.length}
           tone="attention"
+          visibleLimit={8}
         />
         <ActionQueueSection
           title="Routine movement"
@@ -4490,7 +4491,7 @@ function PersonalRotationOverview({
             onClick={() => onDrilldownChange("pr_attention")}
           />
           <TeamMonitorTile
-            label="Linked issue in test"
+            label="Issues in test"
             value={person.testingPrs.length}
             detail={`${testingStalePrs.length} waiting | ${personalTestingOwnerGaps(person.testingPrs)} no tester`}
             tone={testingStalePrs.length > 0 ? "critical" : person.testingPrs.length > 0 ? "attention" : "good"}
@@ -4559,7 +4560,7 @@ function PersonalRotationOverview({
         <section className="personal-rotation-lane personal-rotation-lane-attention">
           <div className="team-rotation-lane-heading">
             <Space size={[6, 6]} wrap>
-              <Text strong>Linked Issue In Test</Text>
+              <Text strong>Issues In Test</Text>
               <Tag color={testingStalePrs.length > 0 ? "red" : "blue"}>{person.testingPrs.length}</Tag>
             </Space>
             <Text type="secondary">assigned tester flow</Text>
@@ -4703,7 +4704,7 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
     return "Pending PRs";
   }
   if (filter === "testing") {
-    return "Linked Issue In Test";
+    return "Issues In Test";
   }
   if (filter === "triage") {
     return "Needs Triage";
@@ -4736,13 +4737,7 @@ function PersonalDrilldownBoard({
             <Tag color={chart.unlinkedPrCount > 0 ? "orange" : "default"}>{chart.unlinkedPrCount} unlinked PR</Tag>
           </Space>
         </div>
-        <div className="team-rotation-list">
-          {chart.rows.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR threads" />
-          ) : (
-            chart.rows.slice(0, 8).map((row) => <PersonalRotationThreadRow row={row} key={row.id} />)
-          )}
-        </div>
+        <PersonalFlowMap chart={chart} />
       </section>
     );
   }
@@ -4894,12 +4889,10 @@ function SelectedPersonWorkbench({
         onDrilldownChange={onDrilldownChange}
       />
 
-      <PersonalDrilldownBoard person={person} chart={gantt} filter={drilldownFilter} />
-
-      <details className="secondary-disclosure personal-detail-disclosure">
-        <summary>
-          <span>Action queue and full work threads</span>
-          <Space size={[4, 4]} wrap>
+      <section className="activity-panel personal-action-panel">
+        <div className="subsection-heading">
+          <Title level={5}>Action Queue</Title>
+          <Space size={[6, 6]} wrap>
             <Tag color={activityItems.some((item) => item.tone === "critical") ? "red" : "default"}>
               {activityItems.filter((item) => item.tone === "critical").length} critical
             </Tag>
@@ -4908,31 +4901,11 @@ function SelectedPersonWorkbench({
             </Tag>
             <Tag>{gantt.rows.length} threads</Tag>
           </Space>
-        </summary>
-        <div className="secondary-disclosure-body">
-          <section className="activity-panel">
-            <div className="subsection-heading">
-              <Title level={5}>Action Queue</Title>
-              <Space size={[6, 6]} wrap>
-                <Tag>{gantt.sharedPrCount} shared PR</Tag>
-                <Tag color={gantt.unlinkedPrCount > 0 ? "orange" : "default"}>{gantt.unlinkedPrCount} unlinked PR</Tag>
-                <Tag color={gantt.outsideIssuePrCount > 0 ? "blue" : "default"}>
-                  {gantt.outsideIssuePrCount} outside issue lane
-                </Tag>
-              </Space>
-            </div>
-            <PersonalActionQueue items={activityItems} />
-          </section>
-
-          <section className="flow-map-panel">
-            <div className="subsection-heading">
-              <Title level={5}>Work Threads</Title>
-              <Text type="secondary">Issue and PR lanes, including many-to-many links.</Text>
-            </div>
-            <PersonalFlowMap chart={gantt} />
-          </section>
         </div>
-      </details>
+        <PersonalActionQueue items={activityItems} />
+      </section>
+
+      <PersonalDrilldownBoard person={person} chart={gantt} filter={drilldownFilter} />
 
       <details className="secondary-disclosure personal-detail-disclosure">
         <summary>
@@ -4962,7 +4935,7 @@ function SelectedPersonWorkbench({
             <WorkLane title="Pending PRs" count={routinePendingPrs.length} tone="normal">
               <PullRequestCardList prs={routinePendingPrs} emptyText="No routine pending PRs" />
             </WorkLane>
-            <WorkLane title="Linked Issue In Test" count={person.testingPrs.length} tone="normal">
+            <WorkLane title="Issues In Test" count={person.testingPrs.length} tone="normal">
               <PullRequestCardList prs={person.testingPrs} emptyText="No PRs linked to issues in test" />
             </WorkLane>
             <WorkLane title="Deferred Issues" count={person.deferredIssues.length} tone="normal">
@@ -6070,12 +6043,12 @@ export default function App() {
           )
       },
       {
-        title: "Test issue",
+        title: "Issue in test",
         width: 240,
         render: (_, pr) =>
           isTestingQueuePr(pr) ? (
             <Space size={[4, 4]} wrap>
-              <Tag color={testingStateColor(pr.testingState)}>linked issue in test</Tag>
+              <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
               {pr.testingTesters.slice(0, 2).map((tester) => (
                 <Tag key={tester}>{tester}</Tag>
               ))}

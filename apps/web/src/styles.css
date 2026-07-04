@@ -1633,6 +1633,14 @@ button.critical-board-stat:hover {
   padding: 12px;
 }
 
+.personal-action-panel {
+  border-left: 3px solid #111827;
+}
+
+.personal-action-panel .subsection-heading {
+  margin-bottom: 10px;
+}
+
 .activity-command-center {
   display: grid;
   gap: 12px;
