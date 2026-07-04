@@ -16,6 +16,7 @@ import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
 import { apiHealthHttpStatus, apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
+import { publicRepoProfileView } from "./profileView";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashboardCache";
@@ -185,16 +186,7 @@ app.get("/api/dashboard", async (request, reply) => {
 
 app.get("/api/profile", async () => {
   const profile = loadRepoProfile();
-  return {
-    key: profile.key,
-    repo: profile.repo,
-    reporting: profile.reporting,
-    access: profile.access,
-    people: profile.people,
-    labels: profile.labels,
-    thresholds: profile.thresholds,
-    workflow: profile.workflow
-  };
+  return publicRepoProfileView(profile);
 });
 
 try {
