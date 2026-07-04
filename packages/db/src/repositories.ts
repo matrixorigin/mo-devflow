@@ -23,13 +23,15 @@ import type {
   ProfileConfigurationWarning,
   RepoProfile,
   SyncHealth,
+  SyncHealthLayer,
+  SyncHealthStatus,
   TestingSummary,
   VisibilityClass,
   WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView
 } from "@mo-devflow/shared";
-import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
+import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthLayers } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
@@ -98,18 +100,37 @@ export function cacheStaleHoursFromEnv(env: Record<string, string | undefined> =
   return Math.max(0.25, parsed);
 }
 
-export function buildSyncHealthSummary(rows: Array<Record<string, unknown>>): SyncHealth[] {
-  return rows.map((row) => ({
-    layer: asString(row.sync_layer),
-    status: asString(row.status),
-    lastSuccessfulAt: fromSqlDate(row.last_successful_at),
-    lastAttemptedAt: fromSqlDate(row.started_at),
-    errorMessage: row.error_message ? asString(row.error_message) : null,
-    rateLimitRemaining:
-      row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
-        ? null
-        : asNumber(row.rate_limit_remaining)
-  }));
+export function buildSyncHealthSummary(input: {
+  rows: Array<Record<string, unknown>>;
+  expectedLayers: readonly SyncHealthLayer[];
+}): SyncHealth[] {
+  const rowsByLayer = new Map(input.rows.map((row) => [asString(row.sync_layer), row]));
+
+  return input.expectedLayers.map((layer) => {
+    const row = rowsByLayer.get(layer);
+    if (!row) {
+      return {
+        layer,
+        status: "not_started",
+        lastSuccessfulAt: null,
+        lastAttemptedAt: null,
+        errorMessage: "Sync layer has not recorded a run yet.",
+        rateLimitRemaining: null
+      };
+    }
+
+    return {
+      layer,
+      status: asString(row.status) as SyncHealthStatus,
+      lastSuccessfulAt: fromSqlDate(row.last_successful_at),
+      lastAttemptedAt: fromSqlDate(row.started_at),
+      errorMessage: row.error_message ? asString(row.error_message) : null,
+      rateLimitRemaining:
+        row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
+          ? null
+          : asNumber(row.rate_limit_remaining)
+    };
+  });
 }
 
 export function isPersonalNeedsTriageIssue(input: {
@@ -525,7 +546,7 @@ export async function getRepoId(profileKey: string): Promise<number | null> {
 
 export async function recordSyncRun(input: {
   repoId: number;
-  syncLayer: string;
+  syncLayer: SyncHealthLayer;
   status: "success" | "failed" | "partial" | "blocked";
   sourceAuthType: string;
   startedAt: string;
@@ -1933,7 +1954,7 @@ export async function getDashboardSummary(
     };
   });
 
-  const syncHealth: SyncHealth[] = buildSyncHealthSummary(syncRows);
+  const syncHealth: SyncHealth[] = buildSyncHealthSummary({ rows: syncRows, expectedLayers: syncHealthLayers });
 
   const dailyMetrics: DailyMetricPoint[] = metricRows.map((row) => ({
     date: asString(row.metric_date),

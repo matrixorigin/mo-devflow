@@ -628,7 +628,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
 
     await recordSyncRun({
       repoId,
-      syncLayer: "github_snapshot",
+      syncLayer: "github_sync",
       status: "success",
       sourceAuthType: snapshot.sourceAuthType,
       startedAt,
@@ -657,7 +657,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
     const classified = classifyGitHubError(error);
     await recordSyncRun({
       repoId,
-      syncLayer: "github_snapshot",
+      syncLayer: "github_sync",
       status: classified.kind === "permission" || classified.kind === "not_found" ? "blocked" : "failed",
       sourceAuthType: configuredGitHubSourceAuthType(),
       startedAt,

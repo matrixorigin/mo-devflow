@@ -107,29 +107,32 @@ describe("cache freshness", () => {
 describe("sync health summary", () => {
   test("keeps one row per sync layer with latest attempt and latest success", () => {
     expect(
-      buildSyncHealthSummary([
-        {
-          sync_layer: "github_snapshot",
-          status: "failed",
-          started_at: "2026-07-04 10:00:00",
-          finished_at: "2026-07-04 10:01:00",
-          error_message: "rate limited",
-          rate_limit_remaining: 0,
-          last_successful_at: "2026-07-04 08:01:00"
-        },
-        {
-          sync_layer: "metrics",
-          status: "success",
-          started_at: "2026-07-04 09:00:00",
-          finished_at: "2026-07-04 09:00:05",
-          error_message: null,
-          rate_limit_remaining: null,
-          last_successful_at: "2026-07-04 09:00:05"
-        }
-      ])
+      buildSyncHealthSummary({
+        expectedLayers: ["github_sync", "metrics"],
+        rows: [
+          {
+            sync_layer: "github_sync",
+            status: "failed",
+            started_at: "2026-07-04 10:00:00",
+            finished_at: "2026-07-04 10:01:00",
+            error_message: "rate limited",
+            rate_limit_remaining: 0,
+            last_successful_at: "2026-07-04 08:01:00"
+          },
+          {
+            sync_layer: "metrics",
+            status: "success",
+            started_at: "2026-07-04 09:00:00",
+            finished_at: "2026-07-04 09:00:05",
+            error_message: null,
+            rate_limit_remaining: null,
+            last_successful_at: "2026-07-04 09:00:05"
+          }
+        ]
+      })
     ).toEqual([
       {
-        layer: "github_snapshot",
+        layer: "github_sync",
         status: "failed",
         lastSuccessfulAt: "2026-07-04T08:01:00Z",
         lastAttemptedAt: "2026-07-04T10:00:00Z",
@@ -142,6 +145,49 @@ describe("sync health summary", () => {
         lastSuccessfulAt: "2026-07-04T09:00:05Z",
         lastAttemptedAt: "2026-07-04T09:00:00Z",
         errorMessage: null,
+        rateLimitRemaining: null
+      }
+    ]);
+  });
+
+  test("marks expected sync layers that have never run", () => {
+    expect(
+      buildSyncHealthSummary({
+        expectedLayers: ["github_sync", "rules", "metrics"],
+        rows: [
+          {
+            sync_layer: "rules",
+            status: "success",
+            started_at: "2026-07-04 09:00:00",
+            error_message: null,
+            rate_limit_remaining: null,
+            last_successful_at: "2026-07-04 09:00:05"
+          }
+        ]
+      })
+    ).toEqual([
+      {
+        layer: "github_sync",
+        status: "not_started",
+        lastSuccessfulAt: null,
+        lastAttemptedAt: null,
+        errorMessage: "Sync layer has not recorded a run yet.",
+        rateLimitRemaining: null
+      },
+      {
+        layer: "rules",
+        status: "success",
+        lastSuccessfulAt: "2026-07-04T09:00:05Z",
+        lastAttemptedAt: "2026-07-04T09:00:00Z",
+        errorMessage: null,
+        rateLimitRemaining: null
+      },
+      {
+        layer: "metrics",
+        status: "not_started",
+        lastSuccessfulAt: null,
+        lastAttemptedAt: null,
+        errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null
       }
     ]);

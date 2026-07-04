@@ -558,9 +558,13 @@ export interface SessionView {
   tokenEncryptionConfigured: boolean;
 }
 
+export const syncHealthLayers = ["github_sync", "webhooks", "rules", "metrics", "ai_drift", "notifications"] as const;
+export type SyncHealthLayer = (typeof syncHealthLayers)[number];
+export type SyncHealthStatus = "success" | "failed" | "partial" | "blocked" | "not_started";
+
 export interface SyncHealth {
-  layer: string;
-  status: string;
+  layer: SyncHealthLayer;
+  status: SyncHealthStatus;
   lastSuccessfulAt: string | null;
   lastAttemptedAt: string | null;
   errorMessage: string | null;
@@ -617,13 +621,7 @@ export interface WebhookIngestionHealth {
   latestFailure: string | null;
 }
 
-export type ManualRefreshLayer =
-  | "github_sync"
-  | "webhooks"
-  | "rules"
-  | "metrics"
-  | "ai_drift"
-  | "notifications";
+export type ManualRefreshLayer = SyncHealthLayer;
 
 export interface ManualRefreshResult {
   requestId: number;

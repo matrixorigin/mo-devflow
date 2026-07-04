@@ -298,6 +298,16 @@ function rateLimitHealthTagColor(remaining: number | null): string {
   return "green";
 }
 
+function syncHealthTagColor(status: DashboardSummary["sync"]["health"][number]["status"]): string {
+  if (status === "success") {
+    return "green";
+  }
+  if (status === "partial" || status === "not_started") {
+    return "orange";
+  }
+  return "red";
+}
+
 function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
   if (severity === "critical") {
     return "red";
@@ -1333,6 +1343,7 @@ export default function App() {
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const criticalOwnerCoverageRows =
     data ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) : [];
+  const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
@@ -1467,6 +1478,16 @@ export default function App() {
                 description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${data.visibility.visibleClasses
                   .map(labelText)
                   .join(", ") || "none"}.`}
+                showIcon
+              />
+            ) : null}
+
+            {notStartedSyncLayers.length > 0 ? (
+              <Alert
+                className="band"
+                type="warning"
+                message="Some sync layers have never run"
+                description={`Missing layers: ${notStartedSyncLayers.map((item) => labelText(item.layer)).join(", ")}.`}
                 showIcon
               />
             ) : null}
@@ -1728,7 +1749,7 @@ export default function App() {
                   {data.sync.health.map((item) => (
                     <Space key={item.layer} size={2}>
                       <Tooltip title={syncHealthTooltip(item)}>
-                        <Tag color={item.status === "success" ? "green" : item.status === "partial" ? "orange" : "red"}>
+                        <Tag color={syncHealthTagColor(item.status)}>
                           {item.layer}: {item.status}
                         </Tag>
                       </Tooltip>
