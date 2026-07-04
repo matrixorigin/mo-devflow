@@ -69,9 +69,7 @@ describe("API health status", () => {
   test("degrades for worker, job queue, or operational attention states", () => {
     expect(apiHealthStatus({ worker: { ...worker, status: "stale" }, jobQueue, operational })).toBe("degraded");
     expect(apiHealthStatus({ worker, jobQueue: { ...jobQueue, status: "attention" }, operational })).toBe("degraded");
-    expect(apiHealthStatus({ worker, jobQueue, operational: { ...operational, status: "degraded" } })).toBe(
-      "degraded"
-    );
+    expect(apiHealthStatus({ worker, jobQueue, operational: { ...operational, status: "degraded" } })).toBe("degraded");
     expect(apiHealthStatus({ worker, jobQueue, operational, operationalError: "Operational probe failed." })).toBe(
       "degraded"
     );

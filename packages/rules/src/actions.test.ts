@@ -114,7 +114,9 @@ describe("workflow fix previews", () => {
       lifecycleState: "other"
     });
     expect(preview.proposedState.labels).toEqual(["kind/bug", "needs-triage"]);
-    expect(preview.warnings).toContain("Preview is based on partial cached issue data; confirm execution should re-check GitHub state.");
+    expect(preview.warnings).toContain(
+      "Preview is based on partial cached issue data; confirm execution should re-check GitHub state."
+    );
   });
 
   test("blocks preview when the label already exists in cache", () => {
@@ -176,8 +178,7 @@ describe("workflow fix previews", () => {
       { type: "add_label", label: "deferred" },
       {
         type: "add_comment",
-        body:
-          "Deferred by mo-devflow workflow fix.\n\nReason: Issue #42 has stayed in needs-triage for 96h.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label."
+        body: "Deferred by mo-devflow workflow fix.\n\nReason: Issue #42 has stayed in needs-triage for 96h.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label."
       }
     ]);
     expect(deferredPreview.proposedState.labels).toEqual(["kind/bug", "deferred"]);

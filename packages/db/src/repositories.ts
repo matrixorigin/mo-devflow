@@ -129,7 +129,7 @@ export function pullRequestTestingTransitionForUpsert(input: {
     !input.hasExistingTestingEvents &&
     input.pr.testingState !== "not_ready" &&
     hasConfirmedTestingEvidence(input.pr);
-  const fromState = firstObservedTestingState ? "not_ready" : input.previousTestingState ?? "not_ready";
+  const fromState = firstObservedTestingState ? "not_ready" : (input.previousTestingState ?? "not_ready");
   const toState = input.pr.testingState;
   if (fromState === toState) {
     return null;
@@ -216,10 +216,7 @@ function turnoverDurationsForPullRequest(transitions: TestingTransitionView[]): 
   let requestedAt: string | null = null;
   let passedAt: string | null = null;
   for (const transition of ordered) {
-    if (
-      !requestedAt &&
-      ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)
-    ) {
+    if (!requestedAt && ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)) {
       requestedAt = transition.occurredAt;
     }
     if (!passedAt && transition.toState === "test_passed") {
@@ -283,16 +280,16 @@ export function testingTurnoverMetricsByTesterFromTransitions(
         ...(requestToPassByTester.get(tester) ?? []),
         ...durations.requestToPassHours
       ]);
-      passToCloseByTester.set(tester, [
-        ...(passToCloseByTester.get(tester) ?? []),
-        ...durations.passToCloseHours
-      ]);
+      passToCloseByTester.set(tester, [...(passToCloseByTester.get(tester) ?? []), ...durations.passToCloseHours]);
     }
   }
 
   const result = new Map<string, TestingTurnoverMetrics>();
   for (const tester of new Set([...requestToPassByTester.keys(), ...passToCloseByTester.keys()])) {
-    result.set(tester, metricsFromDurations(requestToPassByTester.get(tester) ?? [], passToCloseByTester.get(tester) ?? []));
+    result.set(
+      tester,
+      metricsFromDurations(requestToPassByTester.get(tester) ?? [], passToCloseByTester.get(tester) ?? [])
+    );
   }
   return result;
 }
@@ -347,10 +344,13 @@ export function buildSyncHealthSummary(input: {
   });
 }
 
-export function isPersonalNeedsTriageIssue(input: {
-  lifecycleState: string;
-  severity: string | null;
-}, criticalLabels: string[]): boolean {
+export function isPersonalNeedsTriageIssue(
+  input: {
+    lifecycleState: string;
+    severity: string | null;
+  },
+  criticalLabels: string[]
+): boolean {
   return input.lifecycleState === "needs-triage" && !criticalLabels.includes(input.severity ?? "");
 }
 
@@ -362,7 +362,10 @@ function normalizedLoginSet(logins: string[]): Set<string> {
   return new Set(logins.map(normalizedLogin).filter(Boolean));
 }
 
-function criticalIssueOwnerScopeFromSet(ownerLogin: string | null, watchedLogins: Set<string>): CriticalIssueOwnerScope {
+function criticalIssueOwnerScopeFromSet(
+  ownerLogin: string | null,
+  watchedLogins: Set<string>
+): CriticalIssueOwnerScope {
   if (!ownerLogin) {
     return "unowned";
   }
@@ -527,7 +530,9 @@ function employeeMappingLoginSet(profile: RepoProfile): Set<string> {
 }
 
 function employeePlaceholder(login: string): string {
-  const key = normalizedLogin(login).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  const key = normalizedLogin(login)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
   return `TODO_${key || "USER"}`;
 }
 
@@ -625,9 +630,11 @@ export function profileActionSuggestions(
       description: `${testingReviewerLogins.length} requested reviewers appear on open PRs while testing handoff is not configured.`,
       action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
       relatedLogins: testingReviewerLogins,
-      yamlSnippet: `people:\n  testers:\n${testingReviewerLogins.map((login) => `    - ${login}`).join(
-        "\n"
-      )}\ntesting:\n  handoff_signals:\n    reviewer_users:\n${testingReviewerLogins.map((login) => `      - ${login}`).join("\n")}`
+      yamlSnippet: `people:\n  testers:\n${testingReviewerLogins
+        .map((login) => `    - ${login}`)
+        .join(
+          "\n"
+        )}\ntesting:\n  handoff_signals:\n    reviewer_users:\n${testingReviewerLogins.map((login) => `      - ${login}`).join("\n")}`
     });
   }
 
@@ -643,7 +650,8 @@ export function profileActionSuggestions(
       severity: profile.notifications.wecom.enabled ? "warning" : "info",
       title: "Notification employee mappings missing",
       description: `${notificationLogins.length} GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient ${profile.notifications.routing.fallbackRecipient}.`,
-      action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+      action:
+        "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
       relatedLogins: notificationLogins,
       yamlSnippet: `notifications:\n  employees:\n${notificationLogins
         .map((login) => `    ${login}:\n      wecom_user_id: ${employeePlaceholder(login)}`)
@@ -753,8 +761,7 @@ export function profileConfigurationWarnings(input: {
       key: "webhook:secret_unconfigured",
       severity: "warning",
       title: "GitHub webhook secret is not configured",
-      description:
-        "GitHub webhook delivery ingest is disabled until MO_DEVFLOW_GITHUB_WEBHOOK_SECRET is configured.",
+      description: "GitHub webhook delivery ingest is disabled until MO_DEVFLOW_GITHUB_WEBHOOK_SECRET is configured.",
       action: "Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET to the same secret configured on the GitHub webhook."
     });
   }
@@ -819,16 +826,12 @@ export async function upsertRepoProfile(profile: RepoProfile): Promise<number> {
       ]
     );
   }
-  const [rows] = await pool.execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [
-    profile.key
-  ]);
+  const [rows] = await pool.execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [profile.key]);
   return asNumber(rows[0]?.id);
 }
 
 export async function getRepoId(profileKey: string): Promise<number | null> {
-  const [rows] = await getPool().execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [
-    profileKey
-  ]);
+  const [rows] = await getPool().execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [profileKey]);
   return rows[0] ? asNumber(rows[0].id) : null;
 }
 
@@ -1096,7 +1099,9 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
     latestCommitAt: fromSqlDate(row.latest_commit_at),
     detailSyncedAt: fromSqlDate(row.detail_synced_at),
     detailError: row.detail_error ? asString(row.detail_error) : null,
-    testingState: row.testing_state ? asString(row.testing_state) as NormalizedPullRequest["testingState"] : "not_ready",
+    testingState: row.testing_state
+      ? (asString(row.testing_state) as NormalizedPullRequest["testingState"])
+      : "not_ready",
     testingTesters: parseJsonArray(asString(row.testing_testers_json)),
     testingSignals: parseJsonArray(asString(row.testing_signals_json)),
     testingQueueAgeHours:
@@ -1350,10 +1355,7 @@ export const pullRequestAttentionRuleKeys = [
   "merge_conflict",
   "testing_stalled"
 ] as const;
-export const snapshotManagedAttentionRuleKeys = [
-  ...issueAttentionRuleKeys,
-  ...pullRequestAttentionRuleKeys
-] as const;
+export const snapshotManagedAttentionRuleKeys = [...issueAttentionRuleKeys, ...pullRequestAttentionRuleKeys] as const;
 
 export interface AttentionResolutionRow {
   objectType: string;
@@ -1573,10 +1575,10 @@ export async function replaceAiDriftSignals(repoId: number, signals: AiDriftSign
   }
 
   if (activeDedupeKeys.length === 0) {
-    await getPool().execute(
-      "UPDATE ai_drift_signals SET resolved_at = ? WHERE repo_id = ? AND resolved_at IS NULL",
-      [now, repoId]
-    );
+    await getPool().execute("UPDATE ai_drift_signals SET resolved_at = ? WHERE repo_id = ? AND resolved_at IS NULL", [
+      now,
+      repoId
+    ]);
     return;
   }
 
@@ -1602,8 +1604,7 @@ export async function runWithJobLease<T>(
   const pool = getPool();
   const now = nowSql();
   const leaseOwner = `${process.pid}-${Math.random().toString(16).slice(2)}`;
-  const leaseExpiresAt =
-    sqlDate(new Date(Date.now() + (options.leaseSeconds ?? 600) * 1000)) ?? now;
+  const leaseExpiresAt = sqlDate(new Date(Date.now() + (options.leaseSeconds ?? 600) * 1000)) ?? now;
   try {
     await pool.execute(
       `INSERT INTO jobs(
@@ -1912,7 +1913,7 @@ function toPendingPrView(row: RowData): PendingPrView {
     latestCommitAt: fromSqlDate(row.latest_commit_at),
     detailSyncedAt: fromSqlDate(row.detail_synced_at),
     detailError: row.detail_error ? asString(row.detail_error) : null,
-    testingState: row.testing_state ? asString(row.testing_state) as PendingPrView["testingState"] : "not_ready",
+    testingState: row.testing_state ? (asString(row.testing_state) as PendingPrView["testingState"]) : "not_ready",
     testingTesters: parseJsonArray(asString(row.testing_testers_json)),
     testingSignals: parseJsonArray(asString(row.testing_signals_json)),
     testingQueueAgeHours:
@@ -2029,10 +2030,7 @@ function metricPeriodBounds(
 ): { start: string; end: string; label: string } {
   const start = period === "week" ? weekStartDateKey(dateKey, weekStart) : monthStartDateKey(dateKey);
   const end = period === "week" ? addDaysToDateKey(start, 7) : addMonthsToDateKey(start, 1);
-  const label =
-    period === "week"
-      ? `${start.slice(5)}-${addDaysToDateKey(end, -1).slice(5)}`
-      : start.slice(0, 7);
+  const label = period === "week" ? `${start.slice(5)}-${addDaysToDateKey(end, -1).slice(5)}` : start.slice(0, 7);
   return { start, end, label };
 }
 
@@ -2089,11 +2087,7 @@ export function aggregateMetricPoints(
   });
 }
 
-export async function recomputeDailyMetricsFromCache(
-  repoId: number,
-  profile: RepoProfile,
-  days = 30
-): Promise<number> {
+export async function recomputeDailyMetricsFromCache(repoId: number, profile: RepoProfile, days = 30): Promise<number> {
   const pool = getPool();
   const keys = recentDateKeys(days, profile.reporting.timezone);
   const keySet = new Set(keys);
@@ -2491,15 +2485,7 @@ export async function getDashboardSummary(
              AND ${personalPrVisibility.sql}
            ORDER BY p.updated_at DESC
            LIMIT 500`,
-          [
-            repoId,
-            ...profile.people.watchedUsers,
-            startSql,
-            endSql,
-            startSql,
-            endSql,
-            ...personalPrVisibility.params
-          ]
+          [repoId, ...profile.people.watchedUsers, startSql, endSql, startSql, endSql, ...personalPrVisibility.params]
         );
   const criticalIssueNumbers = new Set([
     ...criticalRows.map((row) => asNumber(row.number)),
@@ -2550,7 +2536,8 @@ export async function getDashboardSummary(
     severity: asString(row.severity) as AiDriftSignalView["severity"],
     ownerLogin: row.owner_login ? asString(row.owner_login) : null,
     aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
-    expectedHours: row.expected_hours === null || row.expected_hours === undefined ? null : asNumber(row.expected_hours),
+    expectedHours:
+      row.expected_hours === null || row.expected_hours === undefined ? null : asNumber(row.expected_hours),
     actualHours: row.actual_hours === null || row.actual_hours === undefined ? null : asNumber(row.actual_hours),
     evidenceSummary: asString(row.evidence_summary),
     suggestedAction: asString(row.suggested_action),
@@ -2565,18 +2552,16 @@ export async function getDashboardSummary(
     const ownedPrs = allPrRows.filter((row) => row.owner_login === login);
     return {
       login,
-      activeCriticalIssues: ownedIssues.filter((row) =>
-        profile.labels.critical.includes(asString(row.severity))
-      ).length,
-      needsTriageIssues: ownedIssues.filter(
-        (row) =>
-          isPersonalNeedsTriageIssue(
-            {
-              lifecycleState: asString(row.lifecycle_state),
-              severity: row.severity ? asString(row.severity) : null
-            },
-            profile.labels.critical
-          )
+      activeCriticalIssues: ownedIssues.filter((row) => profile.labels.critical.includes(asString(row.severity)))
+        .length,
+      needsTriageIssues: ownedIssues.filter((row) =>
+        isPersonalNeedsTriageIssue(
+          {
+            lifecycleState: asString(row.lifecycle_state),
+            severity: row.severity ? asString(row.severity) : null
+          },
+          profile.labels.critical
+        )
       ).length,
       deferredIssues: ownedIssues.filter((row) => row.lifecycle_state === "deferred").length,
       prsCreatedYesterday: ownedPrs.filter((row) => inRange(row.created_at, start, end)).length,
@@ -2615,17 +2600,16 @@ export async function getDashboardSummary(
     const pendingOwnedPrs = ownedPrs.filter((pr) => pr.state === "open");
     return {
       login,
-      summary:
-        peopleByLogin.get(login) ?? {
-          login,
-          activeCriticalIssues: 0,
-          needsTriageIssues: 0,
-          deferredIssues: 0,
-          prsCreatedYesterday: 0,
-          prsMergedYesterday: 0,
-          pendingPrs: 0,
-          attentionPrs: 0
-        },
+      summary: peopleByLogin.get(login) ?? {
+        login,
+        activeCriticalIssues: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0,
+        pendingPrs: 0,
+        attentionPrs: 0
+      },
       activeCriticalIssues: ownedIssues
         .filter((row) => profile.labels.critical.includes(asString(row.severity)))
         .map((row) =>

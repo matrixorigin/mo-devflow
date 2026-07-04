@@ -43,7 +43,7 @@ export function dashboardVisibilityFilter(
     return { sql: "1 = 0", params: [] };
   }
   return {
-    sql: clauses.length === 1 ? clauses[0] ?? "1 = 0" : `(${clauses.join(" OR ")})`,
+    sql: clauses.length === 1 ? (clauses[0] ?? "1 = 0") : `(${clauses.join(" OR ")})`,
     params
   };
 }

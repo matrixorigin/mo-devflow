@@ -163,9 +163,9 @@ export async function getWorkerHealth(staleAfterSeconds = workerHeartbeatStaleSe
       ? "stale"
       : phase === "stopped"
         ? "offline"
-      : phase === "failed"
-        ? "failed"
-        : "active";
+        : phase === "failed"
+          ? "failed"
+          : "active";
 
   return {
     status,

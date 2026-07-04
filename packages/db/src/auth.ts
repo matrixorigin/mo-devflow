@@ -86,10 +86,9 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
     );
   }
 
-  const [users] = await pool.execute<RowData[]>(
-    "SELECT id FROM app_users WHERE github_id = ? LIMIT 1",
-    [input.githubId]
-  );
+  const [users] = await pool.execute<RowData[]>("SELECT id FROM app_users WHERE github_id = ? LIMIT 1", [
+    input.githubId
+  ]);
   const userId = asNumber(users[0]?.id);
   if (!userId) {
     throw new Error("GitHub user upsert failed.");

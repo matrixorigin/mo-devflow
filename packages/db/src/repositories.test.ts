@@ -361,16 +361,10 @@ describe("personal issue buckets", () => {
       )
     ).toBe(false);
     expect(
-      isPersonalNeedsTriageIssue(
-        { lifecycleState: "needs-triage", severity: null },
-        baseProfile.labels.critical
-      )
+      isPersonalNeedsTriageIssue({ lifecycleState: "needs-triage", severity: null }, baseProfile.labels.critical)
     ).toBe(true);
     expect(
-      isPersonalNeedsTriageIssue(
-        { lifecycleState: "deferred", severity: null },
-        baseProfile.labels.critical
-      )
+      isPersonalNeedsTriageIssue({ lifecycleState: "deferred", severity: null }, baseProfile.labels.critical)
     ).toBe(false);
   });
 });
@@ -406,12 +400,7 @@ describe("critical issue ownership counts", () => {
   test("separates unowned critical work from owners outside the watched set", () => {
     expect(
       criticalIssueOwnershipCounts(
-        [
-          { ownerLogin: null },
-          { ownerLogin: "alice" },
-          { ownerLogin: "bob" },
-          { ownerLogin: "carol" }
-        ],
+        [{ ownerLogin: null }, { ownerLogin: "alice" }, { ownerLogin: "bob" }, { ownerLogin: "carol" }],
         ["alice", "bob"]
       )
     ).toEqual({
@@ -578,8 +567,7 @@ describe("profile configuration guidance", () => {
         description: "1 requested reviewers appear on open PRs while testing handoff is not configured.",
         action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
         relatedLogins: ["qa-a"],
-        yamlSnippet:
-          "people:\n  testers:\n    - qa-a\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a"
+        yamlSnippet: "people:\n  testers:\n    - qa-a\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a"
       },
       {
         key: "profile:notification_employee_mapping_candidates",
@@ -587,7 +575,8 @@ describe("profile configuration guidance", () => {
         title: "Notification employee mappings missing",
         description:
           "1 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
-        action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+        action:
+          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
         relatedLogins: ["alice"],
         yamlSnippet: "notifications:\n  employees:\n    alice:\n      wecom_user_id: TODO_ALICE"
       }
@@ -710,7 +699,8 @@ describe("profile configuration guidance", () => {
         title: "Notification employee mappings missing",
         description:
           "2 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
-        action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+        action:
+          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
         relatedLogins: ["Bob", "carol"],
         yamlSnippet:
           "notifications:\n  employees:\n    Bob:\n      wecom_user_id: TODO_BOB\n    carol:\n      wecom_user_id: TODO_CAROL"
@@ -1062,47 +1052,47 @@ describe("pull request testing transition events", () => {
 
   test("summarizes testing turnover only from completed transition pairs", () => {
     const transitions: TestingTransitionView[] = [
-        {
-          id: 1,
-          prNumber: 101,
-          fromState: "not_ready",
-          toState: "test_requested",
-          testingTesters: ["tester-a"],
-          testingSignals: ["reviewer:tester-a"],
-          occurredAt: "2026-07-01T00:00:00.000Z",
-          sourceCompleteness: "complete_cache"
-        },
-        {
-          id: 2,
-          prNumber: 101,
-          fromState: "test_requested",
-          toState: "test_passed",
-          testingTesters: ["tester-a"],
-          testingSignals: ["review:APPROVED"],
-          occurredAt: "2026-07-02T12:00:00.000Z",
-          sourceCompleteness: "complete_cache"
-        },
-        {
-          id: 3,
-          prNumber: 101,
-          fromState: "test_passed",
-          toState: "closed_or_merged",
-          testingTesters: [],
-          testingSignals: ["closed_or_merged"],
-          occurredAt: "2026-07-03T00:00:00.000Z",
-          sourceCompleteness: "complete_cache"
-        },
-        {
-          id: 4,
-          prNumber: 102,
-          fromState: "not_ready",
-          toState: "test_requested",
-          testingTesters: ["tester-b"],
-          testingSignals: ["reviewer:tester-b"],
-          occurredAt: "2026-07-01T00:00:00.000Z",
-          sourceCompleteness: "partial_cache"
-        }
-      ];
+      {
+        id: 1,
+        prNumber: 101,
+        fromState: "not_ready",
+        toState: "test_requested",
+        testingTesters: ["tester-a"],
+        testingSignals: ["reviewer:tester-a"],
+        occurredAt: "2026-07-01T00:00:00.000Z",
+        sourceCompleteness: "complete_cache"
+      },
+      {
+        id: 2,
+        prNumber: 101,
+        fromState: "test_requested",
+        toState: "test_passed",
+        testingTesters: ["tester-a"],
+        testingSignals: ["review:APPROVED"],
+        occurredAt: "2026-07-02T12:00:00.000Z",
+        sourceCompleteness: "complete_cache"
+      },
+      {
+        id: 3,
+        prNumber: 101,
+        fromState: "test_passed",
+        toState: "closed_or_merged",
+        testingTesters: [],
+        testingSignals: ["closed_or_merged"],
+        occurredAt: "2026-07-03T00:00:00.000Z",
+        sourceCompleteness: "complete_cache"
+      },
+      {
+        id: 4,
+        prNumber: 102,
+        fromState: "not_ready",
+        toState: "test_requested",
+        testingTesters: ["tester-b"],
+        testingSignals: ["reviewer:tester-b"],
+        occurredAt: "2026-07-01T00:00:00.000Z",
+        sourceCompleteness: "partial_cache"
+      }
+    ];
 
     expect(testingTurnoverMetricsFromTransitions(transitions)).toEqual({
       requestToPassSamples: 1,
@@ -1208,7 +1198,9 @@ describe("metric aggregation", () => {
   test("aggregates months without mixing calendar boundaries", () => {
     const monthly = aggregateMetricPoints(points, "month", "Monday");
 
-    expect(monthly.map((point) => ({ start: point.periodStart, end: point.periodEnd, created: point.prsCreated }))).toEqual([
+    expect(
+      monthly.map((point) => ({ start: point.periodStart, end: point.periodEnd, created: point.prsCreated }))
+    ).toEqual([
       { start: "2026-06-01", end: "2026-07-01", created: 3 },
       { start: "2026-07-01", end: "2026-08-01", created: 3 }
     ]);

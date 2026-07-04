@@ -76,7 +76,9 @@ async function incrementDuplicateDelivery(deliveryId: string, now: string): Prom
   };
 }
 
-export async function recordGitHubWebhookDelivery(input: GitHubWebhookDeliveryRecord): Promise<GitHubWebhookRecordResult> {
+export async function recordGitHubWebhookDelivery(
+  input: GitHubWebhookDeliveryRecord
+): Promise<GitHubWebhookRecordResult> {
   const now = nowSql();
   try {
     await getPool().execute(

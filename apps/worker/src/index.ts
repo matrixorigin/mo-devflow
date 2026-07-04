@@ -43,7 +43,7 @@ async function flushHeartbeat(): Promise<void> {
           ...(state.details ?? {}),
           heartbeatIntervalMs
         }
-      : state.details ?? null;
+      : (state.details ?? null);
 
   await heartbeat({
     ...state,

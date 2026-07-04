@@ -1,9 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  jobQueueHealthStatus,
-  jobQueueOldestPendingWarnHoursFromEnv,
-  jobQueueRecommendedAction
-} from "./jobs";
+import { jobQueueHealthStatus, jobQueueOldestPendingWarnHoursFromEnv, jobQueueRecommendedAction } from "./jobs";
 
 const healthyQueue = {
   blockedJobs: 0,

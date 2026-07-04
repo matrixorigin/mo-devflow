@@ -14,8 +14,7 @@ createRoot(document.getElementById("root")!).render(
           borderRadius: 8,
           colorPrimary: "#2563eb",
           colorInfo: "#2563eb",
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+          fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
         }
       }}
     >

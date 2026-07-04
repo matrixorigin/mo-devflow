@@ -43,10 +43,14 @@ export function classifyWeComFailure(error: unknown): WeComFailureKind {
 }
 
 export function buildWeComMarkdown(profile: RepoProfile, candidate: NotificationCandidate): string {
-  const objectText = candidate.objectNumber ? `${candidate.objectType} #${candidate.objectNumber}` : candidate.objectType;
+  const objectText = candidate.objectNumber
+    ? `${candidate.objectType} #${candidate.objectNumber}`
+    : candidate.objectType;
   const title = candidate.title.length > 120 ? `${candidate.title.slice(0, 117)}...` : candidate.title;
   const evidence =
-    candidate.evidenceSummary.length > 280 ? `${candidate.evidenceSummary.slice(0, 277)}...` : candidate.evidenceSummary;
+    candidate.evidenceSummary.length > 280
+      ? `${candidate.evidenceSummary.slice(0, 277)}...`
+      : candidate.evidenceSummary;
   const target = candidate.htmlUrl ? `[${objectText}](${candidate.htmlUrl})` : objectText;
   const dashboardTarget = `[Open in mo-devflow](${candidate.dashboardUrl})`;
   const owner = candidate.relatedLogin ? `\n> Owner: ${candidate.relatedLogin}` : "";
@@ -56,7 +60,11 @@ export function buildWeComMarkdown(profile: RepoProfile, candidate: Notification
     candidate.sourceType === "monthly_digest"
   ) {
     const digestPeriod =
-      candidate.sourceType === "monthly_digest" ? "monthly" : candidate.sourceType === "weekly_digest" ? "weekly" : "daily";
+      candidate.sourceType === "monthly_digest"
+        ? "monthly"
+        : candidate.sourceType === "weekly_digest"
+          ? "weekly"
+          : "daily";
     return [
       `## mo-devflow ${digestPeriod} digest`,
       `> Repo: ${profile.key}`,

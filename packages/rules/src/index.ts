@@ -86,7 +86,7 @@ export interface CacheSource {
 
 export function labelNames(labels: Array<string | GitHubLabel> | undefined): string[] {
   return (labels ?? [])
-    .map((label) => (typeof label === "string" ? label : label.name ?? ""))
+    .map((label) => (typeof label === "string" ? label : (label.name ?? "")))
     .filter((label) => label.length > 0);
 }
 
@@ -137,8 +137,12 @@ export function linkedPrAuthorsByIssueNumber(pullRequests: GitHubPullRequestLike
   return owners;
 }
 
-function chooseLifecycle(profile: RepoProfile, labels: string[]): { lifecycle: LifecycleState; severity: string | null } {
-  const severity = [...profile.labels.critical, ...profile.labels.active].find((label) => labels.includes(label)) ?? null;
+function chooseLifecycle(
+  profile: RepoProfile,
+  labels: string[]
+): { lifecycle: LifecycleState; severity: string | null } {
+  const severity =
+    [...profile.labels.critical, ...profile.labels.active].find((label) => labels.includes(label)) ?? null;
   if (severity && profile.labels.critical.includes(severity)) {
     return { lifecycle: "critical", severity };
   }
@@ -192,7 +196,9 @@ function issueMatchesSkipList(profile: RepoProfile, issue: NormalizedIssue): boo
   if (skipped.size === 0) {
     return false;
   }
-  return [issue.authorLogin, issue.ownerLogin, ...issue.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
+  return [issue.authorLogin, issue.ownerLogin, ...issue.assignees].some(
+    (login) => login && skipped.has(normalizedLogin(login))
+  );
 }
 
 function prMatchesSkipList(profile: RepoProfile, pr: NormalizedPullRequest): boolean {
@@ -281,7 +287,8 @@ function deriveTestingFlow(
     state,
     testers: unique(testers),
     signals: unique(signals),
-    queueAgeHours: state === "test_passed" ? null : hoursBetween(pr.updated_at ?? pr.created_at ?? new Date().toISOString())
+    queueAgeHours:
+      state === "test_passed" ? null : hoursBetween(pr.updated_at ?? pr.created_at ?? new Date().toISOString())
   };
 }
 
@@ -368,10 +375,12 @@ export function normalizePullRequest(
   const labels = labelNames(pr.labels);
   const assignees = userLogins(pr.assignees);
   const requestedReviewers = userLogins(pr.requested_reviewers);
-  const owner = profile.ownership.prOwner === "assignee" ? userLogins(pr.assignees)[0] ?? pr.user?.login : pr.user?.login;
+  const owner =
+    profile.ownership.prOwner === "assignee" ? (userLogins(pr.assignees)[0] ?? pr.user?.login) : pr.user?.login;
   const createdAt = pr.created_at ?? new Date().toISOString();
   const updatedAt = pr.updated_at ?? createdAt;
-  const ageHours = pr.state === "closed" && pr.closed_at ? hoursBetween(createdAt, pr.closed_at) : hoursBetween(createdAt);
+  const ageHours =
+    pr.state === "closed" && pr.closed_at ? hoursBetween(createdAt, pr.closed_at) : hoursBetween(createdAt);
   const reviewDecision = normalizeState(insight?.reviewDecision);
   const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
   const ciState = normalizeState(insight?.ciState);
@@ -379,7 +388,7 @@ export function normalizePullRequest(
   const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight, commentEvidence);
   const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
   const lastHumanActionAt = insight
-    ? maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt
+    ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt)
     : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
   const attentionFlags: string[] = [];
   if (pr.state !== "closed" && hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours) {
@@ -398,7 +407,10 @@ export function normalizePullRequest(
   if (pr.state !== "closed" && (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")) {
     attentionFlags.push("requested_changes");
   }
-  if (pr.state !== "closed" && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(ciState ?? "")) {
+  if (
+    pr.state !== "closed" &&
+    ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(ciState ?? "")
+  ) {
     attentionFlags.push("ci_failed");
   }
   if (pr.state !== "closed" && mergeStateStatus === "dirty") {
@@ -558,7 +570,12 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
     );
   }
 
-  if (hasActiveSeverity && !hasNeedsTriage && !hasDeferred && issueAgeHours <= profile.thresholds.prematureSeverityWindowHours) {
+  if (
+    hasActiveSeverity &&
+    !hasNeedsTriage &&
+    !hasDeferred &&
+    issueAgeHours <= profile.thresholds.prematureSeverityWindowHours
+  ) {
     violations.push(
       violation({
         objectType: "issue",
@@ -575,7 +592,12 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
     );
   }
 
-  if (hasNeedsTriage && !hasDeferred && !hasActiveSeverity && issueAgeHours >= profile.thresholds.needsTriageStaleHours) {
+  if (
+    hasNeedsTriage &&
+    !hasDeferred &&
+    !hasActiveSeverity &&
+    issueAgeHours >= profile.thresholds.needsTriageStaleHours
+  ) {
     violations.push(
       violation({
         objectType: "issue",
@@ -606,7 +628,9 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
           hasNeedsTriage ? profile.labels.needsTriage : null,
           hasDeferred ? profile.labels.deferred : null,
           ...severityLabels
-        ].filter(Boolean).join(", ")}.`,
+        ]
+          .filter(Boolean)
+          .join(", ")}.`,
         suggestedAction: "Keep exactly one lifecycle state label that matches the current workflow stage.",
         fixable: true
       })
@@ -624,7 +648,8 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
         severity: "warning",
         relatedLogin: issue.ownerLogin ?? issue.authorLogin,
         evidenceSummary: `Deferred issue #${issue.number} has no cached comment explaining why it was deferred.`,
-        suggestedAction: "Add a deferred explanation comment with the reason and the signal needed to promote it later.",
+        suggestedAction:
+          "Add a deferred explanation comment with the reason and the signal needed to promote it later.",
         fixable: false
       })
     );
@@ -695,7 +720,8 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
         expectedHours: warningHours,
         actualHours: ageHours,
         evidenceSummary: `Critical ai-easy issue #${issue.number} is ${ageHours}h old; threshold is ${warningHours}h. Created time is used as a proxy until severity timeline and testing handoff are backfilled.`,
-        suggestedAction: "Review whether ai-easy is still accurate, split blockers, or update the effort label before close.",
+        suggestedAction:
+          "Review whether ai-easy is still accurate, split blockers, or update the effort label before close.",
         sourceCompleteness: "partial_cache"
       });
     }
@@ -734,7 +760,8 @@ export function aiDriftSignalsForPullRequest(profile: RepoProfile, pr: Normalize
       expectedHours: profile.thresholds.aiEasyS0ToTestAttentionDays * 24,
       actualHours: ageHours,
       evidenceSummary: `PR #${pr.number} is labeled ai-easy but has blocker attention flags: ${blockerFlags.join(", ")}.`,
-      suggestedAction: "Re-evaluate the AI effort label before close, split blockers, or document why ai-easy is still accurate.",
+      suggestedAction:
+        "Re-evaluate the AI effort label before close, split blockers, or document why ai-easy is still accurate.",
       sourceCompleteness: pr.isComplete ? "complete_cache" : "partial_cache"
     }
   ];

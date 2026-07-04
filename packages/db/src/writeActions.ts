@@ -217,10 +217,11 @@ export async function markWorkflowFixPreviewStatus(input: {
   userId: number;
   status: WorkflowFixExecutionStatus | "previewed";
 }): Promise<void> {
-  await getPool().execute(
-    "UPDATE write_action_previews SET status = ? WHERE preview_id = ? AND user_id = ?",
-    [input.status, input.previewId, input.userId]
-  );
+  await getPool().execute("UPDATE write_action_previews SET status = ? WHERE preview_id = ? AND user_id = ?", [
+    input.status,
+    input.previewId,
+    input.userId
+  ]);
 }
 
 export async function recordWorkflowFixExecution(input: {

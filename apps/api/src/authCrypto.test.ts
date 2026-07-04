@@ -35,9 +35,7 @@ describe("auth crypto", () => {
 
   test("rejects missing or malformed encryption keys", () => {
     expect(tokenEncryptionConfigFromEnv({})).toBeNull();
-    expect(() =>
-      tokenEncryptionConfigFromEnv({ MO_DEVFLOW_TOKEN_ENCRYPTION_KEY: "too-short" })
-    ).toThrow("32 bytes");
+    expect(() => tokenEncryptionConfigFromEnv({ MO_DEVFLOW_TOKEN_ENCRYPTION_KEY: "too-short" })).toThrow("32 bytes");
   });
 
   test("creates opaque session tokens and stable hashes", () => {

@@ -1,17 +1,8 @@
 export type SourceAuthType = "anonymous" | "service_read_token" | "user_token";
 
-export type VisibilityClass =
-  | "anonymous_readable"
-  | "logged_in_readable"
-  | "token_owner_only"
-  | "admin_only";
+export type VisibilityClass = "anonymous_readable" | "logged_in_readable" | "token_owner_only" | "admin_only";
 
-export type LifecycleState =
-  | "critical"
-  | "needs-triage"
-  | "deferred"
-  | "active"
-  | "other";
+export type LifecycleState = "critical" | "needs-triage" | "deferred" | "active" | "other";
 
 export type AttentionSeverity = "info" | "warning" | "critical";
 
@@ -466,12 +457,7 @@ export interface WorkflowFixPreview {
   expiresAt: string;
 }
 
-export type WorkflowFixExecutionStatus =
-  | "success"
-  | "failed"
-  | "stale_preview"
-  | "blocked"
-  | "token_unavailable";
+export type WorkflowFixExecutionStatus = "success" | "failed" | "stale_preview" | "blocked" | "token_unavailable";
 export type WriteActionKey = WorkflowFixActionKey | "acknowledge_notification" | "retry_notification";
 export type WriteActionObjectType = WorkflowViolationObjectType | "notification_delivery";
 export type WriteActionStatus = WorkflowFixExecutionStatus;
@@ -565,12 +551,7 @@ export interface AnalyticsSummary {
 }
 
 export type NotificationSourceType =
-  | "attention_item"
-  | "workflow_violation"
-  | "ai_drift_signal"
-  | "daily_digest"
-  | "weekly_digest"
-  | "monthly_digest";
+  "attention_item" | "workflow_violation" | "ai_drift_signal" | "daily_digest" | "weekly_digest" | "monthly_digest";
 export type NotificationStatus =
   | "sent"
   | "failed_transient"
@@ -668,11 +649,7 @@ export function notificationStatusAllowsRetry(status: NotificationStatus): boole
 }
 
 export type GitHubWriteCapabilityStatus =
-  | "ready"
-  | "missing_token"
-  | "insufficient_scope"
-  | "scope_unverified"
-  | "write_back_disabled";
+  "ready" | "missing_token" | "insufficient_scope" | "scope_unverified" | "write_back_disabled";
 
 export interface GitHubWriteCapability {
   enabled: boolean;

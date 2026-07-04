@@ -157,7 +157,9 @@ describe("daily digest notification candidates", () => {
       recipient: "maintainer_group",
       dedupeKey: "notification:daily_digest:matrixorigin/matrixone:2026-07-03"
     });
-    expect(candidate.evidenceSummary).toContain("Team: 5 PRs created, 3 merged, 2 issues opened, 1 closed, 1 deferred.");
+    expect(candidate.evidenceSummary).toContain(
+      "Team: 5 PRs created, 3 merged, 2 issues opened, 1 closed, 1 deferred."
+    );
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 4.");
     expect(candidate.evidenceSummary).toContain("alice: 2 created, 1 merged, 3 violations");
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
@@ -195,7 +197,9 @@ describe("daily digest notification candidates", () => {
       recipient: "maintainer_group",
       dedupeKey: "notification:weekly_digest:matrixorigin/matrixone:2026-06-22"
     });
-    expect(candidate.evidenceSummary).toContain("Team: 25 PRs created, 18 merged, 12 issues opened, 8 closed, 3 deferred.");
+    expect(candidate.evidenceSummary).toContain(
+      "Team: 25 PRs created, 18 merged, 12 issues opened, 8 closed, 3 deferred."
+    );
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 9.");
     expect(candidate.evidenceSummary).toContain("alice: 8 created, 5 merged, 4 violations");
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
@@ -388,9 +392,7 @@ describe("notification acknowledgement health", () => {
       mappedEmployees: 1,
       missingEmployeeMappings: 2,
       blockers: [],
-      warnings: [
-        "2 owner-routed notification recipients are missing employee mappings and will use fallback routing."
-      ]
+      warnings: ["2 owner-routed notification recipients are missing employee mappings and will use fallback routing."]
     });
   });
 

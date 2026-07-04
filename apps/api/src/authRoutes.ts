@@ -11,12 +11,7 @@ import {
 } from "@mo-devflow/db";
 import { validateGitHubToken } from "@mo-devflow/github";
 import type { SessionView } from "@mo-devflow/shared";
-import {
-  createSessionToken,
-  encryptSecret,
-  hashSessionToken,
-  tokenEncryptionConfigFromEnv
-} from "./authCrypto";
+import { createSessionToken, encryptSecret, hashSessionToken, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import {
   buildClearCsrfCookie,
   buildCsrfCookie,
@@ -32,11 +27,7 @@ import {
   readCookieValue,
   sessionCookieName
 } from "./sessionCookie";
-import {
-  clientRateLimitKey,
-  FixedWindowRateLimiter,
-  tokenBindRateLimitConfigFromEnv
-} from "./rateLimit";
+import { clientRateLimitKey, FixedWindowRateLimiter, tokenBindRateLimitConfigFromEnv } from "./rateLimit";
 
 const bindGitHubTokenSchema = z.object({
   token: z.string().trim().min(20).max(512)
@@ -189,15 +180,18 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     ]);
     return {
       authenticated: true,
-      user: toAuthenticatedUserView({
-        userId,
-        githubLogin: validation.githubLogin,
-        githubId: validation.githubId,
-        avatarUrl: validation.avatarUrl,
-        tokenScopes: validation.scopes,
-        tokenLastValidatedAt: validatedAt,
-        sessionExpiresAt: expiresAt.toISOString()
-      }, { writeBackEnabled: profile.access.writeBackEnabled }),
+      user: toAuthenticatedUserView(
+        {
+          userId,
+          githubLogin: validation.githubLogin,
+          githubId: validation.githubId,
+          avatarUrl: validation.avatarUrl,
+          tokenScopes: validation.scopes,
+          tokenLastValidatedAt: validatedAt,
+          sessionExpiresAt: expiresAt.toISOString()
+        },
+        { writeBackEnabled: profile.access.writeBackEnabled }
+      ),
       tokenEncryptionConfigured: true
     } satisfies SessionView;
   });

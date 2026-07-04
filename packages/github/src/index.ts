@@ -121,7 +121,7 @@ export async function fetchIssueFreshState(input: {
   return {
     state: response.data.state === "closed" ? "closed" : "open",
     labels: response.data.labels
-      .map((label) => (typeof label === "string" ? label : label.name ?? ""))
+      .map((label) => (typeof label === "string" ? label : (label.name ?? "")))
       .filter(Boolean),
     updatedAt: response.data.updated_at,
     rateLimitRemaining: readRateLimit(response.headers)
@@ -175,7 +175,9 @@ async function applyAddNeedsTriageWorkflowFix(input: {
     };
   }
   const labelsToAdd = input.preview.operations
-    .filter((operation): operation is Extract<WorkflowFixOperation, { type: "add_label" }> => operation.type === "add_label")
+    .filter(
+      (operation): operation is Extract<WorkflowFixOperation, { type: "add_label" }> => operation.type === "add_label"
+    )
     .map((operation) => operation.label);
 
   const staleReason = missingNeedsTriageStaleReason(input.profile, freshState, labelsToAdd);
@@ -293,7 +295,9 @@ async function applyMoveToDeferredWorkflowFix(input: {
         labels: [operation.label]
       });
       rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
-      const responseLabels = response.data.map((label) => label.name).filter((label): label is string => Boolean(label));
+      const responseLabels = response.data
+        .map((label) => label.name)
+        .filter((label): label is string => Boolean(label));
       labels = responseLabels.length > 0 ? responseLabels : appendUnique(labels, [operation.label]);
       appliedOperations.push(operation);
       responses.push({ type: operation.type, status: response.status, labels: [operation.label] });
@@ -405,10 +409,16 @@ function moveToDeferredStaleReason(
   if (freshState.labels.includes(profile.labels.deferred)) {
     return "issue_deferred";
   }
-  if (!sameStringSet(lifecycleLabels(profile, freshState.labels), lifecycleLabels(profile, preview.currentState.labels))) {
+  if (
+    !sameStringSet(lifecycleLabels(profile, freshState.labels), lifecycleLabels(profile, preview.currentState.labels))
+  ) {
     return "lifecycle_labels_changed";
   }
-  if (!preview.operations.some((operation) => operation.type === "add_label" && operation.label === profile.labels.deferred)) {
+  if (
+    !preview.operations.some(
+      (operation) => operation.type === "add_label" && operation.label === profile.labels.deferred
+    )
+  ) {
     return "missing_deferred_label_operation";
   }
   if (!preview.operations.some((operation) => operation.type === "add_comment" && operation.body.trim().length > 0)) {
@@ -468,12 +478,15 @@ function secondsUntil(iso: string | null): number | null {
 }
 
 function errorHeaders(error: unknown): Record<string, string | number | undefined> {
-  const headers = (error as { response?: { headers?: Record<string, string | number | undefined> } })?.response?.headers;
+  const headers = (error as { response?: { headers?: Record<string, string | number | undefined> } })?.response
+    ?.headers;
   return headers ?? {};
 }
 
 function errorStatus(error: unknown): number | null {
-  const status = (error as { status?: number; response?: { status?: number } })?.status ?? (error as { response?: { status?: number } })?.response?.status;
+  const status =
+    (error as { status?: number; response?: { status?: number } })?.status ??
+    (error as { response?: { status?: number } })?.response?.status;
   return typeof status === "number" ? status : null;
 }
 
@@ -658,7 +671,11 @@ async function fetchPullRequestInsight(
   owner: string,
   repo: string,
   pr: PullRequestListItem
-): Promise<{ insight: PullRequestInsight; rateLimitRemaining: number | null; pullRequest: PullRequestDetailItem | null }> {
+): Promise<{
+  insight: PullRequestInsight;
+  rateLimitRemaining: number | null;
+  pullRequest: PullRequestDetailItem | null;
+}> {
   let rateLimitRemaining: number | null = null;
   const detailSyncedAt = new Date().toISOString();
   try {
@@ -785,7 +802,9 @@ function issueCommentFetchLimit(sourceAuthType: SourceAuthType): number {
 }
 
 function issueCommentBackfillCandidates(profile: RepoProfile, issues: IssueListItem[]): IssueListItem[] {
-  const testingCommentSignalsConfigured = profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0);
+  const testingCommentSignalsConfigured = profile.testing.handoffSignals.comments.some(
+    (signal) => signal.trim().length > 0
+  );
   return issues.filter((issue) => {
     if (issue.pull_request) {
       return testingCommentSignalsConfigured;
@@ -847,22 +866,16 @@ async function fetchIssueComments(input: {
   return { comments, rateLimitRemaining };
 }
 
-export async function fetchPullRequestInsightForNumber(input: {
-  profile: RepoProfile;
-  pullNumber: number;
-}): Promise<{
+export async function fetchPullRequestInsightForNumber(input: { profile: RepoProfile; pullNumber: number }): Promise<{
   insight: PullRequestInsight;
   rateLimitRemaining: number | null;
   sourceAuthType: SourceAuthType;
   pullRequest: PullRequestDetailItem | null;
 }> {
   const { octokit, sourceAuthType } = createGitHubClient();
-  const result = await fetchPullRequestInsight(
-    octokit,
-    input.profile.repo.owner,
-    input.profile.repo.name,
-    { number: input.pullNumber } as PullRequestListItem
-  );
+  const result = await fetchPullRequestInsight(octokit, input.profile.repo.owner, input.profile.repo.name, {
+    number: input.pullNumber
+  } as PullRequestListItem);
   return {
     ...result,
     sourceAuthType

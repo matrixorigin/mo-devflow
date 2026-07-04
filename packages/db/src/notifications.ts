@@ -540,10 +540,7 @@ export function buildMonthlyDigestNotificationCandidate(input: {
   };
 }
 
-async function getDailyDigestCandidate(
-  repoId: number,
-  profile: RepoProfile
-): Promise<NotificationCandidate | null> {
+async function getDailyDigestCandidate(repoId: number, profile: RepoProfile): Promise<NotificationCandidate | null> {
   const metricDate = dailyDigestMetricDate(profile.reporting.timezone);
   const [metricRows] = await getPool().execute<RowData[]>(
     `SELECT *
@@ -631,10 +628,7 @@ async function getPeriodDigestMetrics(
   };
 }
 
-async function getWeeklyDigestCandidate(
-  repoId: number,
-  profile: RepoProfile
-): Promise<NotificationCandidate | null> {
+async function getWeeklyDigestCandidate(repoId: number, profile: RepoProfile): Promise<NotificationCandidate | null> {
   const period = weeklyDigestPeriod(profile.reporting.timezone, profile.reporting.weekStart);
   const metrics = await getPeriodDigestMetrics(repoId, profile, period);
   if (!metrics) {
@@ -647,10 +641,7 @@ async function getWeeklyDigestCandidate(
   });
 }
 
-async function getMonthlyDigestCandidate(
-  repoId: number,
-  profile: RepoProfile
-): Promise<NotificationCandidate | null> {
+async function getMonthlyDigestCandidate(repoId: number, profile: RepoProfile): Promise<NotificationCandidate | null> {
   const period = monthlyDigestPeriod(profile.reporting.timezone);
   const metrics = await getPeriodDigestMetrics(repoId, profile, period);
   if (!metrics) {
@@ -706,7 +697,8 @@ export async function listNotificationCandidates(
       [repoId, repoId, escalationCutoff, ...attentionVisibility.params, immediateLimit]
     );
     for (const row of escalationRows) {
-      const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
+      const objectNumber =
+        row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
       const relatedLogin = row.related_login ? asString(row.related_login) : null;
       const sourceId = asNumber(row.id);
       escalatedAttentionIds.push(sourceId);
@@ -746,7 +738,8 @@ export async function listNotificationCandidates(
     [repoId, ...attentionVisibility.params, ...attentionExclusion.params, remainingAfterEscalations]
   );
   for (const row of attentionRows) {
-    const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
+    const objectNumber =
+      row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
     const relatedLogin = row.related_login ? asString(row.related_login) : null;
     candidates.push({
       sourceType: "attention_item",
@@ -1114,7 +1107,8 @@ export async function acknowledgeNotificationDelivery(input: {
   return {
     outcome: "acknowledged",
     deliveryId: asNumber(delivery.id),
-    acknowledgedAt: fromSqlDate(acknowledgement?.acknowledged_at) ?? fromSqlDate(acknowledgedAt) ?? new Date().toISOString(),
+    acknowledgedAt:
+      fromSqlDate(acknowledgement?.acknowledged_at) ?? fromSqlDate(acknowledgedAt) ?? new Date().toISOString(),
     acknowledgedBy: acknowledgement?.github_login ? asString(acknowledgement.github_login) : input.githubLogin
   };
 }

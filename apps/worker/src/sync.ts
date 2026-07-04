@@ -102,9 +102,7 @@ export function syncIntervalSecondsFromEnv(): number {
   return Math.max(60, Math.floor(parsed));
 }
 
-export function metricsRetentionDaysFromEnv(
-  env: Record<string, string | undefined> = process.env
-): number {
+export function metricsRetentionDaysFromEnv(env: Record<string, string | undefined> = process.env): number {
   const parsed = Number(env.MO_DEVFLOW_METRICS_RETENTION_DAYS ?? "120");
   if (!Number.isFinite(parsed)) {
     return 120;
@@ -212,19 +210,23 @@ function pullRequestNumbersFromArray(value: unknown): number[] {
   }
   return Array.from(
     new Set(
-      value
-        .map((item) => (recordPayload(item)?.number))
-        .filter((number): number is number => typeof number === "number")
+      value.map((item) => recordPayload(item)?.number).filter((number): number is number => typeof number === "number")
     )
   );
 }
 
-function pullRequestNumbersFromCiPayload(payload: Record<string, unknown>, eventName: "workflow_run" | "check_run"): number[] {
+function pullRequestNumbersFromCiPayload(
+  payload: Record<string, unknown>,
+  eventName: "workflow_run" | "check_run"
+): number[] {
   const source = eventName === "workflow_run" ? recordPayload(payload.workflow_run) : recordPayload(payload.check_run);
   return pullRequestNumbersFromArray(source?.pull_requests);
 }
 
-function ensureGitHubObjectWithNumber(input: Record<string, unknown>, label: string): Record<string, unknown> & { id: number; number: number } {
+function ensureGitHubObjectWithNumber(
+  input: Record<string, unknown>,
+  label: string
+): Record<string, unknown> & { id: number; number: number } {
   if (typeof input.id !== "number" || typeof input.number !== "number") {
     throw new Error(`${label} payload must include numeric id and number.`);
   }
@@ -326,11 +328,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
     };
 
     if (!profile.notifications.wecom.enabled) {
-      if (
-        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
-          "skipped_disabled"
-        ])
-      ) {
+      if (await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, ["skipped_disabled"])) {
         summary.cooldown += 1;
         continue;
       }
@@ -347,11 +345,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
     }
 
     if (!webhookUrl) {
-      if (
-        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
-          "skipped_no_webhook"
-        ])
-      ) {
+      if (await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, ["skipped_no_webhook"])) {
         summary.cooldown += 1;
         continue;
       }
@@ -368,12 +362,11 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
       continue;
     }
 
-    if (candidate.severity !== "critical" && isInQuietHours(profile.notifications.wecom.quietHours, profile.reporting.timezone)) {
-      if (
-        await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, [
-          "skipped_quiet_hours"
-        ])
-      ) {
+    if (
+      candidate.severity !== "critical" &&
+      isInQuietHours(profile.notifications.wecom.quietHours, profile.reporting.timezone)
+    ) {
+      if (await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, ["skipped_quiet_hours"])) {
         summary.cooldown += 1;
         continue;
       }
@@ -529,7 +522,11 @@ export async function processWebhookPayload(input: {
     if (!rawIssue) {
       throw new WebhookNormalizationError("issues payload missing issue object");
     }
-    const issue = normalizeIssue(input.profile, ensureGitHubObjectWithNumber(rawIssue, "issue"), cacheSourceForWebhook());
+    const issue = normalizeIssue(
+      input.profile,
+      ensureGitHubObjectWithNumber(rawIssue, "issue"),
+      cacheSourceForWebhook()
+    );
     if (issue.isPullRequest) {
       return { processed: true, skipped: true, message: `issue #${issue.number} is a pull request shadow issue` };
     }
@@ -921,13 +918,8 @@ export async function syncOnce(): Promise<SyncResult | null> {
   loadEnv();
   const profile = loadRepoProfile();
 
-  return runWithJobLease(
-    `github-sync:${profile.key}`,
-    "github_sync",
-    () => syncGitHubSnapshotOnce(),
-    {
-      leaseSeconds: 600,
-      nextRunAt: dateAfterSeconds(syncIntervalSecondsFromEnv())
-    }
-  );
+  return runWithJobLease(`github-sync:${profile.key}`, "github_sync", () => syncGitHubSnapshotOnce(), {
+    leaseSeconds: 600,
+    nextRunAt: dateAfterSeconds(syncIntervalSecondsFromEnv())
+  });
 }

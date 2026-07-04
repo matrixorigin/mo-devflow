@@ -12,8 +12,7 @@ export interface EncryptedSecret {
   keyVersion: string;
 }
 
-const encryptionKeyMessage =
-  "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY must be 32 bytes encoded as base64 or 64 hex characters.";
+const encryptionKeyMessage = "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY must be 32 bytes encoded as base64 or 64 hex characters.";
 
 export function tokenEncryptionConfigFromEnv(
   env: Record<string, string | undefined> = process.env
@@ -44,10 +43,7 @@ export function encryptSecret(plaintext: string, config: TokenEncryptionConfig):
 export function decryptSecret(secret: EncryptedSecret, key: Buffer): string {
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(secret.iv, "base64"));
   decipher.setAuthTag(Buffer.from(secret.authTag, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(secret.ciphertext, "base64")),
-    decipher.final()
-  ]).toString("utf8");
+  return Buffer.concat([decipher.update(Buffer.from(secret.ciphertext, "base64")), decipher.final()]).toString("utf8");
 }
 
 export function createSessionToken(): string {

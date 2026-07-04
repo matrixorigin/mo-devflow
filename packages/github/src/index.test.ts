@@ -225,9 +225,7 @@ describe("workflow fix execution", () => {
   });
 
   test("does not execute when the issue was updated after the preview", async () => {
-    octokitMocks.issuesGet.mockResolvedValue(
-      issueResponseWithUpdatedAt(["kind/bug"], "2026-07-03T00:02:00.000Z")
-    );
+    octokitMocks.issuesGet.mockResolvedValue(issueResponseWithUpdatedAt(["kind/bug"], "2026-07-03T00:02:00.000Z"));
 
     const result = await applyWorkflowFixPreview({
       token: "test-user-token",

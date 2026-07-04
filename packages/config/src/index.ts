@@ -54,9 +54,7 @@ const profileSchema = z.object({
     deferred: z.string().default("deferred"),
     critical: z.array(z.string()).default(["severity/s-1", "severity/s0"]),
     active: z.array(z.string()).default(["severity/s-1", "severity/s0", "severity/s1"]),
-    ai_effort: z
-      .array(z.string())
-      .default(["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"])
+    ai_effort: z.array(z.string()).default(["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"])
   }),
   thresholds: z
     .object({
@@ -107,9 +105,7 @@ const profileSchema = z.object({
             .optional()
         })
         .default({ enabled: false }),
-      employees: z
-        .record(z.string(), z.object({ wecom_user_id: z.string() }))
-        .default({}),
+      employees: z.record(z.string(), z.object({ wecom_user_id: z.string() })).default({}),
       routing: z
         .object({
           critical_issue_stalled: notificationRoutingEntrySchema.optional(),
@@ -121,7 +117,9 @@ const profileSchema = z.object({
     .default({ wecom: { enabled: false }, employees: {}, routing: {} })
 });
 
-export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? "config/repos/matrixone.yaml"): RepoProfile {
+export function loadRepoProfile(
+  profilePath = process.env.MO_DEVFLOW_PROFILE ?? "config/repos/matrixone.yaml"
+): RepoProfile {
   const absolutePath = path.resolve(profilePath);
   const rawText = fs.readFileSync(absolutePath, "utf8");
   const raw = YAML.parse(rawText);

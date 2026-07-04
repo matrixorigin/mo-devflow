@@ -1,4 +1,9 @@
-import { parseJsonRecord, type JobQueueHealth, type ManualRefreshLayer, type ManualRefreshResult } from "@mo-devflow/shared";
+import {
+  parseJsonRecord,
+  type JobQueueHealth,
+  type ManualRefreshLayer,
+  type ManualRefreshResult
+} from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 
@@ -78,7 +83,14 @@ export async function ensureRecurringJobs(jobs: RecurringJobSeed[]): Promise<voi
           job_key, job_type, status, attempts, next_run_at, lease_owner,
           lease_expires_at, last_error, payload_json, created_at, updated_at
         ) VALUES (?, ?, 'pending', 0, ?, NULL, NULL, NULL, ?, ?, ?)`,
-        [job.jobKey, job.jobType, sqlDate(job.nextRunAt ?? new Date().toISOString()), stringify(job.payload ?? {}), now, now]
+        [
+          job.jobKey,
+          job.jobType,
+          sqlDate(job.nextRunAt ?? new Date().toISOString()),
+          stringify(job.payload ?? {}),
+          now,
+          now
+        ]
       );
     } catch (error) {
       if (!isDuplicateError(error)) {
@@ -96,7 +108,9 @@ export async function ensureRecurringJobs(jobs: RecurringJobSeed[]): Promise<voi
   }
 }
 
-export async function enqueueJobsNow(jobs: Array<RecurringJobSeed & { jobType: ManualRefreshLayer }>): Promise<QueuedJobNow[]> {
+export async function enqueueJobsNow(
+  jobs: Array<RecurringJobSeed & { jobType: ManualRefreshLayer }>
+): Promise<QueuedJobNow[]> {
   const now = nowSql();
   await ensureRecurringJobs(jobs);
   const queued: QueuedJobNow[] = [];
@@ -157,10 +171,7 @@ export async function recordManualRefreshRequest(input: {
   };
 }
 
-export async function claimNextDueJob(input: {
-  leaseOwner: string;
-  leaseSeconds: number;
-}): Promise<LeasedJob | null> {
+export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds: number }): Promise<LeasedJob | null> {
   const pool = getPool();
   const now = nowSql();
   const leaseExpiresAt = sqlDate(new Date(Date.now() + input.leaseSeconds * 1000)) ?? now;
@@ -223,13 +234,7 @@ export async function completeLeasedJob(input: {
          next_run_at = ?,
          updated_at = ?
      WHERE id = ? AND lease_owner = ?`,
-    [
-      stringify(input.payload ?? {}),
-      sqlDate(input.nextRunAt),
-      nowSql(),
-      input.jobId,
-      input.leaseOwner
-    ]
+    [stringify(input.payload ?? {}), sqlDate(input.nextRunAt), nowSql(), input.jobId, input.leaseOwner]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
     throw new Error(`Cannot complete job ${input.jobId}; lease is no longer owned by this worker.`);

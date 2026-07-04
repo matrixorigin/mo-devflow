@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { detectSchemaDrift, expectedSchemaColumnSpecsFromStatements, expectedSchemaColumnsFromStatements } from "./schema";
+import {
+  detectSchemaDrift,
+  expectedSchemaColumnSpecsFromStatements,
+  expectedSchemaColumnsFromStatements
+} from "./schema";
 
 function column(columnType: string, nullable: boolean) {
   return { columnType, nullable };

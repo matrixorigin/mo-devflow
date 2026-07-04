@@ -73,7 +73,8 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "owner" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(issue.lifecycleState).toBe("critical");
@@ -131,7 +132,8 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: []
-      }, anonymousSource,
+      },
+      anonymousSource,
       { linkedPrAuthorByIssueNumber: new Map([[18, "pr-author"]]) }
     );
 
@@ -153,7 +155,8 @@ describe("rules", () => {
         updated_at: "2026-07-01T01:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "assigned-owner" }]
-      }, anonymousSource,
+      },
+      anonymousSource,
       { linkedPrAuthorByIssueNumber: new Map([[19, "pr-author"]]) }
     );
 
@@ -199,7 +202,8 @@ describe("rules", () => {
         updated_at: "2026-06-01T00:00:00Z",
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(pr.ownerLogin).toBe("alice");
@@ -222,7 +226,8 @@ describe("rules", () => {
         updated_at: freshSystemUpdate,
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource,
+      },
+      anonymousSource,
       {
         number: 9,
         reviewDecision: null,
@@ -256,7 +261,8 @@ describe("rules", () => {
         updated_at: now,
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource,
+      },
+      anonymousSource,
       {
         number: 10,
         reviewDecision: "changes_requested",
@@ -450,7 +456,8 @@ describe("rules", () => {
         head: { ref: "fix" },
         base: { ref: "main" },
         requested_reviewers: [{ login: "tester-a" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -478,7 +485,8 @@ describe("rules", () => {
         requested_reviewers: [{ login: "tester-a" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -506,7 +514,8 @@ describe("rules", () => {
         requested_reviewers: [{ login: "tester-a" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource,
+      },
+      anonymousSource,
       {
         number: 23,
         reviewDecision: "approved",
@@ -551,7 +560,8 @@ describe("rules", () => {
         assignees: [{ login: "qa-owner" }],
         head: { ref: "fix" },
         base: { ref: "main" }
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(pr.testingState).toBe("test_requested");
@@ -637,9 +647,7 @@ describe("rules", () => {
       }
     );
 
-    expect(aiDriftSignalsForPullRequest(profile, pr).map((item) => item.ruleKey)).toEqual([
-      "ai_easy_pr_has_blockers"
-    ]);
+    expect(aiDriftSignalsForPullRequest(profile, pr).map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
   });
 
   test("AI drift ignores ai-easy PRs without blocker evidence", () => {
@@ -736,10 +744,13 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }],
         assignees: []
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
-    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("bug_missing_needs_triage");
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain(
+      "bug_missing_needs_triage"
+    );
   });
 
   test("workflow violations detect stale needs-triage issues", () => {
@@ -756,7 +767,8 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "needs-triage" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("needs_triage_stale");
@@ -776,10 +788,13 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
-    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("premature_active_severity");
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain(
+      "premature_active_severity"
+    );
   });
 
   test("workflow violations do not mark old active severity as premature without timeline evidence", () => {
@@ -796,10 +811,13 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
-    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain("premature_active_severity");
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain(
+      "premature_active_severity"
+    );
   });
 
   test("workflow violations detect conflicting lifecycle labels", () => {
@@ -816,7 +834,8 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "needs-triage" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     const rules = workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey);
@@ -936,7 +955,8 @@ describe("rules", () => {
         updated_at: new Date().toISOString(),
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     expect(aiDriftSignalsForIssue(profile, issue).map((item) => item.ruleKey)).toContain("critical_missing_ai_effort");
@@ -956,11 +976,14 @@ describe("rules", () => {
         updated_at: "2026-01-02T00:00:00Z",
         labels: [{ name: "kind/bug" }, { name: "severity/s0" }, { name: "ai-easy" }],
         assignees: [{ login: "alice" }]
-      }, anonymousSource
+      },
+      anonymousSource
     );
 
     const signals = aiDriftSignalsForIssue(profile, issue);
     expect(signals.map((item) => item.ruleKey)).toContain("ai_easy_critical_too_old");
-    expect(signals.find((item) => item.ruleKey === "ai_easy_critical_too_old")?.sourceCompleteness).toBe("partial_cache");
+    expect(signals.find((item) => item.ruleKey === "ai_easy_critical_too_old")?.sourceCompleteness).toBe(
+      "partial_cache"
+    );
   });
 });

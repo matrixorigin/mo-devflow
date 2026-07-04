@@ -60,11 +60,7 @@ import {
   syncHealthLayers
 } from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
-import {
-  GridComponent,
-  LegendComponent,
-  TooltipComponent
-} from "echarts/components";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
@@ -565,11 +561,19 @@ function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: W
         </Space>
         <Space size={[4, 4]} wrap>
           <Text type="secondary">Labels</Text>
-          {snapshot.labels.length > 0 ? snapshot.labels.map((label) => <Tag key={label}>{label}</Tag>) : <Tag>none</Tag>}
+          {snapshot.labels.length > 0 ? (
+            snapshot.labels.map((label) => <Tag key={label}>{label}</Tag>)
+          ) : (
+            <Tag>none</Tag>
+          )}
         </Space>
         <Space size={[4, 4]} wrap>
           <Text type="secondary">Assignees</Text>
-          {snapshot.assignees.length > 0 ? snapshot.assignees.map((assignee) => <Tag key={assignee}>{assignee}</Tag>) : <Tag>none</Tag>}
+          {snapshot.assignees.length > 0 ? (
+            snapshot.assignees.map((assignee) => <Tag key={assignee}>{assignee}</Tag>)
+          ) : (
+            <Tag>none</Tag>
+          )}
         </Space>
         <Space size={[4, 4]} wrap>
           {snapshot.lifecycleState ? <Tag>{labelText(snapshot.lifecycleState)}</Tag> : null}
@@ -976,7 +980,9 @@ export default function App() {
         render: (title, issue) => (
           <Space size={8} className="table-title-cell">
             {!issue.isComplete ? <Badge color="#d97706" /> : null}
-            <Text strong ellipsis={{ tooltip: title }}>{title}</Text>
+            <Text strong ellipsis={{ tooltip: title }}>
+              {title}
+            </Text>
           </Space>
         )
       },
@@ -1029,7 +1035,9 @@ export default function App() {
             <Space size={[4, 4]} wrap>
               {issue.blockers.slice(0, 4).map((blocker) => (
                 <Tooltip title={blocker.message} key={blocker.key}>
-                  <Tag color={blockerColor(blocker.severity)}>{labelText(blocker.key.split(":").at(-1) ?? blocker.key)}</Tag>
+                  <Tag color={blockerColor(blocker.severity)}>
+                    {labelText(blocker.key.split(":").at(-1) ?? blocker.key)}
+                  </Tag>
                 </Tooltip>
               ))}
               {issue.blockers.length > 4 ? <Tag>+{issue.blockers.length - 4}</Tag> : null}
@@ -1271,9 +1279,15 @@ export default function App() {
           <Space size={[4, 4]} wrap>
             <Tag color={pr.state === "open" ? "green" : "default"}>{pr.state}</Tag>
             {pr.draft ? <Tag color="gold">draft</Tag> : null}
-            {pr.reviewDecision ? <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag> : null}
+            {pr.reviewDecision ? (
+              <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
+                {labelText(pr.reviewDecision)}
+              </Tag>
+            ) : null}
             {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-            {pr.mergeStateStatus ? <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag> : null}
+            {pr.mergeStateStatus ? (
+              <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+            ) : null}
             <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
           </Space>
         )
@@ -1380,11 +1394,11 @@ export default function App() {
             ? "Connect GitHub token to preview fixes"
             : !tokenServerReady
               ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
-            : !supportsPreview
-              ? "No safe preview action for this rule yet"
-              : issueLabelCapability?.enabled
-                ? `Preview ${labelText(actionKey)}`
-                : (issueLabelCapability?.message ?? "Reconnect GitHub token before workflow fixes are enabled");
+              : !supportsPreview
+                ? "No safe preview action for this rule yet"
+                : issueLabelCapability?.enabled
+                  ? `Preview ${labelText(actionKey)}`
+                  : (issueLabelCapability?.message ?? "Reconnect GitHub token before workflow fixes are enabled");
           return (
             <Tooltip title={tooltip}>
               <span>
@@ -1392,7 +1406,9 @@ export default function App() {
                   aria-label="Preview workflow fix"
                   icon={<ClipboardCheck size={15} />}
                   disabled={!session?.authenticated || !canPreview}
-                  loading={previewLoadingKey === `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
+                  loading={
+                    previewLoadingKey === `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`
+                  }
                   onClick={() => void previewWorkflowFix(violation)}
                 />
               </span>
@@ -1541,7 +1557,9 @@ export default function App() {
             return <Tag color="default">not required</Tag>;
           }
           return (
-            <Tooltip title={session?.authenticated ? "Acknowledge notification" : "Connect GitHub token to acknowledge"}>
+            <Tooltip
+              title={session?.authenticated ? "Acknowledge notification" : "Connect GitHub token to acknowledge"}
+            >
               <span>
                 <Button
                   size="small"
@@ -1561,7 +1579,8 @@ export default function App() {
         title: "Error",
         dataIndex: "errorMessage",
         ellipsis: true,
-        render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
+        render: (value) =>
+          value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>
       },
       {
         title: "Retry",
@@ -1666,7 +1685,8 @@ export default function App() {
         dataIndex: "errorMessage",
         width: 300,
         ellipsis: true,
-        render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
+        render: (value) =>
+          value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>
       }
     ],
     []
@@ -1675,7 +1695,11 @@ export default function App() {
   const testerColumns: ColumnsType<DashboardSummary["testing"]["testers"][number]> = useMemo(
     () => [
       { title: "Tester", dataIndex: "login", render: (login) => <Tag>{login}</Tag> },
-      { title: "Queue PRs", dataIndex: "queuePrs", render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>) },
+      {
+        title: "Queue PRs",
+        dataIndex: "queuePrs",
+        render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>)
+      },
       {
         title: "Average Queue Age",
         dataIndex: "averageQueueAgeHours",
@@ -1685,13 +1709,21 @@ export default function App() {
         title: "Req To Pass",
         dataIndex: "averageRequestToPassHours",
         render: (value, row) =>
-          value === null ? <Text type="secondary">{row.requestToPassSamples} samples</Text> : `${hours(value)} (${row.requestToPassSamples})`
+          value === null ? (
+            <Text type="secondary">{row.requestToPassSamples} samples</Text>
+          ) : (
+            `${hours(value)} (${row.requestToPassSamples})`
+          )
       },
       {
         title: "Pass To Close",
         dataIndex: "averagePassToCloseHours",
         render: (value, row) =>
-          value === null ? <Text type="secondary">{row.passToCloseSamples} samples</Text> : `${hours(value)} (${row.passToCloseSamples})`
+          value === null ? (
+            <Text type="secondary">{row.passToCloseSamples} samples</Text>
+          ) : (
+            `${hours(value)} (${row.passToCloseSamples})`
+          )
       }
     ],
     []
@@ -1703,7 +1735,11 @@ export default function App() {
         dataIndex: "prNumber",
         width: 104,
         render: (number) => (
-          <a href={`https://github.com/${data?.repo.owner}/${data?.repo.name}/pull/${number}`} target="_blank" rel="noreferrer">
+          <a
+            href={`https://github.com/${data?.repo.owner}/${data?.repo.name}/pull/${number}`}
+            target="_blank"
+            rel="noreferrer"
+          >
             #{number}
           </a>
         )
@@ -1775,11 +1811,11 @@ export default function App() {
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
-  const latestRateLimitHealth =
-    data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
+  const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
-  const criticalOwnerCoverageRows =
-    data ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) : [];
+  const criticalOwnerCoverageRows = data
+    ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8)
+    : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const freshness = data ? summarizeFreshness(data.sync) : null;
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
@@ -1841,11 +1877,7 @@ export default function App() {
                   : "Connect GitHub token"
               }
             >
-              <Button
-                icon={<KeyRound size={16} />}
-                disabled={tokenEncryptionUnavailable}
-                onClick={openTokenReconnect}
-              >
+              <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={openTokenReconnect}>
                 Connect
               </Button>
             </Tooltip>
@@ -1854,11 +1886,7 @@ export default function App() {
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
           </Tooltip>
           <Tooltip
-            title={
-              session?.authenticated
-                ? "Queue worker refresh"
-                : "Connect GitHub token to queue worker refresh"
-            }
+            title={session?.authenticated ? "Queue worker refresh" : "Connect GitHub token to queue worker refresh"}
           >
             <Button
               icon={<RefreshCcw size={16} />}
@@ -1870,9 +1898,17 @@ export default function App() {
         </Space>
       </Header>
       <Content className="content">
-        {error ? <Alert className="band" type="error" title="Dashboard unavailable" description={error} showIcon /> : null}
+        {error ? (
+          <Alert className="band" type="error" title="Dashboard unavailable" description={error} showIcon />
+        ) : null}
         {manualRefreshError ? (
-          <Alert className="band" type="error" title="Refresh was not queued" description={manualRefreshError} showIcon />
+          <Alert
+            className="band"
+            type="error"
+            title="Refresh was not queued"
+            description={manualRefreshError}
+            showIcon
+          />
         ) : null}
         {manualRefreshResult ? (
           <Alert
@@ -1899,7 +1935,9 @@ export default function App() {
                     oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
                   </Tag>
                   <Tag color={data.sync.staleObjects > 0 ? "orange" : "green"}>{data.sync.staleObjects} stale</Tag>
-                  <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>{data.sync.partialObjects} partial</Tag>
+                  <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>
+                    {data.sync.partialObjects} partial
+                  </Tag>
                 </Space>
                 <Space className="freshness-layers" size={[4, 4]} wrap>
                   {data.sync.health.map((item) => (
@@ -1940,9 +1978,9 @@ export default function App() {
                 className="band"
                 type="info"
                 title="This view is filtered by repository visibility policy"
-                description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${data.visibility.visibleClasses
-                  .map(labelText)
-                  .join(", ") || "none"}.`}
+                description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${
+                  data.visibility.visibleClasses.map(labelText).join(", ") || "none"
+                }.`}
                 showIcon
               />
             ) : null}
@@ -1962,15 +2000,27 @@ export default function App() {
                 <section className="kpi-grid">
                   <div className="metric">
                     <Statistic title="Critical Issues" value={data.counts.criticalIssues} />
-                    <Progress percent={Math.min(100, data.counts.criticalIssues * 10)} showInfo={false} strokeColor="#dc2626" />
+                    <Progress
+                      percent={Math.min(100, data.counts.criticalIssues * 10)}
+                      showInfo={false}
+                      strokeColor="#dc2626"
+                    />
                   </div>
                   <div className="metric">
                     <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
-                    <Progress percent={Math.min(100, data.counts.unownedCriticalIssues * 20)} showInfo={false} strokeColor="#d97706" />
+                    <Progress
+                      percent={Math.min(100, data.counts.unownedCriticalIssues * 20)}
+                      showInfo={false}
+                      strokeColor="#d97706"
+                    />
                   </div>
                   <div className="metric">
                     <Statistic title="Non-watched Critical" value={data.counts.nonWatchedCriticalIssues} />
-                    <Progress percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)} showInfo={false} strokeColor="#ca8a04" />
+                    <Progress
+                      percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)}
+                      showInfo={false}
+                      strokeColor="#ca8a04"
+                    />
                   </div>
                   <div className="metric">
                     <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
@@ -1986,7 +2036,11 @@ export default function App() {
                   </div>
                   <div className="metric">
                     <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
-                    <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
+                    <Progress
+                      percent={Math.min(100, data.counts.attentionPrs * 10)}
+                      showInfo={false}
+                      strokeColor="#ca8a04"
+                    />
                   </div>
                   <div className="metric">
                     <Statistic title="Testing Queue" value={data.testing.queuePrs} />
@@ -1999,7 +2053,10 @@ export default function App() {
                   <div className="metric">
                     <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
                     <Progress
-                      percent={Math.min(100, data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations)}
+                      percent={Math.min(
+                        100,
+                        data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations
+                      )}
                       showInfo={false}
                       strokeColor="#7c3aed"
                     />
@@ -2025,7 +2082,9 @@ export default function App() {
                     <Progress
                       percent={Math.min(
                         100,
-                        data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25 + data.sync.jobQueue.blockedJobs * 30
+                        data.sync.jobQueue.queueDepth * 20 +
+                          data.sync.jobQueue.failedJobs * 25 +
+                          data.sync.jobQueue.blockedJobs * 30
                       )}
                       showInfo={false}
                       strokeColor={
@@ -2198,7 +2257,9 @@ export default function App() {
                 className="band"
                 type="warning"
                 title="Webhook ingestion has failed deliveries"
-                description={data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`}
+                description={
+                  data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`
+                }
                 showIcon
               />
             ) : null}
@@ -2207,7 +2268,9 @@ export default function App() {
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>Operational Health</Title>
-                  <Text type="secondary">Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}</Text>
+                  <Text type="secondary">
+                    Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
+                  </Text>
                 </div>
                 <div className="health-grid">
                   <Statistic
@@ -2215,7 +2278,10 @@ export default function App() {
                     value={labelText(data.sync.worker.status)}
                     styles={{ content: { color: workerStatusColor(data.sync.worker.status) } }}
                   />
-                  <Statistic title="Worker Phase" value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"} />
+                  <Statistic
+                    title="Worker Phase"
+                    value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"}
+                  />
                   <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
                   <Statistic title="Last Tick" value={formatDate(data.sync.worker.lastTickFinishedAt)} />
                   <Statistic
@@ -2224,7 +2290,10 @@ export default function App() {
                     styles={{ content: { color: rateLimitColor(latestRateLimitRemaining) } }}
                   />
                   <Statistic title="Stale Objects" value={data.sync.staleObjects} />
-                  <Statistic title="Oldest Cache" value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)} />
+                  <Statistic
+                    title="Oldest Cache"
+                    value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)}
+                  />
                   <Statistic title="Due Jobs" value={data.sync.jobQueue.queueDepth} />
                   <Statistic title="Running Jobs" value={data.sync.jobQueue.runningJobs} />
                   <Statistic title="Failed Jobs" value={data.sync.jobQueue.failedJobs} />
@@ -2245,9 +2314,24 @@ export default function App() {
                   <Statistic title="Webhook Duplicates" value={data.webhooks.duplicateDeliveries} />
                   <Statistic title="Last Webhook" value={formatDate(data.webhooks.lastReceivedAt)} />
                   <Statistic title="Testing Queue" value={data.testing.queuePrs} />
-                  <Statistic title="Avg Testing Age" value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)} />
-                  <Statistic title="Req To Pass" value={data.testing.averageRequestToPassHours === null ? "-" : hours(data.testing.averageRequestToPassHours)} />
-                  <Statistic title="Pass To Close" value={data.testing.averagePassToCloseHours === null ? "-" : hours(data.testing.averagePassToCloseHours)} />
+                  <Statistic
+                    title="Avg Testing Age"
+                    value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)}
+                  />
+                  <Statistic
+                    title="Req To Pass"
+                    value={
+                      data.testing.averageRequestToPassHours === null
+                        ? "-"
+                        : hours(data.testing.averageRequestToPassHours)
+                    }
+                  />
+                  <Statistic
+                    title="Pass To Close"
+                    value={
+                      data.testing.averagePassToCloseHours === null ? "-" : hours(data.testing.averagePassToCloseHours)
+                    }
+                  />
                   <Statistic title="Testing Events" value={data.testing.transitionEvents} />
                   <Statistic title="Last Testing Event" value={formatDate(data.testing.lastTransitionAt)} />
                 </div>
@@ -2262,9 +2346,7 @@ export default function App() {
                       <Tag color={item.lastSuccessfulAt ? "default" : "red"}>
                         success {formatDate(item.lastSuccessfulAt)}
                       </Tag>
-                      {item.lastFailedAt ? (
-                        <Tag color="orange">failure {formatDate(item.lastFailedAt)}</Tag>
-                      ) : null}
+                      {item.lastFailedAt ? <Tag color="orange">failure {formatDate(item.lastFailedAt)}</Tag> : null}
                       {item.rateLimitRemaining === null ? null : (
                         <Tag color={rateLimitHealthTagColor(item.rateLimitRemaining)}>
                           rate {item.rateLimitRemaining}
@@ -2398,7 +2480,9 @@ export default function App() {
                   <Title level={4}>Testing Flow</Title>
                   <Space size={[6, 6]} wrap>
                     <Tag color={data.testing.queuePrs > 0 ? "blue" : "default"}>{data.testing.queuePrs} queued</Tag>
-                    <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>{data.testing.staleQueuePrs} stale</Tag>
+                    <Tag color={data.testing.staleQueuePrs > 0 ? "red" : "default"}>
+                      {data.testing.staleQueuePrs} stale
+                    </Tag>
                     <Tag>{data.testing.transitionEvents} transitions</Tag>
                     <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
                     <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag>
@@ -2520,7 +2604,9 @@ export default function App() {
                         dataSource={selectedPersonalView.testingPrs}
                         scroll={{ x: 1220 }}
                         pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No PRs currently in testing handoff for this user" /> }}
+                        locale={{
+                          emptyText: <Empty description="No PRs currently in testing handoff for this user" />
+                        }}
                       />
                     </div>
 
@@ -2571,7 +2657,8 @@ export default function App() {
                   <div>
                     <Title level={4}>Analytics</Title>
                     <Text type="secondary">
-                      Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)} | {data.repo.timezone}
+                      Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)} |{" "}
+                      {data.repo.timezone}
                     </Text>
                   </div>
                   <Segmented
@@ -2630,7 +2717,9 @@ export default function App() {
                   <ShieldAlert size={18} />
                   <Title level={4}>Critical Issues</Title>
                 </Space>
-                <Text type="secondary">Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}</Text>
+                <Text type="secondary">
+                  Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
+                </Text>
               </div>
               <Table
                 rowKey="number"
@@ -2678,7 +2767,6 @@ export default function App() {
                 />
               </section>
             ) : null}
-
           </>
         ) : null}
       </Content>
@@ -2751,17 +2839,30 @@ export default function App() {
         title="Workflow Fix Preview"
         open={previewModalOpen}
         okText={
-          workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0
+          workflowPreview &&
+          !workflowExecution &&
+          !workflowPreview.blockedReason &&
+          workflowPreview.operations.length > 0
             ? "Confirm Execute"
             : "Close"
         }
         confirmLoading={executionSaving}
         okButtonProps={{
-          danger: Boolean(workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0)
+          danger: Boolean(
+            workflowPreview &&
+            !workflowExecution &&
+            !workflowPreview.blockedReason &&
+            workflowPreview.operations.length > 0
+          )
         }}
         cancelButtonProps={{ style: { display: workflowExecution ? "none" : undefined } }}
         onOk={() => {
-          if (workflowPreview && !workflowExecution && !workflowPreview.blockedReason && workflowPreview.operations.length > 0) {
+          if (
+            workflowPreview &&
+            !workflowExecution &&
+            !workflowPreview.blockedReason &&
+            workflowPreview.operations.length > 0
+          ) {
             void confirmWorkflowFix();
             return;
           }
@@ -2788,7 +2889,9 @@ export default function App() {
               <WorkflowStateSnapshot title="Current" snapshot={workflowPreview.currentState} />
               <WorkflowStateSnapshot title="Proposed" snapshot={workflowPreview.proposedState} />
             </div>
-            {workflowPreview.blockedReason ? <Alert type="warning" title={workflowPreview.blockedReason} showIcon /> : null}
+            {workflowPreview.blockedReason ? (
+              <Alert type="warning" title={workflowPreview.blockedReason} showIcon />
+            ) : null}
             {workflowPreview.operations.length > 0 ? (
               <div className="preview-operations">
                 {workflowPreview.operations.map((operation, index) => (

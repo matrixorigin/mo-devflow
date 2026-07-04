@@ -20,9 +20,11 @@
     "notify:once": "tsx apps/worker/src/notify-once.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm run typecheck && npm --workspace @mo-devflow/web run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test",
-    "ci": "npm run check && npm run build"
+    "ci": "npm run format:check && npm run check && npm run build"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
@@ -44,6 +46,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
+    "prettier": "^3.9.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0",
