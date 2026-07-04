@@ -151,6 +151,7 @@ const viewOptions = [
   "Overview",
   "Issues",
   "Personal",
+  "Health",
   "Analytics",
   "People",
   "PRs",
@@ -166,6 +167,7 @@ const hashViewMap: Record<string, DashboardView> = {
   overview: "Overview",
   issues: "Issues",
   personal: "Personal",
+  health: "Health",
   analytics: "Analytics",
   people: "People",
   prs: "PRs",
@@ -1679,7 +1681,7 @@ function TeamFlowRiskStrip({
         )}`}
         tone={dataRiskCount > 0 || data.sync.worker.status !== "active" ? dataRiskTone : "good"}
         action="Open health"
-        onClick={() => onNavigate("Analytics")}
+        onClick={() => onNavigate("Health")}
       />
     </div>
   );
@@ -1996,12 +1998,12 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
         <TeamStatusRow
           label="Cache"
           value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} incomplete`}
-          onClick={() => onNavigate("Analytics")}
+          onClick={() => onNavigate("Health")}
         />
         <TeamStatusRow
           label="Worker"
           value={`${labelText(data.sync.worker.phase ?? data.sync.worker.status)} | queue ${data.sync.jobQueue.queueDepth}`}
-          onClick={() => onNavigate("Analytics")}
+          onClick={() => onNavigate("Health")}
         />
         <TeamStatusRow
           label="Webhook"
@@ -2034,6 +2036,288 @@ function TeamStatusRow({ label, value, onClick }: { label: string; value: string
     <button type="button" className="team-status-row" onClick={onClick}>
       {content}
     </button>
+  );
+}
+
+type HealthTileTone = "critical" | "attention" | "good" | "normal";
+
+function healthTileToneColor(tone: HealthTileTone): string {
+  if (tone === "critical") {
+    return "red";
+  }
+  if (tone === "attention") {
+    return "orange";
+  }
+  if (tone === "good") {
+    return "green";
+  }
+  return "blue";
+}
+
+function operationalHealthScore(data: DashboardSummary): { label: string; tone: HealthTileTone } {
+  if (
+    data.sync.worker.status === "failed" ||
+    data.sync.worker.status === "offline" ||
+    data.sync.jobQueue.failedJobs > 0 ||
+    data.sync.jobQueue.blockedJobs > 0 ||
+    data.webhooks.failedDeliveries > 0 ||
+    data.notifications.failedDeliveries > 0
+  ) {
+    return { label: "action required", tone: "critical" };
+  }
+  if (
+    data.sync.staleObjects > 0 ||
+    data.sync.partialObjects > 0 ||
+    data.sync.jobQueue.status === "attention" ||
+    data.notifications.readiness.status === "action_required" ||
+    data.notifications.readiness.status === "degraded"
+  ) {
+    return { label: "needs attention", tone: "attention" };
+  }
+  return { label: "healthy", tone: "good" };
+}
+
+function HealthMetricCard({
+  label,
+  value,
+  detail,
+  tone,
+  action,
+  disabled = false,
+  loading = false,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: HealthTileTone;
+  action?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <article className={`health-metric-card health-metric-${tone}`}>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{detail}</small>
+      </div>
+      {action && onClick ? (
+        <Button size="small" disabled={disabled} loading={loading} onClick={onClick}>
+          {action}
+        </Button>
+      ) : null}
+    </article>
+  );
+}
+
+function HealthLayerRow({
+  item,
+  authenticated,
+  saving,
+  onQueueLayer
+}: {
+  item: DashboardSummary["sync"]["health"][number];
+  authenticated: boolean;
+  saving: boolean;
+  onQueueLayer: (layer: ManualRefreshLayer) => void;
+}) {
+  return (
+    <article className="health-layer-row">
+      <div className="health-layer-main">
+        <Space size={6} wrap>
+          <Tag color={syncHealthTagColor(item.status)}>{labelText(item.status)}</Tag>
+          <Text strong>{labelText(item.layer)}</Text>
+        </Space>
+        <Text type="secondary">{manualRefreshLayerDescription(item.layer)}</Text>
+      </div>
+      <div className="health-layer-meta">
+        <span>success {formatDate(item.lastSuccessfulAt)}</span>
+        <span>attempt {formatDate(item.lastAttemptedAt)}</span>
+        {item.rateLimitRemaining !== null ? <span>rate {item.rateLimitRemaining}</span> : null}
+        {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
+      </div>
+      <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
+        Refresh layer
+      </Button>
+    </article>
+  );
+}
+
+function HealthBoard({
+  data,
+  authenticated,
+  manualRefreshSaving,
+  webhookRetrySaving,
+  cacheImpactItems,
+  onQueueLayers,
+  onOpenView,
+  onImpactSelect,
+  onRetryFailedWebhooks
+}: {
+  data: DashboardSummary;
+  authenticated: boolean;
+  manualRefreshSaving: boolean;
+  webhookRetrySaving: boolean;
+  cacheImpactItems: CacheEvidenceImpactItem[];
+  onQueueLayers: (layers: ManualRefreshLayer[]) => void;
+  onOpenView: (view: DashboardView) => void;
+  onImpactSelect: (target: CacheEvidenceImpactTarget) => void;
+  onRetryFailedWebhooks: () => void;
+}) {
+  const score = operationalHealthScore(data);
+  const notificationRisk =
+    data.notifications.failedDeliveries +
+    data.notifications.unacknowledgedDeliveries +
+    data.notifications.escalationPendingDeliveries;
+  const repairRecommendation = recommendCacheRepair(data.sync);
+  const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
+
+  return (
+    <section className="section">
+      <div className="section-heading">
+        <div>
+          <Title level={4}>Operational Health</Title>
+          <Text type="secondary">
+            Cache quality, worker state, webhook ingestion, notification readiness, and targeted repair controls.
+          </Text>
+        </div>
+        <Tag color={healthTileToneColor(score.tone)}>{score.label}</Tag>
+      </div>
+
+      <div className="health-command-grid">
+        <HealthMetricCard
+          label="Cache evidence"
+          value={`${data.sync.staleObjects}/${data.sync.partialObjects}`}
+          detail={`${data.sync.staleObjects} stale, ${data.sync.partialObjects} incomplete`}
+          tone={data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "attention" : "good"}
+          action={repairRecommendation.layers.length > 0 ? "Queue repair" : "Refresh cache"}
+          disabled={!authenticated}
+          loading={manualRefreshSaving}
+          onClick={() =>
+            onQueueLayers(repairRecommendation.layers.length > 0 ? repairRecommendation.layers : ["github_sync"])
+          }
+        />
+        <HealthMetricCard
+          label="Sync layers"
+          value={unhealthyLayers}
+          detail={`${data.sync.health.length} layers tracked; oldest sync ${formatDate(
+            summarizeFreshness(data.sync).oldestLayerSuccessAt
+          )}`}
+          tone={unhealthyLayers > 0 ? "attention" : "good"}
+          action="Refresh all"
+          disabled={!authenticated}
+          loading={manualRefreshSaving}
+          onClick={() => onQueueLayers([...syncHealthLayers])}
+        />
+        <HealthMetricCard
+          label="Worker and jobs"
+          value={labelText(data.sync.worker.status)}
+          detail={`${data.sync.jobQueue.queueDepth} queued, ${data.sync.jobQueue.runningJobs} running, ${data.sync.jobQueue.failedJobs} failed`}
+          tone={data.sync.worker.status === "active" && data.sync.jobQueue.status === "healthy" ? "good" : "critical"}
+          action="Refresh status"
+          disabled={!authenticated}
+          loading={manualRefreshSaving}
+          onClick={() => onQueueLayers(["rules", "metrics", "ai_drift", "notifications"])}
+        />
+        <HealthMetricCard
+          label="Webhooks"
+          value={data.webhooks.failedDeliveries}
+          detail={`${data.webhooks.pendingDeliveries} pending, ${data.webhooks.ignoredDeliveries} ignored, last ${formatDate(
+            data.webhooks.lastReceivedAt
+          )}`}
+          tone={data.webhooks.failedDeliveries > 0 ? "critical" : "good"}
+          action={data.webhooks.failedDeliveries > 0 ? "Retry failed" : "Open webhooks"}
+          disabled={data.webhooks.failedDeliveries > 0 && !authenticated}
+          loading={webhookRetrySaving}
+          onClick={() => (data.webhooks.failedDeliveries > 0 ? onRetryFailedWebhooks() : onOpenView("Webhooks"))}
+        />
+        <HealthMetricCard
+          label="Notifications"
+          value={labelText(data.notifications.readiness.status)}
+          detail={`${notificationRisk} delivery risk, ${data.notifications.readiness.missingEmployeeMappings} missing mappings`}
+          tone={
+            data.notifications.failedDeliveries > 0 || data.notifications.readiness.status === "action_required"
+              ? "critical"
+              : data.notifications.readiness.status === "disabled"
+                ? "normal"
+                : data.notifications.readiness.status === "degraded"
+                  ? "attention"
+                  : "good"
+          }
+          action="Open notifications"
+          onClick={() => onOpenView("Notifications")}
+        />
+      </div>
+
+      {cacheImpactItems.length > 0 ? (
+        <CacheEvidenceImpactBoard items={cacheImpactItems} onSelect={onImpactSelect} />
+      ) : null}
+
+      <div className="health-detail-grid">
+        <section className="health-panel">
+          <div className="subsection-heading">
+            <Title level={5}>Sync Layers</Title>
+            <Tag color={unhealthyLayers > 0 ? "orange" : "green"}>{unhealthyLayers} need attention</Tag>
+          </div>
+          <div className="health-layer-list">
+            {data.sync.health.map((item) => (
+              <HealthLayerRow
+                item={item}
+                authenticated={authenticated}
+                saving={manualRefreshSaving}
+                onQueueLayer={(layer) => onQueueLayers([layer])}
+                key={item.layer}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="health-panel">
+          <div className="subsection-heading">
+            <Title level={5}>Automation State</Title>
+            <Tag color={data.sync.worker.status === "active" ? "green" : "orange"}>
+              worker {labelText(data.sync.worker.status)}
+            </Tag>
+          </div>
+          <div className="health-fact-list">
+            <HealthFact label="Worker" value={workerStatusDescription(data.sync.worker)} />
+            <HealthFact
+              label="Job queue"
+              value={
+                data.sync.jobQueue.recommendedAction ??
+                `${data.sync.jobQueue.queueDepth} queued, next ${formatDate(data.sync.jobQueue.nextRunAt)}`
+              }
+            />
+            <HealthFact
+              label="Webhook"
+              value={
+                data.webhooks.latestFailure ??
+                `${data.webhooks.pendingDeliveries} pending, ${data.webhooks.failedDeliveries} failed`
+              }
+            />
+            <HealthFact
+              label="Notification readiness"
+              value={
+                data.notifications.readiness.blockers[0] ??
+                data.notifications.readiness.warnings[0] ??
+                `${data.notifications.readiness.mappedEmployees} mapped employees`
+              }
+            />
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function HealthFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="health-fact-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -7325,7 +7609,7 @@ export default function App() {
               />
             ) : null}
 
-            {notStartedSyncLayers.length > 0 ? (
+            {notStartedSyncLayers.length > 0 && view !== "Health" ? (
               <Alert
                 className="band"
                 type="warning"
@@ -7439,7 +7723,21 @@ export default function App() {
               </details>
             ) : null}
 
-            {data.sync.jobQueue.status === "attention" ? (
+            {view === "Health" ? (
+              <HealthBoard
+                data={data}
+                authenticated={Boolean(session?.authenticated)}
+                manualRefreshSaving={manualRefreshSaving}
+                webhookRetrySaving={webhookRetrySaving}
+                cacheImpactItems={cacheImpactItems}
+                onQueueLayers={(layers) => void queueManualRefreshForLayers(layers)}
+                onOpenView={selectView}
+                onImpactSelect={openCacheEvidenceImpact}
+                onRetryFailedWebhooks={() => void retryFailedWebhooks()}
+              />
+            ) : null}
+
+            {data.sync.jobQueue.status === "attention" && view !== "Health" ? (
               <Alert
                 className="band"
                 type="warning"
@@ -7453,7 +7751,7 @@ export default function App() {
               />
             ) : null}
 
-            {data.sync.worker.status !== "active" ? (
+            {data.sync.worker.status !== "active" && view !== "Health" ? (
               <Alert
                 className="band"
                 type={data.sync.worker.status === "failed" ? "error" : "warning"}
@@ -7463,7 +7761,7 @@ export default function App() {
               />
             ) : null}
 
-            {latestRateLimitRemaining !== null && latestRateLimitRemaining <= 10 ? (
+            {latestRateLimitRemaining !== null && latestRateLimitRemaining <= 10 && view !== "Health" ? (
               <Alert
                 className="band"
                 type={latestRateLimitRemaining <= 0 ? "error" : "warning"}
@@ -7473,7 +7771,7 @@ export default function App() {
               />
             ) : null}
 
-            {data.testing.staleQueueIssues > 0 ? (
+            {data.testing.staleQueueIssues > 0 && view !== "PRs" ? (
               <Alert
                 className="band"
                 type="warning"
@@ -7483,7 +7781,7 @@ export default function App() {
               />
             ) : null}
 
-            {data.webhooks.failedDeliveries > 0 ? (
+            {data.webhooks.failedDeliveries > 0 && view !== "Health" && view !== "Webhooks" ? (
               <Alert
                 className="band"
                 type="warning"
