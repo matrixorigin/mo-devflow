@@ -3917,32 +3917,48 @@ button.testing-board-stat:focus-visible {
 }
 
 .action-queue-decision-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
+  align-items: stretch;
+  display: grid;
   gap: 7px;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(0, 0.8fr));
   min-width: 0;
 }
 
 .action-queue-next-action,
 .action-queue-fact {
-  align-items: center;
   background: #ffffff;
   border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  display: inline-flex;
-  gap: 6px;
+  border-radius: 6px;
+  display: grid;
+  gap: 3px;
   max-width: 100%;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 7px 9px;
 }
 
 .action-queue-next-action {
+  background: #eff6ff;
   border-color: #bfdbfe;
   color: #111827;
   font-size: 12px;
-  font-weight: 650;
   line-height: 1.2;
+}
+
+.action-queue-next-label {
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.action-queue-next-action strong {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .action-queue-fact strong,
@@ -5401,6 +5417,10 @@ button.testing-board-stat:focus-visible {
   .action-queue-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .action-queue-decision-row {
+    grid-template-columns: 1fr;
   }
 
   .action-queue-section-stats,

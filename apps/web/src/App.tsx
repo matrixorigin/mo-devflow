@@ -7780,9 +7780,7 @@ function PersonalActionQueueItem({
                   icon={<Eye size={14} />}
                   size="small"
                   onClick={() => onPreview(item)}
-                >
-                  Preview
-                </Button>
+                />
               </Tooltip>
             </div>
             <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
@@ -7812,8 +7810,11 @@ function PersonalActionQueueItem({
         </div>
         <div className="action-queue-decision-row">
           <span className="action-queue-next-action">
-            <TimerReset size={14} aria-hidden="true" />
-            {nextAction}
+            <span className="action-queue-next-label">Next action</span>
+            <strong>
+              <TimerReset size={14} aria-hidden="true" />
+              {nextAction}
+            </strong>
           </span>
           <span className="action-queue-fact">
             <strong>{duration}</strong>
