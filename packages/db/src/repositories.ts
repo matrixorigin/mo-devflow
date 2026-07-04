@@ -42,7 +42,7 @@ import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
 import { getNotificationHealth, notificationRecipientScope } from "./notifications";
-import { addDaysToDateKey, dateKeyInTimezone, previousCalendarDayRange } from "./time";
+import { addDaysToDateKey, calendarDayRangeInTimezone, dateKeyInTimezone, previousCalendarDayRange } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 import { getWebhookIngestionHealth } from "./webhooks";
 import { getWorkerHealth } from "./workerHealth";
@@ -2071,6 +2071,17 @@ function newMetricPoint(date: string, scopeType: "team" | "person", scopeKey: st
     issuesClosed: 0,
     issuesDeferred: 0,
     workflowViolationsDetected: 0,
+    activeCriticalIssues: 0,
+    averageActiveCriticalIssueAgeHours: null,
+    needsTriageIssues: 0,
+    averageNeedsTriageIssueAgeHours: null,
+    deferredIssues: 0,
+    averageDeferredIssueAgeHours: null,
+    pendingPrs: 0,
+    averagePendingPrAgeHours: null,
+    attentionPrs: 0,
+    testingQueuePrs: 0,
+    averageTestingQueueAgeHours: null,
     sourceCompleteness: "partial_cache",
     generatedAt: new Date().toISOString()
   };
@@ -2098,6 +2109,159 @@ function bumpMetric(
   const point = metrics.get(key);
   if (point) {
     point[field] += 1;
+  }
+}
+
+function metricSnapshotAt(dateKey: string, timezone: string): Date {
+  const { end } = calendarDayRangeInTimezone(dateKey, timezone);
+  const now = new Date();
+  return end.getTime() > now.getTime() ? now : end;
+}
+
+function isOpenAt(row: RowData, asOf: Date): boolean {
+  const createdAt = fromSqlDate(row.created_at);
+  if (!createdAt || new Date(createdAt).getTime() >= asOf.getTime()) {
+    return false;
+  }
+  const closedAt = fromSqlDate(row.closed_at);
+  return !closedAt || new Date(closedAt).getTime() >= asOf.getTime();
+}
+
+function isPendingPullRequestAt(row: RowData, asOf: Date): boolean {
+  const createdAt = fromSqlDate(row.created_at);
+  if (!createdAt || new Date(createdAt).getTime() >= asOf.getTime()) {
+    return false;
+  }
+  const finishedAt = fromSqlDate(row.merged_at) ?? fromSqlDate(row.closed_at);
+  return !finishedAt || new Date(finishedAt).getTime() >= asOf.getTime();
+}
+
+function ageHoursAt(row: RowData, asOf: Date): number | null {
+  const createdAt = fromSqlDate(row.created_at);
+  if (!createdAt) {
+    return null;
+  }
+  return Math.max(0, Math.round(((asOf.getTime() - new Date(createdAt).getTime()) / 3_600_000) * 10) / 10);
+}
+
+function averageOrNull(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+}
+
+function isTestingQueueState(value: string): boolean {
+  return ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(value);
+}
+
+function copyMetricSnapshot(target: DailyMetricPoint, source: DailyMetricPoint): void {
+  target.activeCriticalIssues = source.activeCriticalIssues;
+  target.averageActiveCriticalIssueAgeHours = source.averageActiveCriticalIssueAgeHours;
+  target.needsTriageIssues = source.needsTriageIssues;
+  target.averageNeedsTriageIssueAgeHours = source.averageNeedsTriageIssueAgeHours;
+  target.deferredIssues = source.deferredIssues;
+  target.averageDeferredIssueAgeHours = source.averageDeferredIssueAgeHours;
+  target.pendingPrs = source.pendingPrs;
+  target.averagePendingPrAgeHours = source.averagePendingPrAgeHours;
+  target.attentionPrs = source.attentionPrs;
+  target.testingQueuePrs = source.testingQueuePrs;
+  target.averageTestingQueueAgeHours = source.averageTestingQueueAgeHours;
+}
+
+function applyBacklogSnapshotMetrics(input: {
+  metrics: Map<string, DailyMetricPoint>;
+  dateKeys: string[];
+  profile: RepoProfile;
+  issueRows: RowData[];
+  prRows: RowData[];
+}): void {
+  const people = input.profile.people.watchedUsers;
+  const criticalLabels = input.profile.labels.critical;
+  const currentDate = dateKeyInTimezone(new Date(), input.profile.reporting.timezone);
+
+  for (const date of input.dateKeys) {
+    const asOf = metricSnapshotAt(date, input.profile.reporting.timezone);
+    const points = [input.metrics.get(metricKey(date, "team", "all"))].filter(
+      (point): point is DailyMetricPoint => point !== undefined
+    );
+    for (const login of people) {
+      const point = input.metrics.get(metricKey(date, "person", login));
+      if (point) {
+        points.push(point);
+      }
+    }
+
+    for (const point of points) {
+      const activeCriticalAges: number[] = [];
+      const needsTriageAges: number[] = [];
+      const deferredAges: number[] = [];
+      const pendingPrAges: number[] = [];
+      const testingQueueAges: number[] = [];
+
+      for (const row of input.issueRows) {
+        const owner = row.owner_login ? asString(row.owner_login) : "";
+        if (point.scopeType === "person" && owner !== point.scopeKey) {
+          continue;
+        }
+        if (!isOpenAt(row, asOf)) {
+          continue;
+        }
+        const lifecycleState = asString(row.lifecycle_state);
+        const severity = row.severity ? asString(row.severity) : null;
+        const ageHours = ageHoursAt(row, asOf);
+        if (ageHours === null) {
+          continue;
+        }
+        if (severity && criticalLabels.includes(severity)) {
+          point.activeCriticalIssues += 1;
+          activeCriticalAges.push(ageHours);
+        }
+        if (isPersonalNeedsTriageIssue({ lifecycleState, severity }, criticalLabels)) {
+          point.needsTriageIssues += 1;
+          needsTriageAges.push(ageHours);
+        }
+        if (lifecycleState === "deferred") {
+          point.deferredIssues += 1;
+          deferredAges.push(ageHours);
+        }
+      }
+
+      for (const row of input.prRows) {
+        const owner = asString(row.owner_login);
+        if (point.scopeType === "person" && owner !== point.scopeKey) {
+          continue;
+        }
+        if (!isPendingPullRequestAt(row, asOf)) {
+          continue;
+        }
+        const ageHours = ageHoursAt(row, asOf);
+        if (ageHours === null) {
+          continue;
+        }
+        point.pendingPrs += 1;
+        pendingPrAges.push(ageHours);
+        if (parseJsonArray(asString(row.attention_flags_json)).length > 0) {
+          point.attentionPrs += 1;
+        }
+        if (isTestingQueueState(asString(row.testing_state))) {
+          point.testingQueuePrs += 1;
+          const currentQueueAge =
+            row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
+              ? null
+              : asNumber(row.testing_queue_age_hours);
+          if (currentQueueAge !== null && date === currentDate) {
+            testingQueueAges.push(currentQueueAge);
+          }
+        }
+      }
+
+      point.averageActiveCriticalIssueAgeHours = averageOrNull(activeCriticalAges);
+      point.averageNeedsTriageIssueAgeHours = averageOrNull(needsTriageAges);
+      point.averageDeferredIssueAgeHours = averageOrNull(deferredAges);
+      point.averagePendingPrAgeHours = averageOrNull(pendingPrAges);
+      point.averageTestingQueueAgeHours = averageOrNull(testingQueueAges);
+    }
   }
 }
 
@@ -2171,6 +2335,7 @@ export function aggregateMetricPoints(
     existing.issuesClosed += point.issuesClosed;
     existing.issuesDeferred += point.issuesDeferred;
     existing.workflowViolationsDetected += point.workflowViolationsDetected;
+    copyMetricSnapshot(existing, point);
     existing.generatedAt = latestIso(existing.generatedAt, point.generatedAt);
     existing.sourceCompleteness =
       existing.sourceCompleteness === "complete_cache" && point.sourceCompleteness === "complete_cache"
@@ -2208,7 +2373,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [prRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, merged_at
+    `SELECT owner_login, created_at, closed_at, merged_at, attention_flags_json, testing_state, testing_queue_age_hours
      FROM pull_requests
      WHERE repo_id = ?`,
     [repoId]
@@ -2226,7 +2391,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, closed_at, lifecycle_state
+    `SELECT owner_login, created_at, closed_at, lifecycle_state, severity
      FROM issues
      WHERE repo_id = ? AND is_pull_request = 0`,
     [repoId]
@@ -2264,6 +2429,8 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     }
   }
 
+  applyBacklogSnapshotMetrics({ metrics, dateKeys: keys, profile, issueRows, prRows });
+
   const generatedAt = nowSql();
   await pool.execute("DELETE FROM daily_metrics WHERE repo_id = ?", [repoId]);
   for (const point of metrics.values()) {
@@ -2271,8 +2438,13 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
       `INSERT INTO daily_metrics(
         repo_id, metric_date, scope_type, scope_key, prs_created, prs_merged,
         issues_opened, issues_closed, issues_deferred, workflow_violations_detected,
+        active_critical_issues, avg_active_critical_issue_age_hours,
+        needs_triage_issues, avg_needs_triage_issue_age_hours,
+        deferred_issues, avg_deferred_issue_age_hours,
+        pending_prs, avg_pending_pr_age_hours, attention_prs,
+        testing_queue_prs, avg_testing_queue_age_hours,
         source_completeness, generated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         repoId,
         point.date,
@@ -2284,6 +2456,17 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
         point.issuesClosed,
         point.issuesDeferred,
         point.workflowViolationsDetected,
+        point.activeCriticalIssues,
+        point.averageActiveCriticalIssueAgeHours,
+        point.needsTriageIssues,
+        point.averageNeedsTriageIssueAgeHours,
+        point.deferredIssues,
+        point.averageDeferredIssueAgeHours,
+        point.pendingPrs,
+        point.averagePendingPrAgeHours,
+        point.attentionPrs,
+        point.testingQueuePrs,
+        point.averageTestingQueueAgeHours,
         point.sourceCompleteness,
         generatedAt
       ]
@@ -2695,6 +2878,32 @@ export async function getDashboardSummary(
     issuesClosed: asNumber(row.issues_closed),
     issuesDeferred: asNumber(row.issues_deferred),
     workflowViolationsDetected: asNumber(row.workflow_violations_detected),
+    activeCriticalIssues: asNumber(row.active_critical_issues),
+    averageActiveCriticalIssueAgeHours:
+      row.avg_active_critical_issue_age_hours === null || row.avg_active_critical_issue_age_hours === undefined
+        ? null
+        : asNumber(row.avg_active_critical_issue_age_hours),
+    needsTriageIssues: asNumber(row.needs_triage_issues),
+    averageNeedsTriageIssueAgeHours:
+      row.avg_needs_triage_issue_age_hours === null || row.avg_needs_triage_issue_age_hours === undefined
+        ? null
+        : asNumber(row.avg_needs_triage_issue_age_hours),
+    deferredIssues: asNumber(row.deferred_issues),
+    averageDeferredIssueAgeHours:
+      row.avg_deferred_issue_age_hours === null || row.avg_deferred_issue_age_hours === undefined
+        ? null
+        : asNumber(row.avg_deferred_issue_age_hours),
+    pendingPrs: asNumber(row.pending_prs),
+    averagePendingPrAgeHours:
+      row.avg_pending_pr_age_hours === null || row.avg_pending_pr_age_hours === undefined
+        ? null
+        : asNumber(row.avg_pending_pr_age_hours),
+    attentionPrs: asNumber(row.attention_prs),
+    testingQueuePrs: asNumber(row.testing_queue_prs),
+    averageTestingQueueAgeHours:
+      row.avg_testing_queue_age_hours === null || row.avg_testing_queue_age_hours === undefined
+        ? null
+        : asNumber(row.avg_testing_queue_age_hours),
     sourceCompleteness: asString(row.source_completeness) as DailyMetricPoint["sourceCompleteness"],
     generatedAt: fromSqlDate(row.generated_at) ?? new Date().toISOString()
   }));

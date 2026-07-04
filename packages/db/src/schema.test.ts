@@ -22,6 +22,8 @@ describe("schema contract", () => {
     expect(expected.get("notification_deliveries")).toContain("payload_json");
     expect(expected.get("workflow_violations")).toContain("fixable");
     expect(expected.get("user_github_tokens")).toContain("repo_permission");
+    expect(expected.get("daily_metrics")).toContain("active_critical_issues");
+    expect(expected.get("daily_metrics")).toContain("avg_pending_pr_age_hours");
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");
 
     const specs = expectedSchemaColumnSpecsFromStatements();
@@ -37,6 +39,10 @@ describe("schema contract", () => {
     expect(specs.get("user_github_tokens")?.get("repo_permission")).toEqual({
       columnType: "VARCHAR(64)",
       nullable: false
+    });
+    expect(specs.get("daily_metrics")?.get("avg_testing_queue_age_hours")).toEqual({
+      columnType: "DOUBLE",
+      nullable: true
     });
   });
 

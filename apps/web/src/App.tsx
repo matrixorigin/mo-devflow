@@ -828,6 +828,21 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
           }
         ]}
       />
+      <MetricFlowChart
+        title="Backlog Snapshot"
+        points={points}
+        series={[
+          {
+            name: "Active s-1/s0",
+            type: "line",
+            color: "#dc2626",
+            data: (point) => point.activeCriticalIssues
+          },
+          { name: "Pending PR", type: "line", color: "#2563eb", data: (point) => point.pendingPrs },
+          { name: "Needs triage", type: "line", color: "#ca8a04", data: (point) => point.needsTriageIssues },
+          { name: "PR attention", type: "bar", color: "#d97706", data: (point) => point.attentionPrs }
+        ]}
+      />
     </div>
   );
 }

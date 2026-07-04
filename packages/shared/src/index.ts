@@ -530,6 +530,17 @@ export interface DailyMetricPoint {
   issuesClosed: number;
   issuesDeferred: number;
   workflowViolationsDetected: number;
+  activeCriticalIssues: number;
+  averageActiveCriticalIssueAgeHours: number | null;
+  needsTriageIssues: number;
+  averageNeedsTriageIssueAgeHours: number | null;
+  deferredIssues: number;
+  averageDeferredIssueAgeHours: number | null;
+  pendingPrs: number;
+  averagePendingPrAgeHours: number | null;
+  attentionPrs: number;
+  testingQueuePrs: number;
+  averageTestingQueueAgeHours: number | null;
   sourceCompleteness: MetricSourceCompleteness;
   generatedAt: string;
 }

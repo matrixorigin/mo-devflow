@@ -247,6 +247,17 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
     issuesClosed: input.issuesClosed ?? 0,
     issuesDeferred: input.issuesDeferred ?? 0,
     workflowViolationsDetected: input.workflowViolationsDetected ?? 0,
+    activeCriticalIssues: input.activeCriticalIssues ?? 0,
+    averageActiveCriticalIssueAgeHours: input.averageActiveCriticalIssueAgeHours ?? null,
+    needsTriageIssues: input.needsTriageIssues ?? 0,
+    averageNeedsTriageIssueAgeHours: input.averageNeedsTriageIssueAgeHours ?? null,
+    deferredIssues: input.deferredIssues ?? 0,
+    averageDeferredIssueAgeHours: input.averageDeferredIssueAgeHours ?? null,
+    pendingPrs: input.pendingPrs ?? 0,
+    averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
+    attentionPrs: input.attentionPrs ?? 0,
+    testingQueuePrs: input.testingQueuePrs ?? 0,
+    averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: input.sourceCompleteness ?? "complete_cache",
     generatedAt: input.generatedAt ?? "2026-07-04T00:00:00Z"
   };

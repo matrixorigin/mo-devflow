@@ -339,6 +339,17 @@ const schemaStatements = [
     issues_closed INT NOT NULL,
     issues_deferred INT NOT NULL,
     workflow_violations_detected INT NOT NULL,
+    active_critical_issues INT NOT NULL,
+    avg_active_critical_issue_age_hours DOUBLE,
+    needs_triage_issues INT NOT NULL,
+    avg_needs_triage_issue_age_hours DOUBLE,
+    deferred_issues INT NOT NULL,
+    avg_deferred_issue_age_hours DOUBLE,
+    pending_prs INT NOT NULL,
+    avg_pending_pr_age_hours DOUBLE,
+    attention_prs INT NOT NULL,
+    testing_queue_prs INT NOT NULL,
+    avg_testing_queue_age_hours DOUBLE,
     source_completeness VARCHAR(64) NOT NULL,
     generated_at DATETIME NOT NULL,
     UNIQUE KEY uniq_daily_metrics_scope (repo_id, metric_date, scope_type, scope_key)
@@ -456,6 +467,25 @@ const migrations: SchemaMigration[] = [
         await connection.query(
           "ALTER TABLE user_github_tokens ADD COLUMN repo_permission VARCHAR(64) NOT NULL DEFAULT 'unverified'"
         );
+      }
+    }
+  },
+  {
+    version: "0003",
+    name: "daily_metric_backlog_snapshots",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("daily_metrics")) {
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN active_critical_issues INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_active_critical_issue_age_hours DOUBLE");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN needs_triage_issues INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_needs_triage_issue_age_hours DOUBLE");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN deferred_issues INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_deferred_issue_age_hours DOUBLE");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN pending_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_pending_pr_age_hours DOUBLE");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN attention_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN testing_queue_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_testing_queue_age_hours DOUBLE");
       }
     }
   }
