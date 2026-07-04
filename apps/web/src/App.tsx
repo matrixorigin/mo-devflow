@@ -11038,6 +11038,22 @@ export default function App() {
     data && selectedObservedLogin ? observedPersonPreview(data, selectedObservedLogin) : null;
   const peopleBoardUsesObserved = Boolean(data && data.people.length === 0 && observedPeople.length > 0);
   const peopleBoardPeople = data ? (data.people.length > 0 ? data.people : observedPeople) : [];
+  const peopleBoardPersonalByLogin = new Map((data?.personalViews ?? []).map((person) => [person.login, person]));
+  const peopleBoardStats = {
+    criticalIssues: peopleBoardPeople.reduce((sum, person) => sum + person.activeCriticalIssues, 0),
+    attentionPrs: peopleBoardPeople.reduce((sum, person) => sum + person.attentionPrs, 0),
+    needsTriageIssues: peopleBoardPeople.reduce((sum, person) => sum + person.needsTriageIssues, 0),
+    deferredIssues: peopleBoardPeople.reduce((sum, person) => sum + person.deferredIssues, 0),
+    pendingPrs: peopleBoardPeople.reduce((sum, person) => sum + person.pendingPrs, 0),
+    testingWork: peopleBoardPeople.reduce(
+      (sum, person) => sum + testingCountForPeople(person.login, peopleBoardPersonalByLogin),
+      0
+    ),
+    yesterdayPrs: peopleBoardPeople.reduce(
+      (sum, person) => sum + person.prsCreatedYesterday + person.prsMergedYesterday,
+      0
+    )
+  };
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
@@ -12034,31 +12050,65 @@ export default function App() {
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardPeople.some((person) => person.activeCriticalIssues > 0)
-                          ? "inline-filter-chip-red"
-                          : "inline-filter-chip-muted"
+                        peopleBoardStats.criticalIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("critical")}
                     >
-                      {peopleBoardPeople.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} s-1/s0
+                      {peopleBoardStats.criticalIssues} s-1/s0
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardPeople.some((person) => person.attentionPrs > 0) ? "" : "inline-filter-chip-muted"
+                        peopleBoardStats.attentionPrs > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("attention")}
                     >
-                      {peopleBoardPeople.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
+                      {peopleBoardStats.attentionPrs} PR attention
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        peopleBoardPeople.some((person) => person.deferredIssues > 0) ? "" : "inline-filter-chip-muted"
+                        peopleBoardStats.needsTriageIssues > 0 ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "triage" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("triage")}
+                    >
+                      {peopleBoardStats.needsTriageIssues} triage
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        peopleBoardStats.deferredIssues > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => setPeopleScopeFilter("deferred")}
                     >
-                      {peopleBoardPeople.reduce((sum, person) => sum + person.deferredIssues, 0)} deferred
+                      {peopleBoardStats.deferredIssues} deferred
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        peopleBoardStats.pendingPrs > 0 ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "pending_pr" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("pending_pr")}
+                    >
+                      {peopleBoardStats.pendingPrs} pending PR
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        peopleBoardStats.testingWork > 0 ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "testing" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("testing")}
+                    >
+                      {peopleBoardStats.testingWork} testing
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        peopleBoardStats.yesterdayPrs > 0 ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("yesterday_pr")}
+                    >
+                      {peopleBoardStats.yesterdayPrs} PR yday
                     </button>
                   </Space>
                 </div>
