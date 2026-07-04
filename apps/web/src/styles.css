@@ -254,6 +254,35 @@ body {
   display: block;
 }
 
+.cache-repair-plan {
+  border-top: 1px solid #e5e7eb;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.cache-repair-plan-heading {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.cache-repair-plan-heading > div,
+.cache-repair-reasons {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cache-repair-reasons .ant-typography {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .config-snippet {
   background: #111827;
   border-radius: 8px;

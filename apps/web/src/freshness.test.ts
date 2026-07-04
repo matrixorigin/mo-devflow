@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { DashboardSummary, SyncHealth } from "@mo-devflow/shared";
-import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
+import type { CacheObjectEvidenceView, DashboardSummary, SyncHealth } from "@mo-devflow/shared";
+import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 
 function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHealth {
   return {
@@ -57,6 +57,25 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
     },
     ...input
   };
+}
+
+function sample(input: Partial<CacheObjectEvidenceView> & Pick<CacheObjectEvidenceView, "objectType">) {
+  return {
+    objectType: input.objectType,
+    number: input.number ?? 1,
+    title: input.title ?? "sample",
+    htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/issues/1",
+    ownerLogin: input.ownerLogin ?? "alice",
+    state: input.state ?? "open",
+    visibilityClass: input.visibilityClass ?? "anonymous_readable",
+    sourceAuthType: input.sourceAuthType ?? "anonymous",
+    lastSyncedAt: input.lastSyncedAt ?? "2026-07-04T01:00:00.000Z",
+    sourceUpdatedAt: input.sourceUpdatedAt ?? "2026-07-04T01:00:00.000Z",
+    cacheAgeHours: input.cacheAgeHours ?? 8,
+    isComplete: input.isComplete ?? false,
+    syncError: input.syncError ?? null,
+    reason: input.reason ?? "partial"
+  } satisfies CacheObjectEvidenceView;
 }
 
 describe("freshness summary", () => {
@@ -187,5 +206,59 @@ describe("cache evidence summary", () => {
     });
     expect(summary.description).toContain("anonymous");
     expect(summary.facts).toContain("3 cached GitHub objects are hidden");
+  });
+});
+
+describe("cache repair recommendation", () => {
+  test("selects PR backfill and derived layers for stale partial PR evidence", () => {
+    const recommendation = recommendCacheRepair(
+      sync({
+        staleObjects: 2,
+        staleSamples: [sample({ objectType: "pull_request", reason: "stale_and_partial" })],
+        partialObjects: 2,
+        partialSamples: [sample({ objectType: "pull_request", reason: "stale_and_partial" })]
+      })
+    );
+
+    expect(recommendation.layers).toEqual(["github_sync", "pr_backfill", "rules", "metrics", "ai_drift"]);
+    expect(recommendation.reasons.join(" ")).toContain("sampled PRs");
+  });
+
+  test("selects issue timeline and comment backfill for partial issue evidence", () => {
+    const recommendation = recommendCacheRepair(
+      sync({
+        partialObjects: 5,
+        partialSamples: [sample({ objectType: "issue" })]
+      })
+    );
+
+    expect(recommendation.layers).toEqual([
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "rules",
+      "metrics",
+      "ai_drift"
+    ]);
+    expect(recommendation.reasons.join(" ")).toContain("sampled issues");
+  });
+
+  test("falls back to broad evidence repair when partial objects have no samples", () => {
+    const recommendation = recommendCacheRepair(sync({ partialObjects: 5 }));
+
+    expect(recommendation).toMatchObject({
+      layers: ["pr_backfill", "issue_timeline_backfill", "comment_backfill", "rules", "metrics", "ai_drift"]
+    });
+  });
+
+  test("includes unhealthy layers in standard sync order", () => {
+    expect(
+      recommendCacheRepair(
+        sync({
+          health: [layer({ layer: "webhooks", status: "blocked" })],
+          partialObjects: 1,
+          partialSamples: [sample({ objectType: "issue" })]
+        })
+      ).layers
+    ).toEqual(["issue_timeline_backfill", "comment_backfill", "webhooks", "rules", "metrics", "ai_drift"]);
   });
 });

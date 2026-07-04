@@ -1,4 +1,4 @@
-import type { DashboardSummary, SyncHealth } from "@mo-devflow/shared";
+import { syncHealthLayers, type DashboardSummary, type ManualRefreshLayer, type SyncHealth } from "@mo-devflow/shared";
 
 export type FreshnessSeverity = "ok" | "warning" | "critical";
 export type CacheEvidenceSeverity = FreshnessSeverity | "info";
@@ -20,6 +20,25 @@ export interface CacheEvidenceSummary {
   facts: string[];
   affectedConclusions: string[];
   recommendedAction: string | null;
+}
+
+export interface CacheRepairRecommendation {
+  layers: ManualRefreshLayer[];
+  reasons: string[];
+}
+
+const derivedRepairLayers: ManualRefreshLayer[] = ["rules", "metrics", "ai_drift"];
+
+function addLayer(layers: ManualRefreshLayer[], layer: ManualRefreshLayer): void {
+  if (!layers.includes(layer)) {
+    layers.push(layer);
+  }
+}
+
+function addDerivedRepairLayers(layers: ManualRefreshLayer[]): void {
+  for (const layer of derivedRepairLayers) {
+    addLayer(layers, layer);
+  }
 }
 
 function layerRank(status: SyncHealth["status"]): number {
@@ -53,6 +72,56 @@ function evidenceHours(value: number | null): string {
     return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
   }
   return `${(value / 24).toFixed(1)}d`;
+}
+
+export function recommendCacheRepair(sync: DashboardSummary["sync"]): CacheRepairRecommendation {
+  const layers: ManualRefreshLayer[] = [];
+  const reasons: string[] = [];
+  const unhealthyLayers = sync.health.filter((item) => item.status !== "success");
+
+  for (const item of unhealthyLayers) {
+    addLayer(layers, item.layer);
+  }
+  if (unhealthyLayers.length > 0) {
+    reasons.push(`Repair unhealthy layers: ${unhealthyLayers.map((item) => item.layer).join(", ")}.`);
+  }
+
+  const staleSamples = sync.staleSamples ?? [];
+  const partialSamples = sync.partialSamples ?? [];
+  const staleObjectTypes = new Set(staleSamples.map((sample) => sample.objectType));
+  const partialObjectTypes = new Set(partialSamples.map((sample) => sample.objectType));
+
+  if (sync.staleObjects > 0) {
+    addLayer(layers, "github_sync");
+    reasons.push("Refresh GitHub issue/PR cache because active visible objects are stale.");
+    addDerivedRepairLayers(layers);
+  }
+
+  if (staleObjectTypes.has("pull_request") || partialObjectTypes.has("pull_request")) {
+    addLayer(layers, "pr_backfill");
+    reasons.push("Backfill PR detail because sampled PRs are stale or partial.");
+    addDerivedRepairLayers(layers);
+  }
+
+  if (partialObjectTypes.has("issue")) {
+    addLayer(layers, "issue_timeline_backfill");
+    addLayer(layers, "comment_backfill");
+    reasons.push("Backfill issue timeline and comments because sampled issues have partial workflow evidence.");
+    addDerivedRepairLayers(layers);
+  }
+
+  if (sync.partialObjects > 0 && partialSamples.length === 0) {
+    addLayer(layers, "pr_backfill");
+    addLayer(layers, "issue_timeline_backfill");
+    addLayer(layers, "comment_backfill");
+    reasons.push("Partial objects exist without samples; repair PR detail plus issue timeline/comment evidence.");
+    addDerivedRepairLayers(layers);
+  }
+
+  return {
+    layers: syncHealthLayers.filter((layer) => layers.includes(layer)),
+    reasons
+  };
 }
 
 export function summarizeFreshness(sync: DashboardSummary["sync"]): FreshnessSummary {

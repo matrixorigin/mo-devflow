@@ -79,7 +79,7 @@ import {
   TimerReset,
   UserRound
 } from "lucide-react";
-import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
+import { recommendCacheRepair, summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
@@ -1056,6 +1056,66 @@ function CacheEvidenceSamples({ sync }: { sync: DashboardSummary["sync"] }) {
         samples={sync.partialSamples}
         emptyText="Partial objects exist in the cache, but no open visible objects were returned in the sample."
       />
+    </div>
+  );
+}
+
+function CacheRepairPlan({
+  sync,
+  authenticated,
+  onPrepare
+}: {
+  sync: DashboardSummary["sync"];
+  authenticated: boolean;
+  onPrepare: (layers: ManualRefreshLayer[]) => void;
+}) {
+  const recommendation = recommendCacheRepair(sync);
+  if (recommendation.layers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="cache-repair-plan">
+      <div className="cache-repair-plan-heading">
+        <div>
+          <Text strong>Repair plan</Text>
+          <Text type="secondary">
+            Suggested worker layers based on the sampled stale/partial objects and sync health.
+          </Text>
+        </div>
+        <Tooltip
+          title={authenticated ? "Preselect these layers in Queue Worker Refresh" : "Connect GitHub token first"}
+        >
+          <Button
+            size="small"
+            icon={<RefreshCcw size={14} />}
+            disabled={!authenticated}
+            onClick={() => onPrepare(recommendation.layers)}
+          >
+            Select layers
+          </Button>
+        </Tooltip>
+      </div>
+      <Space size={[4, 4]} wrap>
+        {recommendation.layers.map((layer) => (
+          <Tag
+            color={sync.health.find((item) => item.layer === layer)?.status === "success" ? "blue" : "orange"}
+            key={layer}
+          >
+            {labelText(layer)}
+          </Tag>
+        ))}
+      </Space>
+      <div className="cache-repair-reasons">
+        {recommendation.reasons.map((reason) => (
+          <Text type="secondary" key={reason}>
+            {reason}
+          </Text>
+        ))}
+        {!authenticated ? (
+          <Text type="secondary">Manual repair queueing requires a connected GitHub token.</Text>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -2217,7 +2277,10 @@ export default function App() {
     selectView("Personal");
   }
 
-  function openManualRefreshModal() {
+  function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
+    if (layers) {
+      setManualRefreshLayers(layers);
+    }
     setManualRefreshError(null);
     setManualRefreshModalOpen(true);
   }
@@ -3259,7 +3322,7 @@ export default function App() {
               icon={<RefreshCcw size={16} />}
               disabled={!session?.authenticated}
               loading={manualRefreshSaving}
-              onClick={openManualRefreshModal}
+              onClick={() => openManualRefreshModal()}
             />
           </Tooltip>
         </Space>
@@ -3334,6 +3397,11 @@ export default function App() {
                       </Space>
                     ) : null}
                     <CacheEvidenceSamples sync={data.sync} />
+                    <CacheRepairPlan
+                      sync={data.sync}
+                      authenticated={Boolean(session?.authenticated)}
+                      onPrepare={openManualRefreshModal}
+                    />
                     {cacheEvidence.affectedConclusions.length > 0 ? (
                       <div className="evidence-detail-list">
                         <Text type="secondary">Affected conclusions</Text>
