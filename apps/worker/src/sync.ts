@@ -167,6 +167,24 @@ function recordPayload(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+function pullRequestNumbersFromArray(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((item) => (recordPayload(item)?.number))
+        .filter((number): number is number => typeof number === "number")
+    )
+  );
+}
+
+function pullRequestNumbersFromCiPayload(payload: Record<string, unknown>, eventName: "workflow_run" | "check_run"): number[] {
+  const source = eventName === "workflow_run" ? recordPayload(payload.workflow_run) : recordPayload(payload.check_run);
+  return pullRequestNumbersFromArray(source?.pull_requests);
+}
+
 function ensureGitHubObjectWithNumber(input: Record<string, unknown>, label: string): Record<string, unknown> & { id: number; number: number } {
   if (typeof input.id !== "number" || typeof input.number !== "number") {
     throw new Error(`${label} payload must include numeric id and number.`);
@@ -423,6 +441,31 @@ async function upsertPullRequestFromWebhook(input: {
   return cachedPr.number;
 }
 
+async function refreshPullRequestInsightFromGitHub(input: {
+  repoId: number;
+  profile: ReturnType<typeof loadRepoProfile>;
+  pullNumber: number;
+}): Promise<number> {
+  const result = await fetchPullRequestInsightForNumber({
+    profile: input.profile,
+    pullNumber: input.pullNumber
+  });
+  const rawPullRequest = recordPayload(result.pullRequest);
+  if (!rawPullRequest) {
+    throw new Error(
+      `Cannot refresh PR #${input.pullNumber} insight from GitHub: ${
+        result.insight.detailError ?? "pull request detail unavailable"
+      }`
+    );
+  }
+  return upsertPullRequestFromWebhook({
+    repoId: input.repoId,
+    profile: input.profile,
+    rawPullRequest,
+    insight: result.insight
+  });
+}
+
 export async function processWebhookPayload(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
@@ -490,17 +533,33 @@ export async function processWebhookPayload(input: {
       return { processed: true, skipped: true, message: "pull_request_review payload missing pull_request object" };
     }
     const pullRequest = ensureGitHubObjectWithNumber(rawPullRequest, "pull_request");
-    const insight = await fetchPullRequestInsightForNumber({
+    const prNumber = await refreshPullRequestInsightFromGitHub({
+      repoId: input.repoId,
       profile: input.profile,
       pullNumber: pullRequest.number
     });
-    const prNumber = await upsertPullRequestFromWebhook({
-      repoId: input.repoId,
-      profile: input.profile,
-      rawPullRequest,
-      insight: insight.insight
-    });
     return { processed: true, skipped: false, message: `updated PR #${prNumber} review insight` };
+  }
+
+  if (input.eventName === "workflow_run" || input.eventName === "check_run") {
+    const pullNumbers = pullRequestNumbersFromCiPayload(input.payload, input.eventName);
+    if (pullNumbers.length === 0) {
+      return { processed: true, skipped: true, message: `${input.eventName} payload has no pull request numbers` };
+    }
+    const refreshedNumbers: number[] = [];
+    for (const pullNumber of pullNumbers) {
+      const refreshedNumber = await refreshPullRequestInsightFromGitHub({
+        repoId: input.repoId,
+        profile: input.profile,
+        pullNumber
+      });
+      refreshedNumbers.push(refreshedNumber);
+    }
+    return {
+      processed: true,
+      skipped: false,
+      message: `updated PR CI insight for #${refreshedNumbers.join(", #")}`
+    };
   }
 
   const exhaustiveEvent: never = input.eventName;

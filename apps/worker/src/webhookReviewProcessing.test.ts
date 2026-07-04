@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 
 const mocks = vi.hoisted(() => ({
@@ -106,10 +106,27 @@ const profile: RepoProfile = {
 };
 
 describe("webhook review processing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   test("refreshes PR insight from GitHub before updating requested-change attention", async () => {
     const { processWebhookPayload } = await import("./sync");
     const now = new Date().toISOString();
     mocks.fetchPullRequestInsightForNumber.mockResolvedValue({
+      pullRequest: {
+        id: 4242,
+        number: 42,
+        title: "review handoff",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://github.com/matrixorigin/matrixone/pull/42",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        requested_reviewers: [{ login: "tester-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
       insight: {
         number: 42,
         reviewDecision: "changes_requested",
@@ -189,5 +206,118 @@ describe("webhook review processing", () => {
         objectNumber: 42
       })
     );
+  });
+
+  test("refreshes PR insight from GitHub before updating CI attention", async () => {
+    const { processWebhookPayload } = await import("./sync");
+    const now = new Date().toISOString();
+    mocks.fetchPullRequestInsightForNumber.mockResolvedValue({
+      pullRequest: {
+        id: 4343,
+        number: 43,
+        title: "ci handoff",
+        state: "open",
+        user: { login: "bob" },
+        html_url: "https://github.com/matrixorigin/matrixone/pull/43",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        requested_reviewers: [],
+        head: { ref: "fix-ci", sha: "abc123" },
+        base: { ref: "main" }
+      },
+      insight: {
+        number: 43,
+        reviewDecision: "approved",
+        mergeStateStatus: "clean",
+        ciState: "failure",
+        latestReviewState: "APPROVED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      },
+      rateLimitRemaining: 41,
+      sourceAuthType: "service_read_token"
+    });
+    mocks.upsertPullRequest.mockImplementation(async (_repoId: number, pr: unknown) => pr);
+
+    const result = await processWebhookPayload({
+      repoId: 10,
+      profile,
+      eventName: "workflow_run",
+      payload: {
+        action: "completed",
+        workflow_run: {
+          id: 1001,
+          conclusion: "failure",
+          pull_requests: [{ number: 43 }]
+        }
+      }
+    });
+
+    expect(result).toEqual({ processed: true, skipped: false, message: "updated PR CI insight for #43" });
+    expect(mocks.fetchPullRequestInsightForNumber).toHaveBeenCalledWith({ profile, pullNumber: 43 });
+    expect(mocks.upsertPullRequest).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        number: 43,
+        title: "ci handoff",
+        ciState: "failure",
+        isComplete: true,
+        attentionFlags: expect.arrayContaining(["ci_failed"])
+      })
+    );
+    expect(mocks.upsertAttentionItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        objectType: "pull_request",
+        objectNumber: 43,
+        ruleKey: "ci_failed",
+        severity: "warning",
+        relatedLogin: "bob",
+        targetRecipient: "bob",
+        dedupeKey: "matrixorigin/matrixone:pr:43:ci_failed",
+        evidenceSummary: "PR #43 has failing CI checks."
+      })
+    );
+  });
+
+  test("fails CI webhook processing when linked PR detail cannot be refreshed", async () => {
+    const { processWebhookPayload } = await import("./sync");
+    const now = new Date().toISOString();
+    mocks.fetchPullRequestInsightForNumber.mockResolvedValue({
+      pullRequest: null,
+      insight: {
+        number: 44,
+        reviewDecision: null,
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: null,
+        detailSyncedAt: now,
+        detailError: "GitHub rate limit exceeded"
+      },
+      rateLimitRemaining: 0,
+      sourceAuthType: "anonymous"
+    });
+
+    await expect(
+      processWebhookPayload({
+        repoId: 10,
+        profile,
+        eventName: "check_run",
+        payload: {
+          action: "completed",
+          check_run: {
+            id: 1002,
+            conclusion: "failure",
+            pull_requests: [{ number: 44 }]
+          }
+        }
+      })
+    ).rejects.toThrow("Cannot refresh PR #44 insight from GitHub: GitHub rate limit exceeded");
+    expect(mocks.upsertPullRequest).not.toHaveBeenCalled();
+    expect(mocks.upsertAttentionItem).not.toHaveBeenCalled();
   });
 });

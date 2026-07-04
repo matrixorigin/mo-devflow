@@ -100,10 +100,18 @@ describe("notification acknowledgement policy", () => {
 
 describe("GitHub webhook event contract", () => {
   test("lists only webhook events with implemented cache ingestion", () => {
-    expect(supportedGitHubWebhookEvents).toEqual(["issues", "pull_request", "pull_request_review"]);
+    expect(supportedGitHubWebhookEvents).toEqual([
+      "issues",
+      "pull_request",
+      "pull_request_review",
+      "workflow_run",
+      "check_run"
+    ]);
     expect(isSupportedGitHubWebhookEvent("issues")).toBe(true);
     expect(isSupportedGitHubWebhookEvent("pull_request")).toBe(true);
     expect(isSupportedGitHubWebhookEvent("pull_request_review")).toBe(true);
-    expect(isSupportedGitHubWebhookEvent("workflow_run")).toBe(false);
+    expect(isSupportedGitHubWebhookEvent("workflow_run")).toBe(true);
+    expect(isSupportedGitHubWebhookEvent("check_run")).toBe(true);
+    expect(isSupportedGitHubWebhookEvent("deployment_status")).toBe(false);
   });
 });

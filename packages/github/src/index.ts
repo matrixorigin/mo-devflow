@@ -10,6 +10,7 @@ import type {
 } from "@mo-devflow/shared";
 
 type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"]["data"][number];
+type PullRequestDetailItem = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
 
 export interface GitHubSnapshot {
   issues: RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"];
@@ -601,7 +602,7 @@ async function fetchPullRequestInsight(
   owner: string,
   repo: string,
   pr: PullRequestListItem
-): Promise<{ insight: PullRequestInsight; rateLimitRemaining: number | null }> {
+): Promise<{ insight: PullRequestInsight; rateLimitRemaining: number | null; pullRequest: PullRequestDetailItem | null }> {
   let rateLimitRemaining: number | null = null;
   const detailSyncedAt = new Date().toISOString();
   try {
@@ -668,7 +669,8 @@ async function fetchPullRequestInsight(
         detailSyncedAt,
         detailError: null
       },
-      rateLimitRemaining
+      rateLimitRemaining,
+      pullRequest: detail.data
     };
   } catch (error) {
     return {
@@ -683,7 +685,8 @@ async function fetchPullRequestInsight(
         detailSyncedAt,
         detailError: error instanceof Error ? error.message : String(error)
       },
-      rateLimitRemaining
+      rateLimitRemaining,
+      pullRequest: null
     };
   }
 }
@@ -717,7 +720,12 @@ async function fetchPullRequestInsights(input: {
 export async function fetchPullRequestInsightForNumber(input: {
   profile: RepoProfile;
   pullNumber: number;
-}): Promise<{ insight: PullRequestInsight; rateLimitRemaining: number | null; sourceAuthType: SourceAuthType }> {
+}): Promise<{
+  insight: PullRequestInsight;
+  rateLimitRemaining: number | null;
+  sourceAuthType: SourceAuthType;
+  pullRequest: PullRequestDetailItem | null;
+}> {
   const { octokit, sourceAuthType } = createGitHubClient();
   const result = await fetchPullRequestInsight(
     octokit,

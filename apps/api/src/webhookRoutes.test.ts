@@ -227,6 +227,51 @@ describe("webhook routes", () => {
     }
   });
 
+  test("stores signed workflow run webhooks for CI insight refresh", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "completed",
+      repository: { full_name: "matrixorigin/matrixone" },
+      workflow_run: { id: 123, pull_requests: [{ number: 42 }] }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-workflow",
+          "x-github-event": "workflow_run",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        accepted: true,
+        duplicate: false,
+        deliveryId: "delivery-workflow",
+        eventName: "workflow_run",
+        status: "received"
+      });
+      expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-workflow",
+          eventName: "workflow_run",
+          action: "completed",
+          rawPayload: rawBody
+        })
+      );
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("records signed GitHub webhooks ignored for a different repository", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({
@@ -310,9 +355,9 @@ describe("webhook routes", () => {
   test("ignores signed GitHub webhooks for events that are not ingested yet", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({
-      action: "completed",
+      action: "created",
       repository: { full_name: "matrixorigin/matrixone" },
-      workflow_run: { id: 123 }
+      deployment_status: { id: 123 }
     });
     const app = await createWebhookApp();
 
@@ -323,7 +368,7 @@ describe("webhook routes", () => {
         headers: {
           "content-type": "application/json",
           "x-github-delivery": "delivery-3",
-          "x-github-event": "workflow_run",
+          "x-github-event": "deployment_status",
           "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
         },
         payload: rawBody
@@ -335,7 +380,7 @@ describe("webhook routes", () => {
         duplicate: false,
         ignored: true,
         deliveryId: "delivery-3",
-        eventName: "workflow_run",
+        eventName: "deployment_status",
         reason: "unsupported_event"
       });
       expect(mocks.upsertRepoProfile).toHaveBeenCalledWith(profile);
@@ -343,8 +388,8 @@ describe("webhook routes", () => {
         expect.objectContaining({
           repoId: 10,
           deliveryId: "delivery-3",
-          eventName: "workflow_run",
-          action: "completed",
+          eventName: "deployment_status",
+          action: "created",
           ignoredReason: "unsupported_event",
           rawPayload: rawBody
         })
