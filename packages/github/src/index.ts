@@ -764,6 +764,10 @@ function uniqueIssueNumbers(values: number[]): number[] {
   );
 }
 
+function linkedIssueNumbersForPrNumber(prNumber: number, values: number[]): number[] {
+  return uniqueIssueNumbers(values).filter((issueNumber) => issueNumber !== prNumber);
+}
+
 export function linkedIssueNumbersFromPullRequestGraphqlResponse(response: LinkedPullRequestIssuesResponse): number[] {
   const pullRequest = response.repository?.pullRequest;
   const closingIssueNumbers = pullRequest?.closingIssuesReferences?.nodes?.map((node) => node?.number ?? 0) ?? [];
@@ -862,7 +866,10 @@ async function fetchPullRequestInsight(
     const detail = await octokit.rest.pulls.get({ owner, repo, pull_number: pr.number });
     rateLimitRemaining = readRateLimit(detail.headers) ?? rateLimitRemaining;
     const detailData = detail.data as typeof detail.data & { mergeable_state?: string | null; commits?: number | null };
-    let linkedIssueNumbers = extractLinkedIssueNumbers(`${detail.data.title ?? ""}\n${detail.data.body ?? ""}`);
+    let linkedIssueNumbers = linkedIssueNumbersForPrNumber(
+      pr.number,
+      extractLinkedIssueNumbers(`${detail.data.title ?? ""}\n${detail.data.body ?? ""}`)
+    );
     let linkedIssueError: string | null = null;
 
     const reviewsResponse = await octokit.rest.pulls.listReviews({
@@ -914,7 +921,10 @@ async function fetchPullRequestInsight(
 
     try {
       const linkedResult = await fetchPullRequestLinkedIssueNumbers(octokit, owner, repo, pr.number);
-      linkedIssueNumbers = uniqueIssueNumbers([...linkedIssueNumbers, ...linkedResult.linkedIssueNumbers]);
+      linkedIssueNumbers = linkedIssueNumbersForPrNumber(pr.number, [
+        ...linkedIssueNumbers,
+        ...linkedResult.linkedIssueNumbers
+      ]);
       rateLimitRemaining = linkedResult.rateLimitRemaining ?? rateLimitRemaining;
     } catch (error) {
       linkedIssueError = `linked issue sync failed: ${errorMessage(error)}`;
@@ -946,7 +956,10 @@ async function fetchPullRequestInsight(
         latestReviewState: null,
         latestReviewSubmittedAt: null,
         latestCommitAt: null,
-        linkedIssueNumbers: extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`),
+        linkedIssueNumbers: linkedIssueNumbersForPrNumber(
+          pr.number,
+          extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`)
+        ),
         detailSyncedAt,
         detailError: errorMessage(error)
       },

@@ -146,6 +146,10 @@ function uniqueIssueNumbers(values: number[]): number[] {
   );
 }
 
+function linkedIssueNumbersForPrNumber(prNumber: number, values: number[]): number[] {
+  return uniqueIssueNumbers(values).filter((issueNumber) => issueNumber !== prNumber);
+}
+
 function parseJsonNumberArray(value: unknown): number[] {
   if (typeof value !== "string" || value.length === 0) {
     return [];
@@ -188,7 +192,7 @@ export function pullRequestWithPreservedInsight(input: {
       input.current.attentionFlags,
       parseJsonArray(asString(input.previous?.attention_flags_json))
     ),
-    linkedIssueNumbers: uniqueIssueNumbers([
+    linkedIssueNumbers: linkedIssueNumbersForPrNumber(input.current.number, [
       ...input.current.linkedIssueNumbers,
       ...parseJsonNumberArray(input.previous?.linked_issue_numbers_json)
     ]),
@@ -2245,9 +2249,10 @@ async function criticalStartedAtByIssueNumber(
 }
 
 function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
+  const prNumber = asNumber(row.number);
   const rawPayload = parseJsonRecord<Record<string, unknown>>(asString(row.raw_payload), {});
   const body = typeof rawPayload.body === "string" ? rawPayload.body : "";
-  return uniqueIssueNumbers([
+  return linkedIssueNumbersForPrNumber(prNumber, [
     ...parseJsonNumberArray(row.linked_issue_numbers_json),
     ...extractLinkedIssueNumbers(`${asString(row.title)}\n${body}`)
   ]);

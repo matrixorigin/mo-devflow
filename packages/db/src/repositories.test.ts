@@ -794,12 +794,12 @@ describe("linked PR issue references", () => {
     expect(extractLinkedIssueNumbers("Closes #42. Fixes #42. Refs matrixorigin/matrixone#42")).toEqual([42]);
   });
 
-  test("treats parenthesized PR title references as linked issues", () => {
-    expect(extractLinkedIssueNumbers("fix: protocol panic on execute (#24975)")).toEqual([24975]);
+  test("does not treat parenthesized PR title references as linked issues", () => {
+    expect(extractLinkedIssueNumbers("fix: protocol panic on execute (#24975)")).toEqual([]);
   });
 
-  test("does not treat cherry-pick parenthesized references as linked issues", () => {
-    expect(extractLinkedIssueNumbers("fix: align behavior (#25200) (cherry-pick #25262)")).toEqual([25200]);
+  test("keeps parenthesized issue references only when a strong keyword introduces them", () => {
+    expect(extractLinkedIssueNumbers("Fixes (#25200). Cherry-pick #25262")).toEqual([25200]);
   });
 });
 
@@ -1023,7 +1023,7 @@ describe("pull request testing transition events", () => {
         detail_synced_at: "2026-07-03 00:00:00",
         detail_error: null,
         attention_flags_json: JSON.stringify(["no_human_action_24h"]),
-        linked_issue_numbers_json: JSON.stringify([42]),
+        linked_issue_numbers_json: JSON.stringify([42, 101]),
         is_complete: 1
       }
     });

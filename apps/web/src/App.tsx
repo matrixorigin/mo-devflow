@@ -1482,10 +1482,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "unlinked after sync";
+    return "no linked issue";
   }
   if (filter === "issue_link_pending") {
-    return "issue link sync pending";
+    return "issue link evidence pending";
   }
   if (filter === "evidence_pending") {
     return "PR evidence pending";
@@ -1498,7 +1498,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
 
 function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "no_issue") {
-    return "Only PRs with completed detail sync and no discovered issue relationship are counted here.";
+    return "Only PRs with completed PR detail and relationship sync, but no discovered issue relationship, are counted here.";
   }
   if (filter === "issue_link_pending") {
     return "These PRs are not treated as unlinked yet; relationship evidence is still incomplete.";
@@ -1965,8 +1965,8 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "Verified unlinked", value: "no_issue" },
-            { label: "Link sync pending", value: "issue_link_pending" },
+            { label: "No linked issue", value: "no_issue" },
+            { label: "Link evidence pending", value: "issue_link_pending" },
             { label: "Evidence pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}

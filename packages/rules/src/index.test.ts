@@ -563,6 +563,40 @@ describe("rules", () => {
     expect(pr.testingQueueAgeHours).toBeNull();
   });
 
+  test("does not keep self-referential linked issue numbers for pull requests", () => {
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 18,
+        number: 18,
+        title: "fix: protocol panic on execute (#18)",
+        body: "Fixes #18 and relates to #42",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/18",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-02T00:00:00Z",
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 18,
+        reviewDecision: null,
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: null,
+        linkedIssueNumbers: [18, 42],
+        detailSyncedAt: "2026-07-02T00:00:00Z",
+        detailError: null
+      }
+    );
+
+    expect(pr.linkedIssueNumbers).toEqual([42]);
+  });
+
   test("stale PR reviewer handoff does not produce testing stalled attention", () => {
     const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const pr = normalizePullRequest(

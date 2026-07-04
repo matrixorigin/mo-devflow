@@ -246,6 +246,10 @@ function uniqueIssueNumbers(values: number[]): number[] {
   );
 }
 
+function linkedIssueNumbersForPrNumber(prNumber: number, values: number[]): number[] {
+  return uniqueIssueNumbers(values).filter((issueNumber) => issueNumber !== prNumber);
+}
+
 export function normalizeIssue(
   profile: RepoProfile,
   issue: GitHubIssueLike,
@@ -323,7 +327,7 @@ export function normalizePullRequest(
   const mergeStateStatus = normalizeState(insight?.mergeStateStatus);
   const ciState = normalizeState(insight?.ciState);
   const latestReviewState = normalizeState(insight?.latestReviewState);
-  const linkedIssueNumbers = uniqueIssueNumbers([
+  const linkedIssueNumbers = linkedIssueNumbersForPrNumber(pr.number, [
     ...(insight?.linkedIssueNumbers ?? []),
     ...extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`)
   ]);
