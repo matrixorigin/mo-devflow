@@ -649,7 +649,15 @@ export function notificationStatusAllowsRetry(status: NotificationStatus): boole
 }
 
 export type GitHubWriteCapabilityStatus =
-  "ready" | "missing_token" | "insufficient_scope" | "scope_unverified" | "write_back_disabled";
+  | "ready"
+  | "missing_token"
+  | "insufficient_scope"
+  | "scope_unverified"
+  | "repo_permission_unverified"
+  | "insufficient_repo_permission"
+  | "write_back_disabled";
+
+export type GitHubRepoPermission = "admin" | "maintain" | "write" | "triage" | "read" | "none" | "unverified";
 
 export interface GitHubWriteCapability {
   enabled: boolean;
@@ -657,6 +665,8 @@ export interface GitHubWriteCapability {
   message: string;
   requiredScopes: string[];
   currentScopes: string[];
+  requiredRepoPermissions: GitHubRepoPermission[];
+  repoPermission: GitHubRepoPermission;
 }
 
 export interface GitHubWriteCapabilities {
@@ -668,6 +678,7 @@ export interface AuthenticatedUserView {
   githubId: string;
   avatarUrl: string | null;
   tokenScopes: string[];
+  tokenRepoPermission: GitHubRepoPermission;
   tokenLastValidatedAt: string | null;
   sessionExpiresAt: string;
   writeCapabilities: GitHubWriteCapabilities;
@@ -893,16 +904,19 @@ export function extractLinkedIssueNumbers(text: string): number[] {
 }
 
 const issueLabelClassicScopes = ["repo", "public_repo"] as const;
+const issueLabelRepoPermissions: GitHubRepoPermission[] = ["admin", "maintain", "write", "triage"];
 
 export function buildGitHubWriteCapabilities(input: {
   writeBackEnabled: boolean;
   tokenScopes: string[];
+  repoPermission: GitHubRepoPermission;
   tokenLastValidatedAt: string | null;
 }): GitHubWriteCapabilities {
   const currentScopes = Array.from(new Set(input.tokenScopes.map((scope) => scope.trim()).filter(Boolean))).sort();
   const normalizedScopes = new Set(currentScopes.map((scope) => scope.toLowerCase()));
   const hasIssueLabelScope = issueLabelClassicScopes.some((scope) => normalizedScopes.has(scope));
   const requiredScopes = [...issueLabelClassicScopes];
+  const requiredRepoPermissions = [...issueLabelRepoPermissions];
 
   if (!input.writeBackEnabled) {
     return {
@@ -911,7 +925,9 @@ export function buildGitHubWriteCapabilities(input: {
         status: "write_back_disabled",
         message: "GitHub write-back is disabled in the repository profile.",
         requiredScopes,
-        currentScopes
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
       }
     };
   }
@@ -923,7 +939,9 @@ export function buildGitHubWriteCapabilities(input: {
         status: "missing_token",
         message: "Connect or reconnect a GitHub token before workflow fixes are enabled.",
         requiredScopes,
-        currentScopes
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
       }
     };
   }
@@ -936,7 +954,9 @@ export function buildGitHubWriteCapabilities(input: {
         message:
           "GitHub did not report classic token scopes. Reconnect a token with repo or public_repo before workflow fixes are enabled.",
         requiredScopes,
-        currentScopes
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
       }
     };
   }
@@ -948,7 +968,38 @@ export function buildGitHubWriteCapabilities(input: {
         status: "insufficient_scope",
         message: "GitHub token needs repo or public_repo scope to add issue labels.",
         requiredScopes,
-        currentScopes
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
+      }
+    };
+  }
+
+  if (input.repoPermission === "unverified") {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "repo_permission_unverified",
+        message:
+          "GitHub repository permission was not verified for this token. Reconnect a token with triage or write access to this repository.",
+        requiredScopes,
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
+      }
+    };
+  }
+
+  if (!issueLabelRepoPermissions.includes(input.repoPermission)) {
+    return {
+      issueLabels: {
+        enabled: false,
+        status: "insufficient_repo_permission",
+        message: `GitHub token has ${input.repoPermission} permission for this repository; triage or write access is required for workflow fixes.`,
+        requiredScopes,
+        currentScopes,
+        requiredRepoPermissions,
+        repoPermission: input.repoPermission
       }
     };
   }
@@ -959,7 +1010,9 @@ export function buildGitHubWriteCapabilities(input: {
       status: "ready",
       message: "GitHub token can preview issue label workflow fixes.",
       requiredScopes,
-      currentScopes
+      currentScopes,
+      requiredRepoPermissions,
+      repoPermission: input.repoPermission
     }
   };
 }

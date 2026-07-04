@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import type { RestEndpointMethodTypes } from "@octokit/rest";
 import type {
+  GitHubRepoPermission,
   PullRequestInsight,
   RepoProfile,
   SourceAuthType,
@@ -51,7 +52,7 @@ export interface GitHubIssueFreshState {
 
 export interface GitHubIssueWritePermission {
   allowed: boolean;
-  permission: "admin" | "maintain" | "write" | "triage" | "read" | "none" | "unverified";
+  permission: GitHubRepoPermission;
   message: string;
   rateLimitRemaining: number | null;
 }

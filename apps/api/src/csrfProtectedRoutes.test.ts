@@ -40,6 +40,7 @@ describe("CSRF protected routes", () => {
       userId: 1,
       githubLogin: "alice",
       tokenScopes: ["repo"],
+      tokenRepoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
     mocks.loadRepoProfile.mockReturnValue({ key: "matrixorigin/matrixone" });

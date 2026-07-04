@@ -117,6 +117,7 @@ const schemaStatements = [
     token_auth_tag VARCHAR(64) NOT NULL,
     key_version VARCHAR(64) NOT NULL,
     scopes_json LONGTEXT NOT NULL,
+    repo_permission VARCHAR(64) NOT NULL,
     last_validated_at DATETIME NOT NULL,
     revoked_at DATETIME,
     created_at DATETIME NOT NULL,
@@ -436,6 +437,30 @@ const indexStatements = [
   "CREATE INDEX idx_notification_ack_user ON notification_acknowledgements(user_id)"
 ];
 
+interface SchemaMigrationContext {
+  tablesExistedBeforeCreate: Set<string>;
+}
+
+interface SchemaMigration {
+  version: string;
+  name: string;
+  run(connection: mysql.Connection, context: SchemaMigrationContext): Promise<void>;
+}
+
+const migrations: SchemaMigration[] = [
+  {
+    version: "0002",
+    name: "cache_user_token_repo_permission",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("user_github_tokens")) {
+        await connection.query(
+          "ALTER TABLE user_github_tokens ADD COLUMN repo_permission VARCHAR(64) NOT NULL DEFAULT 'unverified'"
+        );
+      }
+    }
+  }
+];
+
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {
   try {
     await connection.query(statement);
@@ -452,6 +477,14 @@ interface SchemaColumnRow extends RowDataPacket {
   column_name: string;
   column_type: string;
   is_nullable: string;
+}
+
+interface SchemaTableRow extends RowDataPacket {
+  table_name: string;
+}
+
+interface SchemaMigrationRow extends RowDataPacket {
+  version: string;
 }
 
 export interface ExpectedSchemaColumn {
@@ -610,6 +643,44 @@ async function assertCurrentSchema(connection: mysql.Connection, database: strin
   );
 }
 
+async function existingTableNames(connection: mysql.Connection, database: string): Promise<Set<string>> {
+  const [rows] = await connection.query<SchemaTableRow[]>(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = ?`,
+    [database]
+  );
+  return new Set(rows.map((row) => row.table_name));
+}
+
+async function schemaMigrationApplied(connection: mysql.Connection, version: string): Promise<boolean> {
+  const [rows] = await connection.query<SchemaMigrationRow[]>(
+    "SELECT version FROM schema_migrations WHERE version = ? LIMIT 1",
+    [version]
+  );
+  return rows.length > 0;
+}
+
+async function markSchemaMigration(connection: mysql.Connection, version: string, name: string): Promise<void> {
+  await connection.query(
+    `INSERT INTO schema_migrations(version, name, applied_at)
+     VALUES(?, ?, UTC_TIMESTAMP())
+     ON DUPLICATE KEY UPDATE applied_at = applied_at`,
+    [version, name]
+  );
+}
+
+async function applySchemaMigrations(connection: mysql.Connection, context: SchemaMigrationContext): Promise<void> {
+  await markSchemaMigration(connection, "0001", "initial_mvp0_schema");
+  for (const migration of migrations) {
+    if (await schemaMigrationApplied(connection, migration.version)) {
+      continue;
+    }
+    await migration.run(connection, context);
+    await markSchemaMigration(connection, migration.version, migration.name);
+  }
+}
+
 export async function migrate(): Promise<void> {
   const config = getDbConfig();
   const bootstrap = await mysql.createConnection({
@@ -638,18 +709,15 @@ export async function migrate(): Promise<void> {
   });
 
   try {
+    const tablesExistedBeforeCreate = await existingTableNames(connection, config.database);
     for (const statement of schemaStatements) {
       await connection.query(statement);
     }
+    await applySchemaMigrations(connection, { tablesExistedBeforeCreate });
     await assertCurrentSchema(connection, config.database);
     for (const statement of indexStatements) {
       await executeIgnoringDuplicateIndex(connection, statement);
     }
-    await connection.query(
-      `INSERT INTO schema_migrations(version, name, applied_at)
-       VALUES('0001', 'initial_mvp0_schema', UTC_TIMESTAMP())
-       ON DUPLICATE KEY UPDATE applied_at = applied_at`
-    );
   } finally {
     await connection.end();
   }

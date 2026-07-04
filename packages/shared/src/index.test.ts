@@ -12,6 +12,7 @@ describe("GitHub write capabilities", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: ["repo"],
+      repoPermission: "write",
       tokenLastValidatedAt: null
     });
 
@@ -25,6 +26,7 @@ describe("GitHub write capabilities", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: ["read:user", "repo"],
+      repoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
 
@@ -38,12 +40,15 @@ describe("GitHub write capabilities", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: ["public_repo"],
+      repoPermission: "triage",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
 
     expect(capabilities.issueLabels).toMatchObject({
       enabled: true,
-      status: "ready"
+      status: "ready",
+      repoPermission: "triage",
+      requiredRepoPermissions: ["admin", "maintain", "write", "triage"]
     });
   });
 
@@ -51,6 +56,7 @@ describe("GitHub write capabilities", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: ["read:user"],
+      repoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
 
@@ -64,6 +70,7 @@ describe("GitHub write capabilities", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: [],
+      repoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
 
@@ -73,10 +80,41 @@ describe("GitHub write capabilities", () => {
     });
   });
 
+  test("keeps issue label writes disabled when repository permission was not verified", () => {
+    const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
+      tokenScopes: ["repo"],
+      repoPermission: "unverified",
+      tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    expect(capabilities.issueLabels).toMatchObject({
+      enabled: false,
+      status: "repo_permission_unverified",
+      repoPermission: "unverified"
+    });
+  });
+
+  test("keeps issue label writes disabled when token has only repository read permission", () => {
+    const capabilities = buildGitHubWriteCapabilities({
+      writeBackEnabled: true,
+      tokenScopes: ["repo"],
+      repoPermission: "read",
+      tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    expect(capabilities.issueLabels).toMatchObject({
+      enabled: false,
+      status: "insufficient_repo_permission",
+      repoPermission: "read"
+    });
+  });
+
   test("keeps issue label writes disabled when repo write-back is disabled", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: false,
       tokenScopes: ["repo"],
+      repoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
 

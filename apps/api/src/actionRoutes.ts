@@ -112,6 +112,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
     const capability = buildGitHubWriteCapabilities({
       writeBackEnabled: profile.access.writeBackEnabled,
       tokenScopes: session.tokenScopes,
+      repoPermission: session.tokenRepoPermission,
       tokenLastValidatedAt: session.tokenLastValidatedAt
     }).issueLabels;
     if (!capability.enabled) {
@@ -342,6 +343,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
     const capability = buildGitHubWriteCapabilities({
       writeBackEnabled: profile.access.writeBackEnabled,
       tokenScopes: session.tokenScopes,
+      repoPermission: session.tokenRepoPermission,
       tokenLastValidatedAt: session.tokenLastValidatedAt
     }).issueLabels;
     if (!capability.enabled) {

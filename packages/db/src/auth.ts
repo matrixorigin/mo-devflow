@@ -1,4 +1,4 @@
-import type { AuthenticatedUserView } from "@mo-devflow/shared";
+import type { AuthenticatedUserView, GitHubRepoPermission } from "@mo-devflow/shared";
 import { buildGitHubWriteCapabilities, parseJsonArray } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
@@ -42,6 +42,7 @@ export interface GitHubTokenBindingRecord {
   tokenAuthTag: string;
   keyVersion: string;
   scopes: string[];
+  repoPermission: GitHubRepoPermission;
   lastValidatedAt: string;
 }
 
@@ -51,6 +52,7 @@ export interface SessionRecord {
   githubId: string;
   avatarUrl: string | null;
   tokenScopes: string[];
+  tokenRepoPermission: GitHubRepoPermission;
   tokenLastValidatedAt: string | null;
   sessionExpiresAt: string;
 }
@@ -61,6 +63,7 @@ export interface StoredGitHubTokenRecord {
   tokenAuthTag: string;
   keyVersion: string;
   scopes: string[];
+  repoPermission: GitHubRepoPermission;
   lastValidatedAt: string | null;
 }
 
@@ -98,8 +101,8 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
     await pool.execute(
       `INSERT INTO user_github_tokens(
         user_id, encrypted_token, token_iv, token_auth_tag, key_version,
-        scopes_json, last_validated_at, revoked_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+        scopes_json, repo_permission, last_validated_at, revoked_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
       [
         userId,
         input.encryptedToken,
@@ -107,6 +110,7 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
         input.tokenAuthTag,
         input.keyVersion,
         stringify(input.scopes),
+        input.repoPermission,
         sqlDate(input.lastValidatedAt),
         now,
         now
@@ -123,6 +127,7 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
            token_auth_tag = ?,
            key_version = ?,
            scopes_json = ?,
+           repo_permission = ?,
            last_validated_at = ?,
            revoked_at = NULL,
            updated_at = ?
@@ -133,6 +138,7 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
         input.tokenAuthTag,
         input.keyVersion,
         stringify(input.scopes),
+        input.repoPermission,
         sqlDate(input.lastValidatedAt),
         now,
         userId
@@ -164,7 +170,8 @@ export async function getActiveSession(sessionHash: string): Promise<SessionReco
        u.github_id,
        u.github_login,
        u.avatar_url,
-       t.scopes_json,
+       COALESCE(t.scopes_json, '[]') AS scopes_json,
+       COALESCE(t.repo_permission, 'none') AS repo_permission,
        t.last_validated_at
      FROM user_sessions s
      JOIN app_users u ON u.id = s.user_id
@@ -188,6 +195,7 @@ export async function getActiveSession(sessionHash: string): Promise<SessionReco
     githubId: asString(row.github_id),
     avatarUrl: row.avatar_url ? asString(row.avatar_url) : null,
     tokenScopes: parseJsonArray(asString(row.scopes_json)),
+    tokenRepoPermission: asString(row.repo_permission) as GitHubRepoPermission,
     tokenLastValidatedAt: fromSqlDate(row.last_validated_at),
     sessionExpiresAt: fromSqlDate(row.expires_at) ?? new Date().toISOString()
   };
@@ -212,7 +220,7 @@ export async function revokeGitHubTokenForUser(userId: number): Promise<void> {
 
 export async function getActiveGitHubTokenForUser(userId: number): Promise<StoredGitHubTokenRecord | null> {
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT encrypted_token, token_iv, token_auth_tag, key_version, scopes_json, last_validated_at
+    `SELECT encrypted_token, token_iv, token_auth_tag, key_version, scopes_json, repo_permission, last_validated_at
      FROM user_github_tokens
      WHERE user_id = ? AND revoked_at IS NULL
      LIMIT 1`,
@@ -228,6 +236,7 @@ export async function getActiveGitHubTokenForUser(userId: number): Promise<Store
     tokenAuthTag: asString(row.token_auth_tag),
     keyVersion: asString(row.key_version),
     scopes: parseJsonArray(asString(row.scopes_json)),
+    repoPermission: asString(row.repo_permission) as GitHubRepoPermission,
     lastValidatedAt: fromSqlDate(row.last_validated_at)
   };
 }
@@ -241,11 +250,13 @@ export function toAuthenticatedUserView(
     githubId: record.githubId,
     avatarUrl: record.avatarUrl,
     tokenScopes: record.tokenScopes,
+    tokenRepoPermission: record.tokenRepoPermission,
     tokenLastValidatedAt: record.tokenLastValidatedAt,
     sessionExpiresAt: record.sessionExpiresAt,
     writeCapabilities: buildGitHubWriteCapabilities({
       writeBackEnabled: input.writeBackEnabled,
       tokenScopes: record.tokenScopes,
+      repoPermission: record.tokenRepoPermission,
       tokenLastValidatedAt: record.tokenLastValidatedAt
     })
   };

@@ -9,8 +9,8 @@ import {
   upsertGitHubTokenBinding,
   type SessionRecord
 } from "@mo-devflow/db";
-import { validateGitHubToken } from "@mo-devflow/github";
-import type { SessionView } from "@mo-devflow/shared";
+import { classifyGitHubError, fetchIssueWritePermission, validateGitHubToken } from "@mo-devflow/github";
+import type { GitHubRepoPermission, RepoProfile, SessionView } from "@mo-devflow/shared";
 import { createSessionToken, encryptSecret, hashSessionToken, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import {
   buildClearCsrfCookie,
@@ -100,6 +100,31 @@ function githubTokenErrorStatus(error: unknown): number | null {
   return typeof status === "number" ? status : null;
 }
 
+async function resolveTokenRepoPermission(input: {
+  token: string;
+  profile: RepoProfile;
+}): Promise<
+  | { permission: GitHubRepoPermission }
+  | { failure: "rejected" | "rate_limited" | "unavailable"; retryAfterSeconds: number | null }
+> {
+  try {
+    const permission = await fetchIssueWritePermission(input);
+    return { permission: permission.permission };
+  } catch (error) {
+    const classified = classifyGitHubError(error);
+    if ((classified.kind === "permission" && classified.status === 403) || classified.kind === "not_found") {
+      return { permission: "none" };
+    }
+    if (classified.kind === "permission" && classified.status === 401) {
+      return { failure: "rejected", retryAfterSeconds: null };
+    }
+    if (classified.kind === "rate_limited") {
+      return { failure: "rate_limited", retryAfterSeconds: classified.retryAfterSeconds };
+    }
+    return { failure: "unavailable", retryAfterSeconds: classified.retryAfterSeconds };
+  }
+}
+
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   const tokenBindRateLimiter = new FixedWindowRateLimiter(tokenBindRateLimitConfigFromEnv());
 
@@ -151,6 +176,28 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    const profile = loadRepoProfile();
+    const repoPermissionResult = await resolveTokenRepoPermission({ token: parsed.data.token, profile });
+    if ("failure" in repoPermissionResult) {
+      if (repoPermissionResult.retryAfterSeconds) {
+        reply.header("retry-after", String(repoPermissionResult.retryAfterSeconds));
+      }
+      const rejected = repoPermissionResult.failure === "rejected";
+      const rateLimited = repoPermissionResult.failure === "rate_limited";
+      return reply.status(rejected ? 401 : rateLimited ? 429 : 502).send({
+        error: rejected
+          ? "github_token_rejected"
+          : rateLimited
+            ? "github_repo_permission_check_rate_limited"
+            : "github_repo_permission_check_failed",
+        message: rejected
+          ? "GitHub rejected the token."
+          : rateLimited
+            ? "GitHub rate limited the repository permission check. Retry later."
+            : "GitHub repository permission check failed."
+      });
+    }
+
     const encryptedToken = encryptSecret(parsed.data.token, encryptionConfig);
     const validatedAt = new Date().toISOString();
     const userId = await upsertGitHubTokenBinding({
@@ -162,12 +209,12 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       tokenAuthTag: encryptedToken.authTag,
       keyVersion: encryptedToken.keyVersion,
       scopes: validation.scopes,
+      repoPermission: repoPermissionResult.permission,
       lastValidatedAt: validatedAt
     });
 
     const sessionToken = createSessionToken();
     const expiresAt = new Date(Date.now() + sessionTtlDaysFromEnv() * 24 * 3_600_000);
-    const profile = loadRepoProfile();
     await createUserSession({
       userId,
       sessionHash: hashSessionToken(sessionToken),
@@ -187,6 +234,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
           githubId: validation.githubId,
           avatarUrl: validation.avatarUrl,
           tokenScopes: validation.scopes,
+          tokenRepoPermission: repoPermissionResult.permission,
           tokenLastValidatedAt: validatedAt,
           sessionExpiresAt: expiresAt.toISOString()
         },

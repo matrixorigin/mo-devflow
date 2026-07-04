@@ -145,6 +145,7 @@ function encryptedStoredToken() {
     tokenAuthTag: encrypted.authTag,
     keyVersion: encrypted.keyVersion,
     scopes: ["repo"],
+    repoPermission: "write",
     lastValidatedAt: "2026-07-04T00:00:00.000Z"
   };
 }
@@ -162,6 +163,7 @@ describe("action routes", () => {
       userId: 1,
       githubLogin: "alice",
       tokenScopes: ["repo"],
+      tokenRepoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
     });
     mocks.getRepoId.mockResolvedValue(10);
@@ -263,6 +265,52 @@ describe("action routes", () => {
         profile: writeBackProfile,
         viewer: { authenticated: true, userId: 1 }
       });
+      expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects workflow fix preview from cached session capability when token lacks repo permission", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getSessionRecordFromRequest.mockResolvedValue({
+      userId: 1,
+      githubLogin: "alice",
+      tokenScopes: ["repo"],
+      tokenRepoPermission: "read",
+      tokenLastValidatedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
+        payload: {
+          actionKey: "add_needs_triage",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "bug_missing_needs_triage"
+        }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({
+        error: "write_capability_unavailable",
+        capability: {
+          enabled: false,
+          status: "insufficient_repo_permission",
+          repoPermission: "read"
+        }
+      });
+      expect(mocks.getActiveWorkflowViolation).not.toHaveBeenCalled();
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
     } finally {
       await app.close();

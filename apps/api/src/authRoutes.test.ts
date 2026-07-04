@@ -8,8 +8,12 @@ import { sessionCookieName } from "./sessionCookie";
 const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
   revokeSession: vi.fn(),
+  createUserSession: vi.fn(),
   toAuthenticatedUserView: vi.fn(),
+  upsertGitHubTokenBinding: vi.fn(),
   loadRepoProfile: vi.fn(),
+  classifyGitHubError: vi.fn(),
+  fetchIssueWritePermission: vi.fn(),
   validateGitHubToken: vi.fn()
 }));
 
@@ -18,14 +22,16 @@ vi.mock("@mo-devflow/config", () => ({
 }));
 
 vi.mock("@mo-devflow/db", () => ({
-  createUserSession: vi.fn(),
+  createUserSession: mocks.createUserSession,
   getActiveSession: mocks.getActiveSession,
   revokeSession: mocks.revokeSession,
   toAuthenticatedUserView: mocks.toAuthenticatedUserView,
-  upsertGitHubTokenBinding: vi.fn()
+  upsertGitHubTokenBinding: mocks.upsertGitHubTokenBinding
 }));
 
 vi.mock("@mo-devflow/github", () => ({
+  classifyGitHubError: mocks.classifyGitHubError,
+  fetchIssueWritePermission: mocks.fetchIssueWritePermission,
   validateGitHubToken: mocks.validateGitHubToken
 }));
 
@@ -38,6 +44,7 @@ const originalRateLimitEnv = {
   max: process.env.MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_MAX,
   windowSeconds: process.env.MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS
 };
+const originalTokenEncryptionKey = process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
 
 function restoreRateLimitEnv(): void {
   if (originalRateLimitEnv.max === undefined) {
@@ -52,19 +59,66 @@ function restoreRateLimitEnv(): void {
   }
 }
 
+function restoreTokenEncryptionEnv(): void {
+  if (originalTokenEncryptionKey === undefined) {
+    delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+  } else {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = originalTokenEncryptionKey;
+  }
+}
+
 describe("auth routes", () => {
   beforeEach(() => {
     restoreRateLimitEnv();
+    restoreTokenEncryptionEnv();
     vi.clearAllMocks();
-    mocks.loadRepoProfile.mockReturnValue({ access: { writeBackEnabled: true } });
+    mocks.loadRepoProfile.mockReturnValue({
+      key: "matrixorigin/matrixone",
+      repo: { owner: "matrixorigin", name: "matrixone" },
+      access: { writeBackEnabled: true }
+    });
+    mocks.validateGitHubToken.mockResolvedValue({
+      githubId: "1001",
+      githubLogin: "alice",
+      avatarUrl: null,
+      scopes: ["repo"],
+      rateLimitRemaining: 99
+    });
+    mocks.fetchIssueWritePermission.mockResolvedValue({
+      allowed: true,
+      permission: "write",
+      message: "GitHub token has write permission for issue workflow fixes.",
+      rateLimitRemaining: 98
+    });
+    mocks.classifyGitHubError.mockReturnValue({
+      kind: "unknown",
+      retriable: true,
+      status: null,
+      message: "unknown",
+      rateLimitRemaining: null,
+      rateLimitResetAt: null,
+      retryAfterSeconds: null
+    });
+    mocks.upsertGitHubTokenBinding.mockResolvedValue(1);
     mocks.toAuthenticatedUserView.mockReturnValue({
       githubLogin: "alice",
       githubId: "1001",
       avatarUrl: null,
       tokenScopes: ["repo"],
+      tokenRepoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z",
       sessionExpiresAt: "2999-07-04T00:00:00.000Z",
-      writeCapabilities: { issueLabels: { enabled: true, message: "ok", missingScopes: [] } }
+      writeCapabilities: {
+        issueLabels: {
+          enabled: true,
+          status: "ready",
+          message: "ok",
+          requiredScopes: ["repo", "public_repo"],
+          currentScopes: ["repo"],
+          requiredRepoPermissions: ["admin", "maintain", "write", "triage"],
+          repoPermission: "write"
+        }
+      }
     });
     mocks.getActiveSession.mockResolvedValue({
       userId: 1,
@@ -72,6 +126,7 @@ describe("auth routes", () => {
       githubId: "1001",
       avatarUrl: null,
       tokenScopes: ["repo"],
+      tokenRepoPermission: "write",
       tokenLastValidatedAt: "2026-07-04T00:00:00.000Z",
       sessionExpiresAt: "2999-07-04T00:00:00.000Z"
     });
@@ -79,6 +134,7 @@ describe("auth routes", () => {
 
   afterEach(() => {
     restoreRateLimitEnv();
+    restoreTokenEncryptionEnv();
   });
 
   test("sets a readable CSRF cookie for authenticated sessions", async () => {
@@ -218,6 +274,94 @@ describe("auth routes", () => {
       expect(Number(body.retryAfterSeconds)).toBeGreaterThan(0);
       expect(second.headers["retry-after"]).toBe(String(body.retryAfterSeconds));
       expect(mocks.validateGitHubToken).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("stores repository permission when binding a GitHub token", async () => {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+    mocks.fetchIssueWritePermission.mockResolvedValue({
+      allowed: true,
+      permission: "triage",
+      message: "GitHub token has triage permission for issue workflow fixes.",
+      rateLimitRemaining: 98
+    });
+    const token = `ghp_${"a".repeat(40)}`;
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/session/github-token",
+        payload: { token }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.fetchIssueWritePermission).toHaveBeenCalledWith({
+        token,
+        profile: {
+          key: "matrixorigin/matrixone",
+          repo: { owner: "matrixorigin", name: "matrixone" },
+          access: { writeBackEnabled: true }
+        }
+      });
+      expect(mocks.upsertGitHubTokenBinding).toHaveBeenCalledWith(
+        expect.objectContaining({
+          githubId: "1001",
+          githubLogin: "alice",
+          scopes: ["repo"],
+          repoPermission: "triage"
+        })
+      );
+      expect(mocks.toAuthenticatedUserView).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokenScopes: ["repo"],
+          tokenRepoPermission: "triage"
+        }),
+        { writeBackEnabled: true }
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("keeps a valid token bound as repository none when the target repo is inaccessible", async () => {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+    mocks.fetchIssueWritePermission.mockRejectedValue(new Error("not found"));
+    mocks.classifyGitHubError.mockReturnValue({
+      kind: "not_found",
+      retriable: false,
+      status: 404,
+      message: "not found",
+      rateLimitRemaining: 97,
+      rateLimitResetAt: null,
+      retryAfterSeconds: null
+    });
+    const token = `ghp_${"b".repeat(40)}`;
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/session/github-token",
+        payload: { token }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.upsertGitHubTokenBinding).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoPermission: "none"
+        })
+      );
+      expect(mocks.toAuthenticatedUserView).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokenRepoPermission: "none"
+        }),
+        { writeBackEnabled: true }
+      );
     } finally {
       await app.close();
     }
