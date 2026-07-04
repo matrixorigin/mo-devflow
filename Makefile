@@ -10,6 +10,7 @@ START_BG := node scripts/run-background.mjs
 STOP_BG := node scripts/stop-background.mjs
 WAIT_URL := node scripts/wait-for-url.mjs
 WAIT_WORKER := node scripts/wait-for-worker-heartbeat.mjs
+ASSERT_PORT_FREE := node scripts/assert-port-free.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
@@ -63,13 +64,19 @@ notify-once:
 
 dev-api-start:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
+	started=0; \
 	if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then \
 		echo "API already running (PID $$(cat $(API_PID)))"; \
 	else \
+		$(ASSERT_PORT_FREE) 127.0.0.1 "$${MO_DEVFLOW_API_PORT:-18081}" API; \
 		$(START_BG) $(API_PID) $(API_LOG) -- npm run start:api; \
+		started=1; \
 		echo "API starting (PID $$(cat $(API_PID)), log $(API_LOG))"; \
 	fi; \
-	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_API_PORT:-18081}/health" API 30000
+	if ! $(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_API_PORT:-18081}/health" API 30000; then \
+		if [ "$$started" = "1" ]; then $(STOP_BG) $(API_PID) API; fi; \
+		exit 1; \
+	fi
 
 dev-api-stop:
 	@$(STOP_BG) $(API_PID) API
@@ -82,13 +89,18 @@ dev-api-status:
 
 dev-worker-start:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
+	started=0; \
 	if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then \
 		echo "Worker already running (PID $$(cat $(WORKER_PID)))"; \
 	else \
 		$(START_BG) $(WORKER_PID) $(WORKER_LOG) -- npm run dev:worker; \
+		started=1; \
 		echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"; \
 	fi; \
-	$(WAIT_WORKER) $(WORKER_PID) Worker 30000
+	if ! $(WAIT_WORKER) $(WORKER_PID) Worker 30000; then \
+		if [ "$$started" = "1" ]; then $(STOP_BG) $(WORKER_PID) Worker; fi; \
+		exit 1; \
+	fi
 
 dev-worker-stop:
 	@$(STOP_BG) $(WORKER_PID) Worker
@@ -101,13 +113,19 @@ dev-worker-status:
 
 dev-web-start:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
+	started=0; \
 	if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then \
 		echo "Web already running (PID $$(cat $(WEB_PID)))"; \
 	else \
+		$(ASSERT_PORT_FREE) 127.0.0.1 "$${MO_DEVFLOW_WEB_PORT:-5173}" Web; \
 		$(START_BG) $(WEB_PID) $(WEB_LOG) -- npm --workspace @mo-devflow/web run dev -- --host 0.0.0.0; \
+		started=1; \
 		echo "Web starting (PID $$(cat $(WEB_PID)), log $(WEB_LOG))"; \
 	fi; \
-	$(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_WEB_PORT:-5173}/" Web 30000
+	if ! $(WAIT_URL) "http://127.0.0.1:$${MO_DEVFLOW_WEB_PORT:-5173}/" Web 30000; then \
+		if [ "$$started" = "1" ]; then $(STOP_BG) $(WEB_PID) Web; fi; \
+		exit 1; \
+	fi
 
 dev-web-stop:
 	@$(STOP_BG) $(WEB_PID) Web
