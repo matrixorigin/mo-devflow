@@ -777,6 +777,17 @@ button.team-monitor-tile:hover,
   text-decoration: none;
 }
 
+.team-critical-context-row > span:first-child {
+  color: #991b1b;
+  font-weight: 600;
+}
+
+.team-critical-context-row a {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
 .team-linked-row-missing {
   color: #b45309;
 }

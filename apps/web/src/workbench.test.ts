@@ -9,6 +9,7 @@ import type {
 } from "@mo-devflow/shared";
 import {
   criticalIssueReasons,
+  criticalIssueContextsByPullRequest,
   effectiveAiEffortLabel,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
@@ -150,6 +151,51 @@ describe("work item attention reasons", () => {
       "Incomplete cache evidence",
       "ai-easy"
     ]);
+  });
+
+  it("indexes many-to-many active issue context by linked PR", () => {
+    const contexts = criticalIssueContextsByPullRequest([
+      criticalIssue({
+        number: 42,
+        severity: "severity/s0",
+        aiEffortLabel: "ai-heavy",
+        criticalAgeHours: 72,
+        linkedPullRequests: [
+          {
+            ...linkedPullRequest(),
+            number: 100,
+            linkedIssueNumbers: [42, 43]
+          }
+        ]
+      }),
+      criticalIssue({
+        number: 43,
+        severity: "severity/s-1",
+        aiEffortLabel: null,
+        ownerLogin: "bob",
+        ownerScope: "non_watched",
+        criticalAgeHours: 8,
+        blockers: [{ key: "issue:blocked", severity: "critical", message: "blocked", relatedPrNumber: 100 }],
+        linkedPullRequests: [
+          {
+            ...linkedPullRequest(),
+            number: 100,
+            linkedIssueNumbers: [42, 43]
+          },
+          {
+            ...linkedPullRequest(),
+            number: 101,
+            linkedIssueNumbers: [43]
+          }
+        ]
+      })
+    ]);
+
+    expect(contexts.get(100)?.map((issue) => `${issue.number}:${issue.severity}:${issue.aiEffortLabel}`)).toEqual([
+      "43:severity/s-1:ai-easy",
+      "42:severity/s0:ai-heavy"
+    ]);
+    expect(contexts.get(101)?.map((issue) => issue.number)).toEqual([43]);
   });
 });
 

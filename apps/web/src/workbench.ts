@@ -129,6 +129,20 @@ export interface FlowEfficiencyIssue {
   ageHours: number;
 }
 
+export interface PrCriticalIssueContext {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  severity: string | null;
+  ownerLogin: string | null;
+  ownerScope: CriticalIssueView["ownerScope"];
+  aiEffortLabel: string;
+  criticalAgeHours: number | null;
+  criticalAgeEvidence: CriticalIssueView["criticalAgeEvidence"];
+  blockerCount: number;
+  isComplete: boolean;
+}
+
 export interface FlowEfficiencySummary {
   prsCreated: number;
   prsMerged: number;
@@ -151,6 +165,38 @@ export interface FlowEfficiencySummary {
 
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
+}
+
+export function criticalIssueContextsByPullRequest(issues: CriticalIssueView[]): Map<number, PrCriticalIssueContext[]> {
+  const byPullRequest = new Map<number, PrCriticalIssueContext[]>();
+
+  for (const issue of issues) {
+    const context: PrCriticalIssueContext = {
+      number: issue.number,
+      title: issue.title,
+      htmlUrl: issue.htmlUrl,
+      severity: issue.severity,
+      ownerLogin: issue.ownerLogin,
+      ownerScope: issue.ownerScope,
+      aiEffortLabel: effectiveAiEffortLabel(issue.aiEffortLabel),
+      criticalAgeHours: issue.criticalAgeHours,
+      criticalAgeEvidence: issue.criticalAgeEvidence,
+      blockerCount: issue.blockers.filter((blocker) => blocker.severity !== "info").length,
+      isComplete: issue.isComplete
+    };
+
+    for (const pr of issue.linkedPullRequests) {
+      const existing = byPullRequest.get(pr.number) ?? [];
+      existing.push(context);
+      byPullRequest.set(pr.number, existing);
+    }
+  }
+
+  for (const [prNumber, contexts] of byPullRequest.entries()) {
+    byPullRequest.set(prNumber, contexts.sort(comparePrCriticalIssueContext));
+  }
+
+  return byPullRequest;
 }
 
 export function flowEfficiencySummary(input: {
@@ -1078,6 +1124,22 @@ function severityPriority(severity: string | null): number {
     return 20;
   }
   return 0;
+}
+
+function comparePrCriticalIssueContext(left: PrCriticalIssueContext, right: PrCriticalIssueContext): number {
+  const severityDelta = severityPriority(right.severity) - severityPriority(left.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  const blockerDelta = right.blockerCount - left.blockerCount;
+  if (blockerDelta !== 0) {
+    return blockerDelta;
+  }
+  const ageDelta = (right.criticalAgeHours ?? -1) - (left.criticalAgeHours ?? -1);
+  if (ageDelta !== 0) {
+    return ageDelta;
+  }
+  return left.number - right.number;
 }
 
 function isTestingQueuePullRequest(pr: FlowEfficiencyPullRequest): boolean {

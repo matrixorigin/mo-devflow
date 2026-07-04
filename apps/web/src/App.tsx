@@ -89,6 +89,7 @@ import {
   type CacheEvidenceSummary
 } from "./freshness";
 import {
+  criticalIssueContextsByPullRequest,
   criticalIssueReasons,
   effectiveAiEffortLabel,
   flowThreadDurationWarnings,
@@ -116,6 +117,7 @@ import {
   type PersonalGanttChart,
   type PersonalGanttPrBar,
   type PersonalGanttRow,
+  type PrCriticalIssueContext,
   type WorkloadStatus
 } from "./workbench";
 
@@ -1521,7 +1523,11 @@ function TeamRotationOverview({
   const criticalIssues = sortCriticalIssuesForAction(
     filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
   );
-  const prRisks = sortPendingPrsForAction(data.pendingPrs);
+  const criticalIssuesByPr = useMemo(
+    () => criticalIssueContextsByPullRequest(data.criticalIssues),
+    [data.criticalIssues]
+  );
+  const prRisks = sortPendingPrsForAction(data.pendingPrs, criticalIssuesByPr);
   const testingIssues = sortTestingIssuesForAction(data.testing.issues);
   const peopleFocus = sortPeopleForTeamFocus(data.people, data.personalViews).slice(0, 6);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
@@ -1647,7 +1653,7 @@ function TeamRotationOverview({
             onAction={() => onOpenPrsFilter("attention")}
           >
             {prRisks.slice(0, 6).map((pr) => (
-              <TeamPrRiskRow pr={pr} key={pr.number} />
+              <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
@@ -1942,13 +1948,19 @@ function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
   );
 }
 
-function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
+function TeamPrRiskRow({ activeIssues = [], pr }: { activeIssues?: PrCriticalIssueContext[]; pr: PendingPrView }) {
   const reasons = prAttentionReasons(pr);
   const visibleReasons = reasons.slice(0, 4);
-  const linkedIssues = pr.linkedIssueNumbers.slice(0, 4).map((number) => ({
+  const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
+  const visibleActiveIssues = activeIssues.slice(0, 3);
+  const linkedIssues = pr.linkedIssueNumbers.map((number) => ({
     number,
     url: linkedObjectUrl(pr.htmlUrl, "issues", number)
   }));
+  const otherLinkedIssues = linkedIssues.filter((link) => !activeIssueNumbers.has(link.number));
+  const visibleIssueLinks = (activeIssues.length > 0 ? otherLinkedIssues : linkedIssues).slice(0, 4);
+  const hiddenIssueLinks =
+    (activeIssues.length > 0 ? otherLinkedIssues : linkedIssues).length - visibleIssueLinks.length;
 
   return (
     <article className="team-work-row">
@@ -1958,6 +1970,11 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
             PR #{pr.number}
           </WorkObjectLink>
           <Tag>{hours(pr.ageHours)}</Tag>
+          {activeIssues.length > 0 ? (
+            <Tag color={severityColor(activeIssues[0]?.severity ?? null)}>
+              {activeIssues.length} active issue{activeIssues.length === 1 ? "" : "s"}
+            </Tag>
+          ) : null}
           {pr.testingState !== "not_ready" ? (
             <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
           ) : null}
@@ -1980,30 +1997,43 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
             </Tag>
           ))}
         </div>
-        <div className={`team-linked-row ${linkedIssues.length === 0 ? "team-linked-row-missing" : ""}`}>
-          {linkedIssues.length > 0 ? (
+        {activeIssues.length > 0 ? (
+          <div className="team-linked-row team-critical-context-row">
+            <span>Active issues</span>
+            {visibleActiveIssues.map((issue) => (
+              <Tooltip title={prCriticalIssueTooltip(issue)} key={issue.number}>
+                <a href={issue.htmlUrl} target="_blank" rel="noreferrer">
+                  #{issue.number} {severityShortLabel(issue.severity)}
+                </a>
+              </Tooltip>
+            ))}
+            {activeIssues.length > visibleActiveIssues.length ? (
+              <span>+{activeIssues.length - visibleActiveIssues.length}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {visibleIssueLinks.length > 0 ? (
+          <div className="team-linked-row">
             <>
-              <span>Issues</span>
-              {linkedIssues.map((link) => (
+              <span>{activeIssues.length > 0 ? "Other issues" : "Issues"}</span>
+              {visibleIssueLinks.map((link) => (
                 <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
                   #{link.number}
                 </a>
               ))}
-              {pr.linkedIssueNumbers.length > linkedIssues.length ? (
-                <span>+{pr.linkedIssueNumbers.length - linkedIssues.length}</span>
-              ) : null}
+              {hiddenIssueLinks > 0 ? <span>+{hiddenIssueLinks}</span> : null}
             </>
-          ) : prIssueLinkUnknown(pr) ? (
-            "Issue link sync pending"
-          ) : (
-            "Unlinked after sync"
-          )}
-        </div>
+          </div>
+        ) : activeIssues.length === 0 ? (
+          <div className="team-linked-row team-linked-row-missing">
+            {prIssueLinkUnknown(pr) ? "Issue link sync pending" : "Unlinked after sync"}
+          </div>
+        ) : null}
       </div>
       <div className="team-work-action">
         <Text type="secondary">Next</Text>
         <Text strong>{teamPrNextAction(pr)}</Text>
-        <small>{prActionContext(pr)}</small>
+        <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
       </div>
     </article>
   );
@@ -2495,9 +2525,14 @@ function maxPrAge(prs: PendingPrView[]): number | null {
   return Math.max(...prs.map((pr) => pr.ageHours));
 }
 
-function sortPendingPrsForAction(prs: PendingPrView[]): PendingPrView[] {
+function sortPendingPrsForAction(
+  prs: PendingPrView[],
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]> = new Map()
+): PendingPrView[] {
   return [...prs].sort((left, right) => {
-    const riskDelta = pendingPrRiskScore(right) - pendingPrRiskScore(left);
+    const riskDelta =
+      pendingPrRiskScore(right, criticalIssuesByPr.get(right.number) ?? []) -
+      pendingPrRiskScore(left, criticalIssuesByPr.get(left.number) ?? []);
     if (riskDelta !== 0) {
       return riskDelta;
     }
@@ -2505,8 +2540,9 @@ function sortPendingPrsForAction(prs: PendingPrView[]): PendingPrView[] {
   });
 }
 
-function pendingPrRiskScore(pr: PendingPrView): number {
+function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): number {
   return (
+    prActiveIssueRiskScore(activeIssues) +
     prAttentionReasons(pr).length * 80 +
     (pr.reviewDecision === "changes_requested" ? 180 : 0) +
     (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
@@ -2521,6 +2557,19 @@ function pendingPrRiskScore(pr: PendingPrView): number {
   );
 }
 
+function prActiveIssueRiskScore(activeIssues: PrCriticalIssueContext[]): number {
+  if (activeIssues.length === 0) {
+    return 0;
+  }
+  const highestSeverity = activeIssues.some((issue) => issue.severity === "severity/s-1") ? 260 : 170;
+  const blockerScore = activeIssues.reduce((total, issue) => total + issue.blockerCount * 35, 0);
+  const durationScore = Math.min(
+    120,
+    activeIssues.reduce((max, issue) => Math.max(max, issue.criticalAgeHours ?? 0), 0) / 4
+  );
+  return highestSeverity + blockerScore + durationScore + Math.min(80, activeIssues.length * 20);
+}
+
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
     return pr.testingTesters.length > 0 ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "issue in test";
@@ -2529,6 +2578,14 @@ function prActionContext(pr: PendingPrView): string {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
   }
   return prIssueLinkUnknown(pr) ? "issue link sync pending" : "unlinked after sync";
+}
+
+function prActiveIssueActionContext(activeIssues: PrCriticalIssueContext[], pr: PendingPrView): string {
+  const primary = activeIssues[0];
+  const prefix = primary
+    ? `active ${severityShortLabel(primary.severity)} #${primary.number}`
+    : `${activeIssues.length} active issues`;
+  return `${prefix} | ${prActionContext(pr)}`;
 }
 
 function teamPrNextAction(pr: PendingPrView): string {
@@ -3149,6 +3206,24 @@ type CriticalRiskTag = {
 
 function criticalIssueDuration(issue: CriticalIssueView): string {
   return personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" });
+}
+
+function severityShortLabel(severity: string | null): string {
+  return severity?.replace("severity/", "") ?? "active";
+}
+
+function prCriticalIssueTooltip(issue: PrCriticalIssueContext): string {
+  return [
+    issue.title,
+    `severity ${severityShortLabel(issue.severity)}`,
+    `owner ${issue.ownerLogin ?? "unowned"}`,
+    issue.aiEffortLabel,
+    personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" }),
+    issue.criticalAgeEvidence === "missing_timeline" ? "duration evidence missing" : null,
+    !issue.isComplete ? "issue cache incomplete" : null
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" | ");
 }
 
 function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
