@@ -25,8 +25,10 @@ import {
   notificationEmployeeMappingCandidates,
   previousCalendarDayRange,
   profileActionSuggestions,
+  profileActionSuggestionsForViewer,
   profileConfigurationWarnings,
   profileSetupPlan,
+  profileSetupPlanForViewer,
   pullRequestWithPreservedInsight,
   pullRequestTestingTransitionForUpsert,
   recentTestingTransitionsForProfile,
@@ -518,6 +520,70 @@ describe("profile configuration guidance", () => {
         "    qa-a:\n" +
         "      wecom_user_id: TODO_QA_A"
     });
+  });
+
+  test("redacts profile setup account hints from anonymous dashboard viewers", () => {
+    const actions = profileActionSuggestions(
+      {
+        ...baseProfile,
+        notifications: {
+          ...baseProfile.notifications,
+          wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+        }
+      },
+      [
+        {
+          ownerLogin: "alice",
+          ownerScope: "non_watched",
+          workflowSkipped: false,
+          criticalIssues: 5,
+          averageAgeHours: 8
+        }
+      ],
+      [{ login: "qa-a", attentionItems: 1, highestSeverity: "warning" }]
+    );
+    const setup = profileSetupPlan(baseProfile, actions);
+    expect(actions).toHaveLength(2);
+    const watchedAction = actions[0]!;
+    const notificationAction = actions[1]!;
+
+    expect(profileActionSuggestionsForViewer({ authenticated: false, userId: null }, actions)).toEqual([
+      {
+        ...watchedAction,
+        relatedLogins: [],
+        yamlSnippet: null
+      },
+      {
+        ...notificationAction,
+        relatedLogins: [],
+        yamlSnippet: null
+      }
+    ]);
+    expect(profileSetupPlanForViewer({ authenticated: false, userId: null }, setup)).toEqual({
+      ...setup,
+      candidateLogins: [],
+      yamlPatch: null
+    });
+  });
+
+  test("keeps profile setup account hints for authenticated dashboard viewers", () => {
+    const actions = profileActionSuggestions(
+      baseProfile,
+      [
+        {
+          ownerLogin: "alice",
+          ownerScope: "non_watched",
+          workflowSkipped: false,
+          criticalIssues: 5,
+          averageAgeHours: 8
+        }
+      ],
+      []
+    );
+    const setup = profileSetupPlan(baseProfile, actions);
+
+    expect(profileActionSuggestionsForViewer({ authenticated: true, userId: 1 }, actions)).toBe(actions);
+    expect(profileSetupPlanForViewer({ authenticated: true, userId: 1 }, setup)).toBe(setup);
   });
 
   test("marks profile setup complete when no action suggestions remain", () => {

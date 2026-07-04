@@ -896,6 +896,31 @@ export function profileSetupPlan(profile: RepoProfile, actions: ProfileActionSug
   };
 }
 
+export function profileActionSuggestionsForViewer(
+  viewer: DashboardViewer,
+  actions: ProfileActionSuggestion[]
+): ProfileActionSuggestion[] {
+  if (viewer.authenticated) {
+    return actions;
+  }
+  return actions.map((action) => ({
+    ...action,
+    relatedLogins: [],
+    yamlSnippet: null
+  }));
+}
+
+export function profileSetupPlanForViewer(viewer: DashboardViewer, setup: ProfileSetupPlan): ProfileSetupPlan {
+  if (viewer.authenticated) {
+    return setup;
+  }
+  return {
+    ...setup,
+    candidateLogins: [],
+    yamlPatch: null
+  };
+}
+
 export function profileConfigurationWarnings(input: {
   profile: RepoProfile;
   env: Record<string, string | undefined>;
@@ -4207,7 +4232,10 @@ export async function getDashboardSummary(
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
-  const profileActions = profileActionSuggestions(profile, criticalOwnerCoverage, notificationMappingCandidates);
+  const rawProfileActions = profileActionSuggestions(profile, criticalOwnerCoverage, notificationMappingCandidates);
+  const rawProfileSetup = profileSetupPlan(profile, rawProfileActions);
+  const profileActions = profileActionSuggestionsForViewer(viewer, rawProfileActions);
+  const profileSetup = profileSetupPlanForViewer(viewer, rawProfileSetup);
 
   return {
     repo: {
@@ -4218,7 +4246,7 @@ export async function getDashboardSummary(
     },
     profileWarnings: profileConfigurationWarnings({ profile, env: process.env }),
     profileActions,
-    profileSetup: profileSetupPlan(profile, profileActions),
+    profileSetup,
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),
