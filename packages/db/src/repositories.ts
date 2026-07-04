@@ -423,7 +423,11 @@ export function profileActionSuggestions(
   return suggestions;
 }
 
-export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfigurationWarning[] {
+export function profileConfigurationWarnings(input: {
+  profile: RepoProfile;
+  env: Record<string, string | undefined>;
+}): ProfileConfigurationWarning[] {
+  const { profile, env } = input;
   const warnings: ProfileConfigurationWarning[] = [];
   if (profile.people.watchedUsers.length === 0) {
     warnings.push({
@@ -444,6 +448,17 @@ export function profileConfigurationWarnings(profile: RepoProfile): ProfileConfi
       description:
         "Testing queue and tester turnover views cannot reflect the real workflow until a handoff label, reviewer, assignee, or comment signal is configured.",
       action: "Configure testing.handoff_signals and people.testers for the repo workflow."
+    });
+  }
+
+  if (!env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET?.trim()) {
+    warnings.push({
+      key: "webhook:secret_unconfigured",
+      severity: "warning",
+      title: "GitHub webhook secret is not configured",
+      description:
+        "GitHub webhook delivery ingest is disabled until MO_DEVFLOW_GITHUB_WEBHOOK_SECRET is configured.",
+      action: "Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET to the same secret configured on the GitHub webhook."
     });
   }
 
@@ -2099,7 +2114,7 @@ export async function getDashboardSummary(
       name: profile.repo.name,
       timezone: profile.reporting.timezone
     },
-    profileWarnings: profileConfigurationWarnings(profile),
+    profileWarnings: profileConfigurationWarnings({ profile, env: process.env }),
     profileActions: profileActionSuggestions(
       profile,
       criticalOwnerCoverage,

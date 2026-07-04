@@ -454,25 +454,38 @@ describe("profile configuration guidance", () => {
   });
 
   test("surfaces missing watched users and testing handoff configuration", () => {
-    expect(profileConfigurationWarnings(baseProfile).map((warning) => warning.key)).toEqual([
+    expect(profileConfigurationWarnings({ profile: baseProfile, env: {} }).map((warning) => warning.key)).toEqual([
       "profile:watched_users_empty",
-      "profile:testing_handoff_unconfigured"
+      "profile:testing_handoff_unconfigured",
+      "webhook:secret_unconfigured"
     ]);
+  });
+
+  test("does not warn about webhook security when the webhook secret is configured", () => {
+    expect(
+      profileConfigurationWarnings({
+        profile: baseProfile,
+        env: { MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret" }
+      }).map((warning) => warning.key)
+    ).toEqual(["profile:watched_users_empty", "profile:testing_handoff_unconfigured"]);
   });
 
   test("does not warn when personal and testing workflow inputs are configured", () => {
     expect(
       profileConfigurationWarnings({
-        ...baseProfile,
-        people: { watchedUsers: ["alice"], testers: ["qa"] },
-        testing: {
-          handoffSignals: {
-            labels: ["testing"],
-            reviewerUsers: [],
-            assigneeUsers: [],
-            comments: []
+        profile: {
+          ...baseProfile,
+          people: { watchedUsers: ["alice"], testers: ["qa"] },
+          testing: {
+            handoffSignals: {
+              labels: ["testing"],
+              reviewerUsers: [],
+              assigneeUsers: [],
+              comments: []
+            }
           }
-        }
+        },
+        env: { MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret" }
       })
     ).toEqual([]);
   });

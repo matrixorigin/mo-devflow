@@ -29,8 +29,14 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
     }
 
     const secret = githubWebhookSecretFromEnv();
+    if (!secret) {
+      return reply.status(503).send({
+        error: "github_webhook_secret_unconfigured",
+        message: "GitHub webhook secret is required before webhook deliveries can be ingested."
+      });
+    }
+
     if (
-      secret &&
       !isValidGitHubWebhookSignature({
         secret,
         rawBody,

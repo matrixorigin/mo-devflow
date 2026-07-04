@@ -184,7 +184,7 @@ GitHub should not be queried repeatedly for every page load. Pages should read f
 
 Supported data ingestion modes:
 
-- Webhook ingestion for near-real-time updates.
+- Webhook ingestion for near-real-time updates, enabled only when the GitHub webhook secret is configured.
 - Active polling for initial sync, periodic refresh, missed-event repair, and manual refresh.
 
 Cached objects should cover at least:
