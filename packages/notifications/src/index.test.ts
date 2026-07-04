@@ -37,6 +37,9 @@ const profile: RepoProfile = {
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
   },
+  workflow: {
+    skipUsers: []
+  },
   notifications: {
     wecom: { enabled: false },
     employees: {},

@@ -57,6 +57,9 @@ const baseProfile: RepoProfile = {
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
   },
+  workflow: {
+    skipUsers: []
+  },
   notifications: {
     wecom: { enabled: false },
     employees: {},
@@ -325,6 +328,65 @@ describe("profile configuration guidance", () => {
         action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
         relatedLogins: ["alice", "bob"],
         yamlSnippet: "people:\n  watched_users:\n    - alice\n    - bob"
+      }
+    ]);
+  });
+
+  test("excludes workflow skip users from configuration suggestions", () => {
+    const profile = {
+      ...baseProfile,
+      workflow: { skipUsers: ["skip-me", "qa-skip"] },
+      notifications: {
+        ...baseProfile.notifications,
+        wecom: { enabled: true }
+      }
+    };
+
+    expect(
+      profileActionSuggestions(
+        profile,
+        [
+          { ownerLogin: "skip-me", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
+          { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 }
+        ],
+        [
+          { login: "qa-skip", openPrs: 8 },
+          { login: "qa-a", openPrs: 4 }
+        ],
+        [
+          { login: "skip-me", attentionItems: 3, highestSeverity: "critical" },
+          { login: "alice", attentionItems: 1, highestSeverity: "warning" }
+        ]
+      )
+    ).toEqual([
+      {
+        key: "profile:watched_users_candidates",
+        severity: "warning",
+        title: "Watched user candidates found",
+        description: "1 owners outside people.watched_users currently own active critical issues.",
+        action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
+        relatedLogins: ["alice"],
+        yamlSnippet: "people:\n  watched_users:\n    - alice"
+      },
+      {
+        key: "profile:testing_reviewer_candidates",
+        severity: "warning",
+        title: "Testing reviewer candidates found",
+        description: "1 requested reviewers appear on open PRs while testing handoff is not configured.",
+        action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
+        relatedLogins: ["qa-a"],
+        yamlSnippet:
+          "people:\n  testers:\n    - qa-a\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a"
+      },
+      {
+        key: "profile:notification_employee_mapping_candidates",
+        severity: "warning",
+        title: "Notification employee mappings missing",
+        description:
+          "1 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
+        action: "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+        relatedLogins: ["alice"],
+        yamlSnippet: "notifications:\n  employees:\n    alice:\n      wecom_user_id: TODO_ALICE"
       }
     ]);
   });

@@ -420,6 +420,9 @@ testing:
     test_changes_requested: {}
     test_passed: {}
     closed_or_merged: {}
+
+workflow:
+  skip_users: []
 ```
 
 ## 12. Derived State and Metrics
@@ -440,6 +443,8 @@ Derived state should include:
 - AI estimate drift status.
 - Workflow violations.
 - Attention items.
+
+Workflow skip users are part of the repository profile. Issues authored by, owned by, or assigned to a skipped user should be excluded from automated workflow violation generation, AI drift generation, and attention-item generation. They should also be filtered out of profile configuration suggestions so the UI does not recommend skipped accounts as watched users, testers, or notification recipients.
 
 Owner derivation should follow the repo profile and write the reason for attribution, for example `assignee`, `linked_pr_author`, or `author`.
 

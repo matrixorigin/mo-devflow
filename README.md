@@ -69,3 +69,9 @@ The current implementation covers read-only cached observability for repo-wide
 critical issues, watched-user summaries, pending PRs, workflow violations, AI
 drift signals, testing queue state, cached analytics, owner attribution, and
 data freshness indicators.
+
+Repository behavior is driven by `config/repos/matrixone.yaml`. The MatrixOne
+profile includes `workflow.skip_users` from the local `mo-bug-triage` skill; a
+skipped user can still appear in cached dashboards, but the rule engine will not
+create workflow violations, AI drift signals, attention notifications, or
+configuration suggestions for that user's issues.

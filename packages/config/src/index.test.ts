@@ -31,6 +31,8 @@ access:
   expose_user_token_synced_private_data: false
   critical_scope: repo-wide
 labels: {}
+workflow:
+  skip_users: []
 `);
 
     expect(() => loadRepoProfile(profilePath)).toThrow(/write_back_enabled/);
@@ -47,8 +49,14 @@ access:
   critical_scope: repo-wide
   write_back_enabled: false
 labels: {}
+workflow:
+  skip_users:
+    - heni02
+    - Ariznawlll
 `);
 
-    expect(loadRepoProfile(profilePath).access.writeBackEnabled).toBe(false);
+    const profile = loadRepoProfile(profilePath);
+    expect(profile.access.writeBackEnabled).toBe(false);
+    expect(profile.workflow.skipUsers).toEqual(["heni02", "Ariznawlll"]);
   });
 });

@@ -89,6 +89,9 @@ const profileSchema = z.object({
     .default({
       handoff_signals: { labels: [], reviewer_users: [], assignee_users: [], comments: [] }
     }),
+  workflow: z.object({
+    skip_users: z.array(z.string())
+  }),
   notifications: z
     .object({
       wecom: z
@@ -173,6 +176,9 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
         assigneeUsers: parsed.testing.handoff_signals.assignee_users,
         comments: parsed.testing.handoff_signals.comments
       }
+    },
+    workflow: {
+      skipUsers: parsed.workflow.skip_users
     },
     notifications: {
       wecom: {

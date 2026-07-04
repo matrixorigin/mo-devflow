@@ -363,10 +363,11 @@ export function profileActionSuggestions(
 ): ProfileActionSuggestion[] {
   const suggestions: ProfileActionSuggestion[] = [];
   const watched = normalizedLoginSet(profile.people.watchedUsers);
+  const skipped = normalizedLoginSet(profile.workflow.skipUsers);
   const candidateLogins = criticalOwnerCoverage
     .filter((owner) => owner.ownerScope === "non_watched" && owner.ownerLogin)
     .map((owner) => owner.ownerLogin as string)
-    .filter((login) => !watched.has(normalizedLogin(login)))
+    .filter((login) => !watched.has(normalizedLogin(login)) && !skipped.has(normalizedLogin(login)))
     .slice(0, 12);
 
   if (candidateLogins.length > 0) {
@@ -387,7 +388,10 @@ export function profileActionSuggestions(
     ...profile.testing.handoffSignals.assigneeUsers
   ]);
   const testingReviewerLogins = testingReviewerCandidates
-    .filter((candidate) => !configuredTestingLogins.has(normalizedLogin(candidate.login)))
+    .filter(
+      (candidate) =>
+        !configuredTestingLogins.has(normalizedLogin(candidate.login)) && !skipped.has(normalizedLogin(candidate.login))
+    )
     .map((candidate) => candidate.login)
     .slice(0, 12);
   if (!hasTestingHandoffSignal(profile) && testingReviewerLogins.length > 0) {
@@ -406,7 +410,10 @@ export function profileActionSuggestions(
 
   const hasNotificationRoutingIntent =
     profile.notifications.wecom.enabled || Boolean(profile.notifications.wecom.webhookUrlEnv);
-  const notificationLogins = notificationMappingCandidates.map((candidate) => candidate.login).slice(0, 12);
+  const notificationLogins = notificationMappingCandidates
+    .map((candidate) => candidate.login)
+    .filter((login) => !skipped.has(normalizedLogin(login)))
+    .slice(0, 12);
   if (hasNotificationRoutingIntent && notificationLogins.length > 0) {
     suggestions.push({
       key: "profile:notification_employee_mapping_candidates",

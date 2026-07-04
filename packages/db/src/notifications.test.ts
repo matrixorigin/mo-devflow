@@ -46,6 +46,9 @@ const profile: RepoProfile = {
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
   },
+  workflow: {
+    skipUsers: []
+  },
   notifications: {
     wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" },
     employees: {},

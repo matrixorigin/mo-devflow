@@ -174,6 +174,9 @@ thresholds:
   pr_no_action_attention: 1d
   critical_no_action_attention: 1d
   ai_easy_s0_to_test_attention: 7d
+workflow:
+  skip_users:
+    - bot-or-maintenance-user
 ```
 
 ## 4. Data Sync and Cache
@@ -312,6 +315,12 @@ PR owner attribution defaults to PR author.
 If multiple owners exist, the UI should show all related users but avoid double-counting in aggregate totals. Personal views can show the same shared item for each related person, while team totals should count the item once.
 
 Owner attribution should be visible in the UI so users understand why an item appears in their view.
+
+### 5.6 Skip Lists
+
+Repository profiles can define workflow skip users. Items authored by, owned by, or assigned to these users should remain visible in cached dashboards when otherwise allowed by access policy, but they should not produce automated workflow violations, AI drift signals, attention notifications, or configuration suggestions.
+
+For MatrixOne, the current bug-triage skill marks `heni02` and `Ariznawlll` as skipped users.
 
 ## 6. Overall View
 

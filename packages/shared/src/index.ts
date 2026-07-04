@@ -78,6 +78,9 @@ export interface RepoProfile {
       comments: string[];
     };
   };
+  workflow: {
+    skipUsers: string[];
+  };
   notifications: {
     wecom: {
       enabled: boolean;

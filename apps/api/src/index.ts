@@ -97,7 +97,8 @@ app.get("/api/profile", async () => {
     access: profile.access,
     people: profile.people,
     labels: profile.labels,
-    thresholds: profile.thresholds
+    thresholds: profile.thresholds,
+    workflow: profile.workflow
   };
 });
 

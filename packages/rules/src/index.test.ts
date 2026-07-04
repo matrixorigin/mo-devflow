@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 import {
   aiDriftSignalsForIssue,
+  criticalAttentionForIssue,
   linkedPrAuthorsByIssueNumber,
   normalizeIssue,
   normalizePullRequest,
@@ -42,6 +43,9 @@ const profile: RepoProfile = {
   },
   testing: {
     handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
+  },
+  workflow: {
+    skipUsers: []
   },
   notifications: {
     wecom: { enabled: false },
@@ -329,6 +333,33 @@ describe("rules", () => {
 
     expect(completePr.isComplete).toBe(true);
     expect(partialPr.isComplete).toBe(false);
+  });
+
+  test("skips workflow violations, AI drift, and critical attention for configured skip users", () => {
+    const skippedProfile = {
+      ...profile,
+      workflow: { skipUsers: ["skip-me"] }
+    };
+    const issue = normalizeIssue(
+      skippedProfile,
+      {
+        id: 50,
+        number: 50,
+        title: "critical skipped issue",
+        state: "open",
+        user: { login: "skip-me" },
+        html_url: "https://example.test/50",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: []
+      },
+      anonymousSource
+    );
+
+    expect(workflowViolationsForIssue(skippedProfile, issue)).toEqual([]);
+    expect(aiDriftSignalsForIssue(skippedProfile, issue)).toEqual([]);
+    expect(criticalAttentionForIssue(skippedProfile, issue)).toEqual([]);
   });
 
   test("testing flow detects configured tester reviewer handoff", () => {

@@ -85,3 +85,8 @@ testing:
     test_changes_requested: {}
     test_passed: {}
     closed_or_merged: {}
+
+workflow:
+  skip_users:
+    - heni02
+    - Ariznawlll

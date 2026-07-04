@@ -168,6 +168,22 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function normalizedLogin(login: string): string {
+  return login.trim().toLowerCase();
+}
+
+function skippedLogins(profile: RepoProfile): Set<string> {
+  return new Set(profile.workflow.skipUsers.map(normalizedLogin).filter(Boolean));
+}
+
+function issueMatchesSkipList(profile: RepoProfile, issue: NormalizedIssue): boolean {
+  const skipped = skippedLogins(profile);
+  if (skipped.size === 0) {
+    return false;
+  }
+  return [issue.authorLogin, issue.ownerLogin, ...issue.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
+}
+
 function deriveTestingFlow(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
@@ -375,6 +391,9 @@ export function normalizePullRequest(
 }
 
 export function criticalAttentionForIssue(profile: RepoProfile, issue: NormalizedIssue): string[] {
+  if (issueMatchesSkipList(profile, issue)) {
+    return [];
+  }
   if (issue.state !== "open" || !issue.severity || !profile.labels.critical.includes(issue.severity)) {
     return [];
   }
@@ -393,6 +412,9 @@ function activeSeverityLabels(profile: RepoProfile, labels: string[]): string[] 
 }
 
 export function workflowViolationsForIssue(profile: RepoProfile, issue: NormalizedIssue): WorkflowViolation[] {
+  if (issueMatchesSkipList(profile, issue)) {
+    return [];
+  }
   if (issue.state !== "open") {
     return [];
   }
@@ -500,6 +522,9 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
 }
 
 export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIssue): AiDriftSignal[] {
+  if (issueMatchesSkipList(profile, issue)) {
+    return [];
+  }
   if (issue.state !== "open" || !issue.severity || !profile.labels.critical.includes(issue.severity)) {
     return [];
   }
