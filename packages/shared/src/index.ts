@@ -192,12 +192,15 @@ export interface CriticalIssueBlockerView {
   relatedPrNumber: number | null;
 }
 
+export type CriticalIssueOwnerScope = "unowned" | "watched" | "non_watched";
+
 export interface CriticalIssueView {
   number: number;
   title: string;
   htmlUrl: string;
   severity: string | null;
   ownerLogin: string | null;
+  ownerScope: CriticalIssueOwnerScope;
   ownerReason: string | null;
   lifecycleState: LifecycleState;
   aiEffortLabel: string | null;

@@ -6,6 +6,7 @@ import type {
   CriticalIssueBlockerView,
   CriticalIssueView,
   CriticalIssueLinkedPullRequestView,
+  CriticalIssueOwnerScope,
   DailyMetricPoint,
   DashboardVisibility,
   DashboardSummary,
@@ -115,14 +116,41 @@ export function isPersonalNeedsTriageIssue(input: {
   return input.lifecycleState === "needs-triage" && !criticalLabels.includes(input.severity ?? "");
 }
 
+function normalizedLogin(login: string): string {
+  return login.trim().toLowerCase();
+}
+
+function normalizedLoginSet(logins: string[]): Set<string> {
+  return new Set(logins.map(normalizedLogin).filter(Boolean));
+}
+
+function criticalIssueOwnerScopeFromSet(ownerLogin: string | null, watchedLogins: Set<string>): CriticalIssueOwnerScope {
+  if (!ownerLogin) {
+    return "unowned";
+  }
+  const normalizedOwner = normalizedLogin(ownerLogin);
+  if (!normalizedOwner) {
+    return "unowned";
+  }
+  return watchedLogins.has(normalizedOwner) ? "watched" : "non_watched";
+}
+
+export function criticalIssueOwnerScope(ownerLogin: string | null, watchedUsers: string[]): CriticalIssueOwnerScope {
+  return criticalIssueOwnerScopeFromSet(ownerLogin, normalizedLoginSet(watchedUsers));
+}
+
 export function criticalIssueOwnershipCounts(
   criticalIssues: Array<{ ownerLogin: string | null }>,
   watchedUsers: string[]
 ): { unownedCriticalIssues: number; nonWatchedCriticalIssues: number } {
-  const watched = new Set(watchedUsers);
+  const watchedLogins = normalizedLoginSet(watchedUsers);
   return {
-    unownedCriticalIssues: criticalIssues.filter((issue) => !issue.ownerLogin).length,
-    nonWatchedCriticalIssues: criticalIssues.filter((issue) => issue.ownerLogin && !watched.has(issue.ownerLogin)).length
+    unownedCriticalIssues: criticalIssues.filter(
+      (issue) => criticalIssueOwnerScopeFromSet(issue.ownerLogin, watchedLogins) === "unowned"
+    ).length,
+    nonWatchedCriticalIssues: criticalIssues.filter(
+      (issue) => criticalIssueOwnerScopeFromSet(issue.ownerLogin, watchedLogins) === "non_watched"
+    ).length
   };
 }
 
@@ -994,7 +1022,11 @@ export function criticalIssueBlockersFromCache(input: {
   return blockers.slice(0, 12);
 }
 
-function toCriticalIssueView(row: RowData, linkedPullRequests: CriticalIssueLinkedPullRequestView[] = []): CriticalIssueView {
+function toCriticalIssueView(
+  row: RowData,
+  linkedPullRequests: CriticalIssueLinkedPullRequestView[] = [],
+  watchedUsers: string[] = []
+): CriticalIssueView {
   const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
   const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : null;
   const syncError = row.sync_error ? asString(row.sync_error) : null;
@@ -1005,6 +1037,7 @@ function toCriticalIssueView(row: RowData, linkedPullRequests: CriticalIssueLink
     htmlUrl: asString(row.html_url),
     severity: row.severity ? asString(row.severity) : null,
     ownerLogin,
+    ownerScope: criticalIssueOwnerScope(ownerLogin, watchedUsers),
     ownerReason: row.owner_reason ? asString(row.owner_reason) : null,
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
     aiEffortLabel,
@@ -1560,7 +1593,7 @@ export async function getDashboardSummary(
         );
   const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(linkedPrCandidateRows, criticalIssueNumbers);
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
-    toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [])
+    toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [], profile.people.watchedUsers)
   );
   const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
 
@@ -1665,7 +1698,9 @@ export async function getDashboardSummary(
         },
       activeCriticalIssues: ownedIssues
         .filter((row) => profile.labels.critical.includes(asString(row.severity)))
-        .map((row) => toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [])),
+        .map((row) =>
+          toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [], profile.people.watchedUsers)
+        ),
       needsTriageIssues: ownedIssues
         .filter((row) =>
           isPersonalNeedsTriageIssue(

@@ -42,6 +42,8 @@ type TestingFlowState =
   | "test_passed"
   | "closed_or_merged";
 
+type CriticalIssueOwnerScope = "unowned" | "watched" | "non_watched";
+
 interface CriticalIssueLinkedPullRequestView {
   number: number;
   title: string;
@@ -73,6 +75,7 @@ interface CriticalIssueView {
   htmlUrl: string;
   severity: string | null;
   ownerLogin: string | null;
+  ownerScope: CriticalIssueOwnerScope;
   ownerReason: string | null;
   lifecycleState: string;
   aiEffortLabel: string | null;
@@ -498,6 +501,26 @@ function severityColor(severity: string | null): string {
     return "volcano";
   }
   return "blue";
+}
+
+function ownerScopeColor(scope: CriticalIssueOwnerScope): string {
+  if (scope === "unowned") {
+    return "red";
+  }
+  if (scope === "non_watched") {
+    return "orange";
+  }
+  return "green";
+}
+
+function ownerScopeTooltip(scope: CriticalIssueOwnerScope): string {
+  if (scope === "unowned") {
+    return "No owner was derived from assignee, linked PR author, or author.";
+  }
+  if (scope === "non_watched") {
+    return "Owner is outside the configured watched users.";
+  }
+  return "Owner is in the configured watched users.";
 }
 
 function labelText(value: string): string {
@@ -1107,15 +1130,19 @@ export default function App() {
       {
         title: "Owner",
         dataIndex: "ownerLogin",
-        width: 148,
-        render: (owner, issue) =>
-          owner ? (
-            <Tooltip title={issue.ownerReason ? `by ${issue.ownerReason}` : undefined}>
-              <Tag>{owner}</Tag>
+        width: 216,
+        render: (owner, issue) => (
+          <Space size={[4, 4]} wrap>
+            {owner ? (
+              <Tooltip title={issue.ownerReason ? `by ${issue.ownerReason}` : undefined}>
+                <Tag>{owner}</Tag>
+              </Tooltip>
+            ) : null}
+            <Tooltip title={ownerScopeTooltip(issue.ownerScope)}>
+              <Tag color={ownerScopeColor(issue.ownerScope)}>{labelText(issue.ownerScope)}</Tag>
             </Tooltip>
-          ) : (
-            <Tag color="red">unowned</Tag>
-          )
+          </Space>
+        )
       },
       {
         title: "Age",

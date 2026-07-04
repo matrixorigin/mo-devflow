@@ -9,6 +9,7 @@ import {
   calendarDayRangeInTimezone,
   criticalIssueBlockersFromCache,
   criticalIssueOwnershipCounts,
+  criticalIssueOwnerScope,
   dateKeyInTimezone,
   isPersonalNeedsTriageIssue,
   previousCalendarDayRange,
@@ -166,6 +167,15 @@ describe("personal issue buckets", () => {
 });
 
 describe("critical issue ownership counts", () => {
+  test("classifies critical issue owners against the watched user set", () => {
+    expect(criticalIssueOwnerScope(null, ["alice"])).toBe("unowned");
+    expect(criticalIssueOwnerScope("  ", ["alice"])).toBe("unowned");
+    expect(criticalIssueOwnerScope("alice", ["alice"])).toBe("watched");
+    expect(criticalIssueOwnerScope("Alice", ["alice"])).toBe("watched");
+    expect(criticalIssueOwnerScope("alice", [" alice "])).toBe("watched");
+    expect(criticalIssueOwnerScope("carol", ["alice"])).toBe("non_watched");
+  });
+
   test("separates unowned critical work from owners outside the watched set", () => {
     expect(
       criticalIssueOwnershipCounts(
