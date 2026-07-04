@@ -3,6 +3,7 @@ import type { ManualRefreshLayer, WorkflowFixPreview } from "@mo-devflow/shared"
 
 export const manualRefreshLayers = [
   "github_sync",
+  "pr_backfill",
   "webhooks",
   "rules",
   "metrics",
@@ -16,6 +17,8 @@ export function jobKeyForLayer(layer: ManualRefreshLayer, repoKey: string): stri
   switch (layer) {
     case "github_sync":
       return `github-sync:${repoKey}`;
+    case "pr_backfill":
+      return `pr-backfill:${repoKey}`;
     case "webhooks":
       return `webhooks:${repoKey}`;
     case "rules":

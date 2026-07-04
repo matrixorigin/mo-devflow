@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 
 const mocks = vi.hoisted(() => ({
   claimNextGitHubWebhookDelivery: vi.fn(),
   completeGitHubWebhookDelivery: vi.fn(),
+  configuredGitHubSourceAuthType: vi.fn(),
   failGitHubWebhookDelivery: vi.fn(),
   fetchPullRequestInsightForNumber: vi.fn(),
+  listPullRequestNumbersForDetailBackfill: vi.fn(),
   loadEnv: vi.fn(),
   loadRepoProfile: vi.fn(),
   notificationDashboardBaseUrlFromEnv: vi.fn(() => "http://localhost:5173"),
@@ -43,6 +45,7 @@ vi.mock("@mo-devflow/db", () => ({
   failGitHubWebhookDelivery: mocks.failGitHubWebhookDelivery,
   isNotificationInCooldown: vi.fn(),
   listCachedIssuesForRules: vi.fn(),
+  listPullRequestNumbersForDetailBackfill: mocks.listPullRequestNumbersForDetailBackfill,
   listNotificationCandidates: vi.fn(),
   notificationDashboardBaseUrlFromEnv: mocks.notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl: mocks.notificationDashboardUrl,
@@ -61,7 +64,7 @@ vi.mock("@mo-devflow/db", () => ({
 
 vi.mock("@mo-devflow/github", () => ({
   classifyGitHubError: vi.fn(),
-  configuredGitHubSourceAuthType: vi.fn(),
+  configuredGitHubSourceAuthType: mocks.configuredGitHubSourceAuthType,
   fetchGitHubSnapshot: vi.fn(),
   fetchPullRequestInsightForNumber: mocks.fetchPullRequestInsightForNumber
 }));
@@ -123,11 +126,81 @@ const profile: RepoProfile = {
   raw: {}
 };
 
+const originalEnv = { ...process.env };
+
 describe("webhook review processing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env = { ...originalEnv };
+    mocks.configuredGitHubSourceAuthType.mockReturnValue("service_read_token");
     mocks.loadRepoProfile.mockReturnValue(profile);
     mocks.upsertRepoProfile.mockResolvedValue(10);
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("backfills selected PR detail and records a dedicated sync layer", async () => {
+    const { backfillPullRequestDetailsOnce } = await import("./sync");
+    process.env.MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS = "2";
+    mocks.listPullRequestNumbersForDetailBackfill.mockResolvedValue([42, 43]);
+    mocks.fetchPullRequestInsightForNumber.mockImplementation(async ({ pullNumber }: { pullNumber: number }) => {
+      const now = "2026-07-04T00:00:00.000Z";
+      return {
+        pullRequest: {
+          id: pullNumber,
+          number: pullNumber,
+          title: `PR ${pullNumber}`,
+          state: "open",
+          user: { login: "alice" },
+          html_url: `https://github.com/matrixorigin/matrixone/pull/${pullNumber}`,
+          created_at: "2026-07-01T00:00:00Z",
+          updated_at: now,
+          requested_reviewers: [],
+          head: { ref: "fix" },
+          base: { ref: "main" }
+        },
+        insight: {
+          number: pullNumber,
+          reviewDecision: "approved",
+          mergeStateStatus: "clean",
+          ciState: "success",
+          latestReviewState: "APPROVED",
+          latestReviewSubmittedAt: now,
+          latestCommitAt: now,
+          detailSyncedAt: now,
+          detailError: null
+        },
+        rateLimitRemaining: 42,
+        sourceAuthType: "service_read_token"
+      };
+    });
+    mocks.upsertPullRequest.mockImplementation(async (_repoId: number, pr: unknown) => pr);
+
+    const result = await backfillPullRequestDetailsOnce();
+
+    expect(result).toMatchObject({ repoId: 10, selected: 2, refreshed: 2, failed: 0 });
+    expect(mocks.listPullRequestNumbersForDetailBackfill).toHaveBeenCalledWith(10, 2);
+    expect(mocks.fetchPullRequestInsightForNumber).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertPullRequest).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        number: 42,
+        isComplete: true,
+        reviewDecision: "approved",
+        ciState: "success"
+      })
+    );
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "pr_backfill",
+        status: "success",
+        sourceAuthType: "service_read_token",
+        raw: expect.objectContaining({ selected: 2, refreshed: 2, failed: 0 })
+      })
+    );
   });
 
   test("refreshes PR insight from GitHub before updating requested-change attention", async () => {

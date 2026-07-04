@@ -1296,6 +1296,25 @@ export async function listPullRequestTestingTransitionEvents(input: {
   }));
 }
 
+export async function listPullRequestNumbersForDetailBackfill(repoId: number, limit: number): Promise<number[]> {
+  if (limit <= 0) {
+    return [];
+  }
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT number
+     FROM pull_requests
+     WHERE repo_id = ?
+       AND state = 'open'
+       AND (is_complete = 0 OR detail_synced_at IS NULL OR detail_error IS NOT NULL)
+     ORDER BY CASE WHEN detail_synced_at IS NULL THEN 0 ELSE 1 END ASC,
+              updated_at DESC,
+              number DESC
+     LIMIT ?`,
+    [repoId, Math.floor(limit)]
+  );
+  return rows.map((row) => asNumber(row.number));
+}
+
 export async function upsertAttentionItem(input: {
   repoId: number;
   objectType: string;

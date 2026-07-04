@@ -4,6 +4,7 @@ import {
   listCachedIssuesForRules,
   listCachedPullRequestsForRules,
   listNotificationCandidates,
+  listPullRequestNumbersForDetailBackfill,
   isNotificationInCooldown,
   notificationDeliveryCooldownHoursForDedupe,
   notificationDeliveryCooldownStatuses,
@@ -86,6 +87,16 @@ export interface NotificationSyncResult {
   cooldown: number;
 }
 
+export interface PullRequestDetailBackfillResult {
+  repoId: number;
+  selected: number;
+  refreshed: number;
+  failed: number;
+  skipped: boolean;
+  sourceAuthType: ReturnType<typeof configuredGitHubSourceAuthType>;
+  rateLimitRemaining: number | null;
+}
+
 export interface WebhookDeliverySyncResult {
   repoId: number;
   claimed: number;
@@ -108,6 +119,22 @@ export function metricsRetentionDaysFromEnv(env: Record<string, string | undefin
     return 120;
   }
   return Math.max(31, Math.floor(parsed));
+}
+
+export function prDetailBackfillLimitFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  sourceAuthType: ReturnType<typeof configuredGitHubSourceAuthType> = configuredGitHubSourceAuthType(env)
+): number {
+  const fallback = sourceAuthType === "anonymous" ? 0 : 25;
+  const configured = env.MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS;
+  if (configured === undefined) {
+    return fallback;
+  }
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(parsed));
 }
 
 export function dateAfterSeconds(seconds: number): string {
@@ -486,7 +513,11 @@ async function refreshPullRequestInsightFromGitHub(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
   pullNumber: number;
-}): Promise<number> {
+}): Promise<{
+  prNumber: number;
+  rateLimitRemaining: number | null;
+  sourceAuthType: ReturnType<typeof configuredGitHubSourceAuthType>;
+}> {
   const result = await fetchPullRequestInsightForNumber({
     profile: input.profile,
     pullNumber: input.pullNumber
@@ -499,12 +530,89 @@ async function refreshPullRequestInsightFromGitHub(input: {
       }`
     );
   }
-  return upsertPullRequestFromWebhook({
+  const prNumber = await upsertPullRequestFromWebhook({
     repoId: input.repoId,
     profile: input.profile,
     rawPullRequest,
     insight: result.insight
   });
+  return {
+    prNumber,
+    rateLimitRemaining: result.rateLimitRemaining,
+    sourceAuthType: result.sourceAuthType
+  };
+}
+
+export async function backfillPullRequestDetailsOnce(): Promise<PullRequestDetailBackfillResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const sourceAuthType = configuredGitHubSourceAuthType();
+  const limit = prDetailBackfillLimitFromEnv(process.env, sourceAuthType);
+  const summary: PullRequestDetailBackfillResult = {
+    repoId,
+    selected: 0,
+    refreshed: 0,
+    failed: 0,
+    skipped: limit === 0,
+    sourceAuthType,
+    rateLimitRemaining: null
+  };
+
+  if (limit === 0) {
+    await recordSyncRun({
+      repoId,
+      syncLayer: "pr_backfill",
+      status: "success",
+      sourceAuthType,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      raw: {
+        ...summary,
+        reason: "MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS is 0 for the current GitHub auth source."
+      }
+    });
+    return summary;
+  }
+
+  const pullNumbers = await listPullRequestNumbersForDetailBackfill(repoId, limit);
+  summary.selected = pullNumbers.length;
+  let latestError: string | null = null;
+  let blocked = false;
+
+  for (const pullNumber of pullNumbers) {
+    try {
+      const result = await refreshPullRequestInsightFromGitHub({ repoId, profile, pullNumber });
+      summary.refreshed += 1;
+      summary.rateLimitRemaining = result.rateLimitRemaining ?? summary.rateLimitRemaining;
+    } catch (error) {
+      summary.failed += 1;
+      const classified = classifyGitHubError(error);
+      latestError = classified.message;
+      if (classified.kind === "permission" || classified.kind === "not_found") {
+        blocked = true;
+        break;
+      }
+      if (classified.kind === "rate_limited") {
+        break;
+      }
+    }
+  }
+
+  await recordSyncRun({
+    repoId,
+    syncLayer: "pr_backfill",
+    status: blocked ? "blocked" : summary.failed > 0 ? "partial" : "success",
+    sourceAuthType,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    errorMessage: latestError,
+    rateLimitRemaining: summary.rateLimitRemaining,
+    raw: summary
+  });
+
+  return summary;
 }
 
 export async function processWebhookPayload(input: {
@@ -579,12 +687,12 @@ export async function processWebhookPayload(input: {
       throw new WebhookNormalizationError("pull_request_review payload missing pull_request object");
     }
     const pullRequest = ensureGitHubObjectWithNumber(rawPullRequest, "pull_request");
-    const prNumber = await refreshPullRequestInsightFromGitHub({
+    const refreshed = await refreshPullRequestInsightFromGitHub({
       repoId: input.repoId,
       profile: input.profile,
       pullNumber: pullRequest.number
     });
-    return { processed: true, skipped: false, message: `updated PR #${prNumber} review insight` };
+    return { processed: true, skipped: false, message: `updated PR #${refreshed.prNumber} review insight` };
   }
 
   if (input.eventName === "workflow_run" || input.eventName === "check_run") {
@@ -594,12 +702,12 @@ export async function processWebhookPayload(input: {
     }
     const refreshedNumbers: number[] = [];
     for (const pullNumber of pullNumbers) {
-      const refreshedNumber = await refreshPullRequestInsightFromGitHub({
+      const refreshed = await refreshPullRequestInsightFromGitHub({
         repoId: input.repoId,
         profile: input.profile,
         pullNumber
       });
-      refreshedNumbers.push(refreshedNumber);
+      refreshedNumbers.push(refreshed.prNumber);
     }
     return {
       processed: true,
