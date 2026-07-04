@@ -67,8 +67,11 @@ delivery; the worker still performs the actual send.
 The notification panel also reports readiness, including webhook configuration
 and employee mapping coverage, before maintainers rely on owner-routed alerts.
 
-To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
-to a 32-byte base64 key, for example `openssl rand -base64 32`.
+`make setup` generates a local-only `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` in the
+ignored `.env` file so personal GitHub token binding can work in development.
+For deployed environments, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` yourself to a
+32-byte base64 key, for example `openssl rand -base64 32`, and keep it in secret
+management rather than source control.
 Token binding attempts are guarded per client IP by
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_MAX` attempts per
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS`; the default is 5 attempts per

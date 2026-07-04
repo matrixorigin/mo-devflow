@@ -143,6 +143,7 @@ const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 const dashboardAutoRefreshMs = 30_000;
+const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
 
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
@@ -10724,7 +10725,7 @@ export default function App() {
           const tooltip = !session?.authenticated
             ? "Connect GitHub token to preview fixes"
             : !tokenServerReady
-              ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
+              ? tokenEncryptionSetupHint
               : !supportsPreview
                 ? "No safe preview action for this rule yet"
                 : issueLabelCapability?.enabled
@@ -11376,7 +11377,7 @@ export default function App() {
               <Tooltip
                 title={
                   tokenEncryptionUnavailable
-                    ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
+                    ? tokenEncryptionSetupHint
                     : headerIssueLabelCapability.enabled
                       ? "Reconnect GitHub token"
                       : headerIssueLabelCapability.message
@@ -11396,13 +11397,7 @@ export default function App() {
               </Tooltip>
             </Space>
           ) : (
-            <Tooltip
-              title={
-                tokenEncryptionUnavailable
-                  ? "MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is not configured"
-                  : "Connect GitHub token"
-              }
-            >
+            <Tooltip title={tokenEncryptionUnavailable ? tokenEncryptionSetupHint : "Connect GitHub token"}>
               <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={openTokenReconnect}>
                 Connect
               </Button>
@@ -12395,7 +12390,7 @@ export default function App() {
         open={tokenModalOpen}
         okText={tokenRetryActive ? `Retry in ${retryDelayText(tokenRetryRemainingSeconds)}` : "Connect"}
         confirmLoading={tokenSaving}
-        okButtonProps={{ disabled: tokenInput.trim().length < 20 || tokenRetryActive }}
+        okButtonProps={{ disabled: tokenEncryptionUnavailable || tokenInput.trim().length < 20 || tokenRetryActive }}
         onOk={() => void connectGitHubToken()}
         onCancel={() => {
           setTokenModalOpen(false);
@@ -12404,6 +12399,7 @@ export default function App() {
         }}
       >
         <Space orientation="vertical" size={12} className="token-modal-body">
+          {tokenEncryptionUnavailable ? <Alert type="warning" title={tokenEncryptionSetupHint} showIcon /> : null}
           {authenticatedUser && headerIssueLabelCapability ? (
             <TokenCapabilityPanel capability={headerIssueLabelCapability} />
           ) : (
@@ -12418,7 +12414,7 @@ export default function App() {
             value={tokenInput}
             autoComplete="off"
             placeholder="GitHub token"
-            disabled={tokenRetryActive}
+            disabled={tokenEncryptionUnavailable || tokenRetryActive}
             onChange={(event) => setTokenInput(event.target.value)}
           />
           {tokenRetryActive ? (

@@ -12,11 +12,12 @@ WAIT_URL := node scripts/wait-for-url.mjs
 WAIT_WORKER := node scripts/wait-for-worker-heartbeat.mjs
 ASSERT_PORT_FREE := node scripts/assert-port-free.mjs
 ASSERT_DB_READY := node scripts/assert-db-ready.mjs
+ENSURE_TOKEN_KEY := node scripts/ensure-token-encryption-key.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
 	@echo "================================"
-	@echo "  make setup              - Create .env and install dependencies"
+	@echo "  make setup              - Create .env, local auth key, and install dependencies"
 	@echo "  make dev-init           - setup + db-create + db-migrate"
 	@echo "  make dev-start          - Start API, worker, and web UI"
 	@echo "  make dev-ready          - Wait for local API, worker, and web readiness"
@@ -38,6 +39,7 @@ help:
 
 setup:
 	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env"; else echo ".env already exists"; fi
+	@$(ENSURE_TOKEN_KEY) .env
 	@npm install
 
 dev-init: setup db-create db-migrate
