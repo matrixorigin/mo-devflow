@@ -39,13 +39,25 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
       githubLogin: session.githubLogin
     });
 
-    if (!acknowledgement) {
+    if (acknowledgement.outcome === "not_found") {
       return reply.status(404).send({
         error: "notification_delivery_not_found",
         message: "Notification delivery was not found in this repository."
       });
     }
 
-    return acknowledgement;
+    if (acknowledgement.outcome === "not_acknowledgeable") {
+      return reply.status(409).send({
+        error: "notification_delivery_not_acknowledgeable",
+        message: `Notification delivery status ${acknowledgement.deliveryStatus} does not require acknowledgement.`,
+        deliveryStatus: acknowledgement.deliveryStatus
+      });
+    }
+
+    return {
+      deliveryId: acknowledgement.deliveryId,
+      acknowledgedAt: acknowledgement.acknowledgedAt,
+      acknowledgedBy: acknowledgement.acknowledgedBy
+    };
   });
 }

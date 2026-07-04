@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
+import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import {
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
-  deliveryStatusRequiresAcknowledgement,
   notificationRecipient
 } from "./notifications";
 
@@ -94,12 +94,12 @@ describe("daily digest notification candidates", () => {
 
 describe("notification acknowledgement health", () => {
   test("counts only actually sent deliveries as awaiting acknowledgement", () => {
-    expect(deliveryStatusRequiresAcknowledgement("sent")).toBe(true);
-    expect(deliveryStatusRequiresAcknowledgement("dry_run")).toBe(false);
-    expect(deliveryStatusRequiresAcknowledgement("failed")).toBe(false);
-    expect(deliveryStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
-    expect(deliveryStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
-    expect(deliveryStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("sent")).toBe(true);
+    expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
   });
 });
 

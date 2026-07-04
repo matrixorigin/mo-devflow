@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildGitHubWriteCapabilities } from "./index";
+import { buildGitHubWriteCapabilities, notificationStatusRequiresAcknowledgement } from "./index";
 
 describe("GitHub write capabilities", () => {
   test("requires a validated connected token before issue label writes are enabled", () => {
@@ -60,5 +60,16 @@ describe("GitHub write capabilities", () => {
       enabled: false,
       status: "scope_unverified"
     });
+  });
+});
+
+describe("notification acknowledgement policy", () => {
+  test("only sent notification deliveries require acknowledgement", () => {
+    expect(notificationStatusRequiresAcknowledgement("sent")).toBe(true);
+    expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
   });
 });

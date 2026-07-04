@@ -48,6 +48,7 @@ import type {
   WorkflowFixStateSnapshot,
   WorkflowViolationView
 } from "@mo-devflow/shared";
+import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import { BarChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
@@ -577,6 +578,10 @@ export default function App() {
   async function acknowledgeNotification(delivery: NotificationDeliveryView) {
     if (!session?.authenticated) {
       setNotificationAckError("Connect GitHub token before acknowledging notifications.");
+      return;
+    }
+    if (!notificationStatusRequiresAcknowledgement(delivery.status)) {
+      setNotificationAckError(`${labelText(delivery.status)} notification deliveries do not require acknowledgement.`);
       return;
     }
     setNotificationAckSavingId(delivery.id);
@@ -1268,12 +1273,19 @@ export default function App() {
       {
         title: "Acknowledgement",
         width: 188,
-        render: (_, delivery) =>
-          delivery.acknowledgedAt ? (
-            <Tooltip title={`Acknowledged by ${delivery.acknowledgedBy ?? "unknown"}`}>
-              <Tag color="green">{formatDate(delivery.acknowledgedAt)}</Tag>
-            </Tooltip>
-          ) : (
+        render: (_, delivery) => {
+          const canAcknowledge = notificationStatusRequiresAcknowledgement(delivery.status);
+          if (delivery.acknowledgedAt) {
+            return (
+              <Tooltip title={`Acknowledged by ${delivery.acknowledgedBy ?? "unknown"}`}>
+                <Tag color="green">{formatDate(delivery.acknowledgedAt)}</Tag>
+              </Tooltip>
+            );
+          }
+          if (!canAcknowledge) {
+            return <Tag color="default">not required</Tag>;
+          }
+          return (
             <Tooltip title={session?.authenticated ? "Acknowledge notification" : "Connect GitHub token to acknowledge"}>
               <span>
                 <Button
@@ -1287,7 +1299,8 @@ export default function App() {
                 </Button>
               </span>
             </Tooltip>
-          )
+          );
+        }
       },
       {
         title: "Error",

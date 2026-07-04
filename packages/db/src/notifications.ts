@@ -6,6 +6,7 @@ import type {
   NotificationStatus,
   RepoProfile
 } from "@mo-devflow/shared";
+import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql } from "./client";
 import { addDaysToDateKey, dateKeyInTimezone } from "./time";
@@ -74,10 +75,6 @@ export function notificationRecipient(profile: RepoProfile, login: string | null
 
 function recipientScope(profile: RepoProfile, recipient: unknown): NotificationDeliveryView["recipientScope"] {
   return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
-}
-
-export function deliveryStatusRequiresAcknowledgement(status: NotificationStatus): boolean {
-  return status === "sent";
 }
 
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
@@ -372,12 +369,28 @@ export async function recordNotificationDelivery(input: {
   );
 }
 
+export type NotificationAcknowledgementResult =
+  | {
+      outcome: "acknowledged";
+      deliveryId: number;
+      acknowledgedAt: string;
+      acknowledgedBy: string;
+    }
+  | {
+      outcome: "not_acknowledgeable";
+      deliveryId: number;
+      deliveryStatus: NotificationStatus;
+    }
+  | {
+      outcome: "not_found";
+    };
+
 export async function acknowledgeNotificationDelivery(input: {
   repoId: number;
   deliveryId: number;
   userId: number;
   githubLogin: string;
-}): Promise<{ deliveryId: number; acknowledgedAt: string; acknowledgedBy: string } | null> {
+}): Promise<NotificationAcknowledgementResult> {
   const pool = getPool();
   const [deliveryRows] = await pool.execute<RowData[]>(
     `SELECT *
@@ -388,7 +401,16 @@ export async function acknowledgeNotificationDelivery(input: {
   );
   const delivery = deliveryRows[0];
   if (!delivery) {
-    return null;
+    return { outcome: "not_found" };
+  }
+
+  const deliveryStatus = asString(delivery.status) as NotificationStatus;
+  if (!notificationStatusRequiresAcknowledgement(deliveryStatus)) {
+    return {
+      outcome: "not_acknowledgeable",
+      deliveryId: asNumber(delivery.id),
+      deliveryStatus
+    };
   }
 
   const acknowledgedAt = nowSql();
@@ -415,6 +437,7 @@ export async function acknowledgeNotificationDelivery(input: {
   const acknowledgement = ackRows[0];
 
   return {
+    outcome: "acknowledged",
     deliveryId: asNumber(delivery.id),
     acknowledgedAt: fromSqlDate(acknowledgement?.acknowledged_at) ?? fromSqlDate(acknowledgedAt) ?? new Date().toISOString(),
     acknowledgedBy: acknowledgement?.github_login ? asString(acknowledgement.github_login) : input.githubLogin

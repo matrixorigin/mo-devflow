@@ -518,6 +518,10 @@ export interface NotificationHealth {
   lastDeliveries: NotificationDeliveryView[];
 }
 
+export function notificationStatusRequiresAcknowledgement(status: NotificationStatus): boolean {
+  return status === "sent";
+}
+
 export type GitHubWriteCapabilityStatus =
   | "ready"
   | "missing_token"
