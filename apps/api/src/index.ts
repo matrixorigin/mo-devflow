@@ -63,13 +63,23 @@ app.get("/health", async () => {
     const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
     const profile = loadRepoProfile();
     const repoId = await getRepoId(profile.key);
-    const operational = repoId ? await getOperationalHealth(repoId) : null;
+    let operational = null;
+    let operationalError: string | null = null;
+    if (repoId) {
+      try {
+        operational = await getOperationalHealth(repoId);
+      } catch (error) {
+        app.log.error({ error, repoKey: profile.key }, "operational health query failed");
+        operationalError = "Operational health summary failed; inspect API logs.";
+      }
+    }
     return {
-      status: apiHealthStatus({ worker, jobQueue, operational }),
+      status: apiHealthStatus({ worker, jobQueue, operational, operationalError }),
       database: "connected",
       worker,
       jobQueue,
       operational,
+      operationalError,
       generatedAt: new Date().toISOString()
     };
   } catch (error) {

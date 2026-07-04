@@ -77,7 +77,9 @@ are failed, blocked, have stale leases, or the oldest due job exceeds
 The `/health` response also includes an operational summary for sync layers,
 stale or partial cache counts, active notification delivery failures, and
 webhook ingestion failures so external monitors can detect degraded cached-data
-quality without scraping the dashboard.
+quality without scraping the dashboard. If that summary query fails, `/health`
+keeps returning database, worker, and job queue status with `status: degraded`
+and an `operationalError` field instead of hiding the remaining health signals.
 Logged-in users can queue layer-scoped refresh jobs from the dashboard instead
 of spending GitHub rate limit on every sync layer.
 GitHub rate-limit failures are retried after the advertised reset window, while

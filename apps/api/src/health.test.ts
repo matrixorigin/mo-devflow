@@ -71,5 +71,8 @@ describe("API health status", () => {
     expect(apiHealthStatus({ worker, jobQueue, operational: { ...operational, status: "degraded" } })).toBe(
       "degraded"
     );
+    expect(apiHealthStatus({ worker, jobQueue, operational, operationalError: "Operational probe failed." })).toBe(
+      "degraded"
+    );
   });
 });

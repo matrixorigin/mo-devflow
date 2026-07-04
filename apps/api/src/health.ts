@@ -6,11 +6,15 @@ export function apiHealthStatus(input: {
   worker: WorkerHealth;
   jobQueue: JobQueueHealth;
   operational?: OperationalHealthSummary | null;
+  operationalError?: string | null;
 }): ApiHealthStatus {
   if (input.worker.status !== "active") {
     return "degraded";
   }
   if (input.jobQueue.status !== "healthy") {
+    return "degraded";
+  }
+  if (input.operationalError) {
     return "degraded";
   }
   if (input.operational?.status === "degraded") {
