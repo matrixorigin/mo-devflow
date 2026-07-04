@@ -15,7 +15,7 @@ export type LifecycleState =
 
 export type AttentionSeverity = "info" | "warning" | "critical";
 
-export const supportedGitHubWebhookEvents = ["issues", "pull_request"] as const;
+export const supportedGitHubWebhookEvents = ["issues", "pull_request", "pull_request_review"] as const;
 export type SupportedGitHubWebhookEvent = (typeof supportedGitHubWebhookEvents)[number];
 
 export function isSupportedGitHubWebhookEvent(eventName: string): eventName is SupportedGitHubWebhookEvent {

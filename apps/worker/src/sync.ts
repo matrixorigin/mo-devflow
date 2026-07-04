@@ -21,7 +21,12 @@ import {
   upsertPullRequest,
   upsertRepoProfile
 } from "@mo-devflow/db";
-import { classifyGitHubError, configuredGitHubSourceAuthType, fetchGitHubSnapshot } from "@mo-devflow/github";
+import {
+  classifyGitHubError,
+  configuredGitHubSourceAuthType,
+  fetchGitHubSnapshot,
+  fetchPullRequestInsightForNumber
+} from "@mo-devflow/github";
 import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
   aiDriftSignalsForIssue,
@@ -38,6 +43,7 @@ import {
   type NormalizedIssue,
   type NotificationCandidate,
   type NotificationStatus,
+  type PullRequestInsight,
   type WorkflowViolation
 } from "@mo-devflow/shared";
 
@@ -378,7 +384,46 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
   return summary;
 }
 
-async function processWebhookPayload(input: {
+async function upsertPullRequestFromWebhook(input: {
+  repoId: number;
+  profile: ReturnType<typeof loadRepoProfile>;
+  rawPullRequest: Record<string, unknown>;
+  insight?: PullRequestInsight;
+}): Promise<number> {
+  const pr = normalizePullRequest(
+    input.profile,
+    ensureGitHubObjectWithNumber(input.rawPullRequest, "pull_request"),
+    cacheSourceForWebhook(),
+    input.insight
+  );
+  const cachedPr = await upsertPullRequest(input.repoId, pr);
+  const activeAttentionDedupeKeys = new Set<string>();
+  for (const flag of cachedPr.attentionFlags) {
+    const dedupeKey = pullRequestAttentionDedupeKey(input.profile.key, cachedPr.number, flag);
+    activeAttentionDedupeKeys.add(dedupeKey);
+    await upsertAttentionItem({
+      repoId: input.repoId,
+      objectType: "pull_request",
+      objectNumber: cachedPr.number,
+      ruleKey: flag,
+      severity: "warning",
+      relatedLogin: cachedPr.ownerLogin,
+      targetRecipient: cachedPr.ownerLogin,
+      dedupeKey,
+      evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
+    });
+  }
+  await resolveStaleAttentionItems({
+    repoId: input.repoId,
+    activeDedupeKeys: activeAttentionDedupeKeys,
+    managedRuleKeys: pullRequestAttentionRuleKeys,
+    objectType: "pull_request",
+    objectNumber: cachedPr.number
+  });
+  return cachedPr.number;
+}
+
+export async function processWebhookPayload(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
   eventName: string;
@@ -431,36 +476,31 @@ async function processWebhookPayload(input: {
     if (!rawPullRequest) {
       return { processed: true, skipped: true, message: "pull_request payload missing pull_request object" };
     }
-    const pr = normalizePullRequest(
-      input.profile,
-      ensureGitHubObjectWithNumber(rawPullRequest, "pull_request"),
-      cacheSourceForWebhook()
-    );
-    const cachedPr = await upsertPullRequest(input.repoId, pr);
-    const activeAttentionDedupeKeys = new Set<string>();
-    for (const flag of cachedPr.attentionFlags) {
-      const dedupeKey = pullRequestAttentionDedupeKey(input.profile.key, cachedPr.number, flag);
-      activeAttentionDedupeKeys.add(dedupeKey);
-      await upsertAttentionItem({
-        repoId: input.repoId,
-        objectType: "pull_request",
-        objectNumber: cachedPr.number,
-        ruleKey: flag,
-        severity: "warning",
-        relatedLogin: cachedPr.ownerLogin,
-        targetRecipient: cachedPr.ownerLogin,
-        dedupeKey,
-        evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
-      });
-    }
-    await resolveStaleAttentionItems({
+    const prNumber = await upsertPullRequestFromWebhook({
       repoId: input.repoId,
-      activeDedupeKeys: activeAttentionDedupeKeys,
-      managedRuleKeys: pullRequestAttentionRuleKeys,
-      objectType: "pull_request",
-      objectNumber: cachedPr.number
+      profile: input.profile,
+      rawPullRequest
     });
-    return { processed: true, skipped: false, message: `updated PR #${cachedPr.number}` };
+    return { processed: true, skipped: false, message: `updated PR #${prNumber}` };
+  }
+
+  if (input.eventName === "pull_request_review") {
+    const rawPullRequest = recordPayload(input.payload.pull_request);
+    if (!rawPullRequest) {
+      return { processed: true, skipped: true, message: "pull_request_review payload missing pull_request object" };
+    }
+    const pullRequest = ensureGitHubObjectWithNumber(rawPullRequest, "pull_request");
+    const insight = await fetchPullRequestInsightForNumber({
+      profile: input.profile,
+      pullNumber: pullRequest.number
+    });
+    const prNumber = await upsertPullRequestFromWebhook({
+      repoId: input.repoId,
+      profile: input.profile,
+      rawPullRequest,
+      insight: insight.insight
+    });
+    return { processed: true, skipped: false, message: `updated PR #${prNumber} review insight` };
   }
 
   const exhaustiveEvent: never = input.eventName;

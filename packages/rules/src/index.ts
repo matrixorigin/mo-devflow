@@ -369,7 +369,7 @@ export function normalizePullRequest(
     sourceAuthType: source.authType,
     sourceUserId: source.userId,
     visibilityClass: visibility(profile, source),
-    isComplete: false,
+    isComplete: Boolean(insight?.detailSyncedAt && !insight.detailError),
     rawPayload: pr
   };
 }

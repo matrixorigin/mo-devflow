@@ -54,13 +54,15 @@ GitHub webhooks can be posted to `/api/webhooks/github`. The API verifies
 `X-Hub-Signature-256` against `MO_DEVFLOW_GITHUB_WEBHOOK_SECRET`; deliveries
 are rejected until that secret is configured. Payloads must include
 `repository.full_name`, and deliveries for other repositories are ignored.
-Only implemented cache-ingestion events are accepted: `issues` and
-`pull_request`. Other signed events are acknowledged as ignored before they enter
-the queue, and ignored deliveries are still counted for operational visibility.
-Accepted deliveries store the delivery ID and raw payload before acknowledgement.
-Duplicate deliveries are ignored and counted for operational visibility. The
-worker processes stored issue and pull request deliveries asynchronously into
-the MatrixOne cache.
+Only implemented cache-ingestion events are accepted: `issues`, `pull_request`,
+and `pull_request_review`. Review webhooks trigger a fresh PR insight read before
+updating request-change and testing attention, instead of trusting a single
+review payload as the final PR state. Other signed events are acknowledged as
+ignored before they enter the queue, and ignored deliveries are still counted for
+operational visibility. Accepted deliveries store the delivery ID and raw payload
+before acknowledgement. Duplicate deliveries are ignored and counted for
+operational visibility. The worker processes stored issue and pull request
+deliveries asynchronously into the MatrixOne cache.
 
 The current implementation covers read-only cached observability for repo-wide
 critical issues, watched-user summaries, pending PRs, workflow violations, AI

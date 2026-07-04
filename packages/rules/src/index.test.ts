@@ -270,6 +270,67 @@ describe("rules", () => {
     expect(pr.attentionFlags).toContain("merge_conflict");
   });
 
+  test("PR detail insight marks cache evidence complete when detail sync succeeds", () => {
+    const now = new Date().toISOString();
+    const completePr = normalizePullRequest(
+      profile,
+      {
+        id: 40,
+        number: 40,
+        title: "reviewed pr",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/40",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 40,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+    const partialPr = normalizePullRequest(
+      profile,
+      {
+        id: 41,
+        number: 41,
+        title: "detail failed pr",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/41",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 41,
+        reviewDecision: null,
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: null,
+        detailSyncedAt: now,
+        detailError: "GitHub API failed"
+      }
+    );
+
+    expect(completePr.isComplete).toBe(true);
+    expect(partialPr.isComplete).toBe(false);
+  });
+
   test("testing flow detects configured tester reviewer handoff", () => {
     const pr = normalizePullRequest(
       {

@@ -714,6 +714,23 @@ async function fetchPullRequestInsights(input: {
   return { insights, rateLimitRemaining };
 }
 
+export async function fetchPullRequestInsightForNumber(input: {
+  profile: RepoProfile;
+  pullNumber: number;
+}): Promise<{ insight: PullRequestInsight; rateLimitRemaining: number | null; sourceAuthType: SourceAuthType }> {
+  const { octokit, sourceAuthType } = createGitHubClient();
+  const result = await fetchPullRequestInsight(
+    octokit,
+    input.profile.repo.owner,
+    input.profile.repo.name,
+    { number: input.pullNumber } as PullRequestListItem
+  );
+  return {
+    ...result,
+    sourceAuthType
+  };
+}
+
 export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubSnapshot> {
   const { octokit, sourceAuthType } = createGitHubClient();
   const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_SYNC_MAX_PAGES ?? "2"));

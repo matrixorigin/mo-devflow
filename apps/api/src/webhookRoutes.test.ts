@@ -181,6 +181,52 @@ describe("webhook routes", () => {
     }
   });
 
+  test("stores signed pull request review webhooks for PR insight refresh", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "submitted",
+      repository: { full_name: "matrixorigin/matrixone" },
+      pull_request: { number: 42 },
+      review: { state: "changes_requested" }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-review",
+          "x-github-event": "pull_request_review",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        accepted: true,
+        duplicate: false,
+        deliveryId: "delivery-review",
+        eventName: "pull_request_review",
+        status: "received"
+      });
+      expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          deliveryId: "delivery-review",
+          eventName: "pull_request_review",
+          action: "submitted",
+          rawPayload: rawBody
+        })
+      );
+      expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("records signed GitHub webhooks ignored for a different repository", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({
