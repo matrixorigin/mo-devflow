@@ -74,6 +74,7 @@ import {
   ExternalLink,
   GitMerge,
   GitPullRequest,
+  Eye,
   KeyRound,
   LogOut,
   RefreshCcw,
@@ -116,6 +117,7 @@ import {
   prAttentionReasons,
   sortTestingIssuesForAction,
   testingIssueLinkedBlockerCount,
+  testingIssueNeedsAttention,
   sortPeopleByWorkload,
   type FlowEfficiencySummary,
   type PersonalActionQueueFilter,
@@ -618,8 +620,14 @@ function testingStateColor(state: TestingFlowState): string {
 }
 
 function testingStateBusinessLabel(state: TestingFlowState): string {
-  if (state === "test_requested" || state === "testing" || state === "dev_done") {
+  if (state === "test_requested") {
+    return "issue assigned to test";
+  }
+  if (state === "testing") {
     return "linked issue in test";
+  }
+  if (state === "dev_done") {
+    return "development done";
   }
   if (state === "test_changes_requested") {
     return "tester requested changes";
@@ -4086,9 +4094,9 @@ function TestingCommandBoard({
   return (
     <div className="testing-command-board">
       <div className="testing-scope-note">
-        <Text strong>Issue assignment is the active test handoff source.</Text>
+        <Text strong>An issue enters testing when it is assigned to a configured tester.</Text>
         <Text type="secondary">
-          PR review requests stay review signals unless the repo profile explicitly configures PR reviewer handoff.
+          PR review requests stay review signals; testing status comes from the linked issue.
         </Text>
       </div>
 
@@ -4122,7 +4130,13 @@ function TestingCommandBoard({
         />
         <TestingBoardStat label="testers" value={testing.testers.length} tone="normal" onClick={scrollToIssueQueue} />
         <TestingBoardStat
-          label="linked PR evidence"
+          label="test starts"
+          value={testing.issueTransitionEvents}
+          tone={testing.issueTransitionEvents > 0 ? "normal" : "muted"}
+          onClick={testing.issueTransitionEvents > 0 ? scrollToIssueQueue : undefined}
+        />
+        <TestingBoardStat
+          label="linked PR gaps"
           value={evidenceGapPrs.length}
           tone={evidenceGapPrs.length > 0 ? "attention" : "normal"}
           onClick={evidenceGapPrs.length > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
@@ -4137,7 +4151,7 @@ function TestingCommandBoard({
         ) : null}
         {hasTurnoverHistory ? (
           <TestingBoardStat
-            label="incomplete history"
+            label="history gaps"
             value={partialTransitions}
             tone={partialTransitions > 0 ? "attention" : "normal"}
             onClick={partialTransitions > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
@@ -4145,7 +4159,7 @@ function TestingCommandBoard({
         ) : null}
       </div>
 
-      {hasTurnoverHistory ? (
+      {testing.queueIssues > 0 || hasTurnoverHistory ? (
         <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
       ) : null}
 
@@ -4179,12 +4193,12 @@ function TestingCommandBoard({
             emptyText="No issue in test has waited more than a day"
           />
           <TestingQueueLane
-            title="Test Evidence Pending"
-            description="PRs linked to test issues where wait time or cache evidence is incomplete."
+            title="Linked PR Data Gaps"
+            description="PRs whose linked issue is in testing but cached wait time or PR details are incomplete."
             prs={evidenceGapPrs}
             visibleLimit={6}
             tone="attention"
-            emptyText="No incomplete linked-issue test data in cached pending PRs"
+            emptyText="No linked PR data gaps in cached pending PRs"
           />
           <TestingQueueLane
             title="Linked PRs In Test"
@@ -4200,12 +4214,67 @@ function TestingCommandBoard({
   );
 }
 
+type TestingIssueQueueFilter = "all" | "attention" | "unlinked" | "data_gap";
+type TestingIssueQueueSort = "priority" | "wait" | "number";
+
+function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
+  return issue.queueAgeEvidence === "issue_cache_timestamp" || !issue.isComplete || issue.syncError !== null;
+}
+
+function testingIssueMatchesFilter(issue: TestingIssueQueueView, filter: TestingIssueQueueFilter): boolean {
+  if (filter === "attention") {
+    return testingIssueNeedsAttention(issue);
+  }
+  if (filter === "unlinked") {
+    return issue.linkedPullRequests.length === 0;
+  }
+  if (filter === "data_gap") {
+    return testingIssueHasDataGap(issue);
+  }
+  return true;
+}
+
+function sortTestingIssueQueue(issues: TestingIssueQueueView[], sort: TestingIssueQueueSort): TestingIssueQueueView[] {
+  if (sort === "wait") {
+    return [...issues].sort(
+      (left, right) =>
+        (right.queueAgeHours ?? 0) - (left.queueAgeHours ?? 0) ||
+        testingIssueLinkedBlockerCount(right) - testingIssueLinkedBlockerCount(left) ||
+        left.number - right.number
+    );
+  }
+  if (sort === "number") {
+    return [...issues].sort((left, right) => right.number - left.number);
+  }
+  return sortTestingIssuesForAction(issues);
+}
+
 function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState<TestingIssueQueueFilter>("all");
+  const [sort, setSort] = useState<TestingIssueQueueSort>("priority");
+  const [previewIssue, setPreviewIssue] = useState<TestingIssueQueueView | null>(null);
   const visibleLimit = 8;
-  const sortedIssues = sortTestingIssuesForAction(issues);
+  const filterCounts: Record<TestingIssueQueueFilter, number> = {
+    all: issues.length,
+    attention: issues.filter(testingIssueNeedsAttention).length,
+    unlinked: issues.filter((issue) => issue.linkedPullRequests.length === 0).length,
+    data_gap: issues.filter(testingIssueHasDataGap).length
+  };
+  const sortedIssues = sortTestingIssueQueue(
+    issues.filter((issue) => testingIssueMatchesFilter(issue, filter)),
+    sort
+  );
   const visibleIssues = expanded ? sortedIssues : sortedIssues.slice(0, visibleLimit);
   const hiddenCount = Math.max(0, sortedIssues.length - visibleIssues.length);
+  const changeFilter = (nextFilter: TestingIssueQueueFilter) => {
+    setFilter(nextFilter);
+    setExpanded(false);
+  };
+  const changeSort = (nextSort: TestingIssueQueueSort) => {
+    setSort(nextSort);
+    setExpanded(false);
+  };
 
   if (issues.length === 0) {
     return null;
@@ -4215,18 +4284,65 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
     <section className="testing-issue-panel" id="testing-issue-queue" aria-label="Issue-level testing queue">
       <div className="testing-issue-panel-heading">
         <div>
-          <Text strong>Issue-Level Test Queue</Text>
-          <Text type="secondary">
-            Issues assigned to configured testers; linked PRs are supporting execution evidence.
-          </Text>
+          <Text strong>Issues In Test</Text>
+          <Text type="secondary">Issues assigned to configured testers. Linked PRs show execution and blockers.</Text>
         </div>
-        <Tag color={sortedIssues.some(isTestingIssueStale) ? "red" : "blue"}>{issues.length} issues</Tag>
+        <Tag color={sortedIssues.some(isTestingIssueStale) ? "red" : "blue"}>{sortedIssues.length} shown</Tag>
       </div>
-      <div className="testing-issue-list">
-        {visibleIssues.map((issue) => (
-          <TestingIssueQueueRow issue={issue} key={issue.number} />
-        ))}
+      <div className="testing-issue-controls">
+        <div className="board-filter-group">
+          <button
+            type="button"
+            className={`inline-filter-chip ${filter === "all" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => changeFilter("all")}
+          >
+            All {filterCounts.all}
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${
+              filterCounts.attention > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+            } ${filter === "attention" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => changeFilter("attention")}
+          >
+            Needs attention {filterCounts.attention}
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${filter === "unlinked" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => changeFilter("unlinked")}
+          >
+            No linked PR {filterCounts.unlinked}
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${filter === "data_gap" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => changeFilter("data_gap")}
+          >
+            Data gaps {filterCounts.data_gap}
+          </button>
+        </div>
+        <Segmented
+          value={sort}
+          onChange={(value) => changeSort(value as TestingIssueQueueSort)}
+          options={[
+            { label: "Priority", value: "priority" },
+            { label: "Wait", value: "wait" },
+            { label: "Issue #", value: "number" }
+          ]}
+        />
       </div>
+      {visibleIssues.length > 0 ? (
+        <div className="testing-issue-list">
+          {visibleIssues.map((issue) => (
+            <TestingIssueQueueRow issue={issue} key={issue.number} onPreview={setPreviewIssue} />
+          ))}
+        </div>
+      ) : (
+        <div className="testing-issue-empty">
+          <Text type="secondary">No issues match this filter</Text>
+        </div>
+      )}
       {hiddenCount > 0 ? (
         <button type="button" className="testing-issue-more" onClick={() => setExpanded(true)}>
           +{hiddenCount} more issues in test. Show all
@@ -4240,11 +4356,18 @@ function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] })
           Show compact queue
         </button>
       ) : null}
+      <TestingIssuePreviewModal issue={previewIssue} onClose={() => setPreviewIssue(null)} />
     </section>
   );
 }
 
-function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
+function TestingIssueQueueRow({
+  issue,
+  onPreview
+}: {
+  issue: TestingIssueQueueView;
+  onPreview: (issue: TestingIssueQueueView) => void;
+}) {
   const linkedBlockers = testingIssueLinkedBlockerCount(issue);
 
   return (
@@ -4264,6 +4387,15 @@ function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
               <Tag color="red">sync error</Tag>
             </Tooltip>
           ) : null}
+          <Tooltip title="Preview issue">
+            <Button
+              aria-label={`Preview issue ${issue.number}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview(issue)}
+            />
+          </Tooltip>
         </div>
         <a className="testing-issue-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
           {issue.title}
@@ -4296,6 +4428,103 @@ function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
         {issue.linkedPullRequests.length > 5 ? <span>+{issue.linkedPullRequests.length - 5}</span> : null}
       </div>
     </article>
+  );
+}
+
+function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueueView | null; onClose: () => void }) {
+  if (!issue) {
+    return null;
+  }
+
+  const linkedBlockers = testingIssueLinkedBlockerCount(issue);
+  const linkedPullRequests = issue.linkedPullRequests.slice(0, 8);
+
+  return (
+    <Modal
+      className="testing-issue-preview-modal"
+      open
+      width={760}
+      title={`Issue #${issue.number}`}
+      onCancel={onClose}
+      footer={[
+        <Button href={issue.htmlUrl} icon={<ExternalLink size={14} />} key="github" target="_blank">
+          Open GitHub
+        </Button>,
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div className="testing-issue-preview">
+        <a className="testing-issue-preview-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <Space size={[4, 4]} wrap>
+          <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
+          <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
+            {issue.queueAgeEvidence === "issue_assignment_event" ? "assignment time" : "issue update time"}
+          </Tag>
+          {linkedBlockers > 0 ? <Tag color="orange">{linkedBlockers} linked PR blockers</Tag> : null}
+          {testingIssueHasDataGap(issue) ? <Tag color="gold">data gap</Tag> : null}
+        </Space>
+
+        <div className="testing-issue-preview-grid">
+          <div className="testing-issue-preview-metric">
+            <span>Wait</span>
+            <strong>{issue.queueAgeHours === null ? "-" : hours(issue.queueAgeHours)}</strong>
+            <small>
+              {issue.queueStartedAt ? `since ${formatDate(issue.queueStartedAt)}` : "start time unavailable"}
+            </small>
+          </div>
+          <div className="testing-issue-preview-metric">
+            <span>Testers</span>
+            <strong>{issue.testers.length}</strong>
+            <small>{issue.testers.length > 0 ? issue.testers.join(", ") : "none in cache"}</small>
+          </div>
+          <div className="testing-issue-preview-metric">
+            <span>Linked PRs</span>
+            <strong>{issue.linkedPullRequests.length}</strong>
+            <small>{linkedBlockers > 0 ? `${linkedBlockers} need attention` : "no linked PR blocker"}</small>
+          </div>
+        </div>
+
+        <section className="testing-issue-preview-section">
+          <Text strong>Linked PRs</Text>
+          {linkedPullRequests.length > 0 ? (
+            <div className="testing-issue-preview-pr-list">
+              {linkedPullRequests.map((pr) => (
+                <a
+                  className="testing-issue-preview-pr"
+                  href={pr.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={pr.number}
+                >
+                  <span>
+                    <GitPullRequest size={14} aria-hidden="true" />
+                    PR #{pr.number}
+                  </span>
+                  <strong>{pr.title}</strong>
+                  <small>
+                    owner {pr.ownerLogin} | age {hours(pr.ageHours)}
+                  </small>
+                  <Space size={[4, 4]} wrap>
+                    {pr.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+                    {pr.mergeStateStatus ? (
+                      <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+                    ) : null}
+                    {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
+                  </Space>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <Text type="secondary">No linked PR is visible in cache.</Text>
+          )}
+        </section>
+      </div>
+    </Modal>
   );
 }
 
@@ -4368,13 +4597,9 @@ function TestingTurnoverBreakdown({
         tone={passToCloseTone}
       />
       <TestingTurnoverCard
-        label="Evidence quality"
+        label="Data gaps"
         value={partialTransitions}
-        detail={
-          hasSamples
-            ? `${testing.closedWithoutPassSignalSamples} closed without pass`
-            : "no complete turnover samples yet"
-        }
+        detail={hasSamples ? `${testing.closedWithoutPassSignalSamples} closed without pass` : "no pass samples yet"}
         tone={partialTransitions > 0 || testing.closedWithoutPassSignalSamples > 0 ? "attention" : "normal"}
       />
     </div>
@@ -8014,6 +8239,86 @@ export default function App() {
     ],
     [criticalIssuesByPr, data?.repo.name, data?.repo.owner]
   );
+  const testingIssueTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentIssueTransitions"][number]> =
+    useMemo(
+      () => [
+        {
+          title: "Issue",
+          dataIndex: "issueNumber",
+          width: 112,
+          render: (number) => (
+            <a
+              href={`https://github.com/${data?.repo.owner}/${data?.repo.name}/issues/${number}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              #{number}
+            </a>
+          )
+        },
+        {
+          title: "Test start",
+          width: 300,
+          render: (_, transition) => (
+            <Space size={4} wrap>
+              <Tag>{testingStateBusinessLabel(transition.fromState)}</Tag>
+              <Text type="secondary">-&gt;</Text>
+              <Tag color={testingStateColor(transition.toState)}>{testingStateBusinessLabel(transition.toState)}</Tag>
+            </Space>
+          )
+        },
+        {
+          title: "Testers",
+          dataIndex: "testingTesters",
+          width: 220,
+          render: (testers: string[]) =>
+            testers.length === 0 ? (
+              <Text type="secondary">-</Text>
+            ) : (
+              <Space size={[4, 4]} wrap>
+                {testers.map((tester) => (
+                  <Tag key={tester}>{tester}</Tag>
+                ))}
+              </Space>
+            )
+        },
+        {
+          title: "Matched assignment",
+          dataIndex: "testingSignals",
+          ellipsis: true,
+          render: (signals: string[]) =>
+            signals.length === 0 ? (
+              <Text type="secondary">-</Text>
+            ) : (
+              <Space size={[4, 4]} wrap>
+                {signals.slice(0, 4).map((signal) => (
+                  <Tooltip key={signal} title={signal}>
+                    <Tag>{testingSignalBusinessLabel(signal)}</Tag>
+                  </Tooltip>
+                ))}
+                {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
+              </Space>
+            )
+        },
+        {
+          title: "Started",
+          dataIndex: "occurredAt",
+          width: 148,
+          render: (value) => formatDate(value)
+        },
+        {
+          title: "Evidence",
+          dataIndex: "sourceCompleteness",
+          width: 116,
+          render: (value) => (
+            <Tag color={value === "complete_cache" ? "green" : "orange"}>
+              {value === "complete_cache" ? "assignment event" : "issue timestamp"}
+            </Tag>
+          )
+        }
+      ],
+      [data?.repo.name, data?.repo.owner]
+    );
   const selectedPersonalView =
     data?.personalViews.find((person) => person.login === selectedPerson) ?? data?.personalViews[0] ?? null;
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
@@ -8039,6 +8344,9 @@ export default function App() {
       data.testing.passToCloseSamples > 0 ||
       data.testing.closedWithoutPassSignalSamples > 0
     : false;
+  const testingHasIssueTransitions = data
+    ? data.testing.issueTransitionEvents > 0 || data.testing.recentIssueTransitions.length > 0
+    : false;
   const scrollToTestingIssueQueue = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -8058,11 +8366,16 @@ export default function App() {
   return (
     <Layout className="app-shell">
       <Header className="topbar">
-        <div>
-          <Text className="eyebrow">mo-devflow</Text>
-          <Title level={3} className="page-title">
-            {data ? data.repo.key : "Development Flow"}
-          </Title>
+        <div className="brand-lockup">
+          <span className="brand-mark">
+            <GitMerge size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <Text className="eyebrow">mo-devflow</Text>
+            <Title level={3} className="page-title">
+              {data ? data.repo.key : "Development Flow"}
+            </Title>
+          </div>
         </div>
         <Space className="topbar-actions" size={[8, 8]} wrap>
           <div className="view-tabs-scroll">
@@ -8587,10 +8900,18 @@ export default function App() {
                     >
                       {data.testing.staleQueueIssues} stale
                     </button>
-                    <Tag>issue assignment handoff</Tag>
-                    {testingHasTurnoverHistory ? <Tag>{data.testing.transitionEvents} transitions</Tag> : null}
-                    {testingHasTurnoverHistory ? <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag> : null}
-                    {testingHasTurnoverHistory ? <Tag>{data.testing.passToCloseSamples} pass-close samples</Tag> : null}
+                    <Tag>issue assignment starts test</Tag>
+                    {testingHasIssueTransitions ? (
+                      <Tag>{data.testing.issueTransitionEvents} issue test starts</Tag>
+                    ) : null}
+                    {testingHasIssueTransitions ? (
+                      <Tag>last test start {formatDate(data.testing.lastIssueTransitionAt)}</Tag>
+                    ) : null}
+                    {testingHasTurnoverHistory ? <Tag>{data.testing.transitionEvents} PR test transitions</Tag> : null}
+                    {testingHasTurnoverHistory ? (
+                      <Tag>{data.testing.requestToPassSamples} test pass samples</Tag>
+                    ) : null}
+                    {testingHasTurnoverHistory ? <Tag>{data.testing.passToCloseSamples} close samples</Tag> : null}
                     {testingHasTurnoverHistory ? (
                       <button
                         type="button"
@@ -8619,6 +8940,18 @@ export default function App() {
                   pagination={false}
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />
+                {testingHasIssueTransitions ? (
+                  <Table
+                    className="testing-transition-table"
+                    rowKey="id"
+                    size="middle"
+                    columns={testingIssueTransitionColumns}
+                    dataSource={data.testing.recentIssueTransitions}
+                    scroll={{ x: 1040 }}
+                    pagination={{ pageSize: 6 }}
+                    locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
+                  />
+                ) : null}
                 {testingHasTurnoverHistory ? (
                   <Table
                     className="testing-transition-table"

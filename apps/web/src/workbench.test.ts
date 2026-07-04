@@ -602,6 +602,7 @@ function testingIssue(input: Partial<TestingIssueQueueView>): TestingIssueQueueV
     htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/issues/50",
     testers: input.testers ?? ["tester-a"],
     queueAgeHours: input.queueAgeHours ?? 12,
+    queueStartedAt: input.queueStartedAt ?? "2026-07-03T13:00:00Z",
     queueAgeEvidence: input.queueAgeEvidence ?? "issue_assignment_event",
     linkedPullRequests: input.linkedPullRequests ?? [],
     isComplete: input.isComplete ?? true,

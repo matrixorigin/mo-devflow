@@ -31,6 +31,7 @@ import type {
   SyncHealth,
   SyncHealthLayer,
   SyncHealthStatus,
+  TestingIssueTransitionView,
   TestingIssueQueueView,
   TestingSummary,
   TestingTransitionView,
@@ -269,6 +270,35 @@ export function recentTestingTransitionsForProfile(
   limit = 12
 ): TestingTransitionView[] {
   return testingTransitionsForProfile(profile, transitions)
+    .sort((left, right) => {
+      const occurredDelta = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
+      if (occurredDelta !== 0) {
+        return occurredDelta;
+      }
+      return right.id - left.id;
+    })
+    .slice(0, limit);
+}
+
+export function testingIssueTransitionsFromQueueIssues(
+  issues: TestingIssueQueueView[],
+  limit = 12
+): TestingIssueTransitionView[] {
+  return issues
+    .map((issue) => {
+      const testers = uniqueValues(issue.testers);
+      return {
+        id: -issue.number,
+        issueNumber: issue.number,
+        fromState: "not_ready" as const,
+        toState: "test_requested" as const,
+        testingTesters: testers,
+        testingSignals: testers.map((tester) => `issue_assignee:#${issue.number}:${tester}`),
+        occurredAt: issue.queueStartedAt ?? issue.lastSyncedAt,
+        sourceCompleteness:
+          issue.queueAgeEvidence === "issue_assignment_event" ? ("complete_cache" as const) : ("partial_cache" as const)
+      };
+    })
     .sort((left, right) => {
       const occurredDelta = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
       if (occurredDelta !== 0) {
@@ -2055,6 +2085,7 @@ interface TestingIssueContext {
   testers: string[];
   signals: string[];
   queueAgeHours: number | null;
+  queueStartedAt: string | null;
   queueAgeEvidence: TestingIssueQueueView["queueAgeEvidence"];
 }
 
@@ -2080,11 +2111,13 @@ function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Ma
       continue;
     }
     const issueNumber = asNumber(row.number);
+    const queueStartedAt = fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at);
     contexts.set(issueNumber, {
       issueNumber,
       testers: uniqueValues(testers),
       signals: uniqueValues(testers.map((tester) => `issue_assignee:#${issueNumber}:${tester}`)),
-      queueAgeHours: hoursSince(fromSqlDate(row.updated_at) ?? fromSqlDate(row.created_at)),
+      queueAgeHours: hoursSince(queueStartedAt),
+      queueStartedAt,
       queueAgeEvidence: "issue_cache_timestamp"
     });
   }
@@ -2157,6 +2190,7 @@ function testingIssueContextsWithAssignmentEvidence(
         ? {
             ...context,
             queueAgeHours: hoursSince(assignmentStartedAt),
+            queueStartedAt: assignmentStartedAt,
             queueAgeEvidence: "issue_assignment_event"
           }
         : context
@@ -2178,11 +2212,15 @@ function testingIssueContextForLinkedIssues(
   const queueAges = matches
     .map((context) => context.queueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value));
+  const queueStartedAtValues = matches
+    .map((context) => context.queueStartedAt)
+    .filter((value): value is string => value !== null);
   return {
     issueNumber: matches[0].issueNumber,
     testers: uniqueValues(matches.flatMap((context) => context.testers)),
     signals: uniqueValues(matches.flatMap((context) => context.signals)),
     queueAgeHours: queueAges.length === 0 ? null : Math.max(...queueAges),
+    queueStartedAt: queueStartedAtValues.length === 0 ? null : queueStartedAtValues.sort()[0],
     queueAgeEvidence: matches.some((context) => context.queueAgeEvidence === "issue_assignment_event")
       ? "issue_assignment_event"
       : "issue_cache_timestamp"
@@ -2243,6 +2281,7 @@ function testingIssueQueueViews(
         htmlUrl: asString(row.html_url),
         testers: context.testers,
         queueAgeHours: context.queueAgeHours,
+        queueStartedAt: context.queueStartedAt,
         queueAgeEvidence: context.queueAgeEvidence,
         linkedPullRequests,
         isComplete: asBoolean(row.is_complete),
@@ -3881,6 +3920,7 @@ export async function getDashboardSummary(
     profile,
     recentTestingEventRows.map(testingTransitionViewFromRow)
   );
+  const recentIssueTestingTransitions = testingIssueTransitionsFromQueueIssues(testingIssueViews);
   const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
   const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
@@ -3894,10 +3934,13 @@ export async function getDashboardSummary(
     ).length,
     averageIssueQueueAgeHours: averageHours(issueQueueAges),
     averageQueueAgeHours: averageHours(queueAges),
+    issueTransitionEvents: testingIssueViews.length,
+    lastIssueTransitionAt: latestIsoOrNull(recentIssueTestingTransitions.map((transition) => transition.occurredAt)),
     transitionEvents: testingTurnoverTransitions.length,
     lastTransitionAt: latestIsoOrNull(testingTurnoverTransitions.map((transition) => transition.occurredAt)),
     ...testingTurnover,
     issues: testingIssueViews,
+    recentIssueTransitions: recentIssueTestingTransitions,
     recentTransitions: recentTestingTransitions,
     testers: Array.from(testerKeys).map((login) => {
       const issues = testingIssueViews.filter((issue) => issue.testers.includes(login));

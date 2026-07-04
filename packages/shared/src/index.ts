@@ -388,6 +388,17 @@ export interface TestingTransitionView {
   sourceCompleteness: MetricSourceCompleteness;
 }
 
+export interface TestingIssueTransitionView {
+  id: number;
+  issueNumber: number;
+  fromState: TestingFlowState;
+  toState: TestingFlowState;
+  testingTesters: string[];
+  testingSignals: string[];
+  occurredAt: string;
+  sourceCompleteness: MetricSourceCompleteness;
+}
+
 export interface TestingIssueLinkedPullRequestView {
   number: number;
   title: string;
@@ -407,6 +418,7 @@ export interface TestingIssueQueueView {
   htmlUrl: string;
   testers: string[];
   queueAgeHours: number | null;
+  queueStartedAt: string | null;
   queueAgeEvidence: "issue_assignment_event" | "issue_cache_timestamp";
   linkedPullRequests: TestingIssueLinkedPullRequestView[];
   isComplete: boolean;
@@ -421,6 +433,8 @@ export interface TestingSummary {
   staleQueuePrs: number;
   averageIssueQueueAgeHours: number | null;
   averageQueueAgeHours: number | null;
+  issueTransitionEvents: number;
+  lastIssueTransitionAt: string | null;
   transitionEvents: number;
   lastTransitionAt: string | null;
   requestToPassSamples: number;
@@ -429,6 +443,7 @@ export interface TestingSummary {
   averageRequestToPassHours: number | null;
   averagePassToCloseHours: number | null;
   issues: TestingIssueQueueView[];
+  recentIssueTransitions: TestingIssueTransitionView[];
   recentTransitions: TestingTransitionView[];
   testers: Array<{
     login: string;

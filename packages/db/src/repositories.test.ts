@@ -4,6 +4,7 @@ import type {
   DailyMetricPoint,
   NormalizedPullRequest,
   RepoProfile,
+  TestingIssueQueueView,
   TestingTransitionView
 } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
@@ -28,6 +29,7 @@ import {
   pullRequestWithPreservedInsight,
   pullRequestTestingTransitionForUpsert,
   recentTestingTransitionsForProfile,
+  testingIssueTransitionsFromQueueIssues,
   testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
   testingTransitionBelongsToProfile,
@@ -1080,6 +1082,60 @@ describe("pull request testing transition events", () => {
     expect(
       recentTestingTransitionsForProfile(issueScopedProfile, [staleReviewerTransition, issueAssigneeTransition], 1)
     ).toEqual([issueAssigneeTransition]);
+  });
+
+  test("derives issue-level testing handoff transitions from the current issue queue", () => {
+    const issues: TestingIssueQueueView[] = [
+      {
+        number: 42,
+        title: "issue in test",
+        htmlUrl: "https://github.com/example/repo/issues/42",
+        testers: ["tester-a", "tester-a"],
+        queueAgeHours: 8,
+        queueStartedAt: "2026-07-03T08:00:00.000Z",
+        queueAgeEvidence: "issue_assignment_event",
+        linkedPullRequests: [],
+        isComplete: true,
+        syncError: null,
+        lastSyncedAt: "2026-07-03T10:00:00.000Z"
+      },
+      {
+        number: 43,
+        title: "issue with partial cache",
+        htmlUrl: "https://github.com/example/repo/issues/43",
+        testers: ["tester-b"],
+        queueAgeHours: 2,
+        queueStartedAt: null,
+        queueAgeEvidence: "issue_cache_timestamp",
+        linkedPullRequests: [],
+        isComplete: false,
+        syncError: null,
+        lastSyncedAt: "2026-07-03T11:00:00.000Z"
+      }
+    ];
+
+    expect(testingIssueTransitionsFromQueueIssues(issues)).toEqual([
+      {
+        id: -43,
+        issueNumber: 43,
+        fromState: "not_ready",
+        toState: "test_requested",
+        testingTesters: ["tester-b"],
+        testingSignals: ["issue_assignee:#43:tester-b"],
+        occurredAt: "2026-07-03T11:00:00.000Z",
+        sourceCompleteness: "partial_cache"
+      },
+      {
+        id: -42,
+        issueNumber: 42,
+        fromState: "not_ready",
+        toState: "test_requested",
+        testingTesters: ["tester-a"],
+        testingSignals: ["issue_assignee:#42:tester-a"],
+        occurredAt: "2026-07-03T08:00:00.000Z",
+        sourceCompleteness: "complete_cache"
+      }
+    ]);
   });
 
   test("summarizes testing turnover only from completed transition pairs", () => {
