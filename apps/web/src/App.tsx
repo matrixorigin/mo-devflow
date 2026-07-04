@@ -9184,6 +9184,14 @@ export default function App() {
     }
   }
 
+  function openObservedPersonalPreview(login: string) {
+    setSelectedPerson(login);
+    if (view === "Personal") {
+      replaceDashboardHash("Personal", login);
+    }
+    openObservedPersonPreview(login);
+  }
+
   function openPeopleBoardPerson(login: string) {
     if (peopleBoardUsesObserved) {
       openObservedPersonPreview(login);
@@ -9199,6 +9207,11 @@ export default function App() {
       return;
     }
     openPersonalDrilldown(login, filter);
+  }
+
+  function openObservedPersonalMetric(login: string, filter: PersonalDrilldownFilter) {
+    setPeopleScopeFilter(peopleScopeForPersonalMetric(filter));
+    openObservedPersonalPreview(login);
   }
 
   function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
@@ -10396,6 +10409,14 @@ export default function App() {
         pendingPrs: data.pendingPrs
       })
     : [];
+  const selectedObservedLogin =
+    data && data.personalViews.length === 0 && observedPeople.length > 0
+      ? ((observedPeople.some((person) => person.login === selectedPerson)
+          ? selectedPerson
+          : observedPeople[0]?.login) ?? null)
+      : null;
+  const selectedObservedPersonPreview =
+    data && selectedObservedLogin ? observedPersonPreview(data, selectedObservedLogin) : null;
   const peopleBoardUsesObserved = Boolean(data && data.people.length === 0 && observedPeople.length > 0);
   const peopleBoardPeople = data ? (data.people.length > 0 ? data.people : observedPeople) : [];
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
@@ -11127,72 +11148,119 @@ export default function App() {
             {view === "Personal" ? (
               <section className="workbench-section">
                 <div className="section-heading">
-                  <Title level={4}>Personal Workbench</Title>
+                  <div>
+                    <Title level={4}>Personal Workbench</Title>
+                    {!data.personalViews.length && observedPeople.length > 0 ? (
+                      <Text type="secondary">Observed owner preview from visible cache</Text>
+                    ) : null}
+                  </div>
                   <Space size={[6, 6]} wrap>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        selectedPersonalView?.summary.activeCriticalIssues
+                        (selectedPersonalView?.summary.activeCriticalIssues ??
+                        selectedObservedPersonPreview?.summary.activeCriticalIssues)
                           ? "inline-filter-chip-red"
                           : "inline-filter-chip-muted"
                       } ${personalDrilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPersonalDrilldownFilter("active_issues")}
+                      onClick={() =>
+                        selectedPersonalView
+                          ? setPersonalDrilldownFilter("active_issues")
+                          : selectedObservedPersonPreview
+                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            : setPersonalDrilldownFilter("active_issues")
+                      }
                     >
-                      {selectedPersonalView?.summary.activeCriticalIssues ?? 0} s-1/s0
+                      {selectedPersonalView?.summary.activeCriticalIssues ??
+                        selectedObservedPersonPreview?.summary.activeCriticalIssues ??
+                        0}{" "}
+                      s-1/s0
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        selectedPersonalView?.summary.attentionPrs ? "" : "inline-filter-chip-muted"
+                        (selectedPersonalView?.summary.attentionPrs ??
+                        selectedObservedPersonPreview?.summary.attentionPrs)
+                          ? ""
+                          : "inline-filter-chip-muted"
                       } ${personalDrilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPersonalDrilldownFilter("pr_attention")}
+                      onClick={() =>
+                        selectedPersonalView
+                          ? setPersonalDrilldownFilter("pr_attention")
+                          : selectedObservedPersonPreview
+                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            : setPersonalDrilldownFilter("pr_attention")
+                      }
                     >
-                      {selectedPersonalView?.summary.attentionPrs ?? 0} PR attention
+                      {selectedPersonalView?.summary.attentionPrs ??
+                        selectedObservedPersonPreview?.summary.attentionPrs ??
+                        0}{" "}
+                      PR attention
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
                         personalDrilldownFilter === "testing" ? "inline-filter-chip-active" : ""
                       }`}
-                      onClick={() => setPersonalDrilldownFilter("testing")}
+                      onClick={() =>
+                        selectedPersonalView
+                          ? setPersonalDrilldownFilter("testing")
+                          : selectedObservedPersonPreview
+                            ? openObservedPersonalPreview(selectedObservedPersonPreview.login)
+                            : setPersonalDrilldownFilter("testing")
+                      }
                     >
                       {selectedPersonalView ? personalTestingWorkCount(selectedPersonalView) : 0} testing
                     </button>
                   </Space>
                 </div>
                 {!data.personalViews.length && observedPeople.length > 0 ? (
-                  <Alert
-                    className="band"
-                    type="info"
-                    showIcon
-                    title="Personal workbench needs watched users"
-                    description="The repository profile has no watched users yet. Open People to inspect observed active owners from visible issue and PR cache, then configure the watched user list for full personal queues and analytics."
-                    action={
-                      <Button size="small" onClick={() => selectView("People")}>
-                        Open People
-                      </Button>
-                    }
-                  />
-                ) : null}
-                <PersonWorkloadBoard
-                  compact
-                  people={data.people}
-                  personalViews={data.personalViews}
-                  selectedLogin={selectedPersonalView?.login ?? null}
-                  onSelect={selectPerson}
-                  onMetricSelect={openPersonalDrilldown}
-                />
-                {selectedPersonalView ? (
-                  <SelectedPersonWorkbench
-                    person={selectedPersonalView}
-                    analyticsPeriod={analyticsPeriod}
-                    trendPoints={personalTrendPoints}
-                    onAnalyticsPeriodChange={setAnalyticsPeriod}
-                    drilldownFilter={personalDrilldownFilter}
-                    onDrilldownChange={setPersonalDrilldownFilter}
-                  />
+                  <>
+                    <Alert
+                      className="band"
+                      type="info"
+                      showIcon
+                      title="Showing observed owners, not full personal analytics"
+                      description="Watched users are not configured. This preview only uses active s-1/s0 issue owners and pending PR authors from visible cache. Configure watched users to unlock needs-triage, deferred, yesterday PR, testing workload, and trend analytics."
+                      action={
+                        <Button size="small" onClick={() => selectView("People")}>
+                          Open People
+                        </Button>
+                      }
+                    />
+                    <PersonWorkloadBoard
+                      compact
+                      mode="observed"
+                      people={observedPeople}
+                      personalViews={[]}
+                      selectedLogin={selectedObservedLogin}
+                      onSelect={openObservedPersonalPreview}
+                      onMetricSelect={openObservedPersonalMetric}
+                    />
+                  </>
                 ) : (
-                  <Empty description="No watched users configured for personal action lists" />
+                  <>
+                    <PersonWorkloadBoard
+                      compact
+                      people={data.people}
+                      personalViews={data.personalViews}
+                      selectedLogin={selectedPersonalView?.login ?? null}
+                      onSelect={selectPerson}
+                      onMetricSelect={openPersonalDrilldown}
+                    />
+                    {selectedPersonalView ? (
+                      <SelectedPersonWorkbench
+                        person={selectedPersonalView}
+                        analyticsPeriod={analyticsPeriod}
+                        trendPoints={personalTrendPoints}
+                        onAnalyticsPeriodChange={setAnalyticsPeriod}
+                        drilldownFilter={personalDrilldownFilter}
+                        onDrilldownChange={setPersonalDrilldownFilter}
+                      />
+                    ) : (
+                      <Empty description="No watched users configured for personal action lists" />
+                    )}
+                  </>
                 )}
               </section>
             ) : null}
