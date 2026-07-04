@@ -1574,6 +1574,18 @@ export default function App() {
         title: "Average Queue Age",
         dataIndex: "averageQueueAgeHours",
         render: (value) => (value === null ? "-" : hours(value))
+      },
+      {
+        title: "Req To Pass",
+        dataIndex: "averageRequestToPassHours",
+        render: (value, row) =>
+          value === null ? <Text type="secondary">{row.requestToPassSamples} samples</Text> : `${hours(value)} (${row.requestToPassSamples})`
+      },
+      {
+        title: "Pass To Close",
+        dataIndex: "averagePassToCloseHours",
+        render: (value, row) =>
+          value === null ? <Text type="secondary">{row.passToCloseSamples} samples</Text> : `${hours(value)} (${row.passToCloseSamples})`
       }
     ],
     []
@@ -2275,6 +2287,7 @@ export default function App() {
                   size="middle"
                   columns={testerColumns}
                   dataSource={data.testing.testers}
+                  scroll={{ x: 760 }}
                   pagination={false}
                   locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                 />

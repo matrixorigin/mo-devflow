@@ -170,6 +170,20 @@ export function testingTransitionViewFromRow(row: Record<string, unknown>): Test
   };
 }
 
+type TestingTurnoverMetrics = Pick<
+  TestingSummary,
+  "requestToPassSamples" | "passToCloseSamples" | "averageRequestToPassHours" | "averagePassToCloseHours"
+>;
+
+function emptyTestingTurnoverMetrics(): TestingTurnoverMetrics {
+  return {
+    requestToPassSamples: 0,
+    passToCloseSamples: 0,
+    averageRequestToPassHours: null,
+    averagePassToCloseHours: null
+  };
+}
+
 function transitionHoursBetween(start: string | null, end: string | null): number | null {
   if (!start || !end) {
     return null;
@@ -189,57 +203,98 @@ function roundedAverage(values: number[]): number | null {
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
 }
 
-export function testingTurnoverMetricsFromTransitions(
-  transitions: TestingTransitionView[]
-): Pick<
-  TestingSummary,
-  "requestToPassSamples" | "passToCloseSamples" | "averageRequestToPassHours" | "averagePassToCloseHours"
-> {
-  const byPullRequest = new Map<number, TestingTransitionView[]>();
-  for (const transition of transitions) {
-    const entries = byPullRequest.get(transition.prNumber) ?? [];
-    entries.push(transition);
-    byPullRequest.set(transition.prNumber, entries);
-  }
-
+function turnoverDurationsForPullRequest(transitions: TestingTransitionView[]): {
+  requestToPassHours: number[];
+  passToCloseHours: number[];
+} {
+  const ordered = [...transitions].sort((left, right) => {
+    const timeOrder = new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime();
+    return timeOrder === 0 ? left.id - right.id : timeOrder;
+  });
   const requestToPassHours: number[] = [];
   const passToCloseHours: number[] = [];
-  for (const entries of byPullRequest.values()) {
-    const ordered = [...entries].sort((left, right) => {
-      const timeOrder = new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime();
-      return timeOrder === 0 ? left.id - right.id : timeOrder;
-    });
-    let requestedAt: string | null = null;
-    let passedAt: string | null = null;
-    for (const transition of ordered) {
-      if (
-        !requestedAt &&
-        ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)
-      ) {
-        requestedAt = transition.occurredAt;
-      }
-      if (!passedAt && transition.toState === "test_passed") {
-        passedAt = transition.occurredAt;
-      }
-      if (transition.toState === "closed_or_merged") {
-        const passToClose = transitionHoursBetween(passedAt, transition.occurredAt);
-        if (passToClose !== null) {
-          passToCloseHours.push(passToClose);
-        }
-      }
+  let requestedAt: string | null = null;
+  let passedAt: string | null = null;
+  for (const transition of ordered) {
+    if (
+      !requestedAt &&
+      ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)
+    ) {
+      requestedAt = transition.occurredAt;
     }
-    const requestToPass = transitionHoursBetween(requestedAt, passedAt);
-    if (requestToPass !== null) {
-      requestToPassHours.push(requestToPass);
+    if (!passedAt && transition.toState === "test_passed") {
+      passedAt = transition.occurredAt;
+    }
+    if (transition.toState === "closed_or_merged") {
+      const passToClose = transitionHoursBetween(passedAt, transition.occurredAt);
+      if (passToClose !== null) {
+        passToCloseHours.push(passToClose);
+      }
     }
   }
+  const requestToPass = transitionHoursBetween(requestedAt, passedAt);
+  if (requestToPass !== null) {
+    requestToPassHours.push(requestToPass);
+  }
+  return { requestToPassHours, passToCloseHours };
+}
 
+function metricsFromDurations(requestToPassHours: number[], passToCloseHours: number[]): TestingTurnoverMetrics {
   return {
     requestToPassSamples: requestToPassHours.length,
     passToCloseSamples: passToCloseHours.length,
     averageRequestToPassHours: roundedAverage(requestToPassHours),
     averagePassToCloseHours: roundedAverage(passToCloseHours)
   };
+}
+
+function transitionsByPullRequest(transitions: TestingTransitionView[]): Map<number, TestingTransitionView[]> {
+  const byPullRequest = new Map<number, TestingTransitionView[]>();
+  for (const transition of transitions) {
+    const entries = byPullRequest.get(transition.prNumber) ?? [];
+    entries.push(transition);
+    byPullRequest.set(transition.prNumber, entries);
+  }
+  return byPullRequest;
+}
+
+export function testingTurnoverMetricsFromTransitions(transitions: TestingTransitionView[]): TestingTurnoverMetrics {
+  const requestToPassHours: number[] = [];
+  const passToCloseHours: number[] = [];
+  for (const entries of transitionsByPullRequest(transitions).values()) {
+    const durations = turnoverDurationsForPullRequest(entries);
+    requestToPassHours.push(...durations.requestToPassHours);
+    passToCloseHours.push(...durations.passToCloseHours);
+  }
+  return metricsFromDurations(requestToPassHours, passToCloseHours);
+}
+
+export function testingTurnoverMetricsByTesterFromTransitions(
+  transitions: TestingTransitionView[]
+): Map<string, TestingTurnoverMetrics> {
+  const requestToPassByTester = new Map<string, number[]>();
+  const passToCloseByTester = new Map<string, number[]>();
+
+  for (const entries of transitionsByPullRequest(transitions).values()) {
+    const testers = Array.from(new Set(entries.flatMap((transition) => transition.testingTesters))).sort();
+    const durations = turnoverDurationsForPullRequest(entries);
+    for (const tester of testers) {
+      requestToPassByTester.set(tester, [
+        ...(requestToPassByTester.get(tester) ?? []),
+        ...durations.requestToPassHours
+      ]);
+      passToCloseByTester.set(tester, [
+        ...(passToCloseByTester.get(tester) ?? []),
+        ...durations.passToCloseHours
+      ]);
+    }
+  }
+
+  const result = new Map<string, TestingTurnoverMetrics>();
+  for (const tester of new Set([...requestToPassByTester.keys(), ...passToCloseByTester.keys()])) {
+    result.set(tester, metricsFromDurations(requestToPassByTester.get(tester) ?? [], passToCloseByTester.get(tester) ?? []));
+  }
+  return result;
 }
 
 function isDuplicateError(error: unknown): boolean {
@@ -2623,7 +2678,9 @@ export async function getDashboardSummary(
     ...profile.people.testers,
     ...testingQueueRows.flatMap((row) => parseJsonArray(asString(row.testing_testers_json)))
   ]);
-  const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverRows.map(testingTransitionViewFromRow));
+  const testingTurnoverTransitions = testingTurnoverRows.map(testingTransitionViewFromRow);
+  const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
+  const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
     queuePrs: testingQueueRows.length,
     staleQueuePrs: testingQueueRows.filter(
@@ -2642,11 +2699,13 @@ export async function getDashboardSummary(
       const ages = rows
         .map((row) => asNumber(row.testing_queue_age_hours))
         .filter((value) => Number.isFinite(value) && value > 0);
+      const turnover = testingTurnoverByTester.get(login) ?? emptyTestingTurnoverMetrics();
       return {
         login,
         queuePrs: rows.length,
         averageQueueAgeHours:
-          ages.length === 0 ? null : Math.round((ages.reduce((sum, value) => sum + value, 0) / ages.length) * 10) / 10
+          ages.length === 0 ? null : Math.round((ages.reduce((sum, value) => sum + value, 0) / ages.length) * 10) / 10,
+        ...turnover
       };
     })
   };

@@ -389,6 +389,10 @@ export interface TestingSummary {
     login: string;
     queuePrs: number;
     averageQueueAgeHours: number | null;
+    requestToPassSamples: number;
+    passToCloseSamples: number;
+    averageRequestToPassHours: number | null;
+    averagePassToCloseHours: number | null;
   }>;
 }
 

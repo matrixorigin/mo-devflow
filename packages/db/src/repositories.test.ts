@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { CriticalIssueLinkedPullRequestView, DailyMetricPoint, NormalizedPullRequest, RepoProfile } from "@mo-devflow/shared";
+import type {
+  CriticalIssueLinkedPullRequestView,
+  DailyMetricPoint,
+  NormalizedPullRequest,
+  RepoProfile,
+  TestingTransitionView
+} from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
@@ -20,6 +26,7 @@ import {
   profileConfigurationWarnings,
   profileSetupPlan,
   pullRequestTestingTransitionForUpsert,
+  testingTurnoverMetricsByTesterFromTransitions,
   testingTurnoverMetricsFromTransitions,
   testingTransitionViewFromRow,
   testingReviewerCoverage,
@@ -1004,8 +1011,7 @@ describe("pull request testing transition events", () => {
   });
 
   test("summarizes testing turnover only from completed transition pairs", () => {
-    expect(
-      testingTurnoverMetricsFromTransitions([
+    const transitions: TestingTransitionView[] = [
         {
           id: 1,
           prNumber: 101,
@@ -1046,13 +1052,35 @@ describe("pull request testing transition events", () => {
           occurredAt: "2026-07-01T00:00:00.000Z",
           sourceCompleteness: "partial_cache"
         }
-      ])
-    ).toEqual({
+      ];
+
+    expect(testingTurnoverMetricsFromTransitions(transitions)).toEqual({
       requestToPassSamples: 1,
       passToCloseSamples: 1,
       averageRequestToPassHours: 36,
       averagePassToCloseHours: 12
     });
+
+    expect(Array.from(testingTurnoverMetricsByTesterFromTransitions(transitions).entries())).toEqual([
+      [
+        "tester-a",
+        {
+          requestToPassSamples: 1,
+          passToCloseSamples: 1,
+          averageRequestToPassHours: 36,
+          averagePassToCloseHours: 12
+        }
+      ],
+      [
+        "tester-b",
+        {
+          requestToPassSamples: 0,
+          passToCloseSamples: 0,
+          averageRequestToPassHours: null,
+          averagePassToCloseHours: null
+        }
+      ]
+    ]);
   });
 });
 
