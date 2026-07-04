@@ -160,26 +160,45 @@ body {
 }
 
 .freshness-bar {
-  align-items: center;
   background: #ffffff;
   border: 1px solid #d1d5db;
   border-radius: 8px;
-  display: flex;
+  display: grid;
   gap: 10px;
-  justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   min-width: 0;
   padding: 10px 12px;
 }
 
+.freshness-topline {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
 .freshness-main,
+.freshness-meta,
 .freshness-layers {
   max-width: 100%;
   min-width: 0;
 }
 
+.freshness-detail {
+  border-top: 1px solid #f3f4f6;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.freshness-meta {
+  justify-content: flex-start;
+}
+
 .freshness-layers {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .freshness-bar .ant-space-item {
@@ -4344,7 +4363,7 @@ button.testing-board-stat:focus-visible {
     flex-direction: column;
   }
 
-  .freshness-bar {
+  .freshness-topline {
     align-items: flex-start;
     flex-direction: column;
   }

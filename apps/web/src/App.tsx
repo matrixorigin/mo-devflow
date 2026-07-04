@@ -92,6 +92,7 @@ import {
   summarizeUpdatePipeline,
   summarizeWebhookReadiness,
   type CacheEvidenceSummary,
+  type FreshnessSummary,
   type UpdatePipelineSummary,
   type UpdatePipelineTile,
   type WebhookReadinessSummary
@@ -3953,6 +3954,80 @@ function CacheRepairPlan({
   );
 }
 
+function FreshnessStatusBar({
+  freshness,
+  sync,
+  readModel,
+  refreshing,
+  autoRefreshError,
+  lastLoadedAt,
+  expanded,
+  onExpandedChange
+}: {
+  freshness: FreshnessSummary;
+  sync: DashboardSummary["sync"];
+  readModel: DashboardReadModelMeta | null;
+  refreshing: boolean;
+  autoRefreshError: string | null;
+  lastLoadedAt: string | null;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}) {
+  const problemLayers = sync.health.filter((item) => item.status !== "success" || item.skipped);
+
+  return (
+    <section className={`freshness-bar ${expanded ? "freshness-bar-expanded" : "freshness-bar-compact"}`}>
+      <div className="freshness-topline">
+        <Space className="freshness-main" size={[8, 8]} wrap>
+          <Text strong>Data status</Text>
+          <Tag color={freshness.tagColor}>{freshness.label}</Tag>
+          {readModel ? (
+            <Tooltip title={readModel.version ? `Read-model version ${readModel.version}` : "Read-model cache status"}>
+              <Tag color={dashboardReadModelStatusColor(readModel.status)}>
+                read model {dashboardReadModelStatusLabel(readModel.status)}
+              </Tag>
+            </Tooltip>
+          ) : null}
+          <Tag>generated {formatDate(sync.generatedAt)}</Tag>
+          <Tag color={sync.staleObjects > 0 ? "orange" : "green"}>{sync.staleObjects} stale</Tag>
+          <Tag color={sync.partialObjects > 0 ? "orange" : "green"}>{sync.partialObjects} incomplete</Tag>
+          {problemLayers.length > 0 ? <Tag color="orange">{problemLayers.length} sync warnings</Tag> : null}
+          <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
+            {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
+          </Tag>
+        </Space>
+        <Button
+          size="small"
+          type="text"
+          icon={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          onClick={() => onExpandedChange(!expanded)}
+        >
+          {expanded ? "Hide sync details" : "Sync details"}
+        </Button>
+      </div>
+      {expanded ? (
+        <div className="freshness-detail">
+          <Space className="freshness-meta" size={[4, 4]} wrap>
+            <Tag color={freshness.oldestLayerSuccessAt ? "default" : "red"}>
+              oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
+            </Tag>
+            <Tag>loaded {formatDate(lastLoadedAt)}</Tag>
+          </Space>
+          <Space className="freshness-layers" size={[4, 4]} wrap>
+            {sync.health.map((item) => (
+              <Tooltip title={syncHealthTooltip(item)} key={item.layer}>
+                <Tag color={syncHealthTagColor(item.status)}>
+                  {labelText(item.layer)} {formatDate(item.lastSuccessfulAt)}
+                </Tag>
+              </Tooltip>
+            ))}
+          </Space>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CacheEvidenceBanner({
   cacheEvidence,
   sync,
@@ -3976,14 +4051,7 @@ function CacheEvidenceBanner({
   onPrepare: (layers: ManualRefreshLayer[]) => void;
   onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
-  const compactFacts = cacheEvidence.facts.filter(
-    (fact) =>
-      !fact.startsWith("Skipped sync layers:") &&
-      !fact.startsWith("Incomplete sync layers:") &&
-      !fact.startsWith("Blocked or failed sync layers:")
-  );
-  const visibleCompactFacts = compactFacts.slice(0, 3);
-  const detailFactCount = Math.max(0, cacheEvidence.facts.length - visibleCompactFacts.length);
+  const compactDescription = "Cached facts remain visible; expand for affected conclusions and repair options.";
 
   return (
     <Alert
@@ -3993,7 +4061,7 @@ function CacheEvidenceBanner({
       description={
         <Space orientation="vertical" size={expanded ? 8 : 6} className="full-width">
           <div className="evidence-alert-summary">
-            <Text>{cacheEvidence.description}</Text>
+            <Text>{expanded ? cacheEvidence.description : compactDescription}</Text>
             <Button
               size="small"
               type="text"
@@ -4003,14 +4071,6 @@ function CacheEvidenceBanner({
               {expanded ? "Hide evidence" : "Show evidence"}
             </Button>
           </div>
-          {!expanded && visibleCompactFacts.length > 0 ? (
-            <Space size={[4, 4]} wrap>
-              {visibleCompactFacts.map((fact) => (
-                <Tag key={fact}>{fact}</Tag>
-              ))}
-              {detailFactCount > 0 ? <Tag>+{detailFactCount} evidence details</Tag> : null}
-            </Space>
-          ) : null}
           {expanded ? (
             <>
               {cacheEvidence.facts.length > 0 ? (
@@ -8978,6 +9038,7 @@ export default function App() {
   const [webhookRetryResult, setWebhookRetryResult] = useState<WebhookRetryResult | null>(null);
   const [webhookRetryError, setWebhookRetryError] = useState<string | null>(null);
   const [observedPersonPreviewState, setObservedPersonPreviewState] = useState<ObservedPersonPreview | null>(null);
+  const [freshnessExpanded, setFreshnessExpanded] = useState(false);
   const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(false);
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
@@ -10641,46 +10702,16 @@ export default function App() {
             ) : null}
 
             {freshness ? (
-              <section className="freshness-bar">
-                <Space className="freshness-main" size={[8, 8]} wrap>
-                  <Text strong>Freshness</Text>
-                  <Tag color={freshness.tagColor}>{freshness.label}</Tag>
-                  {dashboardReadModel ? (
-                    <Tooltip
-                      title={
-                        dashboardReadModel.version
-                          ? `Read-model version ${dashboardReadModel.version}`
-                          : "Read-model cache status"
-                      }
-                    >
-                      <Tag color={dashboardReadModelStatusColor(dashboardReadModel.status)}>
-                        read model {dashboardReadModelStatusLabel(dashboardReadModel.status)}
-                      </Tag>
-                    </Tooltip>
-                  ) : null}
-                  <Tag>generated {formatDate(data.sync.generatedAt)}</Tag>
-                  <Tag color={freshness.oldestLayerSuccessAt ? "default" : "red"}>
-                    oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
-                  </Tag>
-                  <Tag color={data.sync.staleObjects > 0 ? "orange" : "green"}>{data.sync.staleObjects} stale</Tag>
-                  <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>
-                    {data.sync.partialObjects} incomplete
-                  </Tag>
-                  <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
-                    {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
-                  </Tag>
-                  <Tag>loaded {formatDate(lastDashboardLoadedAt)}</Tag>
-                </Space>
-                <Space className="freshness-layers" size={[4, 4]} wrap>
-                  {data.sync.health.map((item) => (
-                    <Tooltip title={syncHealthTooltip(item)} key={item.layer}>
-                      <Tag color={syncHealthTagColor(item.status)}>
-                        {labelText(item.layer)} {formatDate(item.lastSuccessfulAt)}
-                      </Tag>
-                    </Tooltip>
-                  ))}
-                </Space>
-              </section>
+              <FreshnessStatusBar
+                freshness={freshness}
+                sync={data.sync}
+                readModel={dashboardReadModel}
+                refreshing={refreshing}
+                autoRefreshError={autoRefreshError}
+                lastLoadedAt={lastDashboardLoadedAt}
+                expanded={freshnessExpanded}
+                onExpandedChange={setFreshnessExpanded}
+              />
             ) : null}
 
             {cacheEvidence && cacheEvidence.severity !== "ok" ? (
