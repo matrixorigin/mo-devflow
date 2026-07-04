@@ -8261,6 +8261,19 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const [expandedPrs, setExpandedPrs] = useState(false);
   const visiblePrs = expandedPrs ? row.prs : row.prs.slice(0, 6);
   const hiddenPrCount = Math.max(0, row.prs.length - visiblePrs.length);
+  const issueNodeLabel =
+    row.issue.number !== null
+      ? `Issue #${row.issue.number}`
+      : row.linkedIssueNumbers.length > 0
+        ? `${row.linkedIssueNumbers.length} linked issues`
+        : "No visible issue";
+  const prNodeLabel = row.prs.length === 0 ? "No visible PR" : `${row.prs.length} visible PRs`;
+  const visibleTopologyPrs = row.prs.slice(0, 4);
+  const hiddenTopologyPrCount = Math.max(0, row.prs.length - visibleTopologyPrs.length);
+  const showAllPrs = (): void => {
+    setDetailsOpen(true);
+    setExpandedPrs(true);
+  };
 
   return (
     <article className={`flow-thread flow-thread-${row.tone}`} role="listitem">
@@ -8280,14 +8293,15 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               icon={<Eye size={14} />}
               size="small"
               onClick={() => onPreview(row)}
-            >
-              Preview
-            </Button>
+            />
           </Tooltip>
         </div>
         <div className="flow-thread-next">
-          <TimerReset size={14} aria-hidden="true" />
-          {nextAction}
+          <span>Next action</span>
+          <strong>
+            <TimerReset size={14} aria-hidden="true" />
+            {nextAction}
+          </strong>
         </div>
       </div>
 
@@ -8310,6 +8324,50 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
           {statusCounts.testingIssues > 0 ? <Tag color="blue">{statusCounts.testingIssues} testing issue</Tag> : null}
           {statusCounts.testingPrs > 0 ? <Tag color="cyan">{statusCounts.testingPrs} linked PR</Tag> : null}
           {statusCounts.sharedPrs > 0 ? <Tag color="purple">{statusCounts.sharedPrs} shared</Tag> : null}
+        </div>
+      </div>
+
+      <div className="flow-thread-topology" aria-label="Issue and PR relationship">
+        <span className="flow-thread-node flow-thread-node-issue">{issueNodeLabel}</span>
+        <span className="flow-thread-edge">links to</span>
+        <span className={`flow-thread-node ${row.prs.length === 0 ? "flow-thread-node-gap" : "flow-thread-node-pr"}`}>
+          {prNodeLabel}
+        </span>
+        <div className="flow-thread-topology-links">
+          {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
+            <span>
+              issues
+              {linkedIssueUrls.slice(0, 3).map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                  #{link.number}
+                </a>
+              ))}
+              {linkedIssueUrls.length > 3 ? <span>+{linkedIssueUrls.length - 3}</span> : null}
+            </span>
+          ) : null}
+          {visibleTopologyPrs.length > 0 ? (
+            <span>
+              PRs
+              {visibleTopologyPrs.map((pr) => (
+                <a href={pr.htmlUrl} target="_blank" rel="noreferrer" key={`pr-${pr.number}`}>
+                  #{pr.number}
+                </a>
+              ))}
+              {hiddenTopologyPrCount > 0 ? (
+                <button type="button" onClick={showAllPrs}>
+                  +{hiddenTopologyPrCount}
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+          {statusCounts.sharedPrs > 0 ? (
+            <span className="flow-thread-topology-flag">{statusCounts.sharedPrs} shared PR</span>
+          ) : null}
+          {statusCounts.unlinkedPrs > 0 ? (
+            <span className="flow-thread-topology-flag">
+              {statusCounts.unlinkedPrs} {statusCounts.unlinkedPrs === 1 ? "PR needs" : "PRs need"} issue link
+            </span>
+          ) : null}
         </div>
       </div>
 

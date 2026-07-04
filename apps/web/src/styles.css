@@ -4374,18 +4374,34 @@ button.testing-board-stat:focus-visible {
 }
 
 .flow-thread-next {
-  align-items: center;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   color: #111827;
-  display: inline-flex;
+  display: grid;
   font-size: 12px;
-  font-weight: 650;
-  gap: 5px;
+  gap: 3px;
   justify-self: start;
   line-height: 1.2;
-  padding: 5px 7px;
+  min-width: 180px;
+  padding: 6px 8px;
+}
+
+.flow-thread-next > span {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.flow-thread-next strong {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .flow-age-row {
@@ -4480,6 +4496,97 @@ button.testing-board-stat:focus-visible {
 .flow-thread-toggle:focus-visible {
   outline: 3px solid #93c5fd;
   outline-offset: 2px;
+}
+
+.flow-thread-topology {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+.flow-thread-node {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+}
+
+.flow-thread-node-issue {
+  background: #eff6ff;
+}
+
+.flow-thread-node-pr {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.flow-thread-node-gap {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.flow-thread-edge {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.flow-thread-topology-links {
+  align-items: center;
+  color: #6b7280;
+  display: flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.flow-thread-topology-links > span {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.flow-thread-topology-links a,
+.flow-thread-topology-links button {
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.15;
+  padding: 3px 7px;
+  text-decoration: none;
+}
+
+.flow-thread-topology-links a:hover,
+.flow-thread-topology-links button:hover {
+  background: #eff6ff;
+}
+
+.flow-thread-topology-flag {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  color: #4b5563;
+  padding: 3px 7px;
 }
 
 .flow-pr-row {
@@ -5446,6 +5553,10 @@ button.testing-board-stat:focus-visible {
 
   .flow-thread-header {
     flex-direction: column;
+  }
+
+  .flow-thread-topology-links {
+    justify-content: flex-start;
   }
 
   .flow-thread-body {
