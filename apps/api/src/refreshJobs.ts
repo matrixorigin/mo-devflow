@@ -69,3 +69,24 @@ export function workflowWriteRefreshJobs(input: {
     }
   ];
 }
+
+export function webhookDeliveryRefreshJobs(input: {
+  repoKey: string;
+  deliveryId: string;
+  eventName: string;
+  action: string | null;
+  receivedAt: string;
+}): RefreshJobSeed[] {
+  const payload = {
+    trigger: "github_webhook_delivery",
+    deliveryId: input.deliveryId,
+    eventName: input.eventName,
+    action: input.action,
+    receivedAt: input.receivedAt
+  };
+  return (["webhooks", "rules", "metrics", "ai_drift", "notifications"] as const).map((layer) => ({
+    jobKey: jobKeyForLayer(layer, input.repoKey),
+    jobType: layer,
+    payload
+  }));
+}

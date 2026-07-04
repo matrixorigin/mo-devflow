@@ -6,6 +6,7 @@ import { registerWebhookRoutes } from "./webhookRoutes";
 
 const mocks = vi.hoisted(() => ({
   loadRepoProfile: vi.fn(),
+  enqueueJobsNow: vi.fn(),
   recordGitHubWebhookDelivery: vi.fn(),
   recordIgnoredGitHubWebhookDelivery: vi.fn(),
   upsertRepoProfile: vi.fn()
@@ -16,6 +17,7 @@ vi.mock("@mo-devflow/config", () => ({
 }));
 
 vi.mock("@mo-devflow/db", () => ({
+  enqueueJobsNow: mocks.enqueueJobsNow,
   recordGitHubWebhookDelivery: mocks.recordGitHubWebhookDelivery,
   recordIgnoredGitHubWebhookDelivery: mocks.recordIgnoredGitHubWebhookDelivery,
   upsertRepoProfile: mocks.upsertRepoProfile
@@ -98,6 +100,7 @@ describe("webhook routes", () => {
       deliveryId: input.deliveryId,
       status: "ignored"
     }));
+    mocks.enqueueJobsNow.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -166,7 +169,8 @@ describe("webhook routes", () => {
         duplicate: false,
         deliveryId: "delivery-1",
         eventName: "issues",
-        status: "received"
+        status: "received",
+        refreshQueued: true
       });
       expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -179,6 +183,24 @@ describe("webhook routes", () => {
         })
       );
       expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            jobKey: "webhooks:matrixorigin/matrixone",
+            jobType: "webhooks",
+            payload: expect.objectContaining({
+              trigger: "github_webhook_delivery",
+              deliveryId: "delivery-1",
+              eventName: "issues",
+              action: "opened"
+            })
+          }),
+          expect.objectContaining({ jobKey: "rules:matrixorigin/matrixone", jobType: "rules" }),
+          expect.objectContaining({ jobKey: "metrics:matrixorigin/matrixone", jobType: "metrics" }),
+          expect.objectContaining({ jobKey: "ai-drift:matrixorigin/matrixone", jobType: "ai_drift" }),
+          expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
+        ])
+      );
     } finally {
       await app.close();
     }
@@ -225,6 +247,7 @@ describe("webhook routes", () => {
         })
       );
       expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledOnce();
     } finally {
       await app.close();
     }
@@ -270,6 +293,7 @@ describe("webhook routes", () => {
         })
       );
       expect(mocks.recordIgnoredGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledOnce();
     } finally {
       await app.close();
     }
@@ -317,6 +341,7 @@ describe("webhook routes", () => {
         })
       );
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -350,6 +375,7 @@ describe("webhook routes", () => {
       });
       expect(mocks.upsertRepoProfile).not.toHaveBeenCalled();
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -398,6 +424,7 @@ describe("webhook routes", () => {
         })
       );
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

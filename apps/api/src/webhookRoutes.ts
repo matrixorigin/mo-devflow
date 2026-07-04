@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { isSupportedGitHubWebhookEvent } from "@mo-devflow/shared";
 import { loadRepoProfile } from "@mo-devflow/config";
-import { recordGitHubWebhookDelivery, recordIgnoredGitHubWebhookDelivery, upsertRepoProfile } from "@mo-devflow/db";
+import {
+  enqueueJobsNow,
+  recordGitHubWebhookDelivery,
+  recordIgnoredGitHubWebhookDelivery,
+  upsertRepoProfile
+} from "@mo-devflow/db";
 import {
   githubWebhookSecretFromEnv,
   isValidGitHubWebhookSignature,
@@ -10,6 +15,7 @@ import {
   webhookActionFromPayload,
   webhookRepositoryFullNameFromPayload
 } from "./githubWebhook";
+import { webhookDeliveryRefreshJobs } from "./refreshJobs";
 
 export async function registerWebhookRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/webhooks/github", async (request, reply) => {
@@ -105,23 +111,42 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
       });
     }
 
+    const action = webhookActionFromPayload(request.body);
     const result = await recordGitHubWebhookDelivery({
       repoId,
       deliveryId: headers.deliveryId,
       eventName: headers.eventName,
-      action: webhookActionFromPayload(request.body),
+      action,
       signature256: headers.signature256,
       headers: safeWebhookHeaders(request.headers),
       payload: request.body,
       rawPayload: rawBody
     });
+    let refreshQueued = false;
+    if (!result.duplicate) {
+      try {
+        await enqueueJobsNow(
+          webhookDeliveryRefreshJobs({
+            repoKey: profile.key,
+            deliveryId: headers.deliveryId,
+            eventName: headers.eventName,
+            action,
+            receivedAt: new Date().toISOString()
+          })
+        );
+        refreshQueued = true;
+      } catch (error) {
+        request.log.error({ error, deliveryId: headers.deliveryId }, "failed to queue webhook refresh jobs");
+      }
+    }
 
     return reply.status(result.duplicate ? 200 : 202).send({
       accepted: !result.duplicate,
       duplicate: result.duplicate,
       deliveryId: result.deliveryId,
       eventName: headers.eventName,
-      status: result.status
+      status: result.status,
+      refreshQueued
     });
   });
 }

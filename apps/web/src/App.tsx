@@ -113,6 +113,8 @@ const { Header, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
+const dashboardAutoRefreshMs = 30_000;
+
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing";
 type CriticalIssueAiFilter = "all" | string;
@@ -4689,6 +4691,9 @@ export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastDashboardLoadedAt, setLastDashboardLoadedAt] = useState<string | null>(null);
+  const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<DashboardView>(initialDashboardView);
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
@@ -4717,20 +4722,47 @@ export default function App() {
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
+  const dashboardRefreshInFlight = useRef(false);
+  const latestDataRef = useRef<DashboardSummary | null>(null);
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    latestDataRef.current = data;
+  }, [data]);
+
+  async function load(options: { silent?: boolean } = {}) {
+    if (dashboardRefreshInFlight.current) {
+      return;
+    }
+    dashboardRefreshInFlight.current = true;
+    const silent = Boolean(options.silent && latestDataRef.current);
+    if (silent) {
+      setRefreshing(true);
+      setAutoRefreshError(null);
+    } else {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const response = await fetch("/api/dashboard");
       if (!response.ok) {
         throw new Error(`API returned ${response.status}`);
       }
       setData((await response.json()) as DashboardSummary);
+      setLastDashboardLoadedAt(new Date().toISOString());
+      setAutoRefreshError(null);
     } catch (err) {
-      setError(displayError(err));
+      if (silent) {
+        setAutoRefreshError(displayError(err));
+      } else {
+        setError(displayError(err));
+      }
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
+      dashboardRefreshInFlight.current = false;
     }
   }
 
@@ -5010,6 +5042,26 @@ export default function App() {
   useEffect(() => {
     void load();
     void loadSession();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void load({ silent: true });
+    };
+    const intervalId = window.setInterval(refreshIfVisible, dashboardAutoRefreshMs);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, []);
 
   useEffect(() => {
@@ -5902,7 +5954,7 @@ export default function App() {
             </Tooltip>
           )}
           <Tooltip title="Refresh cached dashboard">
-            <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading} />
+            <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading || refreshing} />
           </Tooltip>
           <Tooltip
             title={session?.authenticated ? "Queue worker refresh" : "Connect GitHub token to queue worker refresh"}
@@ -5940,6 +5992,15 @@ export default function App() {
             showIcon
           />
         ) : null}
+        {autoRefreshError && data ? (
+          <Alert
+            className="band"
+            type="warning"
+            title="Dashboard auto refresh failed"
+            description={autoRefreshError}
+            showIcon
+          />
+        ) : null}
         {loading && !data ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : data ? (
@@ -5957,6 +6018,10 @@ export default function App() {
                   <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>
                     {data.sync.partialObjects} partial
                   </Tag>
+                  <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
+                    {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
+                  </Tag>
+                  <Tag>loaded {formatDate(lastDashboardLoadedAt)}</Tag>
                 </Space>
                 <Space className="freshness-layers" size={[4, 4]} wrap>
                   {data.sync.health.map((item) => (
