@@ -89,7 +89,7 @@ function getPool() {
     host: process.env.MO_DEVFLOW_DB_HOST ?? "127.0.0.1",
     port: Number(process.env.MO_DEVFLOW_DB_PORT ?? "6001"),
     user: process.env.MO_DEVFLOW_DB_USER ?? "root",
-    password: process.env.MO_DEVFLOW_DB_PASSWORD ?? "111",
+    password: process.env.MO_DEVFLOW_DB_PASSWORD ?? "",
     database: process.env.MO_DEVFLOW_DB_NAME ?? "mo_devflow",
     waitForConnections: true,
     connectionLimit: 1,

@@ -7,7 +7,7 @@ describe("database client configuration", () => {
       host: "127.0.0.1",
       port: 6001,
       user: "root",
-      password: "111",
+      password: "",
       database: "mo_devflow",
       connectTimeoutMs: 3_000,
       connectionLimit: 10

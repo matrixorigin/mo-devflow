@@ -41,7 +41,7 @@ dev-init: setup db-create db-migrate
 
 db-create:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	mysql --protocol=TCP -h"$${MO_DEVFLOW_DB_HOST:-127.0.0.1}" -P"$${MO_DEVFLOW_DB_PORT:-6001}" -u"$${MO_DEVFLOW_DB_USER:-root}" -p"$${MO_DEVFLOW_DB_PASSWORD:-111}" -e "CREATE DATABASE IF NOT EXISTS \`$${MO_DEVFLOW_DB_NAME:-mo_devflow}\`;"
+	mysql --protocol=TCP -h"$${MO_DEVFLOW_DB_HOST:-127.0.0.1}" -P"$${MO_DEVFLOW_DB_PORT:-6001}" -u"$${MO_DEVFLOW_DB_USER:-root}" --password="$${MO_DEVFLOW_DB_PASSWORD:-}" -e "CREATE DATABASE IF NOT EXISTS \`$${MO_DEVFLOW_DB_NAME:-mo_devflow}\`;"
 
 db-migrate:
 	@npm run db:migrate
@@ -141,7 +141,7 @@ dev-status: dev-api-status dev-worker-status dev-web-status
 
 dev-db-connect:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	mysql --protocol=TCP -h"$${MO_DEVFLOW_DB_HOST:-127.0.0.1}" -P"$${MO_DEVFLOW_DB_PORT:-6001}" -u"$${MO_DEVFLOW_DB_USER:-root}" -p"$${MO_DEVFLOW_DB_PASSWORD:-111}" "$${MO_DEVFLOW_DB_NAME:-mo_devflow}"
+	mysql --protocol=TCP -h"$${MO_DEVFLOW_DB_HOST:-127.0.0.1}" -P"$${MO_DEVFLOW_DB_PORT:-6001}" -u"$${MO_DEVFLOW_DB_USER:-root}" --password="$${MO_DEVFLOW_DB_PASSWORD:-}" "$${MO_DEVFLOW_DB_NAME:-mo_devflow}"
 
 test:
 	@npm run test

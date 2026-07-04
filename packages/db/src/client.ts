@@ -17,7 +17,7 @@ export function getDbConfig(env: Record<string, string | undefined> = process.en
     host: env.MO_DEVFLOW_DB_HOST ?? "127.0.0.1",
     port: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_PORT, 6001, 1),
     user: env.MO_DEVFLOW_DB_USER ?? "root",
-    password: env.MO_DEVFLOW_DB_PASSWORD ?? "111",
+    password: env.MO_DEVFLOW_DB_PASSWORD ?? "",
     database: env.MO_DEVFLOW_DB_NAME ?? "mo_devflow",
     connectTimeoutMs: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_CONNECT_TIMEOUT_MS, 3_000, 500),
     connectionLimit: positiveIntegerFromEnv(env.MO_DEVFLOW_DB_CONNECTION_LIMIT, 10, 1)
