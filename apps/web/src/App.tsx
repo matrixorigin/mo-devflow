@@ -1822,6 +1822,90 @@ function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleSc
   return "all";
 }
 
+interface PersonCardFocus {
+  title: string;
+  detail: string;
+  metric: PersonalDrilldownFilter;
+  tone: "critical" | "attention" | "normal" | "clear";
+}
+
+function personCardFocus(person: PersonSummary, personal: PersonalActionView | undefined): PersonCardFocus {
+  const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+  const staleTestingWork = personal ? personalTestingStaleCount(personal) : 0;
+  const yesterdayPrs = person.prsCreatedYesterday + person.prsMergedYesterday;
+
+  if (person.activeCriticalIssues > 0) {
+    return {
+      title: "Drive active s-1/s0",
+      detail: `${person.activeCriticalIssues} issues, ${person.attentionPrs} PR blockers, ${testingWork} issue tests`,
+      metric: "active_issues",
+      tone: "critical"
+    };
+  }
+  if (person.attentionPrs > 0) {
+    return {
+      title: "Unblock PR rotation",
+      detail: `${person.attentionPrs} attention PRs, ${person.pendingPrs} pending PRs`,
+      metric: "pr_attention",
+      tone: "attention"
+    };
+  }
+  if (staleTestingWork > 0) {
+    return {
+      title: "Move issue testing",
+      detail: `${staleTestingWork} waiting over 24h, ${testingWork} issues in test`,
+      metric: "testing",
+      tone: "attention"
+    };
+  }
+  if (person.needsTriageIssues > 0) {
+    return {
+      title: "Triage candidate issues",
+      detail: "Decide active s-1/s0 or defer with a reason",
+      metric: "triage",
+      tone: "attention"
+    };
+  }
+  if (person.pendingPrs > 0) {
+    return {
+      title: "Review pending PR flow",
+      detail: `${person.pendingPrs} pending PRs, ${yesterdayPrs} PRs yesterday`,
+      metric: "pending_pr",
+      tone: "normal"
+    };
+  }
+  if (testingWork > 0) {
+    return {
+      title: "Track issue test result",
+      detail: `${testingWork} issues assigned to testing`,
+      metric: "testing",
+      tone: "normal"
+    };
+  }
+  if (person.deferredIssues > 0) {
+    return {
+      title: "Review deferred queue",
+      detail: `${person.deferredIssues} deferred issues need a clear reason`,
+      metric: "deferred",
+      tone: "normal"
+    };
+  }
+  if (yesterdayPrs > 0) {
+    return {
+      title: "Review recent PR activity",
+      detail: `${person.prsCreatedYesterday} created, ${person.prsMergedYesterday} merged yesterday`,
+      metric: "yesterday_pr",
+      tone: "normal"
+    };
+  }
+  return {
+    title: "No watched blocker",
+    detail: "Open the personal workbench for visible threads and history",
+    metric: "threads",
+    tone: "clear"
+  };
+}
+
 function observedPersonPreview(data: DashboardSummary, login: string): ObservedPersonPreview | null {
   const summary = observedPeopleFromDashboard({
     criticalIssues: data.criticalIssues,
@@ -6339,6 +6423,7 @@ function PersonWorkloadBoard({
         const testingWork = personal ? personalTestingWorkCount(personal) : 0;
         const status = personWorkloadStatus(person);
         const reasons = personPrimaryReasons(person, testingWork);
+        const focus = personCardFocus(person, personal);
         const selected = selectedLogin === person.login;
         const openMetric = (metric: PersonalDrilldownFilter) => {
           if (onMetricSelect) {
@@ -6368,6 +6453,16 @@ function PersonWorkloadBoard({
                   <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
                 </span>
               </span>
+            </button>
+            <button
+              type="button"
+              className={`person-next-action person-next-action-${focus.tone}`}
+              onClick={() => openMetric(focus.metric)}
+              aria-label={`Open ${person.login} ${focus.title}`}
+            >
+              <span>Next action</span>
+              <strong>{focus.title}</strong>
+              <small>{focus.detail}</small>
             </button>
             <span className="person-stat-grid">
               <button
