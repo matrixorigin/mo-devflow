@@ -3324,7 +3324,15 @@ function TeamPullRequestPreviewModal({
   );
 }
 
-function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCriticalIssueContext[]; pr: PendingPrView }) {
+function PrIssueContextCell({
+  activeIssues = [],
+  pr,
+  onPreview
+}: {
+  activeIssues?: PrCriticalIssueContext[];
+  pr: PendingPrView;
+  onPreview: () => void;
+}) {
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
   const otherIssueNumbers = pr.linkedIssueNumbers.filter((number) => !activeIssueNumbers.has(number));
 
@@ -3341,7 +3349,14 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
               </Tag>
             </Tooltip>
           ))}
-          {activeIssues.length > 3 ? <Tag>+{activeIssues.length - 3}</Tag> : null}
+          {activeIssues.length > 3 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview PR ${pr.number} with ${activeIssues.length - 3} more active issues`}
+              count={activeIssues.length - 3}
+              label="more active"
+              onClick={onPreview}
+            />
+          ) : null}
         </Space>
       ) : null}
       {otherIssueNumbers.length > 0 ? (
@@ -3352,7 +3367,14 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
               #{number}
             </a>
           ))}
-          {otherIssueNumbers.length > 3 ? <Tag>+{otherIssueNumbers.length - 3}</Tag> : null}
+          {otherIssueNumbers.length > 3 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview PR ${pr.number} with ${otherIssueNumbers.length - 3} more linked issues`}
+              count={otherIssueNumbers.length - 3}
+              label="more issues"
+              onClick={onPreview}
+            />
+          ) : null}
         </Space>
       ) : activeIssues.length === 0 ? (
         <Space size={[4, 4]} wrap>
@@ -3443,7 +3465,12 @@ function TeamTestingIssueRow({
               </Tooltip>
             ))}
             {issue.linkedPullRequests.length > linkedPrs.length ? (
-              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+              <LinkedOverflowButton
+                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
+                count={issue.linkedPullRequests.length - linkedPrs.length}
+                label="more PRs"
+                onClick={() => onPreview(issue)}
+              />
             ) : null}
           </div>
         ) : (
@@ -5435,7 +5462,16 @@ function CriticalIssueBoardRow({
               </Tooltip>
             ))}
             {issue.linkedPullRequests.length > linkedPrs.length ? (
-              <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+              onPreview ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
+                  count={issue.linkedPullRequests.length - linkedPrs.length}
+                  label="more PRs"
+                  onClick={() => onPreview(issue)}
+                />
+              ) : (
+                <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
+              )
             ) : null}
           </div>
         ) : (
@@ -5961,7 +5997,14 @@ function TestingIssueQueueRow({
             </Tooltip>
           ))
         )}
-        {issue.linkedPullRequests.length > 5 ? <span>+{issue.linkedPullRequests.length - 5}</span> : null}
+        {issue.linkedPullRequests.length > 5 ? (
+          <LinkedOverflowButton
+            ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 5} more linked PRs`}
+            count={issue.linkedPullRequests.length - 5}
+            label="more PRs"
+            onClick={() => onPreview(issue)}
+          />
+        ) : null}
       </div>
     </article>
   );
@@ -7021,7 +7064,18 @@ function IssueWorkCard({
               </a>
             </Tooltip>
           ))}
-          {issue.linkedPullRequests.length > 4 ? <span>+{issue.linkedPullRequests.length - 4}</span> : null}
+          {issue.linkedPullRequests.length > 4 ? (
+            onPreview ? (
+              <LinkedOverflowButton
+                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 4} more linked PRs`}
+                count={issue.linkedPullRequests.length - 4}
+                label="more PRs"
+                onClick={() => onPreview(issue)}
+              />
+            ) : (
+              <span>+{issue.linkedPullRequests.length - 4}</span>
+            )
+          ) : null}
         </div>
       ) : null}
       {reasons.length > 0 ? (
@@ -10842,7 +10896,19 @@ export default function App() {
       {
         title: "Issue context",
         width: 340,
-        render: (_, pr) => <PrIssueContextCell activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} />
+        render: (_, pr) => (
+          <PrIssueContextCell
+            activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+            pr={pr}
+            onPreview={() =>
+              setWorkObjectPreview({
+                objectType: "pull_request",
+                pr,
+                activeIssues: criticalIssuesByPr.get(pr.number) ?? []
+              })
+            }
+          />
+        )
       },
       {
         title: "Evidence",
