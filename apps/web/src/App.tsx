@@ -1361,6 +1361,9 @@ function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "evidence_pending") {
     return "PR review, CI, merge, or issue-link evidence is still incomplete for these rows.";
   }
+  if (filter === "testing_evidence_gap") {
+    return "The linked issue appears to be in testing, but the PR-side cached evidence is incomplete or not synchronized yet.";
+  }
   return null;
 }
 
@@ -1809,6 +1812,7 @@ function PrFilterBar({
             { label: "Attention", value: "attention" },
             { label: "Issue in test", value: "testing" },
             { label: "Stale test", value: "stale_testing" },
+            { label: "Test evidence gap", value: "testing_evidence_gap" },
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
