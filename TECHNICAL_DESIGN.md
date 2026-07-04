@@ -450,6 +450,7 @@ Derived state should include:
 - AI estimate drift status.
 - Workflow violations.
 - Attention items.
+- Profile setup plan with missing capabilities, candidate logins, and a merged YAML patch for watched users, testing handoff, and notification employee mappings.
 
 Deferred explanation checks depend on cached issue comments. A `deferred_missing_explanation_comment` violation should only be emitted when the issue comment sync is complete and no cached comment contains a deferred reason. Partial comment evidence should suppress that rule rather than produce a misleading violation.
 

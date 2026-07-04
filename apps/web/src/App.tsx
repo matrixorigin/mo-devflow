@@ -182,6 +182,16 @@ function profileWarningAlertType(severity: ProfileConfigurationWarning["severity
   return "info";
 }
 
+function profileSetupCapabilityLabel(value: DashboardSummary["profileSetup"]["missingCapabilities"][number]): string {
+  if (value === "watched_users") {
+    return "watched users";
+  }
+  if (value === "testing_handoff") {
+    return "testing handoff";
+  }
+  return "notification employees";
+}
+
 function attentionSeverityColor(severity: "info" | "warning" | "critical"): string {
   if (severity === "critical") {
     return "red";
@@ -1789,6 +1799,30 @@ export default function App() {
                       <Title level={4}>Profile Actions</Title>
                       <Tag color="orange">{data.profileActions.length}</Tag>
                     </div>
+                    {data.profileSetup.status === "action_required" && data.profileSetup.yamlPatch ? (
+                      <div className="profile-setup-summary">
+                        <div className="subsection-heading">
+                          <Title level={5}>Setup Patch</Title>
+                          <Space size={[4, 4]} wrap>
+                            {data.profileSetup.missingCapabilities.map((capability) => (
+                              <Tag color="orange" key={capability}>
+                                {profileSetupCapabilityLabel(capability)}
+                              </Tag>
+                            ))}
+                          </Space>
+                        </div>
+                        {data.profileSetup.candidateLogins.length > 0 ? (
+                          <Space size={[4, 4]} wrap>
+                            {data.profileSetup.candidateLogins.map((login) => (
+                              <Tag key={login}>{login}</Tag>
+                            ))}
+                          </Space>
+                        ) : null}
+                        <Paragraph className="config-snippet" copyable={{ text: data.profileSetup.yamlPatch }}>
+                          {data.profileSetup.yamlPatch}
+                        </Paragraph>
+                      </div>
+                    ) : null}
                     <Space orientation="vertical" size={12} className="full-width">
                       {data.profileActions.map((suggestion) => (
                         <Alert

@@ -117,6 +117,15 @@ export interface ProfileActionSuggestion {
   yamlSnippet: string | null;
 }
 
+export type ProfileSetupCapability = "watched_users" | "testing_handoff" | "notification_employees";
+
+export interface ProfileSetupPlan {
+  status: "complete" | "action_required";
+  missingCapabilities: ProfileSetupCapability[];
+  candidateLogins: string[];
+  yamlPatch: string | null;
+}
+
 export interface NormalizedIssue {
   githubId: number;
   number: number;
@@ -729,6 +738,7 @@ export interface DashboardSummary {
   };
   profileWarnings: ProfileConfigurationWarning[];
   profileActions: ProfileActionSuggestion[];
+  profileSetup: ProfileSetupPlan;
   visibility: DashboardVisibility;
   sync: {
     generatedAt: string;

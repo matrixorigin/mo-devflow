@@ -23,6 +23,8 @@ import type {
   PersonSummary,
   ProfileActionSuggestion,
   ProfileConfigurationWarning,
+  ProfileSetupCapability,
+  ProfileSetupPlan,
   RepoProfile,
   SyncHealth,
   SyncHealthLayer,
@@ -432,6 +434,72 @@ export function profileActionSuggestions(
   }
 
   return suggestions;
+}
+
+function actionLogins(actions: ProfileActionSuggestion[], key: string): string[] {
+  return actions.find((action) => action.key === key)?.relatedLogins ?? [];
+}
+
+function uniqueLogins(values: string[]): string[] {
+  const seen = new Set<string>();
+  const logins: string[] = [];
+  for (const value of values) {
+    const key = normalizedLogin(value);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    logins.push(value);
+  }
+  return logins;
+}
+
+function yamlList(values: string[], indent: string): string[] {
+  return values.map((value) => `${indent}- ${value}`);
+}
+
+export function profileSetupPlan(profile: RepoProfile, actions: ProfileActionSuggestion[]): ProfileSetupPlan {
+  const watchedUsers = uniqueLogins(actionLogins(actions, "profile:watched_users_candidates"));
+  const testingReviewers = uniqueLogins(actionLogins(actions, "profile:testing_reviewer_candidates"));
+  const notificationLogins = uniqueLogins(actionLogins(actions, "profile:notification_employee_mapping_candidates"));
+  const missingCapabilities: ProfileSetupCapability[] = [];
+  const patchLines: string[] = [];
+
+  if (watchedUsers.length > 0) {
+    missingCapabilities.push("watched_users");
+  }
+  if (testingReviewers.length > 0) {
+    missingCapabilities.push("testing_handoff");
+  }
+  if (notificationLogins.length > 0) {
+    missingCapabilities.push("notification_employees");
+  }
+
+  if (watchedUsers.length > 0 || testingReviewers.length > 0) {
+    patchLines.push("people:");
+    if (watchedUsers.length > 0) {
+      patchLines.push("  watched_users:", ...yamlList(watchedUsers, "    "));
+    }
+    if (testingReviewers.length > 0) {
+      patchLines.push("  testers:", ...yamlList(testingReviewers, "    "));
+    }
+  }
+  if (testingReviewers.length > 0) {
+    patchLines.push("testing:", "  handoff_signals:", "    reviewer_users:", ...yamlList(testingReviewers, "      "));
+  }
+  if (notificationLogins.length > 0) {
+    patchLines.push("notifications:", "  employees:");
+    for (const login of notificationLogins) {
+      patchLines.push(`    ${login}:`, `      wecom_user_id: ${employeePlaceholder(login)}`);
+    }
+  }
+
+  return {
+    status: missingCapabilities.length > 0 ? "action_required" : "complete",
+    missingCapabilities,
+    candidateLogins: uniqueLogins([...watchedUsers, ...testingReviewers, ...notificationLogins]),
+    yamlPatch: patchLines.length > 0 ? patchLines.join("\n") : null
+  };
 }
 
 export function profileConfigurationWarnings(input: {
@@ -2350,6 +2418,12 @@ export async function getDashboardSummary(
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
+  const profileActions = profileActionSuggestions(
+    profile,
+    criticalOwnerCoverage,
+    testingReviewerCandidates,
+    notificationMappingCandidates
+  );
 
   return {
     repo: {
@@ -2359,12 +2433,8 @@ export async function getDashboardSummary(
       timezone: profile.reporting.timezone
     },
     profileWarnings: profileConfigurationWarnings({ profile, env: process.env }),
-    profileActions: profileActionSuggestions(
-      profile,
-      criticalOwnerCoverage,
-      testingReviewerCandidates,
-      notificationMappingCandidates
-    ),
+    profileActions,
+    profileSetup: profileSetupPlan(profile, profileActions),
     visibility,
     sync: {
       generatedAt: new Date().toISOString(),

@@ -18,6 +18,7 @@ import {
   previousCalendarDayRange,
   profileActionSuggestions,
   profileConfigurationWarnings,
+  profileSetupPlan,
   testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
@@ -398,6 +399,80 @@ describe("profile configuration guidance", () => {
         yamlSnippet: "people:\n  watched_users:\n    - alice\n    - bob"
       }
     ]);
+  });
+
+  test("builds a merged profile setup patch from action suggestions", () => {
+    const actions = profileActionSuggestions(
+      {
+        ...baseProfile,
+        notifications: {
+          ...baseProfile.notifications,
+          wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+        }
+      },
+      [
+        { ownerLogin: "alice", ownerScope: "non_watched", criticalIssues: 5, averageAgeHours: 8 },
+        { ownerLogin: "bob", ownerScope: "non_watched", criticalIssues: 2, averageAgeHours: 20 }
+      ],
+      [
+        { login: "qa-a", openPrs: 8 },
+        { login: "qa-b", openPrs: 4 }
+      ],
+      [
+        { login: "alice", attentionItems: 3, highestSeverity: "critical" },
+        { login: "qa-a", attentionItems: 1, highestSeverity: "warning" }
+      ]
+    );
+
+    expect(profileSetupPlan(baseProfile, actions)).toEqual({
+      status: "action_required",
+      missingCapabilities: ["watched_users", "testing_handoff", "notification_employees"],
+      candidateLogins: ["alice", "bob", "qa-a", "qa-b"],
+      yamlPatch:
+        "people:\n" +
+        "  watched_users:\n" +
+        "    - alice\n" +
+        "    - bob\n" +
+        "  testers:\n" +
+        "    - qa-a\n" +
+        "    - qa-b\n" +
+        "testing:\n" +
+        "  handoff_signals:\n" +
+        "    reviewer_users:\n" +
+        "      - qa-a\n" +
+        "      - qa-b\n" +
+        "notifications:\n" +
+        "  employees:\n" +
+        "    alice:\n" +
+        "      wecom_user_id: TODO_ALICE\n" +
+        "    qa-a:\n" +
+        "      wecom_user_id: TODO_QA_A"
+    });
+  });
+
+  test("marks profile setup complete when no action suggestions remain", () => {
+    expect(
+      profileSetupPlan(
+        {
+          ...baseProfile,
+          people: { watchedUsers: ["alice"], testers: ["qa"] },
+          testing: {
+            handoffSignals: {
+              labels: [],
+              reviewerUsers: ["qa"],
+              assigneeUsers: [],
+              comments: []
+            }
+          }
+        },
+        []
+      )
+    ).toEqual({
+      status: "complete",
+      missingCapabilities: [],
+      candidateLogins: [],
+      yamlPatch: null
+    });
   });
 
   test("excludes workflow skip users from configuration suggestions", () => {

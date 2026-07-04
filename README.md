@@ -86,6 +86,12 @@ critical issues, watched-user summaries, pending PRs, workflow violations, AI
 drift signals, testing queue state, cached analytics, owner attribution, and
 data freshness indicators.
 
+When watched users, testing handoff, or notification employee mappings are not
+configured, the dashboard surfaces profile setup actions plus one merged YAML
+setup patch. The patch is derived from cached owners, requested reviewers, and
+active notification candidates so maintainers can review a single profile
+change instead of piecing together separate snippets.
+
 Issue comment backfill is available for workflow rules that need comment
 evidence. Deferred issues only raise a missing-explanation violation after the
 comment sync for that issue is complete; partial comment evidence suppresses the
