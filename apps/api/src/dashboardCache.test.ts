@@ -124,6 +124,20 @@ describe("dashboard summary cache", () => {
     expect(fallback.summary).toEqual(summary("first"));
     expect(buildSummary).toHaveBeenCalledTimes(1);
   });
+
+  test("serves the previous summary when rebuilding fails after a successful build", async () => {
+    const cache = createDashboardSummaryCache({ now: () => 1_000, ttlMs: 10_000 });
+    const buildSummary = vi.fn().mockResolvedValueOnce(summary("first")).mockRejectedValueOnce(new Error("db lost"));
+    const loadVersion = vi.fn().mockResolvedValueOnce("v1").mockResolvedValueOnce("v2");
+
+    await cache.get({ profile, viewer: anonymousViewer, loadVersion, buildSummary });
+    const fallback = await cache.get({ profile, viewer: anonymousViewer, loadVersion, buildSummary });
+
+    expect(fallback.status).toBe("stale-if-error");
+    expect(fallback.summary).toEqual(summary("first"));
+    expect(fallback.version).toBe("v1");
+    expect(buildSummary).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("dashboard cache ttl config", () => {

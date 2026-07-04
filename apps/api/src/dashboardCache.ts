@@ -85,7 +85,20 @@ export function createDashboardSummaryCache(options: { now?: () => number; ttlMs
         };
       }
 
-      const summary = await request.buildSummary();
+      let summary: DashboardSummary;
+      try {
+        summary = await request.buildSummary();
+      } catch (error) {
+        if (cached) {
+          return {
+            etag: cached.etag,
+            status: "stale-if-error",
+            summary: cached.summary,
+            version: cached.version
+          };
+        }
+        throw error;
+      }
       if (ttlMs > 0) {
         entries.set(key, {
           etag,

@@ -19,6 +19,7 @@ import { registerNotificationRoutes } from "./notificationRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashboardCache";
+import { readCookieValue, sessionCookieName } from "./sessionCookie";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -127,29 +128,45 @@ app.get("/health", async (_request, reply) => {
 
 app.get("/api/dashboard", async (request, reply) => {
   try {
-    await ensureMigrationReady();
     const profile = loadRepoProfile();
-    const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
-    const session = await getSessionRecordFromRequest(request, reply);
+    const hasSessionCookie = readCookieValue(request.headers.cookie, sessionCookieName) !== null;
+    let session: Awaited<ReturnType<typeof getSessionRecordFromRequest>>;
+    try {
+      session = await getSessionRecordFromRequest(request, reply);
+    } catch (error) {
+      if (hasSessionCookie) {
+        throw error;
+      }
+      session = null;
+    }
     const viewer = {
       authenticated: Boolean(session),
       userId: session?.userId ?? null
     };
     const ifNoneMatchHeader = request.headers["if-none-match"];
     const ifNoneMatch = Array.isArray(ifNoneMatchHeader) ? ifNoneMatchHeader.join(",") : ifNoneMatchHeader;
+    let repoId: number | null = null;
+    const resolveRepoId = async (): Promise<number> => {
+      if (repoId !== null) {
+        return repoId;
+      }
+      await ensureMigrationReady();
+      repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
+      return repoId;
+    };
     const result = await dashboardCache.get({
       profile,
       viewer,
       ifNoneMatch,
       loadVersion: async () => {
         try {
-          return await getDashboardDataVersion(repoId);
+          return await getDashboardDataVersion(await resolveRepoId());
         } catch (error) {
           app.log.warn({ error, repoKey: profile.key }, "dashboard data version query failed");
           throw error;
         }
       },
-      buildSummary: () => getDashboardSummary(profile, repoId, viewer)
+      buildSummary: async () => getDashboardSummary(profile, await resolveRepoId(), viewer)
     });
     reply.header("Cache-Control", `private, max-age=${Math.floor(dashboardCacheTtlMs / 1000)}, must-revalidate`);
     reply.header("ETag", result.etag);

@@ -104,6 +104,10 @@ The dashboard API uses a short read-model cache keyed by repo profile, viewer,
 and an incremental database version across issues, PRs, sync runs, webhook
 deliveries, notifications, metrics, and write audit state. Set
 `MO_DEVFLOW_DASHBOARD_CACHE_SECONDS=0` to disable it during debugging.
+When the version probe or summary rebuild fails after a successful dashboard
+build, the API can return the previous in-memory snapshot with
+`X-MO-Devflow-Dashboard-Cache: stale-if-error` instead of dropping the
+dashboard during a transient MatrixOne outage.
 Logged-in users can queue layer-scoped refresh jobs from the dashboard instead
 of spending GitHub rate limit on every sync layer.
 GitHub rate-limit failures are retried after the advertised reset window, while
