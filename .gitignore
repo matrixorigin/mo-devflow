@@ -4,6 +4,7 @@ build/
 .vite/
 .env
 deployment/all-in-one/.env
+config/repos/*.local.yaml
 *.log
 *.pid
 coverage/

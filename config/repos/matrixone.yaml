@@ -1,7 +1,6 @@
 repo:
   owner: matrixorigin
   name: matrixone
-  local_path: /Users/xupeng/github/matrixone
 
 reporting:
   timezone: Asia/Shanghai
@@ -14,32 +13,10 @@ access:
   write_back_enabled: false
 
 people:
-  # Bootstrapped from active critical owners visible in the local cache.
-  watched_users:
-    - iamlinjunhong
-    - ck89119
-    - daviszhen
-    - aptend
-    - jiangxinmeng1
-    - LeftHandCold
-    - dengn
-    - aunjgr
-    - XuPeng-SH
-  # Bootstrapped from requested reviewers visible on open PRs. Review this
-  # list with the MatrixOne workflow owner before enabling notifications.
-  testers:
-    - ouyuanning
-    - aunjgr
-    - XuPeng-SH
-    - iamlinjunhong
-    - fengttt
-    - LeftHandCold
-    - aptend
-    - xzxiong
-    - gouhongshen
-    - volgariver6
-    - zhangxu19830126
-    - jiangxinmeng1
+  # Put real watched users and tester identities in an untracked local profile,
+  # for example config/repos/matrixone.local.yaml, and point MO_DEVFLOW_PROFILE at it.
+  watched_users: []
+  testers: []
 
 ownership:
   issue_owner_priority:
@@ -96,21 +73,10 @@ thresholds:
   ai_easy_critical_critical_days: 14
 
 testing:
+  handoff_scope: issue
   handoff_signals:
     labels: []
-    reviewer_users:
-      - ouyuanning
-      - aunjgr
-      - XuPeng-SH
-      - iamlinjunhong
-      - fengttt
-      - LeftHandCold
-      - aptend
-      - xzxiong
-      - gouhongshen
-      - volgariver6
-      - zhangxu19830126
-      - jiangxinmeng1
+    reviewer_users: []
     assignee_users: []
     comments: []
   states:
@@ -123,6 +89,4 @@ testing:
     closed_or_merged: {}
 
 workflow:
-  skip_users:
-    - heni02
-    - Ariznawlll
+  skip_users: []
