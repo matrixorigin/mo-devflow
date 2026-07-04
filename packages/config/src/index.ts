@@ -7,7 +7,8 @@ import type { RepoProfile } from "@mo-devflow/shared";
 
 const notificationRoutingEntrySchema = z.object({
   cooldown_hours: z.number().min(0).optional(),
-  fallback_recipient: z.string().optional()
+  fallback_recipient: z.string().optional(),
+  escalate_after_hours: z.number().min(1).optional()
 });
 
 const profileSchema = z.object({
@@ -200,7 +201,11 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
         fallbackRecipient:
           parsed.notifications.routing.default?.fallback_recipient ??
           parsed.notifications.routing.critical_issue_stalled?.fallback_recipient ??
-          "maintainer_group"
+          "maintainer_group",
+        escalateAfterHours:
+          parsed.notifications.routing.critical_issue_stalled?.escalate_after_hours ??
+          parsed.notifications.routing.default?.escalate_after_hours ??
+          24
       }
     },
     raw

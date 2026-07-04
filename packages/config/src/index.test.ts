@@ -59,4 +59,31 @@ workflow:
     expect(profile.access.writeBackEnabled).toBe(false);
     expect(profile.workflow.skipUsers).toEqual(["heni02", "Ariznawlll"]);
   });
+
+  test("maps critical notification escalation policy into the repo profile", () => {
+    const profilePath = writeProfile(`
+repo:
+  owner: matrixorigin
+  name: matrixone
+access:
+  anonymous_read: true
+  expose_user_token_synced_private_data: false
+  critical_scope: repo-wide
+  write_back_enabled: false
+labels: {}
+workflow:
+  skip_users: []
+notifications:
+  routing:
+    critical_issue_stalled:
+      cooldown_hours: 6
+      fallback_recipient: maintainers
+      escalate_after_hours: 18
+`);
+
+    const profile = loadRepoProfile(profilePath);
+    expect(profile.notifications.routing.cooldownHours).toBe(6);
+    expect(profile.notifications.routing.fallbackRecipient).toBe("maintainers");
+    expect(profile.notifications.routing.escalateAfterHours).toBe(18);
+  });
 });

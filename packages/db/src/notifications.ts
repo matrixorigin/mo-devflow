@@ -9,7 +9,7 @@ import type {
 } from "@mo-devflow/shared";
 import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
-import { fromSqlDate, getPool, nowSql } from "./client";
+import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { addDaysToDateKey, dateKeyInTimezone } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 
@@ -49,6 +49,10 @@ function githubObjectUrl(profile: RepoProfile, objectType: string, objectNumber:
   }
   const segment = objectType === "pull_request" ? "pull" : "issues";
   return `https://github.com/${profile.repo.owner}/${profile.repo.name}/${segment}/${objectNumber}`;
+}
+
+function notificationObjectText(objectType: string, objectNumber: number | null): string {
+  return objectNumber === null ? objectType : `${objectType} #${objectNumber}`;
 }
 
 export function notificationDashboardBaseUrlFromEnv(env: Record<string, string | undefined> = process.env): string {
@@ -146,11 +150,11 @@ export function notificationDeliveryVisibilityWhereSql(
 
 export function notificationSourceObjectVisibilityWhereSql(
   sourceAlias: string,
-  profile: RepoProfile
+  profile: RepoProfile,
+  viewer: DashboardViewer = { authenticated: true, userId: null }
 ): { sql: string; params: number[] } {
-  const notificationViewer = { authenticated: true, userId: null };
-  const issueVisibility = dashboardVisibilityFilter("i", profile, notificationViewer);
-  const pullRequestVisibility = dashboardVisibilityFilter("p", profile, notificationViewer);
+  const issueVisibility = dashboardVisibilityFilter("i", profile, viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", profile, viewer);
 
   return {
     sql: [
@@ -191,6 +195,43 @@ export interface DailyDigestPersonMetrics {
   prsCreated: number;
   prsMerged: number;
   workflowViolationsDetected: number;
+}
+
+export function buildCriticalNotificationEscalationCandidate(input: {
+  profile: RepoProfile;
+  sourceId: number;
+  ruleKey: string;
+  objectType: string;
+  objectNumber: number | null;
+  dashboardUrl: string;
+  htmlUrl: string | null;
+  relatedLogin: string | null;
+  evidenceSummary: string;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  lastSentAt: string;
+  escalationHours: number;
+}): NotificationCandidate {
+  const objectText = notificationObjectText(input.objectType, input.objectNumber);
+  return {
+    sourceType: "attention_item",
+    sourceId: input.sourceId,
+    ruleKey: `${input.ruleKey}:escalation`,
+    severity: "critical",
+    objectType: input.objectType,
+    objectNumber: input.objectNumber,
+    title: `Escalation: ${objectText}`,
+    htmlUrl: input.htmlUrl,
+    dashboardUrl: input.dashboardUrl,
+    relatedLogin: input.relatedLogin,
+    recipient: input.profile.notifications.routing.fallbackRecipient,
+    dedupeKey: `notification:attention_item_escalation:${input.sourceId}:${input.ruleKey}`,
+    evidenceSummary:
+      `${input.evidenceSummary}\nEscalation: the previous critical notification sent at ${input.lastSentAt} ` +
+      `has remained unacknowledged for at least ${input.escalationHours}h.`,
+    firstDetectedAt: input.firstDetectedAt,
+    lastDetectedAt: input.lastDetectedAt
+  };
 }
 
 export function buildDailyDigestNotificationCandidate(input: {
@@ -286,7 +327,60 @@ export async function listNotificationCandidates(
   const candidates: NotificationCandidate[] = [];
   const immediateLimit = limit > 1 ? limit - 1 : 1;
   const dashboardBaseUrl = notificationDashboardBaseUrlFromEnv();
+  const escalationHours = profile.notifications.routing.escalateAfterHours;
+  const escalationCutoff = sqlDate(new Date(Date.now() - escalationHours * 3_600_000));
   const attentionVisibility = notificationSourceObjectVisibilityWhereSql("a", profile);
+  if (escalationCutoff) {
+    const [escalationRows] = await getPool().execute<RowData[]>(
+      `SELECT a.*, d.attempted_at AS last_sent_at
+       FROM attention_items a
+       JOIN (
+         SELECT source_id, MAX(attempted_at) AS last_sent_at
+         FROM notification_deliveries
+         WHERE repo_id = ? AND source_type = 'attention_item' AND status = 'sent'
+         GROUP BY source_id
+       ) latest_sent ON latest_sent.source_id = a.id
+       JOIN notification_deliveries d
+         ON d.repo_id = a.repo_id
+        AND d.source_type = 'attention_item'
+        AND d.source_id = a.id
+        AND d.status = 'sent'
+        AND d.attempted_at = latest_sent.last_sent_at
+       LEFT JOIN notification_acknowledgements ack ON ack.notification_delivery_id = d.id
+       WHERE a.repo_id = ?
+         AND a.resolved_at IS NULL
+         AND a.severity = 'critical'
+         AND ack.id IS NULL
+         AND d.attempted_at <= ?
+         AND ${attentionVisibility.sql}
+       ORDER BY d.attempted_at ASC, a.last_detected_at DESC
+       LIMIT ?`,
+      [repoId, repoId, escalationCutoff, ...attentionVisibility.params, immediateLimit]
+    );
+    for (const row of escalationRows) {
+      const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
+      const relatedLogin = row.related_login ? asString(row.related_login) : null;
+      candidates.push(
+        buildCriticalNotificationEscalationCandidate({
+          profile,
+          sourceId: asNumber(row.id),
+          ruleKey: asString(row.rule_key),
+          objectType: asString(row.object_type),
+          objectNumber,
+          dashboardUrl: asString(row.dashboard_url),
+          htmlUrl: githubObjectUrl(profile, asString(row.object_type), objectNumber),
+          relatedLogin,
+          evidenceSummary: asString(row.evidence_summary),
+          firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+          lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
+          lastSentAt: fromSqlDate(row.last_sent_at) ?? new Date().toISOString(),
+          escalationHours
+        })
+      );
+    }
+  }
+
+  const remainingAfterEscalations = Math.max(0, immediateLimit - candidates.length);
   const [attentionRows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM attention_items a
@@ -295,7 +389,7 @@ export async function listNotificationCandidates(
        CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        a.last_detected_at DESC
      LIMIT ?`,
-    [repoId, ...attentionVisibility.params, immediateLimit]
+    [repoId, ...attentionVisibility.params, remainingAfterEscalations]
   );
   for (const row of attentionRows) {
     const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
@@ -307,7 +401,7 @@ export async function listNotificationCandidates(
       severity: notificationSeverity(row.severity),
       objectType: asString(row.object_type),
       objectNumber,
-      title: `${asString(row.object_type)} ${objectNumber ?? ""}`.trim(),
+      title: notificationObjectText(asString(row.object_type), objectNumber),
       htmlUrl: githubObjectUrl(profile, asString(row.object_type), objectNumber),
       dashboardUrl: asString(row.dashboard_url),
       relatedLogin,
@@ -580,6 +674,33 @@ export async function getNotificationHealth(input: {
        AND ${visibility.sql}`,
     [input.repoId, ...visibility.params]
   );
+  const escalationHours = input.profile.notifications.routing.escalateAfterHours;
+  const escalationCutoff = sqlDate(new Date(Date.now() - escalationHours * 3_600_000));
+  const escalationVisibility = notificationSourceObjectVisibilityWhereSql("a", input.profile, input.viewer);
+  const [escalationRows] = await getPool().execute<RowData[]>(
+    `SELECT COUNT(DISTINCT a.id) AS escalation_count
+     FROM attention_items a
+     JOIN (
+       SELECT source_id, MAX(attempted_at) AS last_sent_at
+       FROM notification_deliveries
+       WHERE repo_id = ? AND source_type = 'attention_item' AND status = 'sent'
+       GROUP BY source_id
+     ) latest_sent ON latest_sent.source_id = a.id
+     JOIN notification_deliveries d
+       ON d.repo_id = a.repo_id
+      AND d.source_type = 'attention_item'
+      AND d.source_id = a.id
+      AND d.status = 'sent'
+      AND d.attempted_at = latest_sent.last_sent_at
+     LEFT JOIN notification_acknowledgements ack ON ack.notification_delivery_id = d.id
+     WHERE a.repo_id = ?
+       AND a.resolved_at IS NULL
+       AND a.severity = 'critical'
+       AND ack.id IS NULL
+       AND d.attempted_at <= ?
+       AND ${escalationVisibility.sql}`,
+    [input.repoId, input.repoId, escalationCutoff, ...escalationVisibility.params]
+  );
 
   const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
     id: asNumber(row.id),
@@ -603,8 +724,10 @@ export async function getNotificationHealth(input: {
       input.profile.notifications.wecom.webhookUrlEnv && process.env[input.profile.notifications.wecom.webhookUrlEnv]
     ),
     cooldownHours: input.profile.notifications.routing.cooldownHours,
+    escalateAfterHours: escalationHours,
     failedDeliveries: asNumber(deliveryFailureRows[0]?.failed_count),
     unacknowledgedDeliveries: asNumber(unacknowledgedRows[0]?.unacknowledged_count),
+    escalationPendingDeliveries: asNumber(escalationRows[0]?.escalation_count),
     lastDeliveries
   };
 }

@@ -65,7 +65,7 @@ const baseProfile: RepoProfile = {
   notifications: {
     wecom: { enabled: false },
     employees: {},
-    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group" }
+    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group", escalateAfterHours: 24 }
   },
   raw: {}
 };

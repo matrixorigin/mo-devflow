@@ -3,6 +3,7 @@ import type { RepoProfile } from "@mo-devflow/shared";
 import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import {
   activeNotificationDeliverySourceWhereSql,
+  buildCriticalNotificationEscalationCandidate,
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
   notificationDeliveryVisibilityWhereSql,
@@ -54,7 +55,7 @@ const profile: RepoProfile = {
   notifications: {
     wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" },
     employees: {},
-    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group" }
+    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group", escalateAfterHours: 24 }
   },
   raw: {}
 };
@@ -126,6 +127,40 @@ describe("daily digest notification candidates", () => {
 });
 
 describe("notification acknowledgement health", () => {
+  test("builds critical escalation candidates for unacknowledged attention items", () => {
+    const candidate = buildCriticalNotificationEscalationCandidate({
+      profile,
+      sourceId: 42,
+      ruleKey: "critical_no_human_action",
+      objectType: "issue",
+      objectNumber: 24413,
+      dashboardUrl: "https://devflow.example.com/#overview",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/24413",
+      relatedLogin: "alice",
+      evidenceSummary: "Critical issue #24413 has no recent human action.",
+      firstDetectedAt: "2026-07-01T00:00:00.000Z",
+      lastDetectedAt: "2026-07-03T00:00:00.000Z",
+      lastSentAt: "2026-07-02T00:00:00.000Z",
+      escalationHours: 24
+    });
+
+    expect(candidate).toMatchObject({
+      sourceType: "attention_item",
+      sourceId: 42,
+      ruleKey: "critical_no_human_action:escalation",
+      severity: "critical",
+      objectType: "issue",
+      objectNumber: 24413,
+      title: "Escalation: issue #24413",
+      dashboardUrl: "https://devflow.example.com/#overview",
+      relatedLogin: "alice",
+      recipient: "maintainer_group",
+      dedupeKey: "notification:attention_item_escalation:42:critical_no_human_action"
+    });
+    expect(candidate.evidenceSummary).toContain("unacknowledged for at least 24h");
+    expect(candidate.evidenceSummary).toContain("Critical issue #24413 has no recent human action.");
+  });
+
   test("counts only actually sent deliveries as awaiting acknowledgement", () => {
     expect(notificationStatusRequiresAcknowledgement("sent")).toBe(true);
     expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);

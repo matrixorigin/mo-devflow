@@ -94,6 +94,7 @@ export interface RepoProfile {
     routing: {
       cooldownHours: number;
       fallbackRecipient: string;
+      escalateAfterHours: number;
     };
   };
   raw: unknown;
@@ -605,8 +606,10 @@ export interface NotificationHealth {
   channel: "wecom";
   webhookConfigured: boolean;
   cooldownHours: number;
+  escalateAfterHours: number;
   failedDeliveries: number;
   unacknowledgedDeliveries: number;
+  escalationPendingDeliveries: number;
   lastDeliveries: NotificationDeliveryView[];
 }
 

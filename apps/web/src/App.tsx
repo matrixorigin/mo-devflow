@@ -2065,6 +2065,9 @@ export default function App() {
                     <Tag color={data.notifications.unacknowledgedDeliveries > 0 ? "orange" : "green"}>
                       {data.notifications.unacknowledgedDeliveries} unacknowledged
                     </Tag>
+                    <Tag color={data.notifications.escalationPendingDeliveries > 0 ? "red" : "green"}>
+                      {data.notifications.escalationPendingDeliveries} escalation pending
+                    </Tag>
                   </Space>
                 </div>
                 {notificationAckError ? (
@@ -2073,6 +2076,14 @@ export default function App() {
                     type="error"
                     title="Notification acknowledgement failed"
                     description={notificationAckError}
+                    showIcon
+                  />
+                ) : null}
+                {data.notifications.escalationPendingDeliveries > 0 ? (
+                  <Alert
+                    className="band"
+                    type="error"
+                    title={`${data.notifications.escalationPendingDeliveries} critical notification acknowledgements are older than ${data.notifications.escalateAfterHours}h.`}
                     showIcon
                   />
                 ) : null}
