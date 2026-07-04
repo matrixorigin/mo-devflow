@@ -3256,6 +3256,8 @@ function TestingCommandBoard({
         />
       </div>
 
+      <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
+
       {testerRows.length > 0 ? (
         <div className="testing-tester-strip" aria-label="Tester queue ownership">
           {testerRows.map((tester) => (
@@ -3334,6 +3336,73 @@ function TestingBoardStat({
     );
   }
   return <span className={`testing-board-stat testing-board-stat-${tone}`}>{content}</span>;
+}
+
+function TestingTurnoverBreakdown({
+  testing,
+  partialTransitions
+}: {
+  testing: DashboardSummary["testing"];
+  partialTransitions: number;
+}) {
+  const requestToPassTone =
+    testing.averageRequestToPassHours !== null && testing.averageRequestToPassHours >= 24 ? "attention" : "normal";
+  const passToCloseTone =
+    testing.averagePassToCloseHours !== null && testing.averagePassToCloseHours >= 24 ? "attention" : "normal";
+  const hasSamples = testing.requestToPassSamples > 0 || testing.passToCloseSamples > 0;
+
+  return (
+    <div className="testing-turnover-strip" aria-label="Testing turnover breakdown">
+      <TestingTurnoverCard
+        label="Current wait"
+        value={testing.averageQueueAgeHours === null ? "-" : hours(testing.averageQueueAgeHours)}
+        detail={`${testing.queuePrs} issues in test | ${testing.staleQueuePrs} waiting`}
+        tone={testing.staleQueuePrs > 0 ? "critical" : testing.queuePrs > 0 ? "attention" : "normal"}
+      />
+      <TestingTurnoverCard
+        label="Request to pass"
+        value={testing.averageRequestToPassHours === null ? "-" : hours(testing.averageRequestToPassHours)}
+        detail={`${testing.requestToPassSamples} samples`}
+        tone={requestToPassTone}
+      />
+      <TestingTurnoverCard
+        label="Pass to close"
+        value={testing.averagePassToCloseHours === null ? "-" : hours(testing.averagePassToCloseHours)}
+        detail={`${testing.passToCloseSamples} samples`}
+        tone={passToCloseTone}
+      />
+      <TestingTurnoverCard
+        label="Evidence quality"
+        value={partialTransitions}
+        detail={
+          hasSamples
+            ? `${testing.closedWithoutPassSignalSamples} closed without pass`
+            : "no complete turnover samples yet"
+        }
+        tone={partialTransitions > 0 || testing.closedWithoutPassSignalSamples > 0 ? "attention" : "normal"}
+      />
+    </div>
+  );
+}
+
+function TestingTurnoverCard({
+  label,
+  value,
+  detail,
+  tone
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal";
+}) {
+  return (
+    <article className={`testing-turnover-card testing-turnover-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
 }
 
 function TestingQueueLane({
