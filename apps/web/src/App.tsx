@@ -173,7 +173,7 @@ type PrScopeFilter =
 type PrBoardTab = "rotation" | "testing";
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
-  "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
+  "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
 type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
@@ -8337,6 +8337,31 @@ function PersonalRotationOverview({
             </button>
             <button
               type="button"
+              className={`inline-filter-chip ${person.pendingPrs.length > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "pending_pr" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={() => onDrilldownChange("pending_pr")}
+            >
+              {person.pendingPrs.length} pending PR
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${person.deferredIssues.length > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "deferred" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={() => onDrilldownChange("deferred")}
+            >
+              {person.deferredIssues.length} deferred
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${drilldownFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("yesterday_pr")}
+            >
+              {person.prsCreatedYesterday.length + person.prsMergedYesterday.length} PR yday
+            </button>
+            <button
+              type="button"
               className={`inline-filter-chip ${drilldownFilter === "threads" ? "inline-filter-chip-active" : ""}`}
               onClick={() => onDrilldownChange("threads")}
             >
@@ -8360,9 +8385,16 @@ function PersonalRotationOverview({
             onClick={() => onDrilldownChange("active_issues")}
           />
           <TeamMonitorTile
+            label="Pending PRs"
+            value={person.pendingPrs.length}
+            detail={`${person.attentionPrs.length} attention | ${oldestPersonalPrText(person.pendingPrs)}`}
+            tone={person.pendingPrs.length > 0 ? "attention" : "good"}
+            onClick={() => onDrilldownChange("pending_pr")}
+          />
+          <TeamMonitorTile
             label="PR blockers"
             value={blockedPrItems.length}
-            detail={`${person.attentionPrs.length} attention | ${oldestPersonalPrText(person.pendingPrs)}`}
+            detail="review, CI, merge, idle, test"
             tone={blockedPrItems.length > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("pr_attention")}
           />
@@ -8382,13 +8414,6 @@ function PersonalRotationOverview({
             detail={`${person.deferredIssues.length} deferred`}
             tone={person.needsTriageIssues.length > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("triage")}
-          />
-          <TeamMonitorTile
-            label="Yesterday PR"
-            value={person.prsCreatedYesterday.length + person.prsMergedYesterday.length}
-            detail={`${person.prsCreatedYesterday.length} created | ${person.prsMergedYesterday.length} merged`}
-            tone="good"
-            onClick={() => onDrilldownChange("yesterday_pr")}
           />
         </div>
       </section>
@@ -8637,6 +8662,9 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
   if (filter === "triage") {
     return "Needs Triage";
   }
+  if (filter === "deferred") {
+    return "Deferred Issues";
+  }
   if (filter === "yesterday_pr") {
     return "Yesterday PR";
   }
@@ -8719,6 +8747,18 @@ function PersonalDrilldownBoard({
           emptyText="No active s-1/s0 issues"
           onPreview={onIssuePreview}
         />
+      </section>
+    );
+  }
+
+  if (filter === "deferred") {
+    return (
+      <section className="personal-filtered-board">
+        <div className="subsection-heading">
+          <Title level={5}>{title}</Title>
+          <Tag color={person.deferredIssues.length > 0 ? "blue" : "default"}>{person.deferredIssues.length} issue</Tag>
+        </div>
+        <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" onPreview={onIssuePreview} />
       </section>
     );
   }
