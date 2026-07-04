@@ -2114,6 +2114,20 @@ function TeamRotationOverview({
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
   const productionReadiness = summarizeProductionReadiness({ data, session });
+  const commandActions = teamCommandActions({
+    data,
+    sMinusOneIssues,
+    prRisks,
+    testingIssues,
+    peopleFocus,
+    updatePipeline,
+    productionReadiness,
+    onNavigate,
+    onConnectToken,
+    onOpenIssuesFilter,
+    onOpenPrsFilter,
+    onOpenPeopleFilter
+  });
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
 
@@ -2158,6 +2172,7 @@ function TeamRotationOverview({
             <span>{teamFocus.detail}</span>
           </div>
         </div>
+        <TeamCommandQueue actions={commandActions} />
         <TeamFlowRiskStrip
           data={data}
           onNavigate={onNavigate}
@@ -2286,6 +2301,167 @@ function TeamRotationOverview({
         ) : null}
         <TrendChart points={trendPoints} />
       </section>
+    </div>
+  );
+}
+
+interface TeamCommandAction {
+  key: string;
+  title: string;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  actionLabel: string;
+  priority: number;
+  onClick: () => void;
+}
+
+function teamCommandActions({
+  data,
+  sMinusOneIssues,
+  prRisks,
+  testingIssues,
+  peopleFocus,
+  updatePipeline,
+  productionReadiness,
+  onNavigate,
+  onConnectToken,
+  onOpenIssuesFilter,
+  onOpenPrsFilter,
+  onOpenPeopleFilter
+}: {
+  data: DashboardSummary;
+  sMinusOneIssues: number;
+  prRisks: PendingPrView[];
+  testingIssues: TestingIssueQueueView[];
+  peopleFocus: PersonSummary[];
+  updatePipeline: UpdatePipelineSummary;
+  productionReadiness: ProductionReadinessSummary;
+  onNavigate: (view: DashboardView) => void;
+  onConnectToken: () => void;
+  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
+}): TeamCommandAction[] {
+  const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
+  const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const blockerPrs = prRisks.filter((pr) => prAttentionReasons(pr).length > 0);
+  const staleTestingRows = testingIssues.filter(
+    (issue) => (issue.queueAgeHours ?? 0) >= 24 || issue.syncError !== null
+  );
+  const criticalPeople = peopleFocus.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0);
+  const actions: TeamCommandAction[] = [];
+
+  if (sMinusOneIssues > 0) {
+    actions.push({
+      key: "s-1",
+      title: `${sMinusOneIssues} s-1 issues need movement`,
+      detail: `oldest ${optionalHours(maxCriticalActiveAge(sMinusOneRows))}; verify owner, linked PR, and blocker state`,
+      tone: "critical",
+      actionLabel: "Open s-1",
+      priority: 1_000,
+      onClick: () => onOpenIssuesFilter({ scope: "s-1" })
+    });
+  }
+  if (issuesWithoutPr.length > 0) {
+    actions.push({
+      key: "issue-pr-gap",
+      title: `${issuesWithoutPr.length} active issues have no visible PR`,
+      detail: "confirm whether execution started, or link the PR evidence",
+      tone: "critical",
+      actionLabel: "Open gaps",
+      priority: 940,
+      onClick: () => onOpenIssuesFilter({ scope: "no_pr" })
+    });
+  }
+  if (blockerPrs.length > 0) {
+    actions.push({
+      key: "pr-blockers",
+      title: `${blockerPrs.length} PRs need attention`,
+      detail: `oldest ${optionalHours(maxPendingPrAge(blockerPrs))}; review CI, requested changes, conflict, or idle state`,
+      tone: "attention",
+      actionLabel: "Open PRs",
+      priority: 900,
+      onClick: () => onOpenPrsFilter("attention")
+    });
+  }
+  if (staleTestingRows.length > 0) {
+    actions.push({
+      key: "testing-waits",
+      title: `${staleTestingRows.length} issues are waiting in test`,
+      detail: `max ${optionalHours(maxTestingIssueAge(staleTestingRows))}; check issue assignment and linked PR evidence`,
+      tone: "attention",
+      actionLabel: "Open testing",
+      priority: 860,
+      onClick: () => onOpenPrsFilter("testing")
+    });
+  }
+  if (criticalPeople.length > 0) {
+    actions.push({
+      key: "people-focus",
+      title: `${criticalPeople.length} people carry active risk`,
+      detail: "open People to compare owner load and drill into personal workbench",
+      tone: "normal",
+      actionLabel: "Open people",
+      priority: 760,
+      onClick: () => onOpenPeopleFilter("critical")
+    });
+  }
+  if (productionReadiness.blockers.length > 0) {
+    const blocker = productionReadiness.blockers[0];
+    actions.push({
+      key: "production-readiness",
+      title: `${productionReadiness.blockers.length} production readiness blockers`,
+      detail: `${blocker.label}: ${blocker.action}`,
+      tone: "attention",
+      actionLabel: "Open gate",
+      priority: 700,
+      onClick: () => openProductionReadinessTarget(blocker.target, onNavigate, onConnectToken)
+    });
+  } else if (updatePipeline.tone === "critical" || updatePipeline.tone === "attention") {
+    actions.push({
+      key: "update-pipeline",
+      title: updatePipeline.title,
+      detail: updatePipeline.detail,
+      tone: updatePipeline.tone === "critical" ? "critical" : "attention",
+      actionLabel: "Open health",
+      priority: 640,
+      onClick: () => onNavigate("Health")
+    });
+  }
+
+  if (actions.length === 0) {
+    actions.push({
+      key: "analytics",
+      title: "No urgent blocker in cached data",
+      detail: "review trend charts and spot throughput changes before they become backlog",
+      tone: "good",
+      actionLabel: "Open analytics",
+      priority: 100,
+      onClick: () => onNavigate("Analytics")
+    });
+  }
+
+  return actions.sort((left, right) => right.priority - left.priority).slice(0, 4);
+}
+
+function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
+  return (
+    <div className="team-command-queue" aria-label="Team command queue">
+      {actions.map((action, index) => (
+        <button
+          type="button"
+          className={`team-command-action team-command-action-${action.tone}`}
+          onClick={action.onClick}
+          key={action.key}
+        >
+          <span className="team-command-action-rank">{index + 1}</span>
+          <span className="team-command-action-copy">
+            <strong>{action.title}</strong>
+            <small>{action.detail}</small>
+          </span>
+          <span className="team-command-action-open">{action.actionLabel}</span>
+        </button>
+      ))}
     </div>
   );
 }
