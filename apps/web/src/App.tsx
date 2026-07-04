@@ -9429,25 +9429,26 @@ export default function App() {
     <Layout className="app-shell">
       <Header className="topbar">
         <div className="brand-lockup">
-          <span className="brand-mark">
-            <GitMerge size={20} aria-hidden="true" />
+          <span className="brand-mark" aria-hidden="true">
+            DF
           </span>
           <div>
-            <Text className="eyebrow">mo-devflow</Text>
+            <Text className="eyebrow">DevFlow Observatory</Text>
             <Title level={3} className="page-title">
               {data ? data.repo.key : "Development Flow"}
             </Title>
+            <Text className="brand-subtitle">Issue, PR, and testing rotation</Text>
           </div>
         </div>
         <Space className="topbar-actions" size={[8, 8]} wrap>
-          <div className="view-tabs-scroll">
+          <nav className="view-tabs-scroll" aria-label="Dashboard views">
             <Segmented
               className="view-tabs"
               value={view}
               onChange={(value) => selectView(String(value) as DashboardView)}
               options={[...viewOptions]}
             />
-          </div>
+          </nav>
           {authenticatedUser && headerIssueLabelCapability ? (
             <Space className="account-actions" size={[8, 8]} wrap>
               <Avatar size={28} src={authenticatedUser.avatarUrl}>
