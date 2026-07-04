@@ -613,13 +613,15 @@ body {
 }
 
 .update-pipeline-strip {
+  align-items: center;
   border: 1px solid #e5e7eb;
   border-left: 3px solid #64748b;
   border-radius: 8px;
   display: grid;
   gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .update-pipeline-critical {
@@ -660,6 +662,63 @@ body {
   gap: 8px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   min-width: 0;
+}
+
+.update-pipeline-mini-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.update-pipeline-mini-fact {
+  align-items: center;
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  max-width: 190px;
+  min-width: 0;
+  padding: 5px 8px;
+}
+
+.update-pipeline-mini-fact:hover {
+  border-color: #93c5fd;
+}
+
+.update-pipeline-mini-fact span,
+.update-pipeline-mini-fact strong {
+  font-size: 12px;
+  line-height: 1.1;
+  min-width: 0;
+}
+
+.update-pipeline-mini-fact span {
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-pipeline-mini-fact strong {
+  color: #111827;
+  font-weight: 750;
+}
+
+.update-pipeline-mini-fact-critical {
+  border-color: #fecaca;
+}
+
+.update-pipeline-mini-fact-attention {
+  border-color: #fed7aa;
+}
+
+.update-pipeline-mini-fact-good {
+  border-color: #bbf7d0;
 }
 
 .update-pipeline-tile {
@@ -4437,6 +4496,15 @@ button.testing-board-stat:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .update-pipeline-strip {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .update-pipeline-mini-facts {
+    justify-content: flex-start;
+  }
+
   .personal-monitor-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4694,7 +4762,7 @@ button.testing-board-stat:focus-visible {
   }
 
   .team-flow-risk-strip {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .update-pipeline-tiles {

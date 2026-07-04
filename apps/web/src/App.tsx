@@ -1919,50 +1919,6 @@ function TeamRotationOverview({
           onOpenPrsFilter={onOpenPrsFilter}
         />
         <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
-        <div className="team-monitor-grid" aria-label="Team flow monitor">
-          <TeamMonitorTile
-            label="Critical issues"
-            value={data.counts.criticalIssues}
-            detail={`${sMinusOneIssues} s-1 | ${data.counts.unownedCriticalIssues} unowned`}
-            tone={data.counts.criticalIssues > 0 ? "critical" : "good"}
-            onClick={() => onOpenIssuesFilter({ scope: "all" })}
-          />
-          <TeamMonitorTile
-            label="PR blockers"
-            value={data.counts.attentionPrs}
-            detail={`${data.counts.pendingPrs} pending | ${oldestPendingPrText(data.pendingPrs)}`}
-            tone={data.counts.attentionPrs > 0 ? "attention" : "good"}
-            onClick={() => onOpenPrsFilter("attention")}
-          />
-          <TeamMonitorTile
-            label="Issues in test"
-            value={data.testing.queueIssues}
-            detail={`${data.testing.staleQueueIssues} stale | avg ${optionalHours(data.testing.averageIssueQueueAgeHours)}`}
-            tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
-            onClick={() => onOpenPrsFilter("testing")}
-          />
-          <TeamMonitorTile
-            label="People focus"
-            value={peopleSource.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0).length}
-            detail={
-              peopleSourceIsObserved
-                ? `${peopleSource.length} observed | configure watched users`
-                : `${data.people.length} watched | ${data.people.reduce(
-                    (sum, person) => sum + person.needsTriageIssues,
-                    0
-                  )} triage`
-            }
-            tone={peopleFocus.length > 0 ? "attention" : "good"}
-            onClick={() => onOpenPeopleFilter("attention")}
-          />
-          <TeamMonitorTile
-            label="Data confidence"
-            value={data.sync.partialObjects}
-            detail={`${data.sync.staleObjects} stale | worker ${labelText(data.sync.worker.status)}`}
-            tone={data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("Health")}
-          />
-        </div>
       </section>
 
       <div className="team-rotation-grid">
@@ -2165,34 +2121,26 @@ function TeamUpdatePipelineStrip({
           <span>{summary.detail}</span>
         </div>
       </div>
-      <div className="update-pipeline-tiles">
+      <div className="update-pipeline-mini-facts">
         {summary.tiles.map((tile) => (
-          <UpdatePipelineTileButton key={tile.key} tile={tile} onNavigate={onNavigate} />
+          <button
+            type="button"
+            className={`update-pipeline-mini-fact update-pipeline-mini-fact-${tile.tone}`}
+            key={tile.key}
+            title={formatPipelineDetail(tile.detail)}
+            onClick={() => onNavigate(updatePipelineTargetView(tile))}
+          >
+            <span>{tile.label}</span>
+            <strong>{tile.value}</strong>
+          </button>
         ))}
       </div>
     </section>
   );
 }
 
-function UpdatePipelineTileButton({
-  tile,
-  onNavigate
-}: {
-  tile: UpdatePipelineTile;
-  onNavigate: (view: DashboardView) => void;
-}) {
-  const targetView: DashboardView = tile.target === "webhooks" ? "Webhooks" : "Health";
-  return (
-    <button
-      type="button"
-      className={`update-pipeline-tile update-pipeline-tile-${tile.tone}`}
-      onClick={() => onNavigate(targetView)}
-    >
-      <span>{tile.label}</span>
-      <strong>{tile.value}</strong>
-      <small>{formatPipelineDetail(tile.detail)}</small>
-    </button>
-  );
+function updatePipelineTargetView(tile: UpdatePipelineTile): DashboardView {
+  return tile.target === "webhooks" ? "Webhooks" : "Health";
 }
 
 function updatePipelineToneColor(tone: UpdatePipelineSummary["tone"]): string {
