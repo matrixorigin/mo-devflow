@@ -1358,14 +1358,17 @@ export default function App() {
             {data ? data.repo.key : "Development Flow"}
           </Title>
         </div>
-        <Space>
-          <Segmented
-            value={view}
-            onChange={(value) => setView(String(value))}
-            options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
-          />
+        <Space className="topbar-actions" size={[8, 8]} wrap>
+          <div className="view-tabs-scroll">
+            <Segmented
+              className="view-tabs"
+              value={view}
+              onChange={(value) => setView(String(value))}
+              options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
+            />
+          </div>
           {authenticatedUser && headerIssueLabelCapability ? (
-            <Space size={8}>
+            <Space className="account-actions" size={[8, 8]} wrap>
               <Avatar size={28} src={authenticatedUser.avatarUrl}>
                 {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
               </Avatar>
