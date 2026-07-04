@@ -275,6 +275,8 @@ The product should detect:
 - Active issues that appear to lack owner, evidence, or progress.
 - Issues with conflicting lifecycle labels.
 
+Deferred-comment checks must only be treated as confirmed when issue comments have been backfilled completely. If comments are partial or unavailable, the UI and rules should avoid presenting missing-comment conclusions as facts.
+
 ### 5.4 AI Effort Labels
 
 AI effort labels estimate implementation cost and expected human involvement.

@@ -70,6 +70,13 @@ critical issues, watched-user summaries, pending PRs, workflow violations, AI
 drift signals, testing queue state, cached analytics, owner attribution, and
 data freshness indicators.
 
+Issue comment backfill is available for workflow rules that need comment
+evidence. Deferred issues only raise a missing-explanation violation after the
+comment sync for that issue is complete; partial comment evidence suppresses the
+rule instead of producing a misleading alert. Anonymous GitHub sync does not
+fetch comments by default; set `MO_DEVFLOW_ISSUE_COMMENT_MAX_ITEMS` or configure
+a service read token before relying on comment-backed workflow checks.
+
 Repository behavior is driven by `config/repos/matrixone.yaml`. The MatrixOne
 profile includes `workflow.skip_users` from the local `mo-bug-triage` skill; a
 skipped user can still appear in cached dashboards, but the rule engine will not

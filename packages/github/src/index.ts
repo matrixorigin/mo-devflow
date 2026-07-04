@@ -11,15 +11,27 @@ import type {
 
 type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"]["data"][number];
 type PullRequestDetailItem = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
+type IssueListItem = RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"][number];
+type IssueCommentItem = RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"][number];
 
 export interface GitHubSnapshot {
   issues: RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"];
   pullRequests: RestEndpointMethodTypes["pulls"]["list"]["response"]["data"];
   pullRequestInsights: Map<number, PullRequestInsight>;
+  issueComments: Map<number, GitHubIssueComments>;
   sourceAuthType: SourceAuthType;
   rateLimitRemaining: number | null;
   issuesComplete: boolean;
   openPullRequestsComplete: boolean;
+}
+
+export interface GitHubIssueComments {
+  issueNumber: number;
+  comments: IssueCommentItem[];
+  isComplete: boolean;
+  syncError: string | null;
+  syncedAt: string;
+  rateLimitRemaining: number | null;
 }
 
 export interface GitHubTokenValidation {
@@ -761,6 +773,73 @@ async function fetchPullRequestInsights(input: {
   return { insights, rateLimitRemaining };
 }
 
+function issueHasLabel(issue: IssueListItem, labelName: string): boolean {
+  return issue.labels.some((label) => (typeof label === "string" ? label : label.name) === labelName);
+}
+
+function issueCommentFetchLimit(sourceAuthType: SourceAuthType): number {
+  const configuredLimit = process.env.MO_DEVFLOW_ISSUE_COMMENT_MAX_ITEMS;
+  const defaultLimit = sourceAuthType === "anonymous" ? 0 : 50;
+  const parsed = Number(configuredLimit ?? defaultLimit);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : defaultLimit;
+}
+
+async function fetchIssueComments(input: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  issues: IssueListItem[];
+  profile: RepoProfile;
+  sourceAuthType: SourceAuthType;
+}): Promise<{ comments: Map<number, GitHubIssueComments>; rateLimitRemaining: number | null }> {
+  const limit = issueCommentFetchLimit(input.sourceAuthType);
+  const selected = input.issues
+    .filter((issue) => !issue.pull_request)
+    .filter((issue) => issueHasLabel(issue, input.profile.labels.deferred))
+    .slice(0, limit);
+  const comments = new Map<number, GitHubIssueComments>();
+  let rateLimitRemaining: number | null = null;
+  const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_ISSUE_COMMENT_MAX_PAGES ?? "2"));
+
+  for (const issue of selected) {
+    const syncedAt = new Date().toISOString();
+    try {
+      const result = await collectPages(
+        input.octokit.paginate.iterator(input.octokit.rest.issues.listComments, {
+          owner: input.owner,
+          repo: input.repo,
+          issue_number: issue.number,
+          per_page: 100
+        }),
+        maxPages
+      );
+      rateLimitRemaining = result.rateLimitRemaining ?? rateLimitRemaining;
+      comments.set(issue.number, {
+        issueNumber: issue.number,
+        comments: result.data,
+        isComplete: result.complete,
+        syncError: result.complete ? null : `Issue comments exceeded ${maxPages} pages.`,
+        syncedAt,
+        rateLimitRemaining: result.rateLimitRemaining
+      });
+    } catch (error) {
+      comments.set(issue.number, {
+        issueNumber: issue.number,
+        comments: [],
+        isComplete: false,
+        syncError: error instanceof Error ? error.message : String(error),
+        syncedAt,
+        rateLimitRemaining
+      });
+    }
+    if (input.sourceAuthType === "anonymous" && rateLimitRemaining !== null && rateLimitRemaining < 8) {
+      break;
+    }
+  }
+
+  return { comments, rateLimitRemaining };
+}
+
 export async function fetchPullRequestInsightForNumber(input: {
   profile: RepoProfile;
   pullNumber: number;
@@ -837,14 +916,27 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
     pullRequests: openPrsResult.data,
     sourceAuthType
   });
+  const issueCommentsResult = await fetchIssueComments({
+    octokit,
+    owner,
+    repo,
+    issues: issuesResult.data,
+    profile,
+    sourceAuthType
+  });
 
   return {
     issues: issuesResult.data,
     pullRequests: Array.from(prsByNumber.values()),
     pullRequestInsights: prInsightsResult.insights,
+    issueComments: issueCommentsResult.comments,
     sourceAuthType,
     rateLimitRemaining:
-      prInsightsResult.rateLimitRemaining ?? issuesResult.rateLimitRemaining ?? openPrsResult.rateLimitRemaining ?? null,
+      issueCommentsResult.rateLimitRemaining ??
+      prInsightsResult.rateLimitRemaining ??
+      issuesResult.rateLimitRemaining ??
+      openPrsResult.rateLimitRemaining ??
+      null,
     issuesComplete: issuesResult.complete,
     openPullRequestsComplete: openPrsResult.complete
   };

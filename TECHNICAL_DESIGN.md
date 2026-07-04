@@ -274,6 +274,7 @@ Worker reliability:
 Backfill:
 
 - Timeline and review backfill should be resumable by object.
+- Issue comment backfill should be persisted separately from issue rows and used for rules that require comment evidence, such as deferred issues missing explanation comments.
 - Backfill jobs should mark partial objects until all required pages are fetched.
 - Dashboards should avoid treating partial objects as complete evidence.
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
@@ -443,6 +444,8 @@ Derived state should include:
 - AI estimate drift status.
 - Workflow violations.
 - Attention items.
+
+Deferred explanation checks depend on cached issue comments. A `deferred_missing_explanation_comment` violation should only be emitted when the issue comment sync is complete and no cached comment contains a deferred reason. Partial comment evidence should suppress that rule rather than produce a misleading violation.
 
 Workflow skip users are part of the repository profile. Issues authored by, owned by, or assigned to a skipped user should be excluded from automated workflow violation generation, AI drift generation, and attention-item generation. They should also be filtered out of profile configuration suggestions so the UI does not recommend skipped accounts as watched users, testers, or notification recipients.
 

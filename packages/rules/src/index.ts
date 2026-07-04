@@ -1,6 +1,7 @@
 import type {
   AiDriftSignal,
   LifecycleState,
+  NormalizedIssueComment,
   NormalizedIssue,
   NormalizedPullRequest,
   PullRequestInsight,
@@ -35,6 +36,15 @@ interface GitHubIssueLike {
   labels?: Array<string | GitHubLabel>;
   assignees?: GitHubUser[] | null;
   pull_request?: unknown;
+}
+
+interface GitHubIssueCommentLike {
+  id: number;
+  body?: string | null;
+  user?: GitHubUser | null;
+  html_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 interface GitHubPullRequestLike {
@@ -305,6 +315,27 @@ export function normalizeIssue(
   };
 }
 
+export function normalizeIssueComment(
+  profile: RepoProfile,
+  issueNumber: number,
+  comment: GitHubIssueCommentLike,
+  source: CacheSource
+): NormalizedIssueComment {
+  return {
+    githubId: comment.id,
+    issueNumber,
+    authorLogin: comment.user?.login ?? "unknown",
+    body: comment.body ?? "",
+    htmlUrl: comment.html_url ?? "",
+    createdAt: comment.created_at ?? new Date().toISOString(),
+    updatedAt: comment.updated_at ?? comment.created_at ?? new Date().toISOString(),
+    sourceAuthType: source.authType,
+    sourceUserId: source.userId,
+    visibilityClass: visibility(profile, source),
+    rawPayload: comment
+  };
+}
+
 export function normalizePullRequest(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
@@ -411,6 +442,37 @@ function activeSeverityLabels(profile: RepoProfile, labels: string[]): string[] 
   return profile.labels.active.filter((label) => labels.includes(label));
 }
 
+function hasDeferredExplanationComment(issue: NormalizedIssue): boolean {
+  const evidence = issue.commentEvidence;
+  if (!evidence?.isComplete) {
+    return true;
+  }
+  return evidence.comments.some((comment) => isDeferredExplanationComment(comment.body));
+}
+
+function isDeferredExplanationComment(body: string): boolean {
+  const normalized = body.toLowerCase();
+  if (!normalized.includes("defer")) {
+    return false;
+  }
+  if (normalized.includes("reason:")) {
+    return true;
+  }
+  return [
+    "unstable repro",
+    "missing dependency",
+    "non-critical",
+    "not critical",
+    "consolidated",
+    "duplicate",
+    "no current owner",
+    "no near-term",
+    "insufficient impact",
+    "feature request",
+    "not a bug"
+  ].some((signal) => normalized.includes(signal));
+}
+
 export function workflowViolationsForIssue(profile: RepoProfile, issue: NormalizedIssue): WorkflowViolation[] {
   if (issueMatchesSkipList(profile, issue)) {
     return [];
@@ -497,6 +559,23 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
         ].filter(Boolean).join(", ")}.`,
         suggestedAction: "Keep exactly one lifecycle state label that matches the current workflow stage.",
         fixable: true
+      })
+    );
+  }
+
+  if (hasDeferred && !hasDeferredExplanationComment(issue)) {
+    violations.push(
+      violation({
+        objectType: "issue",
+        objectNumber: issue.number,
+        title: issue.title,
+        htmlUrl: issue.htmlUrl,
+        ruleKey: "deferred_missing_explanation_comment",
+        severity: "warning",
+        relatedLogin: issue.ownerLogin ?? issue.authorLogin,
+        evidenceSummary: `Deferred issue #${issue.number} has no cached comment explaining why it was deferred.`,
+        suggestedAction: "Add a deferred explanation comment with the reason and the signal needed to promote it later.",
+        fixable: false
       })
     );
   }

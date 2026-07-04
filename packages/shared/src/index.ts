@@ -140,7 +140,32 @@ export interface NormalizedIssue {
   sourceUserId: number | null;
   visibilityClass: VisibilityClass;
   isComplete: boolean;
+  commentEvidence?: IssueCommentEvidence;
   rawPayload: unknown;
+}
+
+export interface NormalizedIssueComment extends IssueCommentEvidenceItem {
+  githubId: number;
+  issueNumber: number;
+  htmlUrl: string;
+  sourceAuthType: SourceAuthType;
+  sourceUserId: number | null;
+  visibilityClass: VisibilityClass;
+  rawPayload: unknown;
+}
+
+export interface IssueCommentEvidence {
+  isComplete: boolean;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+  comments: IssueCommentEvidenceItem[];
+}
+
+export interface IssueCommentEvidenceItem {
+  authorLogin: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NormalizedPullRequest {

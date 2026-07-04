@@ -636,6 +636,105 @@ describe("rules", () => {
     expect(rules).toContain("conflicting_lifecycle_labels");
   });
 
+  test("does not report missing deferred explanation until issue comments are fully backfilled", () => {
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 90,
+        number: 90,
+        title: "deferred without comment evidence",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/90",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        labels: [{ name: "kind/bug" }, { name: "deferred" }],
+        assignees: [{ login: "alice" }]
+      },
+      anonymousSource
+    );
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain(
+      "deferred_missing_explanation_comment"
+    );
+  });
+
+  test("detects deferred issues missing an explanation comment when comments are fully backfilled", () => {
+    const issue = {
+      ...normalizeIssue(
+        profile,
+        {
+          id: 91,
+          number: 91,
+          title: "deferred without explanation",
+          state: "open",
+          user: { login: "reporter" },
+          html_url: "https://example.test/91",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          labels: [{ name: "kind/bug" }, { name: "deferred" }],
+          assignees: [{ login: "alice" }]
+        },
+        anonymousSource
+      ),
+      commentEvidence: {
+        isComplete: true,
+        lastSyncedAt: "2026-07-04T00:00:00.000Z",
+        syncError: null,
+        comments: [
+          {
+            authorLogin: "alice",
+            body: "I looked at this.",
+            createdAt: "2026-01-02T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z"
+          }
+        ]
+      }
+    };
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain(
+      "deferred_missing_explanation_comment"
+    );
+  });
+
+  test("accepts deferred issues with an explanation comment", () => {
+    const issue = {
+      ...normalizeIssue(
+        profile,
+        {
+          id: 92,
+          number: 92,
+          title: "deferred with explanation",
+          state: "open",
+          user: { login: "reporter" },
+          html_url: "https://example.test/92",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          labels: [{ name: "kind/bug" }, { name: "deferred" }],
+          assignees: [{ login: "alice" }]
+        },
+        anonymousSource
+      ),
+      commentEvidence: {
+        isComplete: true,
+        lastSyncedAt: "2026-07-04T00:00:00.000Z",
+        syncError: null,
+        comments: [
+          {
+            authorLogin: "alice",
+            body: "Deferred after triage.\n\nReason: non-critical path, no current owner.",
+            createdAt: "2026-01-02T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z"
+          }
+        ]
+      }
+    };
+
+    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).not.toContain(
+      "deferred_missing_explanation_comment"
+    );
+  });
+
   test("AI drift detects missing effort labels on critical issues", () => {
     const issue = normalizeIssue(
       profile,

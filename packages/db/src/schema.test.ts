@@ -7,6 +7,8 @@ describe("schema contract", () => {
 
     expect(expected.get("issues")).toContain("source_user_id");
     expect(expected.get("pull_requests")).toContain("testing_state");
+    expect(expected.get("issue_comment_syncs")).toContain("is_complete");
+    expect(expected.get("issue_comments")).toContain("body");
     expect(expected.get("notification_deliveries")).toContain("payload_json");
     expect(expected.get("workflow_violations")).toContain("fixable");
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");

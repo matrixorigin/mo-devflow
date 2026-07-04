@@ -11,6 +11,7 @@ import {
   recordSyncRun,
   recordNotificationDelivery,
   recomputeDailyMetricsFromCache,
+  replaceIssueComments,
   replaceAiDriftSignals,
   replaceWorkflowViolations,
   resolveStaleAttentionItems,
@@ -32,6 +33,7 @@ import {
   aiDriftSignalsForIssue,
   criticalAttentionForIssue,
   linkedPrAuthorsByIssueNumber,
+  normalizeIssueComment,
   normalizeIssue,
   normalizePullRequest,
   type CacheSource,
@@ -660,13 +662,52 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       if (!shouldKeepIssue(issue)) {
         continue;
       }
+      const commentResult = snapshot.issueComments.get(issue.number);
+      const comments = commentResult
+        ? commentResult.comments.map((comment) =>
+            normalizeIssueComment(profile, issue.number, comment, {
+              authType: snapshot.sourceAuthType,
+              userId: null
+            })
+          )
+        : [];
+      const issueWithComments = commentResult
+        ? {
+            ...issue,
+            commentEvidence: {
+              isComplete: commentResult.isComplete,
+              lastSyncedAt: commentResult.syncedAt,
+              syncError: commentResult.syncError,
+              comments
+            }
+          }
+        : issue;
       await upsertIssue(repoId, issue);
+      if (commentResult) {
+        await replaceIssueComments({
+          repoId,
+          issueNumber: issue.number,
+          comments,
+          sourceAuthType: snapshot.sourceAuthType,
+          sourceUserId: null,
+          visibilityClass: issue.visibilityClass,
+          isComplete: commentResult.isComplete,
+          syncError: commentResult.syncError,
+          raw: {
+            issueNumber: issue.number,
+            comments: comments.length,
+            isComplete: commentResult.isComplete,
+            syncError: commentResult.syncError
+          },
+          syncedAt: commentResult.syncedAt
+        });
+      }
       issueCount += 1;
-      workflowViolations.push(...workflowViolationsForIssue(profile, issue));
-      aiDriftSignals.push(...aiDriftSignalsForIssue(profile, issue));
+      workflowViolations.push(...workflowViolationsForIssue(profile, issueWithComments));
+      aiDriftSignals.push(...aiDriftSignalsForIssue(profile, issueWithComments));
 
       const issueActiveAttentionDedupeKeys = new Set<string>();
-      for (const flag of criticalAttentionForIssue(profile, issue)) {
+      for (const flag of criticalAttentionForIssue(profile, issueWithComments)) {
         const dedupeKey = issueAttentionDedupeKey(profile.key, issue.number, flag);
         activeAttentionDedupeKeys.add(dedupeKey);
         issueActiveAttentionDedupeKeys.add(dedupeKey);
@@ -748,6 +789,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         issues: issueCount,
         pullRequests: prCount,
         pullRequestInsights: snapshot.pullRequestInsights.size,
+        issueCommentBackfills: snapshot.issueComments.size,
         workflowViolations: workflowViolations.length,
         aiDriftSignals: aiDriftSignals.length,
         resolvedAttentionItems,

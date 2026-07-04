@@ -13,6 +13,7 @@ import type {
   DashboardVisibility,
   DashboardSummary,
   NormalizedIssue,
+  NormalizedIssueComment,
   NormalizedPullRequest,
   NotificationTraceView,
   PendingPrView,
@@ -617,6 +618,70 @@ export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promi
   );
 }
 
+export async function replaceIssueComments(input: {
+  repoId: number;
+  issueNumber: number;
+  comments: NormalizedIssueComment[];
+  sourceAuthType: string;
+  sourceUserId: number | null;
+  visibilityClass: string;
+  isComplete: boolean;
+  syncError: string | null;
+  raw: unknown;
+  syncedAt?: string;
+}): Promise<void> {
+  const syncedAt = sqlDate(input.syncedAt ?? new Date().toISOString());
+  await getPool().execute("DELETE FROM issue_comments WHERE repo_id = ? AND issue_number = ?", [
+    input.repoId,
+    input.issueNumber
+  ]);
+  for (const comment of input.comments) {
+    await getPool().execute(
+      `INSERT INTO issue_comments(
+        repo_id, issue_number, github_id, author_login, body, html_url,
+        created_at, updated_at, source_auth_type, source_user_id, visibility_class,
+        raw_payload, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.repoId,
+        input.issueNumber,
+        String(comment.githubId),
+        comment.authorLogin,
+        comment.body,
+        comment.htmlUrl,
+        sqlDate(comment.createdAt),
+        sqlDate(comment.updatedAt),
+        comment.sourceAuthType,
+        comment.sourceUserId,
+        comment.visibilityClass,
+        stringify(comment.rawPayload),
+        syncedAt
+      ]
+    );
+  }
+  await getPool().execute("DELETE FROM issue_comment_syncs WHERE repo_id = ? AND issue_number = ?", [
+    input.repoId,
+    input.issueNumber
+  ]);
+  await getPool().execute(
+    `INSERT INTO issue_comment_syncs(
+      repo_id, issue_number, source_auth_type, source_user_id, visibility_class,
+      is_complete, sync_error, raw_json, last_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.repoId,
+      input.issueNumber,
+      input.sourceAuthType,
+      input.sourceUserId,
+      input.visibilityClass,
+      input.isComplete ? 1 : 0,
+      input.syncError,
+      stringify(input.raw),
+      syncedAt
+    ]
+  );
+}
+
 export async function listCachedIssuesForRules(repoId: number): Promise<NormalizedIssue[]> {
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
@@ -624,6 +689,8 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
      WHERE repo_id = ? AND state = 'open' AND is_pull_request = 0`,
     [repoId]
   );
+  const issueNumbers = rows.map((row) => asNumber(row.number));
+  const commentEvidence = await issueCommentEvidenceByIssueNumber(repoId, issueNumbers);
 
   return rows.map((row) => ({
     githubId: asNumber(row.github_id),
@@ -648,8 +715,60 @@ export async function listCachedIssuesForRules(repoId: number): Promise<Normaliz
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     isComplete: asNumber(row.is_complete) === 1,
+    commentEvidence: commentEvidence.get(asNumber(row.number)),
     rawPayload: parseJsonRecord(asString(row.raw_payload), {})
   }));
+}
+
+async function issueCommentEvidenceByIssueNumber(
+  repoId: number,
+  issueNumbers: number[]
+): Promise<Map<number, NonNullable<NormalizedIssue["commentEvidence"]>>> {
+  const uniqueIssueNumbers = Array.from(new Set(issueNumbers));
+  const result = new Map<number, NonNullable<NormalizedIssue["commentEvidence"]>>();
+  if (uniqueIssueNumbers.length === 0) {
+    return result;
+  }
+
+  const placeholders = uniqueIssueNumbers.map(() => "?").join(", ");
+  const [syncRows] = await getPool().execute<RowData[]>(
+    `SELECT issue_number, is_complete, sync_error, last_synced_at
+     FROM issue_comment_syncs
+     WHERE repo_id = ? AND issue_number IN (${placeholders})`,
+    [repoId, ...uniqueIssueNumbers]
+  );
+  const [commentRows] = await getPool().execute<RowData[]>(
+    `SELECT issue_number, author_login, body, created_at, updated_at
+     FROM issue_comments
+     WHERE repo_id = ? AND issue_number IN (${placeholders})
+     ORDER BY issue_number ASC, created_at ASC, id ASC`,
+    [repoId, ...uniqueIssueNumbers]
+  );
+
+  const commentsByIssueNumber = new Map<number, NonNullable<NormalizedIssue["commentEvidence"]>["comments"]>();
+  for (const row of commentRows) {
+    const issueNumber = asNumber(row.issue_number);
+    const comments = commentsByIssueNumber.get(issueNumber) ?? [];
+    comments.push({
+      authorLogin: asString(row.author_login),
+      body: asString(row.body),
+      createdAt: fromSqlDate(row.created_at) ?? new Date(0).toISOString(),
+      updatedAt: fromSqlDate(row.updated_at) ?? new Date(0).toISOString()
+    });
+    commentsByIssueNumber.set(issueNumber, comments);
+  }
+
+  for (const row of syncRows) {
+    const issueNumber = asNumber(row.issue_number);
+    result.set(issueNumber, {
+      isComplete: asBoolean(row.is_complete),
+      lastSyncedAt: fromSqlDate(row.last_synced_at),
+      syncError: row.sync_error ? asString(row.sync_error) : null,
+      comments: commentsByIssueNumber.get(issueNumber) ?? []
+    });
+  }
+
+  return result;
 }
 
 export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<NormalizedPullRequest> {
