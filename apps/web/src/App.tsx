@@ -8568,6 +8568,7 @@ export default function App() {
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
+  const [workObjectPreview, setWorkObjectPreview] = useState<TeamWorkPreview | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowFixExecutionResult | null>(null);
@@ -9101,6 +9102,22 @@ export default function App() {
         )
       },
       {
+        title: "Preview",
+        width: 112,
+        render: (_, issue) => (
+          <Tooltip title={`Preview issue ${issue.number}`}>
+            <Button
+              aria-label={`Preview issue ${issue.number}`}
+              icon={<Eye size={14} />}
+              size="small"
+              onClick={() => setWorkObjectPreview({ objectType: "issue", issue })}
+            >
+              Preview
+            </Button>
+          </Tooltip>
+        )
+      },
+      {
         title: "Title",
         dataIndex: "title",
         ellipsis: true,
@@ -9253,6 +9270,28 @@ export default function App() {
           </Space>
         )
       },
+      {
+        title: "Preview",
+        width: 112,
+        render: (_, pr) => (
+          <Tooltip title={`Preview PR ${pr.number}`}>
+            <Button
+              aria-label={`Preview PR ${pr.number}`}
+              icon={<Eye size={14} />}
+              size="small"
+              onClick={() =>
+                setWorkObjectPreview({
+                  objectType: "pull_request",
+                  pr,
+                  activeIssues: criticalIssuesByPr.get(pr.number) ?? []
+                })
+              }
+            >
+              Preview
+            </Button>
+          </Tooltip>
+        )
+      },
       { title: "Owner", dataIndex: "ownerLogin", width: 136, render: (owner) => <Tag>{owner}</Tag> },
       {
         title: "Age",
@@ -9337,7 +9376,7 @@ export default function App() {
         render: (value) => formatDate(value)
       }
     ],
-    []
+    [criticalIssuesByPr]
   );
 
   const violationColumns: ColumnsType<WorkflowViolationView> = useMemo(
@@ -9925,6 +9964,11 @@ export default function App() {
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
     ? sortPendingPrsForAction(filterPendingPrs(data.pendingPrs, prScopeFilter, criticalIssuesByPr), criticalIssuesByPr)
+    : [];
+  const filteredCriticalIssuesForTable = data
+    ? sortCriticalIssuesForAction(
+        filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter)
+      )
     : [];
   const filteredPeople = data ? filterPeople(data.people, data.personalViews, peopleScopeFilter) : [];
   const teamFlowSummary = data
@@ -10622,7 +10666,7 @@ export default function App() {
                       size="middle"
                       columns={prColumns}
                       dataSource={filteredPendingPrs}
-                      scroll={{ x: 1720 }}
+                      scroll={{ x: 1832 }}
                       pagination={{ pageSize: 10 }}
                       locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
                     />
@@ -10794,8 +10838,8 @@ export default function App() {
                   rowKey="number"
                   size="middle"
                   columns={criticalColumns}
-                  dataSource={data.criticalIssues}
-                  scroll={{ x: 1700 }}
+                  dataSource={filteredCriticalIssuesForTable}
+                  scroll={{ x: 1812 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
                 />
@@ -10856,6 +10900,7 @@ export default function App() {
           </>
         ) : null}
       </Content>
+      <TeamWorkPreviewModal preview={workObjectPreview} onClose={() => setWorkObjectPreview(null)} />
       <Modal
         title="Connect GitHub Token"
         open={tokenModalOpen}
