@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -84,6 +84,7 @@ import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
   flowEfficiencySummary,
+  personalGanttChart,
   personalActivityItems,
   personPrimaryReasons,
   personWorkloadStatus,
@@ -92,6 +93,9 @@ import {
   sortPeopleByWorkload,
   type FlowEfficiencySummary,
   type PersonalActivityItem,
+  type PersonalGanttChart,
+  type PersonalGanttPrBar,
+  type PersonalGanttRow,
   type WorkloadStatus
 } from "./workbench";
 
@@ -843,6 +847,21 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
           { name: "PR attention", type: "bar", color: "#d97706", data: (point) => point.attentionPrs }
         ]}
       />
+      <MetricFlowChart
+        title="PR Quality"
+        points={points}
+        series={[
+          { name: "CI failed", type: "bar", color: "#dc2626", data: (point) => point.ciFailedPrs },
+          {
+            name: "Requested changes",
+            type: "bar",
+            color: "#ea580c",
+            data: (point) => point.requestedChangePrs
+          },
+          { name: "Review waiting", type: "line", color: "#2563eb", data: (point) => point.reviewWaitingPrs },
+          { name: "Merge conflict", type: "bar", color: "#7f1d1d", data: (point) => point.mergeConflictPrs }
+        ]}
+      />
     </div>
   );
 }
@@ -1303,6 +1322,155 @@ function PersonalActivityCard({ item }: { item: PersonalActivityItem }) {
   );
 }
 
+function PersonalGanttTimeline({ chart }: { chart: PersonalGanttChart }) {
+  if (chart.rows.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue or PR timeline data" />;
+  }
+  const ticks = [1, 0.75, 0.5, 0.25, 0];
+
+  return (
+    <div className="gantt-timeline">
+      <div className="gantt-axis">
+        <div className="gantt-axis-spacer" />
+        <div className="gantt-axis-track">
+          {ticks.map((tick) => (
+            <span className="gantt-axis-tick" style={{ left: `${(1 - tick) * 100}%` }} key={tick}>
+              {tick === 0 ? "now" : hours(chart.maxAgeHours * tick)}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="gantt-row-list">
+        {chart.rows.map((row) => (
+          <PersonalGanttRowView row={row} key={row.id} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PersonalGanttRowView({ row }: { row: PersonalGanttRow }) {
+  const rowStyle: CSSProperties = { minHeight: 64 + Math.max(1, row.prs.length) * 28 };
+
+  return (
+    <div className={`gantt-row gantt-row-${row.tone}`} style={rowStyle}>
+      <div className="gantt-row-meta">
+        <div className="gantt-row-title">
+          {row.issue.htmlUrl ? (
+            <WorkObjectLink href={row.issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
+              {row.title}
+            </WorkObjectLink>
+          ) : (
+            <span>{row.title}</span>
+          )}
+          <Tag color={ganttToneColor(row.tone)}>{row.kind === "issue" ? "issue lane" : "PR lane"}</Tag>
+        </div>
+        {row.issue.htmlUrl ? (
+          <a className="gantt-row-subtitle" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
+            {row.issue.title}
+          </a>
+        ) : (
+          <span className="gantt-row-subtitle gantt-row-subtitle-muted">{row.issue.title}</span>
+        )}
+        <div className="gantt-row-tags">
+          {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
+          {row.issue.lifecycleState ? <Tag>{labelText(row.issue.lifecycleState)}</Tag> : null}
+          {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
+          <Tag>{hours(row.issue.startAgeHours)}</Tag>
+          {row.prs.length > 0 ? <Tag>{row.prs.length} PRs</Tag> : null}
+          {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared PR</Tag> : null}
+        </div>
+      </div>
+      <div className="gantt-row-bars">
+        <GanttIssueBar row={row} />
+        {row.prs.map((pr, index) => (
+          <GanttPrBar pr={pr} index={index} key={pr.number} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GanttIssueBar({ row }: { row: PersonalGanttRow }) {
+  const style = ganttBarStyle(row.issue, 10);
+  const title = `${row.issue.title} | age ${hours(row.issue.startAgeHours)}${
+    row.issue.reasons.length > 0 ? ` | ${row.issue.reasons.join(", ")}` : ""
+  }`;
+
+  return (
+    <Tooltip title={title}>
+      {row.issue.htmlUrl ? (
+        <a
+          className={`gantt-bar gantt-issue-bar gantt-tone-${row.issue.tone}`}
+          href={row.issue.htmlUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={style}
+        >
+          issue
+        </a>
+      ) : (
+        <span className={`gantt-bar gantt-issue-bar gantt-tone-${row.issue.tone}`} style={style}>
+          lane
+        </span>
+      )}
+    </Tooltip>
+  );
+}
+
+function GanttPrBar({ pr, index }: { pr: PersonalGanttPrBar; index: number }) {
+  const style = ganttBarStyle(pr, 38 + index * 28);
+  const title = [
+    `PR #${pr.number}`,
+    pr.title,
+    `owner ${pr.ownerLogin}`,
+    `age ${hours(pr.startAgeHours)}`,
+    pr.isShared ? `linked issues ${pr.linkedIssueNumbers.join(", ")}` : null,
+    pr.reasons.length > 0 ? pr.reasons.join(", ") : null
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" | ");
+
+  return (
+    <Tooltip title={title}>
+      <a
+        className={`gantt-bar gantt-pr-bar gantt-tone-${pr.tone}`}
+        href={pr.htmlUrl}
+        target="_blank"
+        rel="noreferrer"
+        style={style}
+      >
+        <span>PR #{pr.number}</span>
+        {pr.isShared ? <em>shared</em> : null}
+        {pr.ciState ? <em>ci {labelText(pr.ciState)}</em> : null}
+        {pr.reviewDecision ? <em>{labelText(pr.reviewDecision)}</em> : null}
+        {pr.testingState !== "not_ready" ? <em>{labelText(pr.testingState)}</em> : null}
+      </a>
+    </Tooltip>
+  );
+}
+
+function ganttBarStyle(bar: { offsetPercent: number; widthPercent: number }, top: number): CSSProperties {
+  return {
+    left: `${bar.offsetPercent}%`,
+    top,
+    width: `${bar.widthPercent}%`
+  };
+}
+
+function ganttToneColor(tone: PersonalGanttRow["tone"]): string {
+  if (tone === "critical") {
+    return "red";
+  }
+  if (tone === "attention") {
+    return "orange";
+  }
+  if (tone === "muted") {
+    return "default";
+  }
+  return "blue";
+}
+
 function linkedObjectUrl(sourceUrl: string, kind: "issues" | "pull", number: number): string {
   return sourceUrl.replace(/\/(?:issues|pull)\/\d+$/, `/${kind}/${number}`);
 }
@@ -1345,6 +1513,7 @@ function SelectedPersonWorkbench({
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
   const activityItems = personalActivityItems(person);
+  const gantt = personalGanttChart(person);
   const flowSummary = flowEfficiencySummary({
     points: trendPoints,
     pendingPrs: person.pendingPrs,
@@ -1394,6 +1563,21 @@ function SelectedPersonWorkbench({
           </Space>
         </div>
         <PersonalActivityFeed items={activityItems} />
+      </section>
+
+      <section className="gantt-panel">
+        <div className="subsection-heading">
+          <Title level={5}>Issue / PR Timeline</Title>
+          <Space size={[6, 6]} wrap>
+            <Tag>{gantt.rows.length} lanes</Tag>
+            <Tag color={gantt.sharedPrCount > 0 ? "purple" : "default"}>{gantt.sharedPrCount} shared PR</Tag>
+            <Tag color={gantt.unlinkedPrCount > 0 ? "orange" : "default"}>{gantt.unlinkedPrCount} unlinked PR</Tag>
+            <Tag color={gantt.outsideIssuePrCount > 0 ? "blue" : "default"}>
+              {gantt.outsideIssuePrCount} outside issue lane
+            </Tag>
+          </Space>
+        </div>
+        <PersonalGanttTimeline chart={gantt} />
       </section>
 
       <div className="work-lane-grid work-lane-grid-priority">

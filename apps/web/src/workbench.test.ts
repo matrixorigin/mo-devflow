@@ -10,6 +10,7 @@ import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
   flowEfficiencySummary,
+  personalGanttChart,
   personalActivityItems,
   personPrimaryReasons,
   personWorkloadStatus,
@@ -238,6 +239,62 @@ describe("personal activity feed", () => {
   });
 });
 
+describe("personal gantt chart", () => {
+  it("keeps many-to-many issue and PR links visible", () => {
+    const sharedPr = pullRequest({
+      number: 20,
+      ageHours: 48,
+      createdAt: "2026-07-02T00:00:00.000Z",
+      linkedIssueNumbers: [10, 11],
+      attentionFlags: ["ci_failed"],
+      ciState: "failure"
+    });
+    const unlinkedPr = pullRequest({
+      number: 21,
+      ageHours: 12,
+      createdAt: "2026-07-03T12:00:00.000Z",
+      linkedIssueNumbers: []
+    });
+    const outsideIssuePr = pullRequest({
+      number: 22,
+      ageHours: 10,
+      createdAt: "2026-07-03T14:00:00.000Z",
+      linkedIssueNumbers: [999]
+    });
+    const person = personalView({
+      activeCriticalIssues: [
+        criticalIssue({
+          number: 10,
+          linkedPullRequests: [
+            {
+              ...linkedPullRequest(),
+              number: 20,
+              linkedIssueNumbers: [10, 11]
+            }
+          ]
+        }),
+        criticalIssue({ number: 11, linkedPullRequests: [] })
+      ],
+      pendingPrs: [sharedPr, unlinkedPr, outsideIssuePr],
+      attentionPrs: [sharedPr]
+    });
+
+    const chart = personalGanttChart(person, "2026-07-04T00:00:00.000Z");
+    const issue10 = chart.rows.find((row) => row.id === "issue:10");
+    const issue11 = chart.rows.find((row) => row.id === "issue:11");
+    const otherPrs = chart.rows.find((row) => row.id === "other-prs");
+
+    expect(issue10?.prs.map((pr) => pr.number)).toEqual([20]);
+    expect(issue11?.prs.map((pr) => pr.number)).toEqual([20]);
+    expect(issue10?.prs[0]?.isShared).toBe(true);
+    expect(issue11?.prs[0]?.isShared).toBe(true);
+    expect(otherPrs?.prs.map((pr) => pr.number)).toEqual([21, 22]);
+    expect(chart.sharedPrCount).toBe(1);
+    expect(chart.unlinkedPrCount).toBe(1);
+    expect(chart.outsideIssuePrCount).toBe(1);
+  });
+});
+
 function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
   return {
     date: input.date ?? "2026-07-04",
@@ -258,6 +315,10 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
     pendingPrs: input.pendingPrs ?? 0,
     averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
     attentionPrs: input.attentionPrs ?? 0,
+    ciFailedPrs: input.ciFailedPrs ?? 0,
+    requestedChangePrs: input.requestedChangePrs ?? 0,
+    reviewWaitingPrs: input.reviewWaitingPrs ?? 0,
+    mergeConflictPrs: input.mergeConflictPrs ?? 0,
     testingQueuePrs: input.testingQueuePrs ?? 0,
     averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: input.sourceCompleteness ?? "complete_cache",

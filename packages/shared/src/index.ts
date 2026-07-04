@@ -541,6 +541,10 @@ export interface DailyMetricPoint {
   pendingPrs: number;
   averagePendingPrAgeHours: number | null;
   attentionPrs: number;
+  ciFailedPrs: number;
+  requestedChangePrs: number;
+  reviewWaitingPrs: number;
+  mergeConflictPrs: number;
   testingQueuePrs: number;
   averageTestingQueueAgeHours: number | null;
   sourceCompleteness: MetricSourceCompleteness;

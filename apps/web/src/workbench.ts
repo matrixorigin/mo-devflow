@@ -1,4 +1,5 @@
 import type {
+  CriticalIssueLinkedPullRequestView,
   CriticalIssueView,
   PersonSummary,
   PersonalActionView,
@@ -32,6 +33,66 @@ export interface PersonalActivityItem {
   linkedPullRequestNumbers: number[];
   reasons: string[];
   isComplete: boolean;
+}
+
+export type PersonalGanttTone = "critical" | "attention" | "normal" | "muted";
+export type PersonalGanttRowKind = "issue" | "other_prs";
+
+export interface PersonalGanttBarLayout {
+  startAgeHours: number;
+  endAgeHours: number;
+  offsetPercent: number;
+  widthPercent: number;
+}
+
+export interface PersonalGanttPrBar extends PersonalGanttBarLayout {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  ownerLogin: string;
+  state: "open" | "closed";
+  tone: PersonalGanttTone;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  testingState: string;
+  testingQueueAgeHours: number | null;
+  attentionFlags: string[];
+  linkedIssueNumbers: number[];
+  reasons: string[];
+  isShared: boolean;
+  isComplete: boolean;
+}
+
+export interface PersonalGanttIssueBar extends PersonalGanttBarLayout {
+  number: number | null;
+  title: string;
+  htmlUrl: string | null;
+  tone: PersonalGanttTone;
+  severity: string | null;
+  lifecycleState: string | null;
+  aiEffortLabel: string | null;
+  reasons: string[];
+  isComplete: boolean;
+}
+
+export interface PersonalGanttRow {
+  id: string;
+  kind: PersonalGanttRowKind;
+  title: string;
+  priority: number;
+  tone: PersonalGanttTone;
+  issue: PersonalGanttIssueBar;
+  prs: PersonalGanttPrBar[];
+  linkedIssueNumbers: number[];
+}
+
+export interface PersonalGanttChart {
+  rows: PersonalGanttRow[];
+  maxAgeHours: number;
+  sharedPrCount: number;
+  unlinkedPrCount: number;
+  outsideIssuePrCount: number;
 }
 
 export interface FlowEfficiencyMetricPoint {
@@ -206,6 +267,8 @@ const attentionFlagLabels: Record<string, string> = {
   review_requested_no_response: "Review waiting"
 };
 
+const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+
 export function prAttentionReasons(pr: PersonalPullRequestView): string[] {
   const reasons = pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
@@ -248,6 +311,352 @@ export function personalIssueReasons(issue: PersonalIssueView): string[] {
     return reasons;
   }
   return issue.labels.slice(0, 3);
+}
+
+type GanttPullRequestSource = PersonalPullRequestView | CriticalIssueLinkedPullRequestView;
+
+type PersonalGanttPrDraft = Omit<PersonalGanttPrBar, keyof PersonalGanttBarLayout> & {
+  startAgeHours: number;
+  endAgeHours: number;
+};
+
+type PersonalGanttIssueDraft = Omit<PersonalGanttIssueBar, keyof PersonalGanttBarLayout> & {
+  startAgeHours: number;
+  endAgeHours: number;
+};
+
+interface PersonalGanttRowDraft {
+  id: string;
+  kind: PersonalGanttRowKind;
+  title: string;
+  priority: number;
+  tone: PersonalGanttTone;
+  issue: PersonalGanttIssueDraft;
+  prs: PersonalGanttPrDraft[];
+  linkedIssueNumbers: number[];
+}
+
+export function personalGanttChart(
+  person: PersonalActionView,
+  nowIso: string = new Date().toISOString()
+): PersonalGanttChart {
+  const personalPrs = collectPersonalPullRequests(person);
+  const visibleIssues = [...person.activeCriticalIssues, ...person.needsTriageIssues, ...person.deferredIssues];
+  const visibleIssueNumbers = new Set(visibleIssues.map((issue) => issue.number));
+  const prNumbersShownInIssueRows = new Set<number>();
+  const drafts: PersonalGanttRowDraft[] = visibleIssues.map((issue) => {
+    const criticalIssue = isCriticalIssue(issue);
+    const relatedPrs = new Map<number, GanttPullRequestSource>();
+    if (criticalIssue) {
+      for (const pr of issue.linkedPullRequests) {
+        relatedPrs.set(pr.number, personalPrs.get(pr.number) ?? pr);
+      }
+    }
+    for (const pr of personalPrs.values()) {
+      if (pr.linkedIssueNumbers.includes(issue.number)) {
+        relatedPrs.set(pr.number, pr);
+      }
+    }
+    const prs = Array.from(relatedPrs.values())
+      .map((pr) => prDraft(pr, nowIso, isSharedPullRequest(pr)))
+      .sort(sortGanttPrDrafts);
+    for (const pr of prs) {
+      prNumbersShownInIssueRows.add(pr.number);
+    }
+
+    return {
+      id: `issue:${issue.number}`,
+      kind: "issue",
+      title: `Issue #${issue.number}`,
+      priority: issuePriority(issue),
+      tone: issueGanttTone(issue),
+      issue: issueDraft(issue, nowIso),
+      prs,
+      linkedIssueNumbers: [issue.number]
+    };
+  });
+
+  const otherPrs = Array.from(personalPrs.values())
+    .filter((pr) => !prNumbersShownInIssueRows.has(pr.number))
+    .map((pr) => prDraft(pr, nowIso, isSharedPullRequest(pr)))
+    .sort(sortGanttPrDrafts);
+  if (otherPrs.length > 0) {
+    const maxOtherAge = Math.max(...otherPrs.map((pr) => pr.startAgeHours), 1);
+    drafts.push({
+      id: "other-prs",
+      kind: "other_prs",
+      title: "Other PR work",
+      priority: 220,
+      tone: otherPrs.some((pr) => pr.tone === "attention") ? "attention" : "normal",
+      issue: {
+        number: null,
+        title: "PRs without a visible issue lane",
+        htmlUrl: null,
+        tone: otherPrs.some((pr) => pr.tone === "attention") ? "attention" : "normal",
+        severity: null,
+        lifecycleState: null,
+        aiEffortLabel: null,
+        reasons: [`${otherPrs.length} PRs`],
+        isComplete: otherPrs.every((pr) => pr.isComplete),
+        startAgeHours: maxOtherAge,
+        endAgeHours: 0
+      },
+      prs: otherPrs,
+      linkedIssueNumbers: Array.from(new Set(otherPrs.flatMap((pr) => pr.linkedIssueNumbers))).sort(
+        (left, right) => left - right
+      )
+    });
+  }
+
+  const maxAgeHours = Math.max(
+    24,
+    ...drafts.map((row) => row.issue.startAgeHours),
+    ...drafts.flatMap((row) => row.prs.map((pr) => pr.startAgeHours))
+  );
+
+  const rows = drafts
+    .sort((left, right) => right.priority - left.priority || right.issue.startAgeHours - left.issue.startAgeHours)
+    .map((row) => ({
+      ...row,
+      issue: withLayout(row.issue, maxAgeHours),
+      prs: row.prs.map((pr) => withLayout(pr, maxAgeHours))
+    }));
+  const uniquePrs = Array.from(personalPrs.values());
+
+  return {
+    rows,
+    maxAgeHours,
+    sharedPrCount: uniquePrs.filter(isSharedPullRequest).length,
+    unlinkedPrCount: uniquePrs.filter((pr) => pr.linkedIssueNumbers.length === 0).length,
+    outsideIssuePrCount: uniquePrs.filter(
+      (pr) =>
+        pr.linkedIssueNumbers.length > 0 && pr.linkedIssueNumbers.every((number) => !visibleIssueNumbers.has(number))
+    ).length
+  };
+}
+
+function collectPersonalPullRequests(person: PersonalActionView): Map<number, PersonalPullRequestView> {
+  const prs = new Map<number, PersonalPullRequestView>();
+  const add = (pr: PersonalPullRequestView): void => {
+    const existing = prs.get(pr.number);
+    prs.set(pr.number, existing ? mergePersonalPullRequest(existing, pr) : pr);
+  };
+
+  for (const pr of person.pendingPrs) {
+    add(pr);
+  }
+  for (const pr of person.attentionPrs) {
+    add(pr);
+  }
+  for (const pr of person.testingPrs) {
+    add(pr);
+  }
+  for (const pr of person.prsCreatedYesterday) {
+    add(pr);
+  }
+  for (const pr of person.prsMergedYesterday) {
+    add(pr);
+  }
+
+  return prs;
+}
+
+function mergePersonalPullRequest(
+  left: PersonalPullRequestView,
+  right: PersonalPullRequestView
+): PersonalPullRequestView {
+  return {
+    ...left,
+    ...right,
+    reviewDecision: right.reviewDecision ?? left.reviewDecision,
+    mergeStateStatus: right.mergeStateStatus ?? left.mergeStateStatus,
+    ciState: right.ciState ?? left.ciState,
+    latestReviewState: right.latestReviewState ?? left.latestReviewState,
+    latestReviewSubmittedAt: right.latestReviewSubmittedAt ?? left.latestReviewSubmittedAt,
+    latestCommitAt: right.latestCommitAt ?? left.latestCommitAt,
+    detailSyncedAt: right.detailSyncedAt ?? left.detailSyncedAt,
+    detailError: right.detailError ?? left.detailError,
+    testingQueueAgeHours: right.testingQueueAgeHours ?? left.testingQueueAgeHours,
+    attentionFlags: uniqueStrings([...left.attentionFlags, ...right.attentionFlags]),
+    linkedIssueNumbers: uniqueNumbers([...left.linkedIssueNumbers, ...right.linkedIssueNumbers]),
+    testingTesters: uniqueStrings([...left.testingTesters, ...right.testingTesters]),
+    testingSignals: uniqueStrings([...left.testingSignals, ...right.testingSignals]),
+    isComplete: left.isComplete && right.isComplete
+  };
+}
+
+function issueDraft(issue: CriticalIssueView | PersonalIssueView, nowIso: string): PersonalGanttIssueDraft {
+  const criticalIssue = isCriticalIssue(issue);
+  return {
+    number: issue.number,
+    title: issue.title,
+    htmlUrl: issue.htmlUrl,
+    tone: issueGanttTone(issue),
+    severity: issue.severity,
+    lifecycleState: issue.lifecycleState,
+    aiEffortLabel: criticalIssue ? effectiveAiEffortLabel(issue.aiEffortLabel) : null,
+    reasons: criticalIssue ? criticalIssueReasons(issue) : personalIssueReasons(issue),
+    isComplete: issue.isComplete,
+    startAgeHours: Math.max(issue.ageHours, 0),
+    endAgeHours: 0
+  };
+}
+
+function prDraft(pr: GanttPullRequestSource, nowIso: string, isShared: boolean): PersonalGanttPrDraft {
+  const reasons = prReasons(pr);
+  return {
+    number: pr.number,
+    title: pr.title,
+    htmlUrl: pr.htmlUrl,
+    ownerLogin: pr.ownerLogin,
+    state: pr.state,
+    tone: prGanttTone(pr, reasons),
+    reviewDecision: pr.reviewDecision,
+    mergeStateStatus: pr.mergeStateStatus,
+    ciState: pr.ciState,
+    testingState: pr.testingState,
+    testingQueueAgeHours: pr.testingQueueAgeHours,
+    attentionFlags: pr.attentionFlags,
+    linkedIssueNumbers: pr.linkedIssueNumbers,
+    reasons,
+    isShared,
+    isComplete: pr.isComplete,
+    startAgeHours: prStartAgeHours(pr, nowIso),
+    endAgeHours: prEndAgeHours(pr, nowIso)
+  };
+}
+
+function issuePriority(issue: CriticalIssueView | PersonalIssueView): number {
+  if (isCriticalIssue(issue)) {
+    return 1_000 + severityPriority(issue.severity);
+  }
+  if (issue.lifecycleState === "needs-triage") {
+    return 660;
+  }
+  if (issue.lifecycleState === "deferred") {
+    return 360;
+  }
+  return 500;
+}
+
+function issueGanttTone(issue: CriticalIssueView | PersonalIssueView): PersonalGanttTone {
+  if (isCriticalIssue(issue)) {
+    return "critical";
+  }
+  if (issue.lifecycleState === "needs-triage") {
+    return "attention";
+  }
+  if (issue.lifecycleState === "deferred") {
+    return "muted";
+  }
+  return "normal";
+}
+
+function prGanttTone(pr: GanttPullRequestSource, reasons: string[]): PersonalGanttTone {
+  if (reasons.length > 0) {
+    return "attention";
+  }
+  if (pr.state === "closed") {
+    return "muted";
+  }
+  return "normal";
+}
+
+function prReasons(pr: GanttPullRequestSource): string[] {
+  const reasons = pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
+  if (pr.reviewDecision === "changes_requested") {
+    reasons.push(attentionFlagLabels.requested_changes);
+  }
+  if (pr.ciState && failedCiStates.has(pr.ciState)) {
+    reasons.push(attentionFlagLabels.ci_failed);
+  }
+  if (pr.mergeStateStatus === "dirty") {
+    reasons.push(attentionFlagLabels.merge_conflict);
+  }
+  if (pr.testingState === "test_changes_requested") {
+    reasons.push("Testing changes requested");
+  }
+  if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
+    reasons.push("Testing queue aging");
+  }
+  return uniqueStrings(reasons);
+}
+
+function prStartAgeHours(pr: GanttPullRequestSource, nowIso: string): number {
+  if ("createdAt" in pr) {
+    return hoursBetween(pr.createdAt, nowIso) ?? Math.max(pr.ageHours, 0);
+  }
+  return Math.max(pr.ageHours, 0);
+}
+
+function prEndAgeHours(pr: GanttPullRequestSource, nowIso: string): number {
+  if ("mergedAt" in pr && pr.mergedAt) {
+    return hoursBetween(pr.mergedAt, nowIso) ?? 0;
+  }
+  return 0;
+}
+
+function hoursBetween(startIso: string, endIso: string): number | null {
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return null;
+  }
+  return Math.round(((end - start) / 3_600_000) * 10) / 10;
+}
+
+function withLayout<T extends { startAgeHours: number; endAgeHours: number }>(
+  draft: T,
+  maxAgeHours: number
+): T & PersonalGanttBarLayout {
+  const startAgeHours = clamp(draft.startAgeHours, 0, maxAgeHours);
+  const endAgeHours = clamp(Math.min(draft.endAgeHours, startAgeHours), 0, maxAgeHours);
+  const offsetPercent = ((maxAgeHours - startAgeHours) / maxAgeHours) * 100;
+  const widthPercent = Math.max(1.8, ((startAgeHours - endAgeHours) / maxAgeHours) * 100);
+  return {
+    ...draft,
+    startAgeHours,
+    endAgeHours,
+    offsetPercent: Math.round(offsetPercent * 10) / 10,
+    widthPercent: Math.round(widthPercent * 10) / 10
+  };
+}
+
+function sortGanttPrDrafts(left: PersonalGanttPrDraft, right: PersonalGanttPrDraft): number {
+  const toneDelta = ganttToneRank(right.tone) - ganttToneRank(left.tone);
+  if (toneDelta !== 0) {
+    return toneDelta;
+  }
+  return right.startAgeHours - left.startAgeHours || left.number - right.number;
+}
+
+function ganttToneRank(tone: PersonalGanttTone): number {
+  if (tone === "critical") {
+    return 4;
+  }
+  if (tone === "attention") {
+    return 3;
+  }
+  if (tone === "normal") {
+    return 2;
+  }
+  return 1;
+}
+
+function isSharedPullRequest(pr: GanttPullRequestSource): boolean {
+  return uniqueNumbers(pr.linkedIssueNumbers).length > 1;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.length > 0)));
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values)).sort((left, right) => left - right);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 export function personalActivityItems(person: PersonalActionView): PersonalActivityItem[] {

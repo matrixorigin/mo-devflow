@@ -24,6 +24,10 @@ describe("schema contract", () => {
     expect(expected.get("user_github_tokens")).toContain("repo_permission");
     expect(expected.get("daily_metrics")).toContain("active_critical_issues");
     expect(expected.get("daily_metrics")).toContain("avg_pending_pr_age_hours");
+    expect(expected.get("daily_metrics")).toContain("ci_failed_prs");
+    expect(expected.get("daily_metrics")).toContain("requested_change_prs");
+    expect(expected.get("daily_metrics")).toContain("review_waiting_prs");
+    expect(expected.get("daily_metrics")).toContain("merge_conflict_prs");
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");
 
     const specs = expectedSchemaColumnSpecsFromStatements();
@@ -43,6 +47,10 @@ describe("schema contract", () => {
     expect(specs.get("daily_metrics")?.get("avg_testing_queue_age_hours")).toEqual({
       columnType: "DOUBLE",
       nullable: true
+    });
+    expect(specs.get("daily_metrics")?.get("ci_failed_prs")).toEqual({
+      columnType: "INT",
+      nullable: false
     });
   });
 

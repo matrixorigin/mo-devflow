@@ -348,6 +348,10 @@ const schemaStatements = [
     pending_prs INT NOT NULL,
     avg_pending_pr_age_hours DOUBLE,
     attention_prs INT NOT NULL,
+    ci_failed_prs INT NOT NULL,
+    requested_change_prs INT NOT NULL,
+    review_waiting_prs INT NOT NULL,
+    merge_conflict_prs INT NOT NULL,
     testing_queue_prs INT NOT NULL,
     avg_testing_queue_age_hours DOUBLE,
     source_completeness VARCHAR(64) NOT NULL,
@@ -486,6 +490,18 @@ const migrations: SchemaMigration[] = [
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN attention_prs INT NOT NULL DEFAULT 0");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN testing_queue_prs INT NOT NULL DEFAULT 0");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_testing_queue_age_hours DOUBLE");
+      }
+    }
+  },
+  {
+    version: "0004",
+    name: "daily_metric_pr_quality_snapshots",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("daily_metrics")) {
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN ci_failed_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN requested_change_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN review_waiting_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN merge_conflict_prs INT NOT NULL DEFAULT 0");
       }
     }
   }

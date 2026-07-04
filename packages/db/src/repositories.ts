@@ -2111,6 +2111,10 @@ function newMetricPoint(date: string, scopeType: "team" | "person", scopeKey: st
     pendingPrs: 0,
     averagePendingPrAgeHours: null,
     attentionPrs: 0,
+    ciFailedPrs: 0,
+    requestedChangePrs: 0,
+    reviewWaitingPrs: 0,
+    mergeConflictPrs: 0,
     testingQueuePrs: 0,
     averageTestingQueueAgeHours: null,
     sourceCompleteness: "partial_cache",
@@ -2186,6 +2190,24 @@ function isTestingQueueState(value: string): boolean {
   return ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(value);
 }
 
+const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+
+function normalizedRowState(row: RowData, key: string): string {
+  return asString(row[key]).toLowerCase();
+}
+
+function prHasReviewWaitingSignal(row: RowData, attentionFlags: string[]): boolean {
+  if (attentionFlags.includes("review_requested_no_response")) {
+    return true;
+  }
+  return (
+    parseJsonArray(asString(row.requested_reviewers_json)).length > 0 &&
+    !normalizedRowState(row, "review_decision") &&
+    !normalizedRowState(row, "latest_review_state") &&
+    !fromSqlDate(row.latest_review_submitted_at)
+  );
+}
+
 function copyMetricSnapshot(target: DailyMetricPoint, source: DailyMetricPoint): void {
   target.activeCriticalIssues = source.activeCriticalIssues;
   target.averageActiveCriticalIssueAgeHours = source.averageActiveCriticalIssueAgeHours;
@@ -2196,6 +2218,10 @@ function copyMetricSnapshot(target: DailyMetricPoint, source: DailyMetricPoint):
   target.pendingPrs = source.pendingPrs;
   target.averagePendingPrAgeHours = source.averagePendingPrAgeHours;
   target.attentionPrs = source.attentionPrs;
+  target.ciFailedPrs = source.ciFailedPrs;
+  target.requestedChangePrs = source.requestedChangePrs;
+  target.reviewWaitingPrs = source.reviewWaitingPrs;
+  target.mergeConflictPrs = source.mergeConflictPrs;
   target.testingQueuePrs = source.testingQueuePrs;
   target.averageTestingQueueAgeHours = source.averageTestingQueueAgeHours;
 }
@@ -2272,8 +2298,25 @@ function applyBacklogSnapshotMetrics(input: {
         }
         point.pendingPrs += 1;
         pendingPrAges.push(ageHours);
-        if (parseJsonArray(asString(row.attention_flags_json)).length > 0) {
+        const attentionFlags = parseJsonArray(asString(row.attention_flags_json));
+        if (attentionFlags.length > 0) {
           point.attentionPrs += 1;
+        }
+        if (attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedRowState(row, "ci_state"))) {
+          point.ciFailedPrs += 1;
+        }
+        if (
+          attentionFlags.includes("requested_changes") ||
+          normalizedRowState(row, "review_decision") === "changes_requested" ||
+          normalizedRowState(row, "latest_review_state") === "changes_requested"
+        ) {
+          point.requestedChangePrs += 1;
+        }
+        if (prHasReviewWaitingSignal(row, attentionFlags)) {
+          point.reviewWaitingPrs += 1;
+        }
+        if (attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty") {
+          point.mergeConflictPrs += 1;
         }
         if (isTestingQueueState(asString(row.testing_state))) {
           point.testingQueuePrs += 1;
@@ -2404,7 +2447,10 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [prRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, closed_at, merged_at, attention_flags_json, testing_state, testing_queue_age_hours
+    `SELECT owner_login, created_at, closed_at, merged_at,
+            requested_reviewers_json, review_decision, merge_state_status, ci_state,
+            latest_review_state, latest_review_submitted_at,
+            attention_flags_json, testing_state, testing_queue_age_hours
      FROM pull_requests
      WHERE repo_id = ?`,
     [repoId]
@@ -2473,9 +2519,10 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
         needs_triage_issues, avg_needs_triage_issue_age_hours,
         deferred_issues, avg_deferred_issue_age_hours,
         pending_prs, avg_pending_pr_age_hours, attention_prs,
+        ci_failed_prs, requested_change_prs, review_waiting_prs, merge_conflict_prs,
         testing_queue_prs, avg_testing_queue_age_hours,
         source_completeness, generated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         repoId,
         point.date,
@@ -2496,6 +2543,10 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
         point.pendingPrs,
         point.averagePendingPrAgeHours,
         point.attentionPrs,
+        point.ciFailedPrs,
+        point.requestedChangePrs,
+        point.reviewWaitingPrs,
+        point.mergeConflictPrs,
         point.testingQueuePrs,
         point.averageTestingQueueAgeHours,
         point.sourceCompleteness,
@@ -2939,6 +2990,10 @@ export async function getDashboardSummary(
         ? null
         : asNumber(row.avg_pending_pr_age_hours),
     attentionPrs: asNumber(row.attention_prs),
+    ciFailedPrs: asNumber(row.ci_failed_prs),
+    requestedChangePrs: asNumber(row.requested_change_prs),
+    reviewWaitingPrs: asNumber(row.review_waiting_prs),
+    mergeConflictPrs: asNumber(row.merge_conflict_prs),
     testingQueuePrs: asNumber(row.testing_queue_prs),
     averageTestingQueueAgeHours:
       row.avg_testing_queue_age_hours === null || row.avg_testing_queue_age_hours === undefined
