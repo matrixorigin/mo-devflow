@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { isSupportedGitHubWebhookEvent } from "@mo-devflow/shared";
 import { loadRepoProfile } from "@mo-devflow/config";
 import { recordGitHubWebhookDelivery, upsertRepoProfile } from "@mo-devflow/db";
 import {
@@ -67,6 +68,17 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
         deliveryId: headers.deliveryId,
         eventName: headers.eventName,
         reason: "repository_mismatch"
+      });
+    }
+
+    if (!isSupportedGitHubWebhookEvent(headers.eventName)) {
+      return reply.status(202).send({
+        accepted: false,
+        duplicate: false,
+        ignored: true,
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        reason: "unsupported_event"
       });
     }
 

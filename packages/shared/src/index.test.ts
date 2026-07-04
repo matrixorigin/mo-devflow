@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { buildGitHubWriteCapabilities, notificationStatusRequiresAcknowledgement } from "./index";
+import {
+  buildGitHubWriteCapabilities,
+  isSupportedGitHubWebhookEvent,
+  notificationStatusRequiresAcknowledgement,
+  supportedGitHubWebhookEvents
+} from "./index";
 
 describe("GitHub write capabilities", () => {
   test("requires a validated connected token before issue label writes are enabled", () => {
@@ -90,5 +95,14 @@ describe("notification acknowledgement policy", () => {
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+  });
+});
+
+describe("GitHub webhook event contract", () => {
+  test("lists only webhook events with implemented cache ingestion", () => {
+    expect(supportedGitHubWebhookEvents).toEqual(["issues", "pull_request"]);
+    expect(isSupportedGitHubWebhookEvent("issues")).toBe(true);
+    expect(isSupportedGitHubWebhookEvent("pull_request")).toBe(true);
+    expect(isSupportedGitHubWebhookEvent("workflow_run")).toBe(false);
   });
 });

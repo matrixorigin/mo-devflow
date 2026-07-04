@@ -205,4 +205,42 @@ describe("webhook routes", () => {
       await app.close();
     }
   });
+
+  test("ignores signed GitHub webhooks for events that are not ingested yet", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "completed",
+      repository: { full_name: "matrixorigin/matrixone" },
+      workflow_run: { id: 123 }
+    });
+    const app = await createWebhookApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-3",
+          "x-github-event": "workflow_run",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({
+        accepted: false,
+        duplicate: false,
+        ignored: true,
+        deliveryId: "delivery-3",
+        eventName: "workflow_run",
+        reason: "unsupported_event"
+      });
+      expect(mocks.upsertRepoProfile).not.toHaveBeenCalled();
+      expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 });

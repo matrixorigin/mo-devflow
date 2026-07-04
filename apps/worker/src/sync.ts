@@ -32,12 +32,13 @@ import {
   type CacheSource,
   workflowViolationsForIssue
 } from "@mo-devflow/rules";
-import type {
-  AiDriftSignal,
-  NormalizedIssue,
-  NotificationCandidate,
-  NotificationStatus,
-  WorkflowViolation
+import {
+  isSupportedGitHubWebhookEvent,
+  type AiDriftSignal,
+  type NormalizedIssue,
+  type NotificationCandidate,
+  type NotificationStatus,
+  type WorkflowViolation
 } from "@mo-devflow/shared";
 
 export interface SyncResult {
@@ -383,6 +384,10 @@ async function processWebhookPayload(input: {
   eventName: string;
   payload: Record<string, unknown>;
 }): Promise<{ processed: boolean; skipped: boolean; message: string }> {
+  if (!isSupportedGitHubWebhookEvent(input.eventName)) {
+    return { processed: true, skipped: true, message: `unsupported event ${input.eventName}` };
+  }
+
   if (input.eventName === "issues") {
     const rawIssue = recordPayload(input.payload.issue);
     if (!rawIssue) {
@@ -458,7 +463,8 @@ async function processWebhookPayload(input: {
     return { processed: true, skipped: false, message: `updated PR #${cachedPr.number}` };
   }
 
-  return { processed: true, skipped: true, message: `unsupported event ${input.eventName}` };
+  const exhaustiveEvent: never = input.eventName;
+  throw new Error(`Unhandled supported webhook event ${exhaustiveEvent}`);
 }
 
 export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliverySyncResult> {
