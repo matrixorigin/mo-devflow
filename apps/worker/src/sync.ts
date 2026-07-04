@@ -5,6 +5,8 @@ import {
   listCachedPullRequestsForRules,
   listNotificationCandidates,
   isNotificationInCooldown,
+  notificationDeliveryCooldownHoursForDedupe,
+  notificationDeliveryCooldownStatuses,
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
   pullRequestAttentionRuleKeys,
@@ -31,7 +33,7 @@ import {
   fetchGitHubSnapshot,
   fetchPullRequestInsightForNumber
 } from "@mo-devflow/github";
-import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
+import { buildWeComMarkdown, classifyWeComFailure, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
   aiDriftSignalsForPullRequest,
   aiDriftSignalsForIssue,
@@ -112,6 +114,10 @@ export function metricsRetentionDaysFromEnv(
 
 export function dateAfterSeconds(seconds: number): string {
   return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+export function notificationFailureStatus(error: unknown): NotificationStatus {
+  return classifyWeComFailure(error) === "permanent" ? "failed_permanent" : "failed_transient";
 }
 
 function shouldKeepIssue(issue: NormalizedIssue): boolean {
@@ -304,7 +310,6 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
     failed: 0,
     cooldown: 0
   };
-  const deliveryCooldownStatuses: NotificationStatus[] = ["sent", "failed", "dry_run"];
 
   for (const candidate of candidates) {
     const cooldownHours = notificationCooldownHours(candidate, profile.notifications.routing.cooldownHours);
@@ -377,7 +382,11 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
       continue;
     }
 
-    if (await isNotificationInCooldown(candidate.dedupeKey, cooldownHours, deliveryCooldownStatuses)) {
+    const deliveryCooldownHours = await notificationDeliveryCooldownHoursForDedupe(candidate.dedupeKey, cooldownHours);
+    if (
+      deliveryCooldownHours !== null &&
+      (await isNotificationInCooldown(candidate.dedupeKey, deliveryCooldownHours, notificationDeliveryCooldownStatuses))
+    ) {
       summary.cooldown += 1;
       continue;
     }
@@ -412,7 +421,7 @@ export async function sendNotificationsOnce(): Promise<NotificationSyncResult> {
         repoId,
         candidate,
         channel: "wecom",
-        status: "failed",
+        status: notificationFailureStatus(error),
         dryRun: false,
         payload,
         errorMessage: error instanceof Error ? error.message : String(error)

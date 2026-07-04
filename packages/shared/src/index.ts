@@ -570,7 +570,8 @@ export type NotificationSourceType =
   | "monthly_digest";
 export type NotificationStatus =
   | "sent"
-  | "failed"
+  | "failed_transient"
+  | "failed_permanent"
   | "dry_run"
   | "skipped_disabled"
   | "skipped_no_webhook"

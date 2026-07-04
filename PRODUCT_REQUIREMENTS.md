@@ -577,6 +577,7 @@ Notifications must be controlled by policy:
 - Escalate unresolved or unacknowledged critical attention items after the configured threshold.
 - Resolve or suppress notifications automatically when the underlying attention item is no longer true.
 - Record repeated delivery failures and show them on the dashboard.
+- Distinguish transient delivery failures that should retry with backoff from permanent delivery failures that need configuration or operator action.
 - Record notification delivery state.
 - Record acknowledgement state when supported by the channel or by the product UI.
 

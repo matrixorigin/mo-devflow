@@ -5,6 +5,43 @@ export interface WeComSendResult {
   body: unknown;
 }
 
+export type WeComFailureKind = "transient" | "permanent";
+
+export class WeComSendError extends Error {
+  readonly failureKind: WeComFailureKind;
+  readonly status: number | null;
+  readonly providerBody: unknown;
+
+  constructor(
+    message: string,
+    input: { failureKind: WeComFailureKind; status: number | null; providerBody?: unknown }
+  ) {
+    super(message);
+    this.name = "WeComSendError";
+    this.failureKind = input.failureKind;
+    this.status = input.status;
+    this.providerBody = input.providerBody;
+  }
+}
+
+export function weComFailureKindFromHttpStatus(status: number): WeComFailureKind {
+  if (status === 408 || status === 429 || status >= 500) {
+    return "transient";
+  }
+  return "permanent";
+}
+
+export function weComFailureKindFromProviderCode(code: number): WeComFailureKind {
+  return code === 45009 ? "transient" : "permanent";
+}
+
+export function classifyWeComFailure(error: unknown): WeComFailureKind {
+  if (error instanceof WeComSendError) {
+    return error.failureKind;
+  }
+  return "transient";
+}
+
 export function buildWeComMarkdown(profile: RepoProfile, candidate: NotificationCandidate): string {
   const objectText = candidate.objectNumber ? `${candidate.objectType} #${candidate.objectNumber}` : candidate.objectType;
   const title = candidate.title.length > 120 ? `${candidate.title.slice(0, 117)}...` : candidate.title;
@@ -87,9 +124,44 @@ export async function sendWeComMarkdown(webhookUrl: string, markdown: string): P
     // Keep provider text as-is.
   }
   if (!response.ok) {
-    throw new Error(`WeCom webhook returned ${response.status}: ${text.slice(0, 240)}`);
+    throw new WeComSendError(`WeCom webhook returned ${response.status}: ${text.slice(0, 240)}`, {
+      failureKind: weComFailureKindFromHttpStatus(response.status),
+      status: response.status,
+      providerBody: body
+    });
+  }
+  const providerFailure = weComProviderFailureFromBody(body);
+  if (providerFailure) {
+    throw new WeComSendError(
+      `WeCom webhook rejected message ${providerFailure.code}: ${providerFailure.message.slice(0, 240)}`,
+      {
+        failureKind: weComFailureKindFromProviderCode(providerFailure.code),
+        status: response.status,
+        providerBody: body
+      }
+    );
   }
   return { status: response.status, body };
+}
+
+function weComProviderFailureFromBody(body: unknown): { code: number; message: string } | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+  const record = body as Record<string, unknown>;
+  const errcode =
+    typeof record.errcode === "number"
+      ? record.errcode
+      : typeof record.errcode === "string"
+        ? Number(record.errcode)
+        : null;
+  if (errcode === null || !Number.isFinite(errcode) || errcode === 0) {
+    return null;
+  }
+  return {
+    code: errcode,
+    message: typeof record.errmsg === "string" ? record.errmsg : `errcode ${errcode}`
+  };
 }
 
 function validatedWebhookUrl(value: string): string {
@@ -97,10 +169,16 @@ function validatedWebhookUrl(value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("WeCom webhook URL is invalid.");
+    throw new WeComSendError("WeCom webhook URL is invalid.", {
+      failureKind: "permanent",
+      status: null
+    });
   }
   if (url.protocol !== "https:") {
-    throw new Error("WeCom webhook URL must use https.");
+    throw new WeComSendError("WeCom webhook URL must use https.", {
+      failureKind: "permanent",
+      status: null
+    });
   }
   return url.toString();
 }

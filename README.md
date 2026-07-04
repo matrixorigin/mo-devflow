@@ -42,6 +42,8 @@ development uses `http://localhost:${MO_DEVFLOW_WEB_PORT}`.
 Notification candidates include immediate attention alerts, escalation alerts,
 and daily, weekly, and monthly maintainer digests derived from cached repository
 metrics.
+Delivery failures are recorded as transient or permanent so the dashboard can
+show retrying provider failures separately from configuration problems.
 
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.

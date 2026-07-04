@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 import type { NotificationCandidate, RepoProfile } from "@mo-devflow/shared";
-import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "./index";
+import {
+  WeComSendError,
+  buildWeComMarkdown,
+  classifyWeComFailure,
+  isInQuietHours,
+  sendWeComMarkdown,
+  weComFailureKindFromHttpStatus,
+  weComFailureKindFromProviderCode
+} from "./index";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -163,5 +171,28 @@ describe("notifications", () => {
 
   test("rejects non-HTTPS webhook URLs before sending", async () => {
     await expect(sendWeComMarkdown("http://example.test/webhook", "message")).rejects.toThrow("must use https");
+  });
+
+  test("classifies WeCom HTTP failures by retryability", () => {
+    expect(weComFailureKindFromHttpStatus(429)).toBe("transient");
+    expect(weComFailureKindFromHttpStatus(500)).toBe("transient");
+    expect(weComFailureKindFromHttpStatus(400)).toBe("permanent");
+  });
+
+  test("classifies WeCom provider error codes by retryability", () => {
+    expect(weComFailureKindFromProviderCode(45009)).toBe("transient");
+    expect(weComFailureKindFromProviderCode(40013)).toBe("permanent");
+  });
+
+  test("preserves permanent validation errors for worker delivery status", async () => {
+    let error: unknown;
+    try {
+      await sendWeComMarkdown("http://example.test/webhook", "message");
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(WeComSendError);
+    expect(classifyWeComFailure(error)).toBe("permanent");
   });
 });

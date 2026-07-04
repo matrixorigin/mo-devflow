@@ -326,7 +326,7 @@ function notificationStatusColor(value: NotificationStatus): string {
   if (value === "sent") {
     return "green";
   }
-  if (value === "failed" || value === "skipped_no_webhook") {
+  if (value === "failed_transient" || value === "failed_permanent" || value === "skipped_no_webhook") {
     return "red";
   }
   if (value === "dry_run" || value === "skipped_quiet_hours") {

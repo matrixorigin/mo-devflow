@@ -91,7 +91,8 @@ describe("notification acknowledgement policy", () => {
   test("only sent notification deliveries require acknowledgement", () => {
     expect(notificationStatusRequiresAcknowledgement("sent")).toBe(true);
     expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
-    expect(notificationStatusRequiresAcknowledgement("failed")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed_transient")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed_permanent")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);

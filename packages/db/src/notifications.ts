@@ -193,6 +193,38 @@ export function notificationImmediateLimit(limit: number): number {
   return Math.max(1, limit - digestSlots);
 }
 
+export const PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS = 24 * 365 * 10;
+const TRANSIENT_NOTIFICATION_FAILURE_BASE_COOLDOWN_HOURS = 0.25;
+export const notificationDeliveryCooldownStatuses: NotificationStatus[] = [
+  "sent",
+  "failed_transient",
+  "failed_permanent",
+  "dry_run"
+];
+
+export function notificationDeliveryCooldownHours(
+  deliveries: Array<{ status: NotificationStatus }>,
+  configuredCooldownHours: number
+): number | null {
+  const latest = deliveries[0]?.status;
+  if (!latest) {
+    return null;
+  }
+  if (latest === "failed_permanent") {
+    return PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS;
+  }
+  if (latest === "failed_transient") {
+    const transientFailures = deliveries.findIndex((delivery) => delivery.status !== "failed_transient");
+    const failureCount = transientFailures === -1 ? deliveries.length : transientFailures;
+    const backoffHours = TRANSIENT_NOTIFICATION_FAILURE_BASE_COOLDOWN_HOURS * 2 ** Math.max(0, failureCount - 1);
+    return Math.min(Math.max(0, configuredCooldownHours), backoffHours);
+  }
+  if (latest === "sent" || latest === "dry_run") {
+    return configuredCooldownHours;
+  }
+  return null;
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
@@ -803,6 +835,25 @@ export async function isNotificationInCooldown(
   return Date.now() - new Date(attemptedAt).getTime() < cooldownHours * 3_600_000;
 }
 
+export async function notificationDeliveryCooldownHoursForDedupe(
+  dedupeKey: string,
+  configuredCooldownHours: number
+): Promise<number | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT status
+     FROM notification_deliveries
+     WHERE dedupe_key = ?
+       AND status IN (${notificationDeliveryCooldownStatuses.map(() => "?").join(", ")})
+     ORDER BY attempted_at DESC
+     LIMIT 8`,
+    [dedupeKey, ...notificationDeliveryCooldownStatuses]
+  );
+  return notificationDeliveryCooldownHours(
+    rows.map((row) => ({ status: asString(row.status) as NotificationStatus })),
+    configuredCooldownHours
+  );
+}
+
 export async function recordNotificationDelivery(input: {
   repoId: number;
   candidate: NotificationCandidate;
@@ -940,7 +991,7 @@ export async function getNotificationHealth(input: {
   const [deliveryFailureRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS failed_count
      FROM notification_deliveries d
-     WHERE d.repo_id = ? AND d.status = 'failed'
+     WHERE d.repo_id = ? AND d.status IN ('failed_transient', 'failed_permanent')
        AND ${activeSourceWhere}
        AND ${visibility.sql}`,
     [input.repoId, ...visibility.params]

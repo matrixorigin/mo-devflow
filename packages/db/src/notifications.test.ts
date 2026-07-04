@@ -15,7 +15,9 @@ import {
   notificationDeliveryVisibilityWhereSql,
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
+  notificationDeliveryCooldownHours,
   notificationSourceObjectVisibilityWhereSql,
+  PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS,
   notificationRecipient,
   notificationRecipientScope
 } from "./notifications";
@@ -285,10 +287,39 @@ describe("notification acknowledgement health", () => {
   test("counts only actually sent deliveries as awaiting acknowledgement", () => {
     expect(notificationStatusRequiresAcknowledgement("sent")).toBe(true);
     expect(notificationStatusRequiresAcknowledgement("dry_run")).toBe(false);
-    expect(notificationStatusRequiresAcknowledgement("failed")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed_transient")).toBe(false);
+    expect(notificationStatusRequiresAcknowledgement("failed_permanent")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+  });
+
+  test("derives delivery cooldown from latest delivery status", () => {
+    expect(notificationDeliveryCooldownHours([], 12)).toBeNull();
+    expect(notificationDeliveryCooldownHours([{ status: "sent" }], 12)).toBe(12);
+    expect(notificationDeliveryCooldownHours([{ status: "dry_run" }], 12)).toBe(12);
+    expect(notificationDeliveryCooldownHours([{ status: "failed_transient" }], 12)).toBe(0.25);
+    expect(
+      notificationDeliveryCooldownHours(
+        [{ status: "failed_transient" }, { status: "failed_transient" }, { status: "sent" }],
+        12
+      )
+    ).toBe(0.5);
+    expect(
+      notificationDeliveryCooldownHours(
+        [
+          { status: "failed_transient" },
+          { status: "failed_transient" },
+          { status: "failed_transient" },
+          { status: "failed_transient" }
+        ],
+        1
+      )
+    ).toBe(1);
+    expect(notificationDeliveryCooldownHours([{ status: "failed_permanent" }], 12)).toBe(
+      PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS
+    );
+    expect(notificationDeliveryCooldownHours([{ status: "skipped_quiet_hours" }], 12)).toBeNull();
   });
 
   test("builds strict active-source filter for notification health counters", () => {
