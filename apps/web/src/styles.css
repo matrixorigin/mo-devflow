@@ -211,6 +211,48 @@ body {
   white-space: normal;
 }
 
+.freshness-chip {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  color: #374151;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  max-width: 100%;
+  min-height: 24px;
+  overflow-wrap: anywhere;
+  padding: 1px 8px;
+  text-align: left;
+}
+
+.freshness-chip:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.freshness-chip:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 1px;
+}
+
+.freshness-chip-critical {
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.freshness-chip-attention {
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.freshness-chip-good {
+  border-color: #86efac;
+  color: #166534;
+}
+
 .full-width {
   max-width: 100%;
   min-width: 0;

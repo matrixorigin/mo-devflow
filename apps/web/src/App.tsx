@@ -2166,7 +2166,7 @@ function updatePipelineToneLabel(tone: UpdatePipelineSummary["tone"]): string {
   if (tone === "good") {
     return "flowing";
   }
-  return "observed";
+  return "polling";
 }
 
 function formatPipelineDetail(detail: string): string {
@@ -2916,6 +2916,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
     data.notifications.failedDeliveries +
     data.notifications.unacknowledgedDeliveries +
     data.notifications.escalationPendingDeliveries;
+  const webhookReadiness = summarizeWebhookReadiness(data);
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
@@ -2937,7 +2938,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
         />
         <TeamStatusRow
           label="Webhook"
-          value={`${data.webhooks.pendingDeliveries} pending / ${data.webhooks.failedDeliveries} failed`}
+          value={`${webhookReadinessModeLabel(webhookReadiness.mode)} | ${data.webhooks.pendingDeliveries} pending / ${data.webhooks.failedDeliveries} failed`}
           onClick={() => onNavigate("Webhooks")}
         />
         <TeamStatusRow
@@ -3105,6 +3106,7 @@ function HealthBoard({
     data.notifications.escalationPendingDeliveries;
   const repairRecommendation = recommendCacheRepair(data.sync);
   const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
+  const webhookReadiness = summarizeWebhookReadiness(data);
 
   return (
     <section className="section">
@@ -3155,11 +3157,9 @@ function HealthBoard({
         />
         <HealthMetricCard
           label="Webhooks"
-          value={data.webhooks.failedDeliveries}
-          detail={`${data.webhooks.pendingDeliveries} pending, ${data.webhooks.ignoredDeliveries} ignored, last ${formatDate(
-            data.webhooks.lastReceivedAt
-          )}`}
-          tone={data.webhooks.failedDeliveries > 0 ? "critical" : "good"}
+          value={webhookReadinessModeLabel(webhookReadiness.mode)}
+          detail={webhookReadiness.facts.slice(0, 3).join(", ")}
+          tone={webhookReadiness.tone}
           action={data.webhooks.failedDeliveries > 0 ? "Retry failed" : "Open webhooks"}
           disabled={data.webhooks.failedDeliveries > 0 && !authenticated}
           loading={webhookRetrySaving}
@@ -3905,21 +3905,27 @@ function CacheRepairPlan({
 function FreshnessStatusBar({
   freshness,
   sync,
+  webhookReadiness,
   readModel,
   refreshing,
   autoRefreshError,
   lastLoadedAt,
   expanded,
-  onExpandedChange
+  onExpandedChange,
+  onOpenHealth,
+  onOpenWebhooks
 }: {
   freshness: FreshnessSummary;
   sync: DashboardSummary["sync"];
+  webhookReadiness: WebhookReadinessSummary;
   readModel: DashboardReadModelMeta | null;
   refreshing: boolean;
   autoRefreshError: string | null;
   lastLoadedAt: string | null;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  onOpenHealth: () => void;
+  onOpenWebhooks: () => void;
 }) {
   const problemLayers = sync.health.filter((item) => item.status !== "success" || item.skipped);
 
@@ -3937,9 +3943,33 @@ function FreshnessStatusBar({
             </Tooltip>
           ) : null}
           <Tag>generated {formatDate(sync.generatedAt)}</Tag>
-          <Tag color={sync.staleObjects > 0 ? "orange" : "green"}>{sync.staleObjects} stale</Tag>
-          <Tag color={sync.partialObjects > 0 ? "orange" : "green"}>{sync.partialObjects} incomplete</Tag>
-          {problemLayers.length > 0 ? <Tag color="orange">{problemLayers.length} sync warnings</Tag> : null}
+          <button
+            type="button"
+            className={`freshness-chip freshness-chip-${webhookReadiness.tone}`}
+            title={webhookReadiness.description}
+            onClick={onOpenWebhooks}
+          >
+            {webhookStatusChipLabel(webhookReadiness)}
+          </button>
+          <button
+            type="button"
+            className={`freshness-chip ${sync.staleObjects > 0 ? "freshness-chip-attention" : "freshness-chip-good"}`}
+            onClick={onOpenHealth}
+          >
+            {sync.staleObjects} stale
+          </button>
+          <button
+            type="button"
+            className={`freshness-chip ${sync.partialObjects > 0 ? "freshness-chip-attention" : "freshness-chip-good"}`}
+            onClick={onOpenHealth}
+          >
+            {sync.partialObjects} incomplete
+          </button>
+          {problemLayers.length > 0 ? (
+            <button type="button" className="freshness-chip freshness-chip-attention" onClick={onOpenHealth}>
+              {problemLayers.length} sync warnings
+            </button>
+          ) : null}
           <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
             {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
           </Tag>
@@ -3974,6 +4004,22 @@ function FreshnessStatusBar({
       ) : null}
     </section>
   );
+}
+
+function webhookStatusChipLabel(readiness: WebhookReadinessSummary): string {
+  if (readiness.mode === "polling_only") {
+    return "updates: polling only";
+  }
+  if (readiness.mode === "waiting_for_delivery") {
+    return "hook: waiting";
+  }
+  if (readiness.mode === "queued") {
+    return "hook: queued";
+  }
+  if (readiness.mode === "failed") {
+    return "hook: failed";
+  }
+  return "hook: receiving";
 }
 
 function CacheEvidenceBanner({
@@ -10672,12 +10718,15 @@ export default function App() {
               <FreshnessStatusBar
                 freshness={freshness}
                 sync={data.sync}
+                webhookReadiness={summarizeWebhookReadiness(data)}
                 readModel={dashboardReadModel}
                 refreshing={refreshing}
                 autoRefreshError={autoRefreshError}
                 lastLoadedAt={lastDashboardLoadedAt}
                 expanded={freshnessExpanded}
                 onExpandedChange={setFreshnessExpanded}
+                onOpenHealth={() => selectView("Health")}
+                onOpenWebhooks={() => selectView("Webhooks")}
               />
             ) : null}
 

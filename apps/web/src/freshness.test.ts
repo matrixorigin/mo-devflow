@@ -170,6 +170,25 @@ describe("update pipeline summary", () => {
     });
   });
 
+  test("reports polling-only update path when the webhook secret is missing", () => {
+    const summary = summarizeUpdatePipeline({
+      sync: sync({ partialObjects: 0 }),
+      webhooks: webhooks(),
+      profileWarnings: webhookWarning()
+    });
+
+    expect(summary).toMatchObject({
+      tone: "normal",
+      title: "Updates are polling from cache"
+    });
+    expect(summary.detail).toContain("webhook ingest is not enabled");
+    expect(summary.tiles.find((tile) => tile.key === "webhooks")).toMatchObject({
+      value: "polling only",
+      detail: expect.stringContaining("webhook secret is missing"),
+      tone: "normal"
+    });
+  });
+
   test("prioritizes operator attention for worker, queue, or webhook failures", () => {
     const summary = summarizeUpdatePipeline({
       sync: sync({

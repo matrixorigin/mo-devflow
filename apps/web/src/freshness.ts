@@ -206,10 +206,13 @@ export function summarizeWebhookReadiness(
   };
 }
 
-export function summarizeUpdatePipeline(input: Pick<DashboardSummary, "sync" | "webhooks">): UpdatePipelineSummary {
+export function summarizeUpdatePipeline(
+  input: Pick<DashboardSummary, "sync" | "webhooks"> & Partial<Pick<DashboardSummary, "profileWarnings">>
+): UpdatePipelineSummary {
   const worker = input.sync.worker;
   const queue = input.sync.jobQueue;
   const webhooks = input.webhooks;
+  const secretMissing = input.profileWarnings ? hasWebhookSecretWarning(input.profileWarnings) : false;
   const webhookFailures = failedWebhookDeliveries(webhooks);
   const workerRisk = worker.status !== "active";
   const queueRisk = queue.status !== "healthy";
@@ -251,12 +254,16 @@ export function summarizeUpdatePipeline(input: Pick<DashboardSummary, "sync" | "
           ? `${webhookFailures} failed`
           : webhooks.pendingDeliveries > 0
             ? `${webhooks.pendingDeliveries} pending`
-            : webhooks.lastReceivedAt
-              ? "receiving"
-              : "no deliveries",
+            : secretMissing
+              ? "polling only"
+              : webhooks.lastReceivedAt
+                ? "receiving"
+                : "no deliveries",
       detail: webhooks.lastReceivedAt
         ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed`
-        : "polling repair is the only observed update path",
+        : secretMissing
+          ? "webhook secret is missing; worker polling and manual refresh are the current update path"
+          : "polling repair is the only observed update path",
       tone: webhookRisk ? "critical" : pendingWebhookRisk ? "attention" : webhooks.lastReceivedAt ? "good" : "normal",
       target: "webhooks"
     },
@@ -285,6 +292,14 @@ export function summarizeUpdatePipeline(input: Pick<DashboardSummary, "sync" | "
       tone: "attention",
       title: "Updates are flowing with evidence gaps",
       detail: "Cached facts remain visible, but some current workflow conclusions depend on refresh or backfill.",
+      tiles
+    };
+  }
+  if (secretMissing) {
+    return {
+      tone: "normal",
+      title: "Updates are polling from cache",
+      detail: "GitHub webhook ingest is not enabled; worker polling and manual refresh are the current update path.",
       tiles
     };
   }
