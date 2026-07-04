@@ -86,8 +86,8 @@ const preview: WorkflowFixPreview = {
   title: "panic on insert",
   htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
   reason: "Open bug issue #42 has no needs-triage label.",
-  currentState: stateSnapshot(["kind/bug"], "cache"),
-  proposedState: stateSnapshot(["kind/bug", "needs-triage"], "cache"),
+  currentState: stateSnapshot(["kind/bug"]),
+  proposedState: stateSnapshot(["kind/bug", "needs-triage"]),
   operations: [{ type: "add_label", label: "needs-triage" }],
   warnings: [],
   blockedReason: null,
@@ -104,9 +104,9 @@ const deferredPreview: WorkflowFixPreview = {
   actionKey: "move_to_deferred",
   ruleKey: "needs_triage_stale",
   reason: "Issue #42 has stayed in needs-triage for 96h.",
-  currentState: stateSnapshot(["kind/bug", "needs-triage"], "cache"),
+  currentState: stateSnapshot(["kind/bug", "needs-triage"]),
   proposedState: {
-    ...stateSnapshot(["kind/bug", "deferred"], "cache"),
+    ...stateSnapshot(["kind/bug", "deferred"]),
     lifecycleState: "deferred"
   },
   operations: [
@@ -138,6 +138,17 @@ function issueResponse(labels: string[], state: "open" | "closed" = "open") {
       state,
       labels: labels.map((name) => ({ name })),
       updated_at: "2026-07-03T00:01:00.000Z"
+    },
+    headers: { "x-ratelimit-remaining": "99" }
+  };
+}
+
+function issueResponseWithUpdatedAt(labels: string[], updatedAt: string, state: "open" | "closed" = "open") {
+  return {
+    data: {
+      state,
+      labels: labels.map((name) => ({ name })),
+      updated_at: updatedAt
     },
     headers: { "x-ratelimit-remaining": "99" }
   };
@@ -190,11 +201,11 @@ describe("workflow fix execution", () => {
 
   test.each([
     { state: "closed" as const, labels: ["kind/bug"], skipped: "issue_closed" },
-    { state: "open" as const, labels: ["kind/bug", "needs-triage"], skipped: "label_already_present" },
-    { state: "open" as const, labels: [], skipped: "bug_label_missing" },
-    { state: "open" as const, labels: ["kind/bug", "deferred"], skipped: "issue_deferred" },
-    { state: "open" as const, labels: ["kind/bug", "severity/s0"], skipped: "active_lifecycle_present" }
-  ])("does not execute when fresh state is stale: $skipped", async ({ state, labels, skipped }) => {
+    { state: "open" as const, labels: ["kind/bug", "needs-triage"], skipped: "issue_labels_changed" },
+    { state: "open" as const, labels: [], skipped: "issue_labels_changed" },
+    { state: "open" as const, labels: ["kind/bug", "deferred"], skipped: "issue_labels_changed" },
+    { state: "open" as const, labels: ["kind/bug", "severity/s0"], skipped: "issue_labels_changed" }
+  ])("does not execute when the preview baseline is stale: $skipped", async ({ state, labels, skipped }) => {
     octokitMocks.issuesGet.mockResolvedValue(issueResponse(labels, state));
 
     const result = await applyWorkflowFixPreview({
@@ -208,6 +219,42 @@ describe("workflow fix execution", () => {
     expect(result.beforeState.labels).toEqual(labels);
     expect(result.afterState.labels).toEqual(labels);
     expect(result.response).toEqual({ skipped });
+  });
+
+  test("does not execute when the issue was updated after the preview", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(
+      issueResponseWithUpdatedAt(["kind/bug"], "2026-07-03T00:02:00.000Z")
+    );
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview
+    });
+
+    expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
+    expect(result.appliedOperations).toEqual([]);
+    expect(result.response).toEqual({ skipped: "issue_updated_since_preview" });
+  });
+
+  test("does not execute previews that were not built from GitHub fresh state", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug"]));
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: {
+        ...preview,
+        currentState: {
+          ...preview.currentState,
+          source: "cache"
+        }
+      }
+    });
+
+    expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
+    expect(result.appliedOperations).toEqual([]);
+    expect(result.response).toEqual({ skipped: "preview_state_not_fresh" });
   });
 
   test("moves a stale needs-triage issue to deferred and comments with the preview reason", async () => {
@@ -248,7 +295,7 @@ describe("workflow fix execution", () => {
     expect(result.rateLimitRemaining).toBe(96);
   });
 
-  test("does not move to deferred when the lifecycle labels changed after preview", async () => {
+  test("does not move to deferred when labels changed after preview", async () => {
     octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "severity/s0"]));
 
     const result = await applyWorkflowFixPreview({
@@ -261,7 +308,7 @@ describe("workflow fix execution", () => {
     expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
     expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
-    expect(result.response).toEqual({ skipped: "lifecycle_labels_changed" });
+    expect(result.response).toEqual({ skipped: "issue_labels_changed" });
   });
 });
 

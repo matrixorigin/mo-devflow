@@ -150,12 +150,23 @@ async function applyAddNeedsTriageWorkflowFix(input: {
     profile: input.profile,
     issueNumber: input.preview.objectNumber
   });
+  const beforeState = stateSnapshotFromFreshIssue(freshState);
+  const staleBaselineReason = previewBaselineStaleReason(input.preview, freshState);
+  if (staleBaselineReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleBaselineReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
   const labelsToAdd = input.preview.operations
     .filter((operation): operation is Extract<WorkflowFixOperation, { type: "add_label" }> => operation.type === "add_label")
     .map((operation) => operation.label);
 
   const staleReason = missingNeedsTriageStaleReason(input.profile, freshState, labelsToAdd);
-  const beforeState = stateSnapshotFromFreshIssue(freshState);
   if (staleReason) {
     return {
       freshState,
@@ -212,6 +223,17 @@ async function applyMoveToDeferredWorkflowFix(input: {
     issueNumber: input.preview.objectNumber
   });
   const beforeState = stateSnapshotFromFreshIssue(freshState);
+  const staleBaselineReason = previewBaselineStaleReason(input.preview, freshState);
+  if (staleBaselineReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleBaselineReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
   const staleReason = moveToDeferredStaleReason(input.profile, input.preview, freshState);
   if (staleReason) {
     return {
@@ -297,6 +319,22 @@ async function applyMoveToDeferredWorkflowFix(input: {
   };
 }
 
+function previewBaselineStaleReason(preview: WorkflowFixPreview, freshState: GitHubIssueFreshState): string | null {
+  if (preview.currentState.source !== "github" || !preview.currentState.updatedAt) {
+    return "preview_state_not_fresh";
+  }
+  if (preview.currentState.state !== freshState.state) {
+    return freshState.state === "closed" ? "issue_closed" : "issue_state_changed";
+  }
+  if (!sameStringSet(preview.currentState.labels, freshState.labels)) {
+    return "issue_labels_changed";
+  }
+  if (preview.currentState.updatedAt !== freshState.updatedAt) {
+    return "issue_updated_since_preview";
+  }
+  return null;
+}
+
 function appendUnique(values: string[], additions: string[]): string[] {
   const merged = [...values];
   for (const addition of additions) {
@@ -373,10 +411,16 @@ function lifecycleLabels(profile: RepoProfile, labels: string[]): string[] {
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) {
+  const normalizedLeft = normalizedStringSet(left);
+  const normalizedRight = normalizedStringSet(right);
+  if (normalizedLeft.length !== normalizedRight.length) {
     return false;
   }
-  return left.every((value, index) => value === right[index]);
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function normalizedStringSet(values: string[]): string[] {
+  return Array.from(new Set(values)).sort();
 }
 
 function headerValue(headers: Record<string, string | number | undefined>, name: string): string | number | undefined {
