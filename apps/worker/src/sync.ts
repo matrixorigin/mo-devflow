@@ -949,6 +949,7 @@ export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfill
 
   const candidates = await listIssueTimelineBackfillCandidates(repoId, {
     criticalLabels: profile.labels.critical,
+    testerLogins: profile.people.testers,
     limit
   });
   summary.selected = candidates.length;

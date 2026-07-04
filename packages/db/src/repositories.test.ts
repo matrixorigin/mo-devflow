@@ -21,6 +21,7 @@ import {
   dateKeyInTimezone,
   dashboardVisibilityFilter,
   isPersonalNeedsTriageIssue,
+  issueTimelineBackfillCandidatesFromRows,
   notificationEmployeeMappingCandidates,
   previousCalendarDayRange,
   profileActionSuggestions,
@@ -1241,6 +1242,73 @@ describe("pull request testing transition events", () => {
           averagePassToCloseHours: null
         }
       ]
+    ]);
+  });
+});
+
+describe("issue timeline backfill candidate selection", () => {
+  test("prioritizes tester-assigned issues and filters assignees exactly", () => {
+    expect(
+      issueTimelineBackfillCandidatesFromRows(
+        [
+          {
+            issue_number: 10,
+            visibility_class: "anonymous_readable",
+            source_updated_at: "2026-07-01 10:00:00",
+            timeline_synced_at: "2026-07-01 11:00:00",
+            severity: "severity/s0",
+            assignees_json: JSON.stringify([])
+          },
+          {
+            issue_number: 11,
+            visibility_class: "anonymous_readable",
+            source_updated_at: "2026-07-01 09:00:00",
+            timeline_synced_at: null,
+            severity: null,
+            assignees_json: JSON.stringify(["tester-a"])
+          },
+          {
+            issue_number: 12,
+            visibility_class: "anonymous_readable",
+            source_updated_at: "2026-07-01 12:00:00",
+            timeline_synced_at: null,
+            severity: null,
+            assignees_json: JSON.stringify(["tester-a-shadow"])
+          },
+          {
+            issue_number: 13,
+            visibility_class: "anonymous_readable",
+            source_updated_at: "2026-07-01 08:00:00",
+            timeline_synced_at: null,
+            severity: "severity/s-1",
+            assignees_json: JSON.stringify([])
+          }
+        ],
+        {
+          criticalLabels: ["severity/s-1", "severity/s0"],
+          testerLogins: ["tester-a"],
+          limit: 3
+        }
+      )
+    ).toEqual([
+      {
+        issueNumber: 11,
+        visibilityClass: "anonymous_readable",
+        sourceUpdatedAt: "2026-07-01T09:00:00Z",
+        lastTimelineSyncedAt: null
+      },
+      {
+        issueNumber: 13,
+        visibilityClass: "anonymous_readable",
+        sourceUpdatedAt: "2026-07-01T08:00:00Z",
+        lastTimelineSyncedAt: null
+      },
+      {
+        issueNumber: 10,
+        visibilityClass: "anonymous_readable",
+        sourceUpdatedAt: "2026-07-01T10:00:00Z",
+        lastTimelineSyncedAt: "2026-07-01T11:00:00Z"
+      }
     ]);
   });
 });

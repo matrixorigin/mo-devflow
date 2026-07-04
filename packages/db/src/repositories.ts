@@ -96,6 +96,8 @@ export interface IssueTimelineBackfillCandidate {
   lastTimelineSyncedAt: string | null;
 }
 
+type IssueTimelineBackfillCandidateRow = Record<string, unknown>;
+
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -1559,26 +1561,97 @@ export async function listIssueCommentBackfillCandidates(
   }));
 }
 
+export function issueTimelineBackfillCandidatesFromRows(
+  rows: IssueTimelineBackfillCandidateRow[],
+  input: { criticalLabels: string[]; testerLogins?: string[]; limit: number }
+): IssueTimelineBackfillCandidate[] {
+  if (input.limit <= 0) {
+    return [];
+  }
+  const criticalLabels = new Set(input.criticalLabels);
+  const testerLogins = normalizedLoginSet(input.testerLogins ?? []);
+  return rows
+    .map((row) => {
+      const assigneeLogins = parseJsonArray(asString(row.assignees_json)).map(normalizedLogin);
+      const isTestingIssue = assigneeLogins.some((login) => testerLogins.has(login));
+      const isCriticalIssue = criticalLabels.has(asString(row.severity));
+      if (!isCriticalIssue && !isTestingIssue) {
+        return null;
+      }
+      return {
+        candidate: {
+          issueNumber: asNumber(row.issue_number),
+          visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
+          sourceUpdatedAt: fromSqlDate(row.source_updated_at) ?? new Date(0).toISOString(),
+          lastTimelineSyncedAt: fromSqlDate(row.timeline_synced_at)
+        },
+        isTestingIssue,
+        isCriticalIssue
+      };
+    })
+    .filter(
+      (
+        row
+      ): row is {
+        candidate: IssueTimelineBackfillCandidate;
+        isTestingIssue: boolean;
+        isCriticalIssue: boolean;
+      } => row !== null
+    )
+    .sort((left, right) => {
+      const missingSyncDelta =
+        Number(left.candidate.lastTimelineSyncedAt !== null) - Number(right.candidate.lastTimelineSyncedAt !== null);
+      if (missingSyncDelta !== 0) {
+        return missingSyncDelta;
+      }
+      const testingDelta = Number(right.isTestingIssue) - Number(left.isTestingIssue);
+      if (testingDelta !== 0) {
+        return testingDelta;
+      }
+      const criticalDelta = Number(right.isCriticalIssue) - Number(left.isCriticalIssue);
+      if (criticalDelta !== 0) {
+        return criticalDelta;
+      }
+      const updatedDelta =
+        new Date(right.candidate.sourceUpdatedAt).getTime() - new Date(left.candidate.sourceUpdatedAt).getTime();
+      if (updatedDelta !== 0) {
+        return updatedDelta;
+      }
+      return right.candidate.issueNumber - left.candidate.issueNumber;
+    })
+    .slice(0, Math.floor(input.limit))
+    .map((row) => row.candidate);
+}
+
 export async function listIssueTimelineBackfillCandidates(
   repoId: number,
-  input: { criticalLabels: string[]; limit: number }
+  input: { criticalLabels: string[]; testerLogins?: string[]; limit: number }
 ): Promise<IssueTimelineBackfillCandidate[]> {
   if (input.limit <= 0) {
     return [];
   }
   const criticalLabels = input.criticalLabels.length > 0 ? input.criticalLabels : ["__mo_devflow_no_critical_label__"];
+  const testerLogins = Array.from(normalizedLoginSet(input.testerLogins ?? []));
+  const testerClauses = testerLogins.map(() => "LOWER(i.assignees_json) LIKE ?");
+  const candidateScopeSql = [`i.severity IN (${criticalLabels.map(() => "?").join(", ")})`, ...testerClauses].join(
+    " OR "
+  );
+  const candidateScopeParams = [...criticalLabels, ...testerLogins.map((login) => `%"${login}"%`)];
+  const fetchLimit = Math.max(Math.floor(input.limit) * 8, Math.floor(input.limit));
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT i.number AS issue_number,
             i.visibility_class,
             i.updated_at AS source_updated_at,
-            s.last_synced_at AS timeline_synced_at
+            s.last_synced_at AS timeline_synced_at,
+            i.severity,
+            i.assignees_json
      FROM issues i
      LEFT JOIN issue_timeline_syncs s
        ON s.repo_id = i.repo_id AND s.issue_number = i.number
      WHERE i.repo_id = ?
        AND i.state = 'open'
        AND i.is_pull_request = 0
-       AND i.severity IN (${criticalLabels.map(() => "?").join(", ")})
+       AND (${candidateScopeSql})
        AND (
          s.issue_number IS NULL
          OR s.is_complete = 0
@@ -1589,14 +1662,9 @@ export async function listIssueTimelineBackfillCandidates(
               i.updated_at DESC,
               i.number DESC
      LIMIT ?`,
-    [repoId, ...criticalLabels, Math.floor(input.limit)]
+    [repoId, ...candidateScopeParams, fetchLimit]
   );
-  return rows.map((row) => ({
-    issueNumber: asNumber(row.issue_number),
-    visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
-    sourceUpdatedAt: fromSqlDate(row.source_updated_at) ?? new Date(0).toISOString(),
-    lastTimelineSyncedAt: fromSqlDate(row.timeline_synced_at)
-  }));
+  return issueTimelineBackfillCandidatesFromRows(rows, input);
 }
 
 export async function upsertAttentionItem(input: {
