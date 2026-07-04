@@ -1357,6 +1357,8 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   }
   const criticalItems = items.filter((item) => item.tone === "critical");
   const attentionItems = items.filter((item) => item.tone === "attention");
+  const routineItems = items.filter((item) => item.tone !== "critical" && item.tone !== "attention");
+  const visibleRoutineItems = routineItems.slice(0, 8);
   const prItems = items.filter((item) => item.objectType === "pull_request");
   const issueItems = items.filter((item) => item.objectType === "issue");
   const oldestCritical = maxDuration(criticalItems);
@@ -1400,18 +1402,29 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           tone="muted"
         />
       </div>
-      <div className="next-action-list" role="table" aria-label="Personal action queue">
-        <div className="next-action-header" role="row">
-          <span>Object</span>
-          <span>Next action</span>
-          <span>Signal</span>
-          <span>Duration</span>
-          <span>Links</span>
-        </div>
-        {items.slice(0, 12).map((item, index) => (
-          <PersonalActionQueueItem index={index + 1} item={item} key={item.id} />
-        ))}
-        {items.length > 12 ? <div className="action-queue-more">+{items.length - 12} more current objects</div> : null}
+      <div className="action-queue-sections" role="list" aria-label="Personal action queue">
+        <ActionQueueSection
+          title="Critical now"
+          description="Active s-1/s0 issues that should drive the day."
+          items={criticalItems}
+          offset={0}
+          tone="critical"
+        />
+        <ActionQueueSection
+          title="Needs attention"
+          description="PRs, testing handoffs, and triage items with blocking signals."
+          items={attentionItems}
+          offset={criticalItems.length}
+          tone="attention"
+        />
+        <ActionQueueSection
+          title="Routine movement"
+          description="Pending, deferred, created, or merged work to keep rotating."
+          items={visibleRoutineItems}
+          offset={criticalItems.length + attentionItems.length}
+          tone="normal"
+          hiddenCount={Math.max(0, routineItems.length - visibleRoutineItems.length)}
+        />
       </div>
     </div>
   );
@@ -1437,6 +1450,50 @@ function ActivitySummaryTile({
   );
 }
 
+function ActionQueueSection({
+  title,
+  description,
+  items,
+  offset,
+  tone,
+  hiddenCount = 0
+}: {
+  title: string;
+  description: string;
+  items: PersonalActivityItem[];
+  offset: number;
+  tone: "critical" | "attention" | "normal";
+  hiddenCount?: number;
+}) {
+  if (items.length === 0 && hiddenCount === 0) {
+    return null;
+  }
+
+  return (
+    <section className={`action-queue-section action-queue-section-${tone}`} role="listitem" aria-label={title}>
+      <div className="action-queue-section-heading">
+        <div>
+          <Text strong>{title}</Text>
+          <Text type="secondary">{description}</Text>
+        </div>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>
+          {items.length + hiddenCount}
+        </Tag>
+      </div>
+      {items.length > 0 ? (
+        <div className="action-queue-section-list" role="list">
+          {items.map((item, index) => (
+            <PersonalActionQueueItem index={offset + index + 1} item={item} key={item.id} />
+          ))}
+        </div>
+      ) : null}
+      {hiddenCount > 0 ? (
+        <div className="action-queue-more">+{hiddenCount} routine objects hidden in this compact queue</div>
+      ) : null}
+    </section>
+  );
+}
+
 function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; index: number }) {
   const icon =
     item.objectType === "pull_request" ? (
@@ -1459,44 +1516,57 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
   const duration = personalDurationText(item);
 
   return (
-    <article className={`action-queue-item action-queue-item-${item.tone}`} role="row">
-      <div className="action-queue-object" role="cell">
+    <article className={`action-queue-item action-queue-item-${item.tone}`} role="listitem">
+      <div className="action-queue-rank">
+        <span className="action-index">{index}</span>
+      </div>
+      <div className="action-queue-object">
         <div className="action-queue-title-row">
           <WorkObjectLink href={item.htmlUrl} icon={icon}>
             {objectLabel}
           </WorkObjectLink>
-          {item.ownerLogin ? <Tag>{item.ownerLogin}</Tag> : null}
+          <Tag color={actionTone}>{item.phase}</Tag>
         </div>
         <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
           {item.title}
         </a>
+        <div className="action-queue-object-meta">
+          {item.ownerLogin ? (
+            <span>
+              <UserRound size={13} aria-hidden="true" />
+              {item.ownerLogin}
+            </span>
+          ) : null}
+          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
+          {item.testingState && item.testingState !== "not_ready" ? (
+            <Tag color={testingStateColor(item.testingState)}>{labelText(item.testingState)}</Tag>
+          ) : null}
+          {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+        </div>
       </div>
-      <div className="action-queue-next" role="cell">
-        <span className="action-index">{index}</span>
+      <div className="action-queue-next">
+        <Text type="secondary">Next</Text>
         <span className="action-command">
           <TimerReset size={14} aria-hidden="true" />
           {nextAction}
         </span>
-        <Tag color={actionTone}>{item.phase}</Tag>
-      </div>
-      <div className="action-queue-signal" role="cell">
-        <Text strong>{primarySignal}</Text>
+        <div className="action-queue-primary-signal">
+          <Text strong>{primarySignal}</Text>
+        </div>
         <div className="action-queue-tags">
           {item.reasons.slice(0, 2).map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
             </Tag>
           ))}
-          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
           {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
           {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
           {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
-          {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
         </div>
       </div>
-      <div className="action-queue-duration" role="cell">
+      <div className="action-queue-duration">
         <strong>{duration}</strong>
-        <small>{item.durationEvidence}</small>
+        <small>{labelText(item.durationEvidence)}</small>
         {item.lastHumanActionAt ? (
           <span>
             <UserRound size={13} aria-hidden="true" />
@@ -1509,35 +1579,46 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
             testing {hours(item.testingQueueAgeHours)}
           </span>
         ) : null}
-      </div>
-      <div className="action-queue-links" role="cell">
-        {linkedIssueUrls.length === 0 && linkedPrUrls.length === 0 ? <span className="action-no-links">-</span> : null}
-        {linkedIssueUrls.length > 0 ? (
-          <span>
-            issue
-            <span>
-              {linkedIssueUrls.map((link) => (
-                <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
-                  #{link.number}
-                </a>
-              ))}
-            </span>
-          </span>
-        ) : null}
-        {linkedPrUrls.length > 0 ? (
-          <span>
-            PR
-            <span>
-              {linkedPrUrls.map((link) => (
-                <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
-                  #{link.number}
-                </a>
-              ))}
-            </span>
-          </span>
-        ) : null}
+        <ActionQueueLinks issueLinks={linkedIssueUrls} prLinks={linkedPrUrls} />
       </div>
     </article>
+  );
+}
+
+function ActionQueueLinks({
+  issueLinks,
+  prLinks
+}: {
+  issueLinks: Array<{ number: number; url: string }>;
+  prLinks: Array<{ number: number; url: string }>;
+}) {
+  if (issueLinks.length === 0 && prLinks.length === 0) {
+    return <span className="action-no-links">No linked object</span>;
+  }
+
+  return (
+    <div className="action-queue-links">
+      {issueLinks.length > 0 ? (
+        <span>
+          issues
+          {issueLinks.map((link) => (
+            <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+              #{link.number}
+            </a>
+          ))}
+        </span>
+      ) : null}
+      {prLinks.length > 0 ? (
+        <span>
+          PRs
+          {prLinks.map((link) => (
+            <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
+              #{link.number}
+            </a>
+          ))}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

@@ -34,7 +34,7 @@ export interface PersonalActivityItem {
   reviewDecision: string | null;
   ciState: string | null;
   mergeStateStatus: string | null;
-  testingState: string | null;
+  testingState: TestingFlowState | null;
   linkedIssueNumbers: number[];
   linkedPullRequestNumbers: number[];
   reasons: string[];
