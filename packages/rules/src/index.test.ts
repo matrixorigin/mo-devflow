@@ -274,6 +274,75 @@ describe("rules", () => {
     expect(pr.attentionFlags).toContain("merge_conflict");
   });
 
+  test("PR attention includes stale review requests without response", () => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 401,
+        number: 401,
+        title: "waiting for review",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/401",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "reviewer-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 401,
+        reviewDecision: null,
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: staleUpdate,
+        detailSyncedAt: new Date().toISOString(),
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).toContain("review_requested_no_response");
+  });
+
+  test("PR attention does not include review-request no-response after a review arrives", () => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 402,
+        number: 402,
+        title: "reviewed",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/402",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "reviewer-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 402,
+        reviewDecision: "reviewed",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "COMMENTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: staleUpdate,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).not.toContain("review_requested_no_response");
+  });
+
   test("PR detail insight marks cache evidence complete when detail sync succeeds", () => {
     const now = new Date().toISOString();
     const completePr = normalizePullRequest(

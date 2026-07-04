@@ -82,6 +82,11 @@ comments. When `testing.handoff_signals.comments` is configured, matching
 complete PR comment evidence can move a PR into the testing queue and refresh
 its human-action timestamp.
 
+PR attention includes stale review requests. If a pending PR still has requested
+reviewers, has no cached review response, and has been stale longer than the
+configured threshold, it is marked `review_requested_no_response`; until request
+timeline events are backfilled this remains partial-cache evidence.
+
 Repository behavior is driven by `config/repos/matrixone.yaml`. The MatrixOne
 profile includes `workflow.skip_users` from the local `mo-bug-triage` skill; a
 skipped user can still appear in cached dashboards, but the rule engine will not

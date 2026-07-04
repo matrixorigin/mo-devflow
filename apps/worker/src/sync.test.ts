@@ -10,6 +10,9 @@ describe("PR attention evidence", () => {
 
   test("keeps confirmed review and CI evidence concise when PR detail is complete", () => {
     expect(prEvidence("requested_changes", 42, true)).toBe("PR #42 has unresolved requested changes.");
+    expect(prEvidence("review_requested_no_response", 42, true)).toBe(
+      "PR #42 has a stale review request without reviewer response."
+    );
     expect(prEvidence("ci_failed", 42, true)).toBe("PR #42 has failing CI checks.");
   });
 });

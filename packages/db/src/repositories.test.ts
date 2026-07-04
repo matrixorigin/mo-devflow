@@ -633,6 +633,28 @@ describe("critical issue cache blockers", () => {
     });
   });
 
+  test("surfaces stale review requests as linked PR blockers", () => {
+    const blockers = criticalIssueBlockersFromCache({
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      isComplete: true,
+      syncError: null,
+      linkedPullRequests: [
+        {
+          ...linkedPr,
+          attentionFlags: ["review_requested_no_response"]
+        }
+      ]
+    });
+
+    expect(blockers).toContainEqual({
+      key: "pr:101:review_requested_no_response",
+      severity: "warning",
+      message: "PR #101 has a stale review request without reviewer response.",
+      relatedPrNumber: 101
+    });
+  });
+
   test("marks linked PR attention as partial when PR detail backfill is incomplete", () => {
     const blockers = criticalIssueBlockersFromCache({
       ownerLogin: "alice",

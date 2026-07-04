@@ -12,6 +12,7 @@ vi.mock("@mo-devflow/db", () => ({
   issueAttentionRuleKeys: ["critical_no_human_action"],
   pullRequestAttentionRuleKeys: [
     "no_human_action_24h",
+    "review_requested_no_response",
     "requested_changes",
     "ci_failed",
     "merge_conflict",
@@ -20,6 +21,7 @@ vi.mock("@mo-devflow/db", () => ({
   snapshotManagedAttentionRuleKeys: [
     "critical_no_human_action",
     "no_human_action_24h",
+    "review_requested_no_response",
     "requested_changes",
     "ci_failed",
     "merge_conflict",
@@ -200,6 +202,7 @@ describe("webhook review processing", () => {
         activeDedupeKeys: expect.any(Set),
         managedRuleKeys: [
           "no_human_action_24h",
+          "review_requested_no_response",
           "requested_changes",
           "ci_failed",
           "merge_conflict",

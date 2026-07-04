@@ -377,6 +377,16 @@ export function normalizePullRequest(
   if (pr.state !== "closed" && hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours) {
     attentionFlags.push("no_human_action_24h");
   }
+  if (
+    pr.state !== "closed" &&
+    requestedReviewers.length > 0 &&
+    !reviewDecision &&
+    !latestReviewState &&
+    !insight?.latestReviewSubmittedAt &&
+    hoursBetween(updatedAt) >= profile.thresholds.prNoActionAttentionHours
+  ) {
+    attentionFlags.push("review_requested_no_response");
+  }
   if (pr.state !== "closed" && (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")) {
     attentionFlags.push("requested_changes");
   }

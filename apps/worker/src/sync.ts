@@ -116,6 +116,8 @@ export function prEvidence(flag: string, prNumber: number, isComplete: boolean):
   let evidence: string;
   if (flag === "requested_changes") {
     evidence = `PR #${prNumber} has unresolved requested changes.`;
+  } else if (flag === "review_requested_no_response") {
+    evidence = `PR #${prNumber} has a stale review request without reviewer response.`;
   } else if (flag === "ci_failed") {
     evidence = `PR #${prNumber} has failing CI checks.`;
   } else if (flag === "merge_conflict") {

@@ -461,6 +461,8 @@ Action derivation should classify events as:
 
 PR stale detection should use `last_human_action_at` by default. System-only events should not clear human stale alerts.
 
+Review-request attention should be derived from requested reviewers plus review insight. Until review-request timeline timestamps are backfilled, a PR with requested reviewers, no cached review response, and stale `updated_at` can be flagged as `review_requested_no_response` with partial-cache evidence.
+
 Testing state derivation should be event-sourced from normalized PR timeline facts. State transitions should be persisted with the trigger event so ambiguous or incorrect handoff rules can be debugged.
 
 Until full PR timeline events are available, configured testing comment signals can be derived from cached PR issue comments. This path should only use complete comment evidence; partial comment evidence must not create a confirmed testing handoff. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.

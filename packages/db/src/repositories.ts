@@ -924,6 +924,7 @@ export async function upsertAttentionItem(input: {
 export const issueAttentionRuleKeys = ["critical_no_human_action"] as const;
 export const pullRequestAttentionRuleKeys = [
   "no_human_action_24h",
+  "review_requested_no_response",
   "requested_changes",
   "ci_failed",
   "merge_conflict",
@@ -1333,6 +1334,14 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
       key: `pr:${pr.number}:requested_changes`,
       severity: "warning",
       message: message(`PR #${pr.number} has unresolved requested changes.`),
+      relatedPrNumber: pr.number
+    };
+  }
+  if (flag === "review_requested_no_response") {
+    return {
+      key: `pr:${pr.number}:review_requested_no_response`,
+      severity: "warning",
+      message: message(`PR #${pr.number} has a stale review request without reviewer response.`),
       relatedPrNumber: pr.number
     };
   }
