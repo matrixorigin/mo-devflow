@@ -919,7 +919,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     item.testingQueueAgeHours !== null ||
     ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
   ) {
-    return "Get test result";
+    return "Get linked issue test result";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -986,7 +986,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Get test result";
+    return "Get linked issue test result";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";

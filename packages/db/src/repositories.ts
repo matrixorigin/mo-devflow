@@ -293,7 +293,7 @@ export function testingIssueTransitionsFromQueueIssues(
         id: -issue.number,
         issueNumber: issue.number,
         fromState: "not_ready" as const,
-        toState: "test_requested" as const,
+        toState: "testing" as const,
         testingTesters: testers,
         testingSignals: testers.map((tester) => `issue_assignee:#${issue.number}:${tester}`),
         occurredAt: issue.queueStartedAt ?? issue.lastSyncedAt,
@@ -2408,7 +2408,7 @@ function applyIssueTestingContextToPendingPrView<T extends PendingPrView | Perso
   }
   return {
     ...pr,
-    testingState: "test_requested",
+    testingState: "testing",
     testingTesters: context.testers,
     testingSignals: context.signals,
     testingQueueAgeHours: context.queueAgeHours,
@@ -2442,7 +2442,7 @@ function applyIssueTestingContextToLinkedPrView(
   }
   return {
     ...pr,
-    testingState: "test_requested",
+    testingState: "testing",
     testingTesters: context.testers,
     testingQueueAgeHours: context.queueAgeHours,
     attentionFlags: testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours)

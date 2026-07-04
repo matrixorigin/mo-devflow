@@ -622,10 +622,10 @@ function testingStateColor(state: TestingFlowState): string {
 
 function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "test_requested") {
-    return "issue assigned to test";
+    return "legacy test signal";
   }
   if (state === "testing") {
-    return "linked issue in test";
+    return "issue in test";
   }
   if (state === "dev_done") {
     return "development done";
@@ -648,7 +648,7 @@ function testingSignalBusinessLabel(signal: string): string {
     return `issue #${issueAssignee[1]} assigned to ${issueAssignee[2]}`;
   }
   if (signal.startsWith("reviewer:")) {
-    return `configured PR handoff reviewer: ${signal.slice("reviewer:".length)}`;
+    return `PR reviewer signal: ${signal.slice("reviewer:".length)}`;
   }
   if (signal.startsWith("assignee:")) {
     return `PR assigned to ${signal.slice("assignee:".length)}`;
@@ -1569,6 +1569,7 @@ function TeamRotationOverview({
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
+  const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
 
   return (
     <div className="team-overview">
@@ -1652,7 +1653,7 @@ function TeamRotationOverview({
             value={data.sync.partialObjects}
             detail={`${data.sync.staleObjects} stale | worker ${labelText(data.sync.worker.status)}`}
             tone={data.sync.staleObjects > 0 || data.sync.partialObjects > 0 ? "attention" : "good"}
-            onClick={() => onNavigate("Analytics")}
+            onClick={() => onNavigate("Health")}
           />
         </div>
       </section>
@@ -1709,7 +1710,7 @@ function TeamRotationOverview({
             onAction={() => onNavigate("PRs")}
           >
             {testingIssues.slice(0, 5).map((issue) => (
-              <TeamTestingIssueRow issue={issue} key={issue.number} />
+              <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
             ))}
           </TeamRotationLane>
         </div>
@@ -1721,6 +1722,7 @@ function TeamRotationOverview({
       </div>
 
       <TeamWorkPreviewModal preview={workPreview} onClose={() => setWorkPreview(null)} />
+      <TestingIssuePreviewModal issue={testingPreviewIssue} onClose={() => setTestingPreviewIssue(null)} />
 
       <section className="section team-flow-section">
         <div className="section-heading">
@@ -2001,7 +2003,9 @@ function TeamRotationLane({
         <div className="team-rotation-lane-title">
           <Space size={[6, 6]} wrap>
             <Text strong>{title}</Text>
-            <Tag color={tone === "critical" ? "red" : "orange"}>{count}</Tag>
+            <button type="button" className={`team-lane-count team-lane-count-${tone}`} onClick={onAction}>
+              {count}
+            </button>
           </Space>
           {controls}
         </div>
@@ -2013,7 +2017,7 @@ function TeamRotationLane({
       {hiddenCount > 0 ? (
         <button type="button" className="team-rotation-more" onClick={onAction}>
           <span>
-            +{hiddenCount} additional {overflowLabel ?? "items"}
+            {hiddenCount} more {overflowLabel ?? "items"} match this filter
           </span>
           <strong>{actionLabel}</strong>
         </button>
@@ -2513,7 +2517,13 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
   );
 }
 
-function TeamTestingIssueRow({ issue }: { issue: TestingIssueQueueView }) {
+function TeamTestingIssueRow({
+  issue,
+  onPreview
+}: {
+  issue: TestingIssueQueueView;
+  onPreview: (issue: TestingIssueQueueView) => void;
+}) {
   const linkedPrs = issue.linkedPullRequests.slice(0, 4);
   const blockerCount = testingIssueLinkedBlockerCount(issue);
 
@@ -2529,6 +2539,15 @@ function TeamTestingIssueRow({ issue }: { issue: TestingIssueQueueView }) {
             {issue.queueAgeEvidence === "issue_assignment_event" ? "tester assignment" : "issue update time"}
           </Tag>
           {!issue.isComplete ? <Tag color="gold">issue sync pending</Tag> : null}
+          <Tooltip title="Preview issue">
+            <Button
+              aria-label={`Preview issue ${issue.number}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview(issue)}
+            />
+          </Tooltip>
         </div>
         <a className="team-work-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
           {issue.title}
@@ -4319,7 +4338,7 @@ function testingQueueNextAction(pr: PendingPrView): string {
     return "Ask tester for status";
   }
   if (pr.testingState === "testing") {
-    return "Get test result";
+    return "Get linked issue test result";
   }
   return "Confirm linked issue test status";
 }
@@ -5396,6 +5415,7 @@ function PullRequestCardList({
 
 function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
   const [queueFilter, setQueueFilter] = useState<PersonalActionQueueFilter>("all");
+  const [previewItem, setPreviewItem] = useState<PersonalActivityItem | null>(null);
 
   if (items.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No current activity" />;
@@ -5480,6 +5500,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             items={criticalItems}
             offset={0}
             tone="critical"
+            onPreview={setPreviewItem}
           />
           <ActionQueueSection
             title="Needs attention"
@@ -5488,6 +5509,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={criticalItems.length}
             tone="attention"
             visibleLimit={8}
+            onPreview={setPreviewItem}
           />
           <ActionQueueSection
             title="Routine movement"
@@ -5496,6 +5518,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={criticalItems.length + attentionItems.length}
             tone="normal"
             visibleLimit={6}
+            onPreview={setPreviewItem}
           />
         </div>
       ) : selectedItems.length === 0 ? (
@@ -5511,9 +5534,11 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={0}
             tone={selectedTone}
             visibleLimit={10}
+            onPreview={setPreviewItem}
           />
         </div>
       )}
+      <PersonalActivityPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
     </div>
   );
 }
@@ -5607,7 +5632,8 @@ function ActionQueueSection({
   items,
   offset,
   tone,
-  visibleLimit
+  visibleLimit,
+  onPreview
 }: {
   title: string;
   description: string;
@@ -5615,6 +5641,7 @@ function ActionQueueSection({
   offset: number;
   tone: "critical" | "attention" | "normal";
   visibleLimit?: number;
+  onPreview: (item: PersonalActivityItem) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasOverflow = visibleLimit !== undefined && items.length > visibleLimit;
@@ -5637,13 +5664,13 @@ function ActionQueueSection({
       {visibleItems.length > 0 ? (
         <div className="action-queue-section-list" role="list">
           {visibleItems.map((item, index) => (
-            <PersonalActionQueueItem index={offset + index + 1} item={item} key={item.id} />
+            <PersonalActionQueueItem index={offset + index + 1} item={item} key={item.id} onPreview={onPreview} />
           ))}
         </div>
       ) : null}
       {hiddenCount > 0 ? (
         <button type="button" className="action-queue-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} routine objects hidden. Show all
+          {hiddenCount} more {title.toLowerCase()} objects. Show all
         </button>
       ) : hasOverflow && expanded ? (
         <button type="button" className="action-queue-more action-queue-more-muted" onClick={() => setExpanded(false)}>
@@ -5692,7 +5719,15 @@ function ActionQueueSectionStats({
   );
 }
 
-function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; index: number }) {
+function PersonalActionQueueItem({
+  item,
+  index,
+  onPreview
+}: {
+  item: PersonalActivityItem;
+  index: number;
+  onPreview: (item: PersonalActivityItem) => void;
+}) {
   const icon =
     item.objectType === "pull_request" ? (
       <GitPullRequest size={15} aria-hidden="true" />
@@ -5734,6 +5769,15 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
                 <Tag color={testingStateColor(item.testingState)}>{testingStateBusinessLabel(item.testingState)}</Tag>
               ) : null}
               {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
+              <Tooltip title={`Preview ${objectLabel}`}>
+                <Button
+                  aria-label={`Preview ${objectLabel}`}
+                  icon={<Eye size={14} />}
+                  size="small"
+                  type="text"
+                  onClick={() => onPreview(item)}
+                />
+              </Tooltip>
             </div>
             <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
               {item.title}
@@ -5794,6 +5838,122 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
         </div>
       </div>
     </article>
+  );
+}
+
+function PersonalActivityPreviewModal({ item, onClose }: { item: PersonalActivityItem | null; onClose: () => void }) {
+  if (!item) {
+    return null;
+  }
+
+  const objectLabel = item.objectType === "pull_request" ? `PR #${item.number}` : `Issue #${item.number}`;
+  const linkedIssueUrls = item.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(item.htmlUrl, "issues", number)
+  }));
+  const linkedPrUrls = item.linkedPullRequestNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(item.htmlUrl, "pull", number)
+  }));
+  const nextAction = personalActivityNextAction(item);
+  const primarySignal = personalActivityPrimarySignal(item);
+
+  return (
+    <Modal
+      className="team-object-preview-modal"
+      open
+      width={760}
+      title={objectLabel}
+      onCancel={onClose}
+      footer={[
+        <Button href={item.htmlUrl} icon={<ExternalLink size={14} />} key="github" target="_blank">
+          Open GitHub
+        </Button>,
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div className="team-object-preview">
+        <a className="team-object-preview-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
+          {item.title}
+        </a>
+        <Space size={[4, 4]} wrap>
+          <Tag color={item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue"}>
+            {item.phase}
+          </Tag>
+          {item.ownerLogin ? <Tag>{item.ownerLogin}</Tag> : null}
+          {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
+          {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
+          {item.testingState && item.testingState !== "not_ready" ? (
+            <Tag color={testingStateColor(item.testingState)}>{testingStateBusinessLabel(item.testingState)}</Tag>
+          ) : null}
+          {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
+        </Space>
+
+        <div className="team-object-preview-grid">
+          <div className="team-object-preview-metric">
+            <span>Duration</span>
+            <strong>{personalDurationText(item)}</strong>
+            <small>{labelText(item.durationEvidence)}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Last action</span>
+            <strong>{formatDate(item.lastHumanActionAt)}</strong>
+            <small>{item.lastHumanActionAt ? "cached human activity" : "not visible in cache"}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Links</span>
+            <strong>{item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length}</strong>
+            <small>
+              {item.linkedIssueNumbers.length} issue | {item.linkedPullRequestNumbers.length} PR
+            </small>
+          </div>
+        </div>
+
+        <section className="team-object-preview-section">
+          <Text strong>Next action</Text>
+          <Text>{nextAction}</Text>
+          <Text type="secondary">{primarySignal}</Text>
+        </section>
+
+        {item.reasons.length > 0 ? (
+          <section className="team-object-preview-section">
+            <Text strong>Signals</Text>
+            <Space size={[4, 4]} wrap>
+              {item.reasons.map((reason) => (
+                <Tag color={activityReasonColor(reason)} key={reason}>
+                  {reason}
+                </Tag>
+              ))}
+              {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
+              {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+              {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
+            </Space>
+          </section>
+        ) : null}
+
+        <section className="team-object-preview-section">
+          <Text strong>Linked work</Text>
+          {linkedIssueUrls.length === 0 && linkedPrUrls.length === 0 ? (
+            <Text type="secondary">No linked issue or PR is visible in cache.</Text>
+          ) : (
+            <Space size={[6, 6]} wrap>
+              {linkedIssueUrls.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
+                  issue #{link.number}
+                </a>
+              ))}
+              {linkedPrUrls.map((link) => (
+                <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
+                  PR #{link.number}
+                </a>
+              ))}
+            </Space>
+          )}
+        </section>
+      </div>
+    </Modal>
   );
 }
 
