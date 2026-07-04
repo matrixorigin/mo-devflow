@@ -9,7 +9,7 @@ WEB_LOG := web_server.log
 START_BG := node scripts/run-background.mjs
 STOP_BG := node scripts/stop-background.mjs
 WAIT_URL := node scripts/wait-for-url.mjs
-WAIT_PROCESS := node scripts/wait-for-process.mjs
+WAIT_WORKER := node scripts/wait-for-worker-heartbeat.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
@@ -85,7 +85,7 @@ dev-worker-start:
 		$(START_BG) $(WORKER_PID) $(WORKER_LOG) -- npm run dev:worker; \
 		echo "Worker starting (PID $$(cat $(WORKER_PID)), log $(WORKER_LOG))"; \
 	fi; \
-	$(WAIT_PROCESS) $(WORKER_PID) Worker 5000
+	$(WAIT_WORKER) $(WORKER_PID) Worker 30000
 
 dev-worker-stop:
 	@$(STOP_BG) $(WORKER_PID) Worker

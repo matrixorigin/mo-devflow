@@ -214,6 +214,6 @@ export function loadRepoProfile(profilePath = process.env.MO_DEVFLOW_PROFILE ?? 
 
 export function loadEnv(): void {
   if (fs.existsSync(".env")) {
-    dotenv.config();
+    dotenv.config({ quiet: true });
   }
 }
