@@ -90,7 +90,7 @@ describe("person workload summaries", () => {
         },
         2
       )
-    ).toEqual(["4 PR attention", "2 testing work", "3 needs triage", "2 pending PRs", "1 deferred"]);
+    ).toEqual(["4 PR attention", "2 issue testing", "3 needs triage", "2 pending PRs", "1 deferred"]);
   });
 
   it("derives observed owners from visible critical issues and pending PRs when watched users are absent", () => {

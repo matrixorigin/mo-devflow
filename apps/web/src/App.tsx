@@ -1783,7 +1783,7 @@ function peopleScopeLabel(filter: PeopleScopeFilter): string {
     return "pending PR";
   }
   if (filter === "testing") {
-    return "testing work";
+    return "issue testing";
   }
   if (filter === "yesterday_pr") {
     return "yesterday PR";
@@ -1797,11 +1797,11 @@ function testingCountForPeople(login: string, personalByLogin: Map<string, Perso
 }
 
 function personalTestingWorkCount(person: PersonalActionView): number {
-  return person.testingIssues.length + person.testingPrs.length;
+  return person.testingIssues.length;
 }
 
 function personalTestingStaleCount(person: PersonalActionView): number {
-  return person.testingIssues.filter(isTestingIssueStale).length + person.testingPrs.filter(isTestingStalePr).length;
+  return person.testingIssues.filter(isTestingIssueStale).length;
 }
 
 function personMatchesScope(
@@ -3497,7 +3497,7 @@ function TeamPeopleFocus({
                 <strong>{person.login}</strong>
                 <small>
                   {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention |{" "}
-                  {testingCountForPerson(person.login, personalViews)} testing work
+                  {testingCountForPerson(person.login, personalViews)} issue testing
                 </small>
                 {observedMode ? (
                   <small>Visible cache owner; configure watched users for full personal view</small>
@@ -5291,7 +5291,7 @@ function PeopleBoardSummary({
         onClick={() => onScopeFilterChange("pending_pr")}
       />
       <CriticalBoardStat
-        label="testing work"
+        label="issue testing"
         value={testingPeople}
         tone={testingPeople > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
@@ -6416,10 +6416,10 @@ function PersonWorkloadBoard({
               <button
                 type="button"
                 onClick={() => openMetric("testing")}
-                aria-label={`Open ${person.login} testing work`}
+                aria-label={`Open ${person.login} issue testing`}
               >
                 <strong>{testingWork}</strong>
-                <small>testing</small>
+                <small>issue test</small>
               </button>
               <button
                 type="button"
@@ -7370,7 +7370,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("pr_blockers")}
         />
         <ActivitySummaryTile
-          label="Testing work"
+          label="Issue testing"
           value={testingItems.length}
           detail={optionalHours(maxTestingAge(testingItems))}
           tone="normal"
@@ -7502,7 +7502,7 @@ function actionQueueFilterLabel(filter: PersonalActionQueueFilter): string {
     return "Issue threads";
   }
   if (filter === "testing") {
-    return "Testing work";
+    return "Issue testing";
   }
   if (filter === "prs") {
     return "PR rotation";
@@ -8071,7 +8071,7 @@ function personalFlowThreadFilterLabel(filter: PersonalFlowThreadFilter): string
     return "blocked PR or duration-risk work";
   }
   if (filter === "testing") {
-    return "issue testing work";
+    return "issue testing";
   }
   if (filter === "needs_link") {
     return "issue-PR linking gaps";
@@ -8685,9 +8685,8 @@ function PersonalRotationOverview({
   );
   const [aiFilter, setAiFilter] = useState<CriticalIssueAiFilter>("all");
   const testingStaleIssues = person.testingIssues.filter(isTestingIssueStale);
-  const testingStalePrs = person.testingPrs.filter(isTestingStalePr);
   const testingWorkCount = personalTestingWorkCount(person);
-  const staleTestingWorkCount = testingStaleIssues.length + testingStalePrs.length;
+  const staleTestingWorkCount = testingStaleIssues.length;
   const testingIssueRows = sortTestingIssueQueue(person.testingIssues, "priority").slice(0, 4);
   const testingPrRows = sortTestingQueuePrs(person.testingPrs).slice(0, Math.max(0, 4 - testingIssueRows.length));
   const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
@@ -8791,12 +8790,9 @@ function PersonalRotationOverview({
             onClick={() => onDrilldownChange("pr_attention")}
           />
           <TeamMonitorTile
-            label="Testing work"
+            label="Issue testing"
             value={testingWorkCount}
-            detail={`${staleTestingWorkCount} waiting >24h | ${oldestPersonalTestingText(
-              person.testingPrs,
-              person.testingIssues
-            )}`}
+            detail={`${staleTestingWorkCount} waiting >24h | ${person.testingPrs.length} linked PR evidence | ${oldestPersonalTestingText([], person.testingIssues)}`}
             tone={staleTestingWorkCount > 0 ? "critical" : testingWorkCount > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("testing")}
           />
@@ -9193,9 +9189,8 @@ function PersonalDrilldownBoard({
         <div className="subsection-heading">
           <Title level={5}>{title}</Title>
           <Space size={[4, 4]} wrap>
-            <Tag color={staleTestingWorkCount > 0 ? "red" : "blue"}>{testingWorkCount} work</Tag>
-            <Tag>{person.testingIssues.length} issue</Tag>
-            <Tag>{person.testingPrs.length} linked PR</Tag>
+            <Tag color={staleTestingWorkCount > 0 ? "red" : "blue"}>{testingWorkCount} issue testing</Tag>
+            <Tag>{person.testingPrs.length} linked PR evidence</Tag>
           </Space>
         </div>
         <TestingIssueQueuePanel
@@ -9293,7 +9288,7 @@ function SelectedPersonWorkbench({
               <Tag color={person.summary.needsTriageIssues > 0 ? "gold" : "default"}>
                 {person.summary.needsTriageIssues} needs triage
               </Tag>
-              <Tag>{personalTestingWorkCount(person)} testing work</Tag>
+              <Tag>{personalTestingWorkCount(person)} issue testing</Tag>
               <Tag>
                 yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday}
               </Tag>
@@ -11327,7 +11322,7 @@ export default function App() {
         )
       },
       {
-        title: "Legacy matched config",
+        title: "Ignored PR-side users",
         dataIndex: "testingTesters",
         width: 220,
         render: (testers: string[]) =>
@@ -11342,7 +11337,7 @@ export default function App() {
           )
       },
       {
-        title: "Legacy evidence",
+        title: "Ignored PR-side signal",
         dataIndex: "testingSignals",
         ellipsis: true,
         render: (signals: string[]) =>
@@ -12184,7 +12179,7 @@ export default function App() {
                           <Tag>{data.testing.testers.length} testers</Tag>
                           <Tag>{data.testing.recentIssueTransitions.length} issue events</Tag>
                           {testingHasTurnoverHistory ? (
-                            <Tag>{data.testing.recentTransitions.length} PR-only signals</Tag>
+                            <Tag>{data.testing.recentTransitions.length} ignored PR signals</Tag>
                           ) : null}
                         </Space>
                       </summary>
@@ -12215,8 +12210,8 @@ export default function App() {
                             <Alert
                               className="band"
                               type="info"
-                              title="PR-only signal audit"
-                              description="This table is kept for audit/debugging. Current testing handoff is issue-scoped, so reviewer-only PR signals are not counted as issue testing handoffs."
+                              title="Ignored PR-side signal audit"
+                              description="This table is for audit/debugging only. Reviewer, assignee, label, and comment signals on PRs do not put an issue into testing."
                               showIcon
                             />
                             <Table
@@ -12352,7 +12347,7 @@ export default function App() {
                       type="info"
                       showIcon
                       title="Showing observed owners, not full personal analytics"
-                      description="Watched users are not configured. This preview only uses active s-1/s0 issue owners and pending PR authors from visible cache. Configure watched users to unlock needs-triage, deferred, yesterday PR, testing workload, and trend analytics."
+                      description="Watched users are not configured. This preview only uses active s-1/s0 issue owners and pending PR authors from visible cache. Configure watched users to unlock needs-triage, deferred, yesterday PR, issue testing, and trend analytics."
                       action={
                         <Button size="small" onClick={() => selectView("People")}>
                           Open People

@@ -405,7 +405,7 @@ export function personPrimaryReasons(person: PersonSummary, testingWork: number)
   const reasons = [
     person.activeCriticalIssues > 0 ? `${person.activeCriticalIssues} active s-1/s0` : null,
     person.attentionPrs > 0 ? `${person.attentionPrs} PR attention` : null,
-    testingWork > 0 ? `${testingWork} testing work` : null,
+    testingWork > 0 ? `${testingWork} issue testing` : null,
     person.needsTriageIssues > 0 ? `${person.needsTriageIssues} needs triage` : null,
     person.pendingPrs > 0 ? `${person.pendingPrs} pending PRs` : null,
     person.deferredIssues > 0 ? `${person.deferredIssues} deferred` : null
