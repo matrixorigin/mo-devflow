@@ -6,6 +6,7 @@ import {
   buildCriticalNotificationEscalationCandidate,
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
+  excludedAttentionSourceWhereSql,
   notificationDeliveryVisibilityWhereSql,
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
@@ -159,6 +160,14 @@ describe("notification acknowledgement health", () => {
     });
     expect(candidate.evidenceSummary).toContain("unacknowledged for at least 24h");
     expect(candidate.evidenceSummary).toContain("Critical issue #24413 has no recent human action.");
+  });
+
+  test("builds attention source exclusion filters for already escalated candidates", () => {
+    expect(excludedAttentionSourceWhereSql("a", [])).toEqual({ sql: "1 = 1", params: [] });
+    expect(excludedAttentionSourceWhereSql("a", [42, 51])).toEqual({
+      sql: "a.id NOT IN (?, ?)",
+      params: [42, 51]
+    });
   });
 
   test("counts only actually sent deliveries as awaiting acknowledgement", () => {

@@ -168,6 +168,19 @@ export function notificationSourceObjectVisibilityWhereSql(
   };
 }
 
+export function excludedAttentionSourceWhereSql(
+  attentionAlias: string,
+  sourceIds: number[]
+): { sql: string; params: number[] } {
+  if (sourceIds.length === 0) {
+    return { sql: "1 = 1", params: [] };
+  }
+  return {
+    sql: `${attentionAlias}.id NOT IN (${sourceIds.map(() => "?").join(", ")})`,
+    params: sourceIds
+  };
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
@@ -330,6 +343,7 @@ export async function listNotificationCandidates(
   const escalationHours = profile.notifications.routing.escalateAfterHours;
   const escalationCutoff = sqlDate(new Date(Date.now() - escalationHours * 3_600_000));
   const attentionVisibility = notificationSourceObjectVisibilityWhereSql("a", profile);
+  const escalatedAttentionIds: number[] = [];
   if (escalationCutoff) {
     const [escalationRows] = await getPool().execute<RowData[]>(
       `SELECT a.*, d.attempted_at AS last_sent_at
@@ -360,10 +374,12 @@ export async function listNotificationCandidates(
     for (const row of escalationRows) {
       const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
       const relatedLogin = row.related_login ? asString(row.related_login) : null;
+      const sourceId = asNumber(row.id);
+      escalatedAttentionIds.push(sourceId);
       candidates.push(
         buildCriticalNotificationEscalationCandidate({
           profile,
-          sourceId: asNumber(row.id),
+          sourceId,
           ruleKey: asString(row.rule_key),
           objectType: asString(row.object_type),
           objectNumber,
@@ -381,15 +397,19 @@ export async function listNotificationCandidates(
   }
 
   const remainingAfterEscalations = Math.max(0, immediateLimit - candidates.length);
+  const attentionExclusion = excludedAttentionSourceWhereSql("a", escalatedAttentionIds);
   const [attentionRows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM attention_items a
-     WHERE a.repo_id = ? AND a.resolved_at IS NULL AND ${attentionVisibility.sql}
+     WHERE a.repo_id = ?
+       AND a.resolved_at IS NULL
+       AND ${attentionVisibility.sql}
+       AND ${attentionExclusion.sql}
      ORDER BY
        CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        a.last_detected_at DESC
      LIMIT ?`,
-    [repoId, ...attentionVisibility.params, remainingAfterEscalations]
+    [repoId, ...attentionVisibility.params, ...attentionExclusion.params, remainingAfterEscalations]
   );
   for (const row of attentionRows) {
     const objectNumber = row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number);
