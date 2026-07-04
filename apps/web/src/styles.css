@@ -1221,6 +1221,124 @@ button.critical-board-stat:hover {
   border-left-color: #d97706;
 }
 
+.testing-issue-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.testing-issue-panel-heading {
+  align-items: start;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.testing-issue-panel-heading > div,
+.testing-issue-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.testing-issue-list {
+  display: grid;
+  min-width: 0;
+}
+
+.testing-issue-row {
+  border-bottom: 1px solid #f3f4f6;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.34fr);
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.testing-issue-row:last-child {
+  border-bottom: 0;
+}
+
+.testing-issue-row-critical {
+  background: #fff7f7;
+}
+
+.testing-issue-title-row,
+.testing-issue-meta,
+.testing-issue-prs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.testing-issue-title {
+  color: #111827;
+  display: -webkit-box;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.testing-issue-title:hover,
+.testing-issue-pr:hover {
+  text-decoration: underline;
+}
+
+.testing-issue-meta {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.testing-issue-prs {
+  justify-content: flex-end;
+}
+
+.testing-issue-pr {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 12px;
+  line-height: 1.15;
+  padding: 3px 7px;
+  text-decoration: none;
+}
+
+.testing-issue-pr-attention {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.testing-issue-more {
+  appearance: none;
+  background: #f9fafb;
+  border: 0;
+  border-top: 1px dashed #d1d5db;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px 11px;
+  text-align: center;
+  width: 100%;
+}
+
+.testing-issue-more-muted {
+  color: #374151;
+}
+
 .testing-tester-strip {
   display: grid;
   gap: 8px;
@@ -2888,6 +3006,14 @@ button.critical-board-stat:hover {
 
   .testing-queue-row {
     grid-template-columns: 1fr;
+  }
+
+  .testing-issue-row {
+    grid-template-columns: 1fr;
+  }
+
+  .testing-issue-prs {
+    justify-content: flex-start;
   }
 
   .testing-queue-lane-heading {

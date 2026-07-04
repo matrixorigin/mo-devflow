@@ -31,6 +31,7 @@ import type {
   SyncHealth,
   SyncHealthLayer,
   SyncHealthStatus,
+  TestingIssueQueueView,
   TestingSummary,
   TestingTransitionView,
   WorkerHealth,
@@ -2166,6 +2167,70 @@ function testingIssueContextForLinkedIssues(
   };
 }
 
+function averageHours(values: Array<number | null>): number | null {
+  const valid = values.filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
+  return valid.length === 0
+    ? null
+    : Math.round((valid.reduce((sum, value) => sum + value, 0) / valid.length) * 10) / 10;
+}
+
+function testingIssueQueueViews(
+  issueRows: RowData[],
+  contexts: Map<number, TestingIssueContext>,
+  pullRequests: PersonalPullRequestView[]
+): TestingIssueQueueView[] {
+  const linkedPrsByIssue = new Map<number, TestingIssueQueueView["linkedPullRequests"]>();
+  for (const pr of pullRequests) {
+    if (pr.state !== "open") {
+      continue;
+    }
+    for (const issueNumber of pr.linkedIssueNumbers) {
+      const linkedPrs = linkedPrsByIssue.get(issueNumber) ?? [];
+      linkedPrs.push({
+        number: pr.number,
+        title: pr.title,
+        htmlUrl: pr.htmlUrl,
+        ownerLogin: pr.ownerLogin,
+        ageHours: pr.ageHours,
+        reviewDecision: pr.reviewDecision,
+        mergeStateStatus: pr.mergeStateStatus,
+        ciState: pr.ciState,
+        attentionFlags: pr.attentionFlags,
+        isComplete: pr.isComplete
+      });
+      linkedPrsByIssue.set(issueNumber, linkedPrs);
+    }
+  }
+
+  return issueRows
+    .map((row) => {
+      const issueNumber = asNumber(row.number);
+      const context = contexts.get(issueNumber);
+      if (!context) {
+        return null;
+      }
+      const linkedPullRequests = [...(linkedPrsByIssue.get(issueNumber) ?? [])].sort(
+        (left, right) =>
+          right.attentionFlags.length - left.attentionFlags.length ||
+          right.ageHours - left.ageHours ||
+          left.number - right.number
+      );
+      return {
+        number: issueNumber,
+        title: asString(row.title),
+        htmlUrl: asString(row.html_url),
+        testers: context.testers,
+        queueAgeHours: context.queueAgeHours,
+        linkedPullRequests,
+        isComplete: asBoolean(row.is_complete),
+        syncError: row.sync_error ? asString(row.sync_error) : null,
+        lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString()
+      } satisfies TestingIssueQueueView;
+    })
+    .filter((issue): issue is TestingIssueQueueView => issue !== null)
+    .sort((left, right) => (right.queueAgeHours ?? 0) - (left.queueAgeHours ?? 0) || left.number - right.number);
+}
+
 function testingAttentionFlags(flags: string[], context: TestingIssueContext | null, thresholdHours: number): string[] {
   const next = flags.filter((flag) => flag !== "testing_stalled");
   if (
@@ -3078,8 +3143,8 @@ export async function getDashboardSummary(
     [repoId, ...prVisibility.params]
   );
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT i.number, i.owner_login, i.lifecycle_state, i.severity, i.state, i.is_pull_request,
-            i.assignees_json, i.created_at, i.updated_at
+    `SELECT i.number, i.title, i.html_url, i.owner_login, i.lifecycle_state, i.severity, i.state, i.is_pull_request,
+            i.assignees_json, i.created_at, i.updated_at, i.is_complete, i.sync_error, i.last_synced_at
      FROM issues i
      WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
     [repoId, ...issueListVisibility.params]
@@ -3476,6 +3541,7 @@ export async function getDashboardSummary(
   const allPrViews = allPrRows.map((row) =>
     applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
   );
+  const testingIssueViews = testingIssueQueueViews(issueRows, testingIssueContexts, allPrViews);
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
@@ -3682,34 +3748,45 @@ export async function getDashboardSummary(
   const queueAges = testingQueuePrs
     .map((pr) => pr.testingQueueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
-  const testerKeys = new Set([...profile.people.testers, ...testingQueuePrs.flatMap((pr) => pr.testingTesters)]);
+  const issueQueueAges = testingIssueViews
+    .map((issue) => issue.queueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
+  const testerKeys = new Set([
+    ...profile.people.testers,
+    ...testingIssueViews.flatMap((issue) => issue.testers),
+    ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
+  ]);
   const testingTurnoverTransitions = testingTurnoverRows.map(testingTransitionViewFromRow);
   const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
   const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
   const testing: TestingSummary = {
+    queueIssues: testingIssueViews.length,
     queuePrs: testingQueuePrs.length,
+    staleQueueIssues: testingIssueViews.filter(
+      (issue) => (issue.queueAgeHours ?? 0) >= profile.thresholds.prNoActionAttentionHours
+    ).length,
     staleQueuePrs: testingQueuePrs.filter(
       (pr) => (pr.testingQueueAgeHours ?? 0) >= profile.thresholds.prNoActionAttentionHours
     ).length,
-    averageQueueAgeHours:
-      queueAges.length === 0
-        ? null
-        : Math.round((queueAges.reduce((sum, value) => sum + value, 0) / queueAges.length) * 10) / 10,
+    averageIssueQueueAgeHours: averageHours(issueQueueAges),
+    averageQueueAgeHours: averageHours(queueAges),
     transitionEvents: asNumber(testingEventRows[0]?.transition_events),
     lastTransitionAt: fromSqlDate(testingEventRows[0]?.last_transition_at),
     ...testingTurnover,
+    issues: testingIssueViews,
     recentTransitions: recentTestingEventRows.map(testingTransitionViewFromRow),
     testers: Array.from(testerKeys).map((login) => {
+      const issues = testingIssueViews.filter((issue) => issue.testers.includes(login));
       const prs = testingQueuePrs.filter((pr) => pr.testingTesters.includes(login));
-      const ages = prs
-        .map((pr) => pr.testingQueueAgeHours)
-        .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
+      const issueAges = issues.map((issue) => issue.queueAgeHours);
+      const ages = prs.map((pr) => pr.testingQueueAgeHours);
       const turnover = testingTurnoverByTester.get(login) ?? emptyTestingTurnoverMetrics();
       return {
         login,
+        queueIssues: issues.length,
         queuePrs: prs.length,
-        averageQueueAgeHours:
-          ages.length === 0 ? null : Math.round((ages.reduce((sum, value) => sum + value, 0) / ages.length) * 10) / 10,
+        averageIssueQueueAgeHours: averageHours(issueAges),
+        averageQueueAgeHours: averageHours(ages),
         ...turnover
       };
     })

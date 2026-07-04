@@ -393,9 +393,37 @@ export interface TestingTransitionView {
   sourceCompleteness: MetricSourceCompleteness;
 }
 
+export interface TestingIssueLinkedPullRequestView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  ownerLogin: string;
+  ageHours: number;
+  reviewDecision: string | null;
+  mergeStateStatus: string | null;
+  ciState: string | null;
+  attentionFlags: string[];
+  isComplete: boolean;
+}
+
+export interface TestingIssueQueueView {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  testers: string[];
+  queueAgeHours: number | null;
+  linkedPullRequests: TestingIssueLinkedPullRequestView[];
+  isComplete: boolean;
+  syncError: string | null;
+  lastSyncedAt: string;
+}
+
 export interface TestingSummary {
+  queueIssues: number;
   queuePrs: number;
+  staleQueueIssues: number;
   staleQueuePrs: number;
+  averageIssueQueueAgeHours: number | null;
   averageQueueAgeHours: number | null;
   transitionEvents: number;
   lastTransitionAt: string | null;
@@ -404,10 +432,13 @@ export interface TestingSummary {
   closedWithoutPassSignalSamples: number;
   averageRequestToPassHours: number | null;
   averagePassToCloseHours: number | null;
+  issues: TestingIssueQueueView[];
   recentTransitions: TestingTransitionView[];
   testers: Array<{
     login: string;
+    queueIssues: number;
     queuePrs: number;
+    averageIssueQueueAgeHours: number | null;
     averageQueueAgeHours: number | null;
     requestToPassSamples: number;
     passToCloseSamples: number;

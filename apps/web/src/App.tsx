@@ -45,6 +45,7 @@ import type {
   ProfileConfigurationWarning,
   SessionView,
   TestingFlowState,
+  TestingIssueQueueView,
   WriteActionExecutionView,
   WorkflowFixActionKey,
   WorkflowFixExecutionResult,
@@ -1458,9 +1459,9 @@ function TeamRotationOverview({
           />
           <TeamMonitorTile
             label="Issues in test"
-            value={data.testing.queuePrs}
-            detail={`${data.testing.staleQueuePrs} stale | avg ${optionalHours(data.testing.averageQueueAgeHours)}`}
-            tone={data.testing.staleQueuePrs > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
+            value={data.testing.queueIssues}
+            detail={`${data.testing.staleQueueIssues} stale | avg ${optionalHours(data.testing.averageIssueQueueAgeHours)}`}
+            tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
             onClick={() => onOpenPrsFilter("testing")}
           />
           <TeamMonitorTile
@@ -1607,9 +1608,9 @@ function TeamFlowRiskStrip({
       />
       <TeamFlowRiskCard
         label="Test waits"
-        value={staleTestingPrs.length}
-        detail={`${data.testing.queuePrs} in test | max ${optionalHours(maxTestingPrAge(staleTestingPrs))}`}
-        tone={staleTestingPrs.length > 0 ? "critical" : data.testing.queuePrs > 0 ? "attention" : "good"}
+        value={data.testing.staleQueueIssues}
+        detail={`${data.testing.queueIssues} issues in test | max ${optionalHours(maxTestingIssueAge(data.testing.issues))}`}
+        tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
         action="Open test queue"
         onClick={() => onOpenPrsFilter(staleTestingPrs.length > 0 ? "stale_testing" : "testing")}
       />
@@ -1666,6 +1667,13 @@ function maxPendingPrAge(prs: PendingPrView[]): number | null {
 function maxTestingPrAge(prs: PendingPrView[]): number | null {
   const values = prs
     .map((pr) => pr.testingQueueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? null : Math.max(...values);
+}
+
+function maxTestingIssueAge(issues: TestingIssueQueueView[]): number | null {
+  const values = issues
+    .map((issue) => issue.queueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value));
   return values.length === 0 ? null : Math.max(...values);
 }
@@ -1979,10 +1987,10 @@ function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { ti
       detail: `${data.counts.criticalIssues} active s-1/s0 total; ${data.counts.attentionPrs} PRs also need attention.`
     };
   }
-  if (data.testing.staleQueuePrs > 0) {
+  if (data.testing.staleQueueIssues > 0) {
     return {
-      title: `${data.testing.staleQueuePrs} linked issues have waited on test too long.`,
-      detail: `${data.testing.queuePrs} PRs are linked to issues assigned to testers.`
+      title: `${data.testing.staleQueueIssues} issues have waited on test too long.`,
+      detail: `${data.testing.queueIssues} issues are assigned to configured testers.`
     };
   }
   if (data.counts.attentionPrs > 0) {
@@ -3190,15 +3198,15 @@ function TestingCommandBoard({
   ).length;
   const testerRows = [...testing.testers]
     .sort((left, right) => {
-      const queueDelta = right.queuePrs - left.queuePrs;
+      const queueDelta = right.queueIssues - left.queueIssues;
       if (queueDelta !== 0) {
         return queueDelta;
       }
-      return (right.averageQueueAgeHours ?? 0) - (left.averageQueueAgeHours ?? 0);
+      return (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0);
     })
     .slice(0, 8);
 
-  if (queuePrs.length === 0 && testing.testers.length === 0) {
+  if (testing.issues.length === 0 && queuePrs.length === 0 && testing.testers.length === 0) {
     return (
       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No linked issue is currently assigned to testers" />
     );
@@ -3209,20 +3217,30 @@ function TestingCommandBoard({
       <div className="testing-command-summary" aria-label="Testing command summary">
         <TestingBoardStat
           label="issues in test"
-          value={testing.queuePrs}
+          value={testing.queueIssues}
           tone="normal"
           onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
           label="waiting >24h"
-          value={testing.staleQueuePrs}
+          value={testing.staleQueueIssues}
           tone="critical"
           onClick={() => onOpenPrsFilter("stale_testing")}
         />
         <TestingBoardStat
-          label="avg test wait"
-          value={testing.averageQueueAgeHours === null ? "-" : hours(testing.averageQueueAgeHours)}
-          tone={testing.averageQueueAgeHours !== null && testing.averageQueueAgeHours >= 24 ? "attention" : "normal"}
+          label="avg issue wait"
+          value={testing.averageIssueQueueAgeHours === null ? "-" : hours(testing.averageIssueQueueAgeHours)}
+          tone={
+            testing.averageIssueQueueAgeHours !== null && testing.averageIssueQueueAgeHours >= 24
+              ? "attention"
+              : "normal"
+          }
+        />
+        <TestingBoardStat
+          label="linked PRs"
+          value={testing.queuePrs}
+          tone="normal"
+          onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
           label="testers"
@@ -3258,6 +3276,8 @@ function TestingCommandBoard({
 
       <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
 
+      <TestingIssueQueuePanel issues={testing.issues} />
+
       {testerRows.length > 0 ? (
         <div className="testing-tester-strip" aria-label="Tester queue ownership">
           {testerRows.map((tester) => (
@@ -3266,8 +3286,10 @@ function TestingCommandBoard({
                 <Text strong>{tester.login}</Text>
                 <Text type="secondary">{tester.queuePrs} linked PRs</Text>
               </div>
-              <strong>{tester.averageQueueAgeHours === null ? "-" : hours(tester.averageQueueAgeHours)}</strong>
-              <small>avg test wait</small>
+              <strong>
+                {tester.averageIssueQueueAgeHours === null ? "-" : hours(tester.averageIssueQueueAgeHours)}
+              </strong>
+              <small>{tester.queueIssues} issues | avg wait</small>
             </article>
           ))}
         </div>
@@ -3309,6 +3331,123 @@ function TestingCommandBoard({
       </div>
     </div>
   );
+}
+
+function TestingIssueQueuePanel({ issues }: { issues: TestingIssueQueueView[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleLimit = 8;
+  const sortedIssues = [...issues].sort(
+    (left, right) =>
+      Number(isTestingIssueStale(right)) - Number(isTestingIssueStale(left)) ||
+      (right.queueAgeHours ?? 0) - (left.queueAgeHours ?? 0) ||
+      right.linkedPullRequests.length - left.linkedPullRequests.length ||
+      left.number - right.number
+  );
+  const visibleIssues = expanded ? sortedIssues : sortedIssues.slice(0, visibleLimit);
+  const hiddenCount = Math.max(0, sortedIssues.length - visibleIssues.length);
+
+  if (issues.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="testing-issue-panel" aria-label="Issue-level testing queue">
+      <div className="testing-issue-panel-heading">
+        <div>
+          <Text strong>Issue-Level Test Queue</Text>
+          <Text type="secondary">
+            Issues assigned to configured testers; linked PRs are supporting execution evidence.
+          </Text>
+        </div>
+        <Tag color={sortedIssues.some(isTestingIssueStale) ? "red" : "blue"}>{issues.length} issues</Tag>
+      </div>
+      <div className="testing-issue-list">
+        {visibleIssues.map((issue) => (
+          <TestingIssueQueueRow issue={issue} key={issue.number} />
+        ))}
+      </div>
+      {hiddenCount > 0 ? (
+        <button type="button" className="testing-issue-more" onClick={() => setExpanded(true)}>
+          +{hiddenCount} more issues in test. Show all
+        </button>
+      ) : sortedIssues.length > visibleLimit && expanded ? (
+        <button
+          type="button"
+          className="testing-issue-more testing-issue-more-muted"
+          onClick={() => setExpanded(false)}
+        >
+          Show compact queue
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
+  const linkedBlockers = issue.linkedPullRequests.filter(
+    (pr) =>
+      pr.attentionFlags.length > 0 ||
+      pr.reviewDecision === "changes_requested" ||
+      pr.mergeStateStatus === "dirty" ||
+      (pr.ciState !== null &&
+        ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState))
+  );
+
+  return (
+    <article className={`testing-issue-row ${isTestingIssueStale(issue) ? "testing-issue-row-critical" : ""}`}>
+      <div className="testing-issue-main">
+        <div className="testing-issue-title-row">
+          <WorkObjectLink href={issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
+            Issue #{issue.number}
+          </WorkObjectLink>
+          <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
+          {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+          {issue.syncError ? (
+            <Tooltip title={issue.syncError}>
+              <Tag color="red">sync error</Tag>
+            </Tooltip>
+          ) : null}
+        </div>
+        <a className="testing-issue-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+          {issue.title}
+        </a>
+        <div className="testing-issue-meta">
+          <span>testers {issue.testers.slice(0, 4).join(", ")}</span>
+          <span>{issue.linkedPullRequests.length} linked PRs</span>
+          {linkedBlockers.length > 0 ? <span>{linkedBlockers.length} PR blockers</span> : null}
+        </div>
+      </div>
+      <div className="testing-issue-prs">
+        {issue.linkedPullRequests.length === 0 ? (
+          <Text type="secondary">No linked PR visible</Text>
+        ) : (
+          issue.linkedPullRequests.slice(0, 5).map((pr) => (
+            <Tooltip title={pr.title} key={pr.number}>
+              <a
+                className={
+                  pr.attentionFlags.length > 0 ? "testing-issue-pr testing-issue-pr-attention" : "testing-issue-pr"
+                }
+                href={pr.htmlUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                PR #{pr.number}
+              </a>
+            </Tooltip>
+          ))
+        )}
+        {issue.linkedPullRequests.length > 5 ? <span>+{issue.linkedPullRequests.length - 5}</span> : null}
+      </div>
+    </article>
+  );
+}
+
+function isTestingIssueStale(issue: TestingIssueQueueView): boolean {
+  return (issue.queueAgeHours ?? 0) >= 24;
+}
+
+function testingIssueWaitText(issue: TestingIssueQueueView): string {
+  return issue.queueAgeHours === null ? "wait unknown" : `waiting ${hours(issue.queueAgeHours)}`;
 }
 
 function TestingBoardStat({
@@ -3355,9 +3494,9 @@ function TestingTurnoverBreakdown({
     <div className="testing-turnover-strip" aria-label="Testing turnover breakdown">
       <TestingTurnoverCard
         label="Current wait"
-        value={testing.averageQueueAgeHours === null ? "-" : hours(testing.averageQueueAgeHours)}
-        detail={`${testing.queuePrs} issues in test | ${testing.staleQueuePrs} waiting`}
-        tone={testing.staleQueuePrs > 0 ? "critical" : testing.queuePrs > 0 ? "attention" : "normal"}
+        value={testing.averageIssueQueueAgeHours === null ? "-" : hours(testing.averageIssueQueueAgeHours)}
+        detail={`${testing.queueIssues} issues in test | ${testing.staleQueueIssues} waiting`}
+        tone={testing.staleQueueIssues > 0 ? "critical" : testing.queueIssues > 0 ? "attention" : "normal"}
       />
       <TestingTurnoverCard
         label="Request to pass"
@@ -6659,13 +6798,18 @@ export default function App() {
     () => [
       { title: "Tester", dataIndex: "login", render: (login) => <Tag>{login}</Tag> },
       {
-        title: "Queue PRs",
+        title: "Queue Issues",
+        dataIndex: "queueIssues",
+        render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>)
+      },
+      {
+        title: "Linked PRs",
         dataIndex: "queuePrs",
         render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>)
       },
       {
-        title: "Average Queue Age",
-        dataIndex: "averageQueueAgeHours",
+        title: "Average Issue Wait",
+        dataIndex: "averageIssueQueueAgeHours",
         render: (value) => (value === null ? "-" : hours(value))
       },
       {
@@ -7135,11 +7279,11 @@ export default function App() {
               />
             ) : null}
 
-            {data.testing.staleQueuePrs > 0 ? (
+            {data.testing.staleQueueIssues > 0 ? (
               <Alert
                 className="band"
                 type="warning"
-                title={`${data.testing.staleQueuePrs} linked issues have waited on test too long`}
+                title={`${data.testing.staleQueueIssues} issues have waited on test too long`}
                 description="Test wait currently uses cached issue update time until issue assignment timeline is backfilled."
                 showIcon
               />
@@ -7281,19 +7425,19 @@ export default function App() {
                   <Space size={[6, 6]} wrap>
                     <button
                       type="button"
-                      className={`inline-filter-chip ${data.testing.queuePrs > 0 ? "" : "inline-filter-chip-muted"}`}
+                      className={`inline-filter-chip ${data.testing.queueIssues > 0 ? "" : "inline-filter-chip-muted"}`}
                       onClick={() => openPrsWithFilter("testing")}
                     >
-                      {data.testing.queuePrs} linked to test issues
+                      {data.testing.queueIssues} issues in test
                     </button>
                     <button
                       type="button"
                       className={`inline-filter-chip ${
-                        data.testing.staleQueuePrs > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+                        data.testing.staleQueueIssues > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
                       }`}
                       onClick={() => openPrsWithFilter("stale_testing")}
                     >
-                      {data.testing.staleQueuePrs} stale
+                      {data.testing.staleQueueIssues} stale
                     </button>
                     <Tag>{data.testing.transitionEvents} transitions</Tag>
                     <Tag>{data.testing.requestToPassSamples} req-pass samples</Tag>
