@@ -155,6 +155,19 @@ export interface NormalizedIssueComment extends IssueCommentEvidenceItem {
   rawPayload: unknown;
 }
 
+export interface NormalizedIssueTimelineEvent {
+  githubId: string;
+  issueNumber: number;
+  eventType: "labeled" | "unlabeled";
+  labelName: string | null;
+  actorLogin: string | null;
+  occurredAt: string;
+  sourceAuthType: SourceAuthType;
+  sourceUserId: number | null;
+  visibilityClass: VisibilityClass;
+  rawPayload: unknown;
+}
+
 export interface IssueCommentEvidence {
   isComplete: boolean;
   lastSyncedAt: string | null;
@@ -249,7 +262,7 @@ export interface CriticalIssueBlockerView {
 }
 
 export type CriticalIssueOwnerScope = "unowned" | "watched" | "non_watched";
-export type CriticalIssueAgeEvidence = "webhook_label_event" | "missing_timeline";
+export type CriticalIssueAgeEvidence = "issue_timeline_event" | "missing_timeline";
 
 export interface CriticalIssueView {
   number: number;
@@ -719,6 +732,7 @@ export const csrfHeaderName = "x-mo-devflow-csrf";
 export const syncHealthLayers = [
   "github_sync",
   "pr_backfill",
+  "issue_timeline_backfill",
   "comment_backfill",
   "webhooks",
   "rules",

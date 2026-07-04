@@ -14,6 +14,7 @@ type PullRequestListItem = RestEndpointMethodTypes["pulls"]["list"]["response"][
 type PullRequestDetailItem = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
 type IssueListItem = RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"][number];
 type IssueCommentItem = RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"][number];
+type IssueEventItem = RestEndpointMethodTypes["issues"]["listEvents"]["response"]["data"][number];
 
 export interface GitHubSnapshot {
   issues: RestEndpointMethodTypes["issues"]["listForRepo"]["response"]["data"];
@@ -29,6 +30,15 @@ export interface GitHubSnapshot {
 export interface GitHubIssueComments {
   issueNumber: number;
   comments: IssueCommentItem[];
+  isComplete: boolean;
+  syncError: string | null;
+  syncedAt: string;
+  rateLimitRemaining: number | null;
+}
+
+export interface GitHubIssueTimelineEvents {
+  issueNumber: number;
+  events: IssueEventItem[];
   isComplete: boolean;
   syncError: string | null;
   syncedAt: string;
@@ -949,6 +959,62 @@ export async function fetchIssueCommentsForNumber(input: { profile: RepoProfile;
 > {
   const { octokit, sourceAuthType } = createGitHubClient();
   const result = await fetchIssueCommentsForNumberWithClient({
+    octokit,
+    owner: input.profile.repo.owner,
+    repo: input.profile.repo.name,
+    issueNumber: input.issueNumber
+  });
+  return {
+    ...result,
+    sourceAuthType
+  };
+}
+
+async function fetchIssueEventsForNumberWithClient(input: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+}): Promise<GitHubIssueTimelineEvents> {
+  const syncedAt = new Date().toISOString();
+  const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_ISSUE_TIMELINE_MAX_PAGES ?? "2"));
+  try {
+    const result = await collectPages(
+      input.octokit.paginate.iterator(input.octokit.rest.issues.listEvents, {
+        owner: input.owner,
+        repo: input.repo,
+        issue_number: input.issueNumber,
+        per_page: 100
+      }),
+      maxPages
+    );
+    return {
+      issueNumber: input.issueNumber,
+      events: result.data,
+      isComplete: result.complete,
+      syncError: result.complete ? null : `Issue timeline events exceeded ${maxPages} pages.`,
+      syncedAt,
+      rateLimitRemaining: result.rateLimitRemaining
+    };
+  } catch (error) {
+    return {
+      issueNumber: input.issueNumber,
+      events: [],
+      isComplete: false,
+      syncError: error instanceof Error ? error.message : String(error),
+      syncedAt,
+      rateLimitRemaining: null
+    };
+  }
+}
+
+export async function fetchIssueEventsForNumber(input: { profile: RepoProfile; issueNumber: number }): Promise<
+  GitHubIssueTimelineEvents & {
+    sourceAuthType: SourceAuthType;
+  }
+> {
+  const { octokit, sourceAuthType } = createGitHubClient();
+  const result = await fetchIssueEventsForNumberWithClient({
     octokit,
     owner: input.profile.repo.owner,
     repo: input.profile.repo.name,

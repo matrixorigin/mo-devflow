@@ -14,6 +14,7 @@ import type {
   DashboardSummary,
   NormalizedIssue,
   NormalizedIssueComment,
+  NormalizedIssueTimelineEvent,
   NormalizedPullRequest,
   NotificationTraceView,
   PendingPrView,
@@ -82,6 +83,13 @@ export interface IssueCommentBackfillCandidate {
   visibilityClass: NormalizedIssue["visibilityClass"];
   sourceUpdatedAt: string;
   lastCommentSyncedAt: string | null;
+}
+
+export interface IssueTimelineBackfillCandidate {
+  issueNumber: number;
+  visibilityClass: NormalizedIssue["visibilityClass"];
+  sourceUpdatedAt: string;
+  lastTimelineSyncedAt: string | null;
 }
 
 function stringify(value: unknown): string {
@@ -1015,6 +1023,99 @@ export async function replaceIssueComments(input: {
   );
 }
 
+export async function replaceIssueTimelineEvents(input: {
+  repoId: number;
+  issueNumber: number;
+  events: NormalizedIssueTimelineEvent[];
+  sourceAuthType: string;
+  sourceUserId: number | null;
+  visibilityClass: string;
+  isComplete: boolean;
+  syncError: string | null;
+  raw: unknown;
+  syncedAt?: string;
+}): Promise<void> {
+  const syncedAt = sqlDate(input.syncedAt ?? new Date().toISOString());
+  await getPool().execute("DELETE FROM issue_timeline_events WHERE repo_id = ? AND issue_number = ?", [
+    input.repoId,
+    input.issueNumber
+  ]);
+  for (const event of input.events) {
+    await getPool().execute(
+      `INSERT INTO issue_timeline_events(
+        repo_id, issue_number, github_id, event_type, label_name, actor_login,
+        occurred_at, source_auth_type, source_user_id, visibility_class,
+        raw_payload, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.repoId,
+        input.issueNumber,
+        event.githubId,
+        event.eventType,
+        event.labelName,
+        event.actorLogin,
+        sqlDate(event.occurredAt),
+        event.sourceAuthType,
+        event.sourceUserId,
+        event.visibilityClass,
+        stringify(event.rawPayload),
+        syncedAt
+      ]
+    );
+  }
+  await getPool().execute("DELETE FROM issue_timeline_syncs WHERE repo_id = ? AND issue_number = ?", [
+    input.repoId,
+    input.issueNumber
+  ]);
+  await getPool().execute(
+    `INSERT INTO issue_timeline_syncs(
+      repo_id, issue_number, source_auth_type, source_user_id, visibility_class,
+      is_complete, sync_error, raw_json, last_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.repoId,
+      input.issueNumber,
+      input.sourceAuthType,
+      input.sourceUserId,
+      input.visibilityClass,
+      input.isComplete ? 1 : 0,
+      input.syncError,
+      stringify(input.raw),
+      syncedAt
+    ]
+  );
+}
+
+export async function upsertIssueTimelineEvent(repoId: number, event: NormalizedIssueTimelineEvent): Promise<void> {
+  try {
+    await getPool().execute(
+      `INSERT INTO issue_timeline_events(
+        repo_id, issue_number, github_id, event_type, label_name, actor_login,
+        occurred_at, source_auth_type, source_user_id, visibility_class,
+        raw_payload, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        repoId,
+        event.issueNumber,
+        event.githubId,
+        event.eventType,
+        event.labelName,
+        event.actorLogin,
+        sqlDate(event.occurredAt),
+        event.sourceAuthType,
+        event.sourceUserId,
+        event.visibilityClass,
+        stringify(event.rawPayload),
+        nowSql()
+      ]
+    );
+  } catch (error) {
+    if (!isDuplicateError(error)) {
+      throw error;
+    }
+  }
+}
+
 export async function listCachedIssuesForRules(repoId: number): Promise<NormalizedIssue[]> {
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
@@ -1393,6 +1494,46 @@ export async function listIssueCommentBackfillCandidates(
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     sourceUpdatedAt: fromSqlDate(row.source_updated_at) ?? new Date(0).toISOString(),
     lastCommentSyncedAt: fromSqlDate(row.comment_synced_at)
+  }));
+}
+
+export async function listIssueTimelineBackfillCandidates(
+  repoId: number,
+  input: { criticalLabels: string[]; limit: number }
+): Promise<IssueTimelineBackfillCandidate[]> {
+  if (input.limit <= 0) {
+    return [];
+  }
+  const criticalLabels = input.criticalLabels.length > 0 ? input.criticalLabels : ["__mo_devflow_no_critical_label__"];
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT i.number AS issue_number,
+            i.visibility_class,
+            i.updated_at AS source_updated_at,
+            s.last_synced_at AS timeline_synced_at
+     FROM issues i
+     LEFT JOIN issue_timeline_syncs s
+       ON s.repo_id = i.repo_id AND s.issue_number = i.number
+     WHERE i.repo_id = ?
+       AND i.state = 'open'
+       AND i.is_pull_request = 0
+       AND i.severity IN (${criticalLabels.map(() => "?").join(", ")})
+       AND (
+         s.issue_number IS NULL
+         OR s.is_complete = 0
+         OR s.sync_error IS NOT NULL
+         OR s.last_synced_at < i.updated_at
+       )
+     ORDER BY CASE WHEN s.last_synced_at IS NULL THEN 0 ELSE 1 END ASC,
+              i.updated_at DESC,
+              i.number DESC
+     LIMIT ?`,
+    [repoId, ...criticalLabels, Math.floor(input.limit)]
+  );
+  return rows.map((row) => ({
+    issueNumber: asNumber(row.issue_number),
+    visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
+    sourceUpdatedAt: fromSqlDate(row.source_updated_at) ?? new Date(0).toISOString(),
+    lastTimelineSyncedAt: fromSqlDate(row.timeline_synced_at)
   }));
 }
 
@@ -1803,48 +1944,42 @@ function hoursSince(value: string | null): number | null {
 
 async function criticalStartedAtByIssueNumber(
   repoId: number,
-  currentSeverityByIssueNumber: Map<number, string>
+  currentSeverityByIssueNumber: Map<number, string>,
+  visibilitySql: string,
+  visibilityParams: number[]
 ): Promise<Map<number, string>> {
   if (currentSeverityByIssueNumber.size === 0) {
     return new Map();
   }
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT action, payload_json, received_at, processed_at
-     FROM github_webhook_deliveries
+    `SELECT issue_number, event_type, label_name, occurred_at
+     FROM issue_timeline_events e
      WHERE repo_id = ?
-       AND event_name = 'issues'
-       AND action IN ('labeled', 'unlabeled')
-       AND status = 'processed'
-     ORDER BY COALESCE(processed_at, received_at) ASC, id ASC
+       AND event_type IN ('labeled', 'unlabeled')
+       AND ${visibilitySql}
+     ORDER BY occurred_at ASC, id ASC
      LIMIT 5000`,
-    [repoId]
+    [repoId, ...visibilityParams]
   );
   const startedAtByIssueNumber = new Map<number, string>();
   for (const row of rows) {
-    const payload = parseJsonRecord<Record<string, unknown>>(asString(row.payload_json), {});
-    const issue = objectRecord(payload.issue);
-    const label = objectRecord(payload.label);
-    const issueNumber = asNumber(issue.number);
+    const issueNumber = asNumber(row.issue_number);
     const currentSeverity = currentSeverityByIssueNumber.get(issueNumber);
-    const labelName = typeof label.name === "string" ? label.name : null;
+    const labelName = row.label_name ? asString(row.label_name) : null;
     if (!currentSeverity || labelName !== currentSeverity) {
       continue;
     }
-    const occurredAt = fromSqlDate(row.processed_at) ?? fromSqlDate(row.received_at);
+    const occurredAt = fromSqlDate(row.occurred_at);
     if (!occurredAt) {
       continue;
     }
-    if (asString(row.action) === "labeled") {
+    if (asString(row.event_type) === "labeled") {
       startedAtByIssueNumber.set(issueNumber, occurredAt);
-    } else if (asString(row.action) === "unlabeled") {
+    } else if (asString(row.event_type) === "unlabeled") {
       startedAtByIssueNumber.delete(issueNumber);
     }
   }
   return startedAtByIssueNumber;
-}
-
-function objectRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
@@ -2058,7 +2193,7 @@ function toCriticalIssueView(
     ageHours: issueAgeHours(row),
     criticalStartedAt,
     criticalAgeHours: hoursSince(criticalStartedAt),
-    criticalAgeEvidence: criticalStartedAt ? "webhook_label_event" : "missing_timeline",
+    criticalAgeEvidence: criticalStartedAt ? "issue_timeline_event" : "missing_timeline",
     lastHumanActionAt: lastHumanAction.lastHumanActionAt,
     lastHumanActionEvidence: lastHumanAction.lastHumanActionEvidence,
     sourceUpdatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
@@ -2643,6 +2778,7 @@ export async function getDashboardSummary(
   const personalIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const personalPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const linkedPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
+  const timelineEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
   const testingEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
   const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
@@ -2939,7 +3075,12 @@ export async function getDashboardSummary(
       criticalSeverityByIssueNumber.set(issueNumber, severity);
     }
   }
-  const criticalStartedAtMap = await criticalStartedAtByIssueNumber(repoId, criticalSeverityByIssueNumber);
+  const criticalStartedAtMap = await criticalStartedAtByIssueNumber(
+    repoId,
+    criticalSeverityByIssueNumber,
+    timelineEventVisibility.sql,
+    timelineEventVisibility.params
+  );
   const [linkedPrCandidateRows] =
     criticalIssueNumbers.size === 0
       ? [[] as RowData[]]

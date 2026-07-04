@@ -15,6 +15,7 @@
     "dev:web": "npm --workspace @mo-devflow/web run dev",
     "db:migrate": "tsx packages/db/src/migrate.ts",
     "sync:once": "tsx apps/worker/src/sync-once.ts",
+    "timeline:once": "tsx apps/worker/src/timeline-once.ts",
     "rules:once": "tsx apps/worker/src/rules-once.ts",
     "metrics:once": "tsx apps/worker/src/metrics-once.ts",
     "drift:once": "tsx apps/worker/src/drift-once.ts",

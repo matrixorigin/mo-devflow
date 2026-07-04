@@ -4,6 +4,7 @@ import type { NormalizedIssue } from "@mo-devflow/shared";
 import {
   commentBackfillLimitFromEnv,
   issueEvidence,
+  issueTimelineBackfillLimitFromEnv,
   metricsRetentionDaysFromEnv,
   notificationFailureStatus,
   prDetailBackfillLimitFromEnv,
@@ -126,6 +127,28 @@ describe("comment backfill config", () => {
     expect(commentBackfillLimitFromEnv({ MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS: "bad" }, "service_read_token")).toBe(
       25
     );
+  });
+});
+
+describe("issue timeline backfill config", () => {
+  test("keeps anonymous backfill disabled by default", () => {
+    expect(issueTimelineBackfillLimitFromEnv({}, "anonymous")).toBe(0);
+  });
+
+  test("enables bounded service-token backfill by default", () => {
+    expect(issueTimelineBackfillLimitFromEnv({}, "service_read_token")).toBe(25);
+  });
+
+  test("accepts explicit limits and clamps invalid values", () => {
+    expect(issueTimelineBackfillLimitFromEnv({ MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS: "5" }, "anonymous")).toBe(
+      5
+    );
+    expect(
+      issueTimelineBackfillLimitFromEnv({ MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS: "-1" }, "service_read_token")
+    ).toBe(0);
+    expect(
+      issueTimelineBackfillLimitFromEnv({ MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS: "bad" }, "service_read_token")
+    ).toBe(25);
   });
 });
 

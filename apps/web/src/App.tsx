@@ -2248,8 +2248,8 @@ export default function App() {
         render: (value, issue) => (
           <Tooltip
             title={
-              issue.criticalAgeEvidence === "webhook_label_event"
-                ? `From GitHub issue label webhook at ${formatDate(issue.criticalStartedAt)}.`
+              issue.criticalAgeEvidence === "issue_timeline_event"
+                ? `From GitHub issue label event at ${formatDate(issue.criticalStartedAt)}.`
                 : "Missing severity timeline evidence; issue created age is not used as active severity duration."
             }
           >

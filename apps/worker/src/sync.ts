@@ -2,6 +2,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   issueAttentionRuleKeys,
   listIssueCommentBackfillCandidates,
+  listIssueTimelineBackfillCandidates,
   listCachedIssuesForRules,
   listCachedPullRequestsForRules,
   listNotificationCandidates,
@@ -19,6 +20,7 @@ import {
   recordNotificationDelivery,
   recomputeDailyMetricsFromCache,
   replaceIssueComments,
+  replaceIssueTimelineEvents,
   replaceAiDriftSignals,
   replaceWorkflowViolations,
   resolveStaleAttentionItems,
@@ -26,6 +28,7 @@ import {
   snapshotManagedAttentionRuleKeys,
   upsertAttentionItem,
   upsertIssue,
+  upsertIssueTimelineEvent,
   upsertPullRequest,
   upsertRepoProfile
 } from "@mo-devflow/db";
@@ -34,6 +37,7 @@ import {
   configuredGitHubSourceAuthType,
   fetchGitHubSnapshot,
   fetchIssueCommentsForNumber,
+  fetchIssueEventsForNumber,
   fetchPullRequestInsightForNumber
 } from "@mo-devflow/github";
 import { buildWeComMarkdown, classifyWeComFailure, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
@@ -53,6 +57,7 @@ import {
   isSupportedGitHubWebhookEvent,
   type AiDriftSignal,
   type NormalizedIssue,
+  type NormalizedIssueTimelineEvent,
   type NotificationCandidate,
   type NotificationStatus,
   type PullRequestInsight,
@@ -114,6 +119,18 @@ export interface IssueCommentBackfillResult {
   workflowViolations: number | null;
 }
 
+export interface IssueTimelineBackfillResult {
+  repoId: number;
+  selected: number;
+  refreshed: number;
+  complete: number;
+  partial: number;
+  failed: number;
+  skipped: boolean;
+  sourceAuthType: SourceAuthType;
+  rateLimitRemaining: number | null;
+}
+
 export interface WebhookDeliverySyncResult {
   repoId: number;
   claimed: number;
@@ -160,6 +177,22 @@ export function commentBackfillLimitFromEnv(
 ): number {
   const fallback = sourceAuthType === "anonymous" ? 0 : 25;
   const configured = env.MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS;
+  if (configured === undefined) {
+    return fallback;
+  }
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+export function issueTimelineBackfillLimitFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  sourceAuthType: SourceAuthType = configuredGitHubSourceAuthType(env)
+): number {
+  const fallback = sourceAuthType === "anonymous" ? 0 : 25;
+  const configured = env.MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS;
   if (configured === undefined) {
     return fallback;
   }
@@ -274,6 +307,40 @@ export class WebhookNormalizationError extends Error {
 
 function recordPayload(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function normalizeIssueTimelineEvent(
+  issueNumber: number,
+  event: unknown,
+  source: CacheSource,
+  visibilityClass: NormalizedIssue["visibilityClass"]
+): NormalizedIssueTimelineEvent | null {
+  const payload = recordPayload(event);
+  if (!payload) {
+    return null;
+  }
+  const eventType = typeof payload.event === "string" ? payload.event : "";
+  if (eventType !== "labeled" && eventType !== "unlabeled") {
+    return null;
+  }
+  const label = recordPayload(payload.label);
+  const actor = recordPayload(payload.actor);
+  const occurredAt = typeof payload.created_at === "string" ? payload.created_at : null;
+  if (!occurredAt) {
+    return null;
+  }
+  return {
+    githubId: String(payload.id ?? `${issueNumber}:${eventType}:${occurredAt}:${label?.name ?? ""}`),
+    issueNumber,
+    eventType,
+    labelName: typeof label?.name === "string" ? label.name : null,
+    actorLogin: typeof actor?.login === "string" ? actor.login : null,
+    occurredAt,
+    sourceAuthType: source.authType,
+    sourceUserId: source.userId,
+    visibilityClass,
+    rawPayload: payload
+  };
 }
 
 function pullRequestNumbersFromArray(value: unknown): number[] {
@@ -792,6 +859,130 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
   return summary;
 }
 
+export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfillResult> {
+  loadEnv();
+  const profile = loadRepoProfile();
+  const startedAt = new Date().toISOString();
+  const repoId = await upsertRepoProfile(profile);
+  const sourceAuthType = configuredGitHubSourceAuthType();
+  const limit = issueTimelineBackfillLimitFromEnv(process.env, sourceAuthType);
+  const summary: IssueTimelineBackfillResult = {
+    repoId,
+    selected: 0,
+    refreshed: 0,
+    complete: 0,
+    partial: 0,
+    failed: 0,
+    skipped: limit === 0,
+    sourceAuthType,
+    rateLimitRemaining: null
+  };
+
+  if (limit === 0) {
+    await recordSyncRun({
+      repoId,
+      syncLayer: "issue_timeline_backfill",
+      status: "success",
+      sourceAuthType,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      raw: {
+        ...summary,
+        reason: "MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS is 0 for the current GitHub auth source."
+      }
+    });
+    return summary;
+  }
+
+  const candidates = await listIssueTimelineBackfillCandidates(repoId, {
+    criticalLabels: profile.labels.critical,
+    limit
+  });
+  summary.selected = candidates.length;
+  let latestError: string | null = null;
+  let blocked = false;
+
+  for (const candidate of candidates) {
+    try {
+      const result = await fetchIssueEventsForNumber({
+        profile,
+        issueNumber: candidate.issueNumber
+      });
+      const events = result.events
+        .map((event) =>
+          normalizeIssueTimelineEvent(
+            candidate.issueNumber,
+            event,
+            { authType: result.sourceAuthType, userId: null },
+            candidate.visibilityClass
+          )
+        )
+        .filter((event): event is NormalizedIssueTimelineEvent => event !== null);
+      await replaceIssueTimelineEvents({
+        repoId,
+        issueNumber: candidate.issueNumber,
+        events,
+        sourceAuthType: result.sourceAuthType,
+        sourceUserId: null,
+        visibilityClass: candidate.visibilityClass,
+        isComplete: result.isComplete,
+        syncError: result.syncError,
+        raw: {
+          issueNumber: candidate.issueNumber,
+          events: events.length,
+          isComplete: result.isComplete,
+          syncError: result.syncError
+        },
+        syncedAt: result.syncedAt
+      });
+      summary.refreshed += 1;
+      summary.rateLimitRemaining = result.rateLimitRemaining ?? summary.rateLimitRemaining;
+      if (result.isComplete) {
+        summary.complete += 1;
+      } else {
+        summary.partial += 1;
+        latestError = result.syncError ?? latestError;
+        if (result.syncError && events.length === 0) {
+          summary.failed += 1;
+        }
+      }
+      if (
+        result.sourceAuthType === "anonymous" &&
+        summary.rateLimitRemaining !== null &&
+        summary.rateLimitRemaining < 8
+      ) {
+        break;
+      }
+    } catch (error) {
+      summary.failed += 1;
+      const classified = classifyGitHubError(error);
+      latestError = classified.message;
+      if (classified.kind === "permission" || classified.kind === "not_found") {
+        blocked = true;
+        break;
+      }
+      if (classified.kind === "rate_limited") {
+        summary.rateLimitRemaining = classified.rateLimitRemaining ?? summary.rateLimitRemaining;
+        break;
+      }
+    }
+  }
+
+  await recordSyncRun({
+    repoId,
+    syncLayer: "issue_timeline_backfill",
+    status: blocked ? "blocked" : summary.failed > 0 || summary.partial > 0 ? "partial" : "success",
+    sourceAuthType,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    errorMessage: latestError,
+    rateLimitRemaining: summary.rateLimitRemaining,
+    raw: summary
+  });
+
+  return summary;
+}
+
 export async function processWebhookPayload(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
@@ -816,6 +1007,25 @@ export async function processWebhookPayload(input: {
       return { processed: true, skipped: true, message: `issue #${issue.number} is a pull request shadow issue` };
     }
     await upsertIssue(input.repoId, issue);
+    const action = typeof input.payload.action === "string" ? input.payload.action : "";
+    if (action === "labeled" || action === "unlabeled") {
+      const timelineEvent = normalizeIssueTimelineEvent(
+        issue.number,
+        {
+          id: input.payload.delivery_id,
+          event: action,
+          label: input.payload.label,
+          actor: input.payload.sender,
+          created_at: issue.updatedAt,
+          source: "webhook"
+        },
+        cacheSourceForWebhook(),
+        issue.visibilityClass
+      );
+      if (timelineEvent) {
+        await upsertIssueTimelineEvent(input.repoId, timelineEvent);
+      }
+    }
     const activeAttentionDedupeKeys = new Set<string>();
     for (const flag of criticalAttentionForIssue(input.profile, issue)) {
       const dedupeKey = issueAttentionDedupeKey(input.profile.key, issue.number, flag);

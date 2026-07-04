@@ -290,6 +290,35 @@ const schemaStatements = [
     last_synced_at DATETIME NOT NULL,
     UNIQUE KEY uniq_issue_comments_repo_github (repo_id, github_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS issue_timeline_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    issue_number INT NOT NULL,
+    github_id VARCHAR(64) NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    label_name VARCHAR(255),
+    actor_login VARCHAR(255),
+    occurred_at DATETIME NOT NULL,
+    source_auth_type VARCHAR(64) NOT NULL,
+    source_user_id BIGINT,
+    visibility_class VARCHAR(64) NOT NULL,
+    raw_payload LONGTEXT NOT NULL,
+    last_synced_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_issue_timeline_events_repo_github (repo_id, github_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_timeline_syncs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id BIGINT NOT NULL,
+    issue_number INT NOT NULL,
+    source_auth_type VARCHAR(64) NOT NULL,
+    source_user_id BIGINT,
+    visibility_class VARCHAR(64) NOT NULL,
+    is_complete TINYINT NOT NULL,
+    sync_error TEXT,
+    raw_json LONGTEXT,
+    last_synced_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_issue_timeline_syncs_issue (repo_id, issue_number)
+  )`,
   `CREATE TABLE IF NOT EXISTS attention_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     repo_id BIGINT NOT NULL,
@@ -434,6 +463,10 @@ const indexStatements = [
   "CREATE INDEX idx_issue_comment_syncs_repo_issue ON issue_comment_syncs(repo_id, issue_number)",
   "CREATE INDEX idx_issue_comments_repo_issue ON issue_comments(repo_id, issue_number)",
   "CREATE INDEX idx_issue_comments_repo_visibility_source ON issue_comments(repo_id, visibility_class, source_user_id)",
+  "CREATE INDEX idx_issue_timeline_events_repo_issue ON issue_timeline_events(repo_id, issue_number)",
+  "CREATE INDEX idx_issue_timeline_events_repo_label ON issue_timeline_events(repo_id, label_name, occurred_at)",
+  "CREATE INDEX idx_issue_timeline_syncs_repo_issue ON issue_timeline_syncs(repo_id, issue_number)",
+  "CREATE INDEX idx_issue_timeline_events_visibility_source ON issue_timeline_events(repo_id, visibility_class, source_user_id)",
   "CREATE INDEX idx_user_sessions_user ON user_sessions(user_id)",
   "CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at)",
   "CREATE INDEX idx_write_action_previews_repo ON write_action_previews(repo_id)",
@@ -503,6 +536,13 @@ const migrations: SchemaMigration[] = [
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN review_waiting_prs INT NOT NULL DEFAULT 0");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN merge_conflict_prs INT NOT NULL DEFAULT 0");
       }
+    }
+  },
+  {
+    version: "0005",
+    name: "issue_timeline_event_cache",
+    async run() {
+      // The CREATE TABLE/INDEX statements above are idempotent and create this cache for both fresh and existing DBs.
     }
   }
 ];

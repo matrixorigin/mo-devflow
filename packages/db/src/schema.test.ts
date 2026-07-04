@@ -19,6 +19,8 @@ describe("schema contract", () => {
     expect(expected.get("pr_testing_events")).toContain("source_completeness");
     expect(expected.get("issue_comment_syncs")).toContain("is_complete");
     expect(expected.get("issue_comments")).toContain("body");
+    expect(expected.get("issue_timeline_events")).toContain("label_name");
+    expect(expected.get("issue_timeline_syncs")).toContain("is_complete");
     expect(expected.get("notification_deliveries")).toContain("payload_json");
     expect(expected.get("workflow_violations")).toContain("fixable");
     expect(expected.get("user_github_tokens")).toContain("repo_permission");

@@ -949,8 +949,8 @@ function issueDuration(issue: CriticalIssueView | PersonalIssueView): {
       hours: issue.criticalAgeHours,
       kind: "critical_active",
       evidence:
-        issue.criticalAgeEvidence === "webhook_label_event"
-          ? "GitHub issue label webhook"
+        issue.criticalAgeEvidence === "issue_timeline_event"
+          ? "GitHub issue label event"
           : "Missing severity timeline evidence"
     };
   }
