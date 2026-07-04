@@ -343,6 +343,19 @@ function notificationStatusColor(value: NotificationStatus): string {
   return "default";
 }
 
+function notificationReadinessColor(value: DashboardSummary["notifications"]["readiness"]["status"]): string {
+  if (value === "ready") {
+    return "green";
+  }
+  if (value === "degraded") {
+    return "orange";
+  }
+  if (value === "action_required") {
+    return "red";
+  }
+  return "default";
+}
+
 function workflowExecutionStatusColor(value: WriteActionExecutionView["status"]): string {
   if (value === "success") {
     return "green";
@@ -2234,11 +2247,18 @@ export default function App() {
                     <Title level={4}>Notifications</Title>
                   </Space>
                   <Space size={[6, 6]} wrap>
+                    <Tag color={notificationReadinessColor(data.notifications.readiness.status)}>
+                      {labelText(data.notifications.readiness.status)}
+                    </Tag>
                     <Tag color={data.notifications.enabled ? "green" : "default"}>
                       {data.notifications.enabled ? "enabled" : "disabled"}
                     </Tag>
                     <Tag color={data.notifications.webhookConfigured ? "green" : "orange"}>
                       {data.notifications.webhookConfigured ? "webhook configured" : "no webhook"}
+                    </Tag>
+                    <Tag>{data.notifications.readiness.mappedEmployees} mapped employees</Tag>
+                    <Tag color={data.notifications.readiness.missingEmployeeMappings > 0 ? "orange" : "green"}>
+                      {data.notifications.readiness.missingEmployeeMappings} missing mappings
                     </Tag>
                     <Tag>{data.notifications.cooldownHours}h cooldown</Tag>
                     <Tag color={data.notifications.unacknowledgedDeliveries > 0 ? "orange" : "green"}>
@@ -2266,21 +2286,25 @@ export default function App() {
                     showIcon
                   />
                 ) : null}
-                {!data.notifications.enabled ? (
+                {data.notifications.readiness.blockers.length > 0 ? (
                   <Alert
                     className="band"
-                    type="info"
-                    title="WeCom delivery is disabled; notification runs are recorded as skipped without sending external requests."
+                    type={data.notifications.readiness.status === "disabled" ? "info" : "error"}
+                    title={`Notification readiness: ${labelText(data.notifications.readiness.status)}`}
+                    description={data.notifications.readiness.blockers.join(" ")}
                     showIcon
                   />
-                ) : !data.notifications.webhookConfigured ? (
+                ) : null}
+                {data.notifications.readiness.warnings.length > 0 ? (
                   <Alert
                     className="band"
-                    type="error"
-                    title="WeCom delivery is enabled but the webhook environment variable is not configured."
+                    type="warning"
+                    title="Notification routing is degraded"
+                    description={data.notifications.readiness.warnings.join(" ")}
                     showIcon
                   />
-                ) : data.notifications.failedDeliveries > 0 ? (
+                ) : null}
+                {data.notifications.failedDeliveries > 0 ? (
                   <Alert
                     className="band"
                     type="warning"

@@ -2711,7 +2711,6 @@ export async function getDashboardSummary(
   };
   const jobQueue = await getJobQueueHealth();
   const worker: WorkerHealth = await getWorkerHealth();
-  const notifications = await getNotificationHealth({ repoId, profile, viewer });
   const webhooks = await getWebhookIngestionHealth(repoId);
   const writeActions: WriteActionExecutionView[] = await listWriteActionExecutionsForDashboard({
     repoId,
@@ -2739,6 +2738,12 @@ export async function getDashboardSummary(
       severity: attentionSeverity(signal.severity)
     }))
   ]);
+  const notifications = await getNotificationHealth({
+    repoId,
+    profile,
+    viewer,
+    missingEmployeeMappings: notificationMappingCandidates.length
+  });
   const oldestSyncedAt = fromSqlDate(staleRows[0]?.oldest_synced_at);
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)

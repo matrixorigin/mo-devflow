@@ -3,6 +3,7 @@ import type {
   NotificationCandidate,
   NotificationDeliveryView,
   NotificationHealth,
+  NotificationReadiness,
   NotificationSourceType,
   NotificationStatus,
   RepoProfile
@@ -224,6 +225,58 @@ export function notificationDeliveryCooldownHours(
     return configuredCooldownHours;
   }
   return null;
+}
+
+export function notificationReadiness(input: {
+  profile: RepoProfile;
+  env?: Record<string, string | undefined>;
+  missingEmployeeMappings: number;
+}): NotificationReadiness {
+  const env = input.env ?? process.env;
+  const webhookEnvVar = input.profile.notifications.wecom.webhookUrlEnv ?? null;
+  const webhookConfigured = Boolean(webhookEnvVar && env[webhookEnvVar]?.trim());
+  const mappedEmployees = Object.values(input.profile.notifications.employees).filter(
+    (employee) => employee.wecomUserId.trim().length > 0
+  ).length;
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  if (!input.profile.notifications.wecom.enabled) {
+    blockers.push("WeCom delivery is disabled in the repository profile.");
+  } else {
+    if (!webhookEnvVar) {
+      blockers.push("notifications.wecom.webhook_url_env is not configured in the repository profile.");
+    } else if (!webhookConfigured) {
+      blockers.push(`${webhookEnvVar} is not set in the API or worker environment.`);
+    }
+    if (!input.profile.notifications.routing.fallbackRecipient.trim()) {
+      blockers.push("notifications routing fallback_recipient is empty.");
+    }
+  }
+
+  if (input.missingEmployeeMappings > 0) {
+    warnings.push(
+      `${input.missingEmployeeMappings} owner-routed notification recipients are missing employee mappings and will use fallback routing.`
+    );
+  }
+
+  const status = !input.profile.notifications.wecom.enabled
+    ? "disabled"
+    : blockers.length > 0
+      ? "action_required"
+      : warnings.length > 0
+        ? "degraded"
+        : "ready";
+
+  return {
+    status,
+    blockers,
+    warnings,
+    webhookEnvVar,
+    mappedEmployees,
+    missingEmployeeMappings: input.missingEmployeeMappings,
+    fallbackRecipient: input.profile.notifications.routing.fallbackRecipient
+  };
 }
 
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
@@ -1070,6 +1123,7 @@ export async function getNotificationHealth(input: {
   repoId: number;
   profile: RepoProfile;
   viewer: DashboardViewer;
+  missingEmployeeMappings?: number;
 }): Promise<NotificationHealth> {
   const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
@@ -1159,6 +1213,10 @@ export async function getNotificationHealth(input: {
     webhookConfigured: Boolean(
       input.profile.notifications.wecom.webhookUrlEnv && process.env[input.profile.notifications.wecom.webhookUrlEnv]
     ),
+    readiness: notificationReadiness({
+      profile: input.profile,
+      missingEmployeeMappings: input.missingEmployeeMappings ?? 0
+    }),
     cooldownHours: input.profile.notifications.routing.cooldownHours,
     escalateAfterHours: escalationHours,
     failedDeliveries: asNumber(deliveryFailureRows[0]?.failed_count),

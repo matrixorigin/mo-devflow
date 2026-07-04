@@ -567,6 +567,7 @@ Enterprise WeChat channel:
 - Keep provider credentials in environment variables.
 - Support per-user notifications through configured employee mappings.
 - Support maintainer group or bot webhook routing for summaries.
+- Expose readiness state for channel enablement, webhook environment configuration, employee mapping coverage, and fallback routing.
 - Apply cooldown per deduplication key to avoid repeated alerts.
 - Respect quiet hours unless the notification is explicitly critical.
 - Store provider responses for debugging, with sensitive data redacted.

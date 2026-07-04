@@ -631,10 +631,23 @@ export interface NotificationDeliveryView {
   acknowledgedBy: string | null;
 }
 
+export type NotificationReadinessStatus = "ready" | "degraded" | "action_required" | "disabled";
+
+export interface NotificationReadiness {
+  status: NotificationReadinessStatus;
+  blockers: string[];
+  warnings: string[];
+  webhookEnvVar: string | null;
+  mappedEmployees: number;
+  missingEmployeeMappings: number;
+  fallbackRecipient: string;
+}
+
 export interface NotificationHealth {
   enabled: boolean;
   channel: "wecom";
   webhookConfigured: boolean;
+  readiness: NotificationReadiness;
   cooldownHours: number;
   escalateAfterHours: number;
   failedDeliveries: number;

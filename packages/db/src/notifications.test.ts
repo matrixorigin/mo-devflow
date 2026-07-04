@@ -16,6 +16,7 @@ import {
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
   notificationDeliveryCooldownHours,
+  notificationReadiness,
   notificationSourceObjectVisibilityWhereSql,
   PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS,
   notificationRecipient,
@@ -322,6 +323,96 @@ describe("notification acknowledgement health", () => {
     );
     expect(notificationDeliveryCooldownHours([{ status: "retry_requested" }], 12)).toBeNull();
     expect(notificationDeliveryCooldownHours([{ status: "skipped_quiet_hours" }], 12)).toBeNull();
+  });
+
+  test("summarizes notification readiness for disabled WeCom delivery", () => {
+    expect(
+      notificationReadiness({
+        profile: {
+          ...profile,
+          notifications: {
+            ...profile.notifications,
+            wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+          }
+        },
+        env: {},
+        missingEmployeeMappings: 0
+      })
+    ).toMatchObject({
+      status: "disabled",
+      webhookEnvVar: "MO_DEVFLOW_WECOM_WEBHOOK_URL",
+      mappedEmployees: 0,
+      missingEmployeeMappings: 0,
+      fallbackRecipient: "maintainer_group",
+      blockers: ["WeCom delivery is disabled in the repository profile."],
+      warnings: []
+    });
+  });
+
+  test("requires configured webhook environment when WeCom delivery is enabled", () => {
+    expect(
+      notificationReadiness({
+        profile: {
+          ...profile,
+          notifications: {
+            ...profile.notifications,
+            wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+          }
+        },
+        env: {},
+        missingEmployeeMappings: 0
+      })
+    ).toMatchObject({
+      status: "action_required",
+      blockers: ["MO_DEVFLOW_WECOM_WEBHOOK_URL is not set in the API or worker environment."],
+      warnings: []
+    });
+  });
+
+  test("marks notifications degraded when owner mappings fall back to maintainer routing", () => {
+    expect(
+      notificationReadiness({
+        profile: {
+          ...profile,
+          notifications: {
+            ...profile.notifications,
+            wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" },
+            employees: { alice: { wecomUserId: "alice-wecom" } }
+          }
+        },
+        env: { MO_DEVFLOW_WECOM_WEBHOOK_URL: "https://wecom.example.test/webhook" },
+        missingEmployeeMappings: 2
+      })
+    ).toMatchObject({
+      status: "degraded",
+      mappedEmployees: 1,
+      missingEmployeeMappings: 2,
+      blockers: [],
+      warnings: [
+        "2 owner-routed notification recipients are missing employee mappings and will use fallback routing."
+      ]
+    });
+  });
+
+  test("marks notifications ready when channel and routing mappings are complete", () => {
+    expect(
+      notificationReadiness({
+        profile: {
+          ...profile,
+          notifications: {
+            ...profile.notifications,
+            wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" },
+            employees: { alice: { wecomUserId: "alice-wecom" } }
+          }
+        },
+        env: { MO_DEVFLOW_WECOM_WEBHOOK_URL: "https://wecom.example.test/webhook" },
+        missingEmployeeMappings: 0
+      })
+    ).toMatchObject({
+      status: "ready",
+      blockers: [],
+      warnings: []
+    });
   });
 
   test("builds strict active-source filter for notification health counters", () => {

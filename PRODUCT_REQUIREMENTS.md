@@ -574,6 +574,7 @@ Notifications must be controlled by policy:
 - Support per-user routing.
 - Support team or maintainer group routing for overall summaries.
 - Use a maintainer fallback when the responsible user has no enterprise WeChat mapping.
+- Show notification readiness, including channel enablement, webhook configuration, mapped employees, missing mappings, and fallback routing.
 - Escalate unresolved or unacknowledged critical attention items after the configured threshold.
 - Resolve or suppress notifications automatically when the underlying attention item is no longer true.
 - Record repeated delivery failures and show them on the dashboard.
