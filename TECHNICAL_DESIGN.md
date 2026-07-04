@@ -279,7 +279,7 @@ Backfill:
 - Dashboards should avoid treating partial objects as complete evidence.
 - Rule evaluation should be runnable from cached normalized data without hitting GitHub. This supports rule tuning, notification replay, and degraded operation during GitHub rate limits.
 - Metrics evaluation should also be runnable from cached normalized data. Until full historical backfill exists, generated trend points must carry partial-cache completeness metadata and the UI must explain the limitation.
-- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on critical issues and `ai-easy` critical issues exceeding configured age thresholds. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must be marked as partial evidence.
+- AI drift evaluation should start from conservative cache-derived signals, such as missing AI effort labels on critical issues, `ai-easy` critical issues exceeding configured age thresholds, and `ai-easy` PRs with blocker attention flags. The first PR-level drift rule flags `ai_easy_pr_has_blockers` when an open `ai-easy` PR has requested changes, failed CI, or a merge conflict. Until severity-promotion timestamps, linked PRs, and testing handoff events are backfilled, these signals must carry complete or partial cache evidence metadata.
 
 ## 9. Authentication and Token Handling
 
@@ -573,6 +573,7 @@ Initial notification rules:
 - PR has merge conflict.
 - Testing handoff is stale.
 - `ai-easy` critical issue exceeds expected `s0` to testing duration.
+- `ai-easy` PR has requested changes, failed CI, or merge conflict blocker evidence.
 - Daily watched-user digest.
 - Daily maintainer digest.
 

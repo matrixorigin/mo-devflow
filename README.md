@@ -87,6 +87,10 @@ reviewers, has no cached review response, and has been stale longer than the
 configured threshold, it is marked `review_requested_no_response`; until request
 timeline events are backfilled this remains partial-cache evidence.
 
+AI drift also includes PR-level evidence. An open `ai-easy` PR with requested
+changes, failed CI, or merge conflict attention is flagged as
+`ai_easy_pr_has_blockers` so the effort label can be corrected before close.
+
 Repository behavior is driven by `config/repos/matrixone.yaml`. The MatrixOne
 profile includes `workflow.skip_users` from the local `mo-bug-triage` skill; a
 skipped user can still appear in cached dashboards, but the rule engine will not

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 import {
   aiDriftSignalsForIssue,
+  aiDriftSignalsForPullRequest,
   criticalAttentionForIssue,
   linkedPrAuthorsByIssueNumber,
   normalizeIssue,
@@ -603,6 +604,76 @@ describe("rules", () => {
     expect(pr.testingState).toBe("test_requested");
     expect(pr.testingSignals).toContain("comment:ready for testing");
     expect(pr.lastHumanActionAt).toBe("2026-07-02T00:30:00Z");
+  });
+
+  test("AI drift detects ai-easy PRs with review or CI blockers", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 501,
+        number: 501,
+        title: "easy fix with blockers",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/501",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        labels: [{ name: "ai-easy" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 501,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState: "failure",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(aiDriftSignalsForPullRequest(profile, pr).map((item) => item.ruleKey)).toEqual([
+      "ai_easy_pr_has_blockers"
+    ]);
+  });
+
+  test("AI drift ignores ai-easy PRs without blocker evidence", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 502,
+        number: 502,
+        title: "easy clean fix",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/502",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        labels: [{ name: "ai-easy" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 502,
+        reviewDecision: "approved",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "APPROVED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(aiDriftSignalsForPullRequest(profile, pr)).toEqual([]);
   });
 
   test("testing flow reflects requested changes, approval, and close states", () => {

@@ -195,6 +195,14 @@ function issueMatchesSkipList(profile: RepoProfile, issue: NormalizedIssue): boo
   return [issue.authorLogin, issue.ownerLogin, ...issue.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
 }
 
+function prMatchesSkipList(profile: RepoProfile, pr: NormalizedPullRequest): boolean {
+  const skipped = skippedLogins(profile);
+  if (skipped.size === 0) {
+    return false;
+  }
+  return [pr.authorLogin, pr.ownerLogin, ...pr.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
+}
+
 function deriveTestingFlow(
   profile: RepoProfile,
   pr: GitHubPullRequestLike,
@@ -694,4 +702,40 @@ export function aiDriftSignalsForIssue(profile: RepoProfile, issue: NormalizedIs
   }
 
   return signals;
+}
+
+export function aiDriftSignalsForPullRequest(profile: RepoProfile, pr: NormalizedPullRequest): AiDriftSignal[] {
+  if (prMatchesSkipList(profile, pr) || pr.state !== "open") {
+    return [];
+  }
+  const aiEffortLabel = chooseAiEffortLabel(profile, pr.labels);
+  if (aiEffortLabel !== "ai-easy") {
+    return [];
+  }
+
+  const blockerFlags = pr.attentionFlags.filter((flag) =>
+    ["requested_changes", "ci_failed", "merge_conflict"].includes(flag)
+  );
+  if (blockerFlags.length === 0) {
+    return [];
+  }
+
+  const ageHours = hoursBetween(pr.createdAt);
+  return [
+    {
+      objectType: "pull_request",
+      objectNumber: pr.number,
+      title: pr.title,
+      htmlUrl: pr.htmlUrl,
+      ruleKey: "ai_easy_pr_has_blockers",
+      severity: blockerFlags.includes("merge_conflict") || blockerFlags.length >= 2 ? "critical" : "warning",
+      ownerLogin: pr.ownerLogin,
+      aiEffortLabel,
+      expectedHours: profile.thresholds.aiEasyS0ToTestAttentionDays * 24,
+      actualHours: ageHours,
+      evidenceSummary: `PR #${pr.number} is labeled ai-easy but has blocker attention flags: ${blockerFlags.join(", ")}.`,
+      suggestedAction: "Re-evaluate the AI effort label before close, split blockers, or document why ai-easy is still accurate.",
+      sourceCompleteness: pr.isComplete ? "complete_cache" : "partial_cache"
+    }
+  ];
 }

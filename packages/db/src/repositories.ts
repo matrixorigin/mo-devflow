@@ -771,6 +771,59 @@ async function issueCommentEvidenceByIssueNumber(
   return result;
 }
 
+export async function listCachedPullRequestsForRules(repoId: number): Promise<NormalizedPullRequest[]> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT *
+     FROM pull_requests
+     WHERE repo_id = ? AND state = 'open'`,
+    [repoId]
+  );
+
+  return rows.map((row) => ({
+    githubId: asNumber(row.github_id),
+    number: asNumber(row.number),
+    title: asString(row.title),
+    state: "open",
+    authorLogin: asString(row.author_login),
+    ownerLogin: asString(row.owner_login),
+    htmlUrl: asString(row.html_url),
+    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString(),
+    updatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
+    closedAt: fromSqlDate(row.closed_at),
+    mergedAt: fromSqlDate(row.merged_at),
+    draft: asBoolean(row.draft),
+    headRef: asString(row.head_ref),
+    baseRef: asString(row.base_ref),
+    labels: parseJsonArray(asString(row.labels_json)),
+    assignees: parseJsonArray(asString(row.assignees_json)),
+    requestedReviewers: parseJsonArray(asString(row.requested_reviewers_json)),
+    ageHours: asNumber(row.age_hours),
+    lastHumanActionAt: fromSqlDate(row.last_human_action_at) ?? new Date().toISOString(),
+    lastSystemActionAt: fromSqlDate(row.last_system_action_at),
+    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
+    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null,
+    ciState: row.ci_state ? asString(row.ci_state) : null,
+    latestReviewState: row.latest_review_state ? asString(row.latest_review_state) : null,
+    latestReviewSubmittedAt: fromSqlDate(row.latest_review_submitted_at),
+    latestCommitAt: fromSqlDate(row.latest_commit_at),
+    detailSyncedAt: fromSqlDate(row.detail_synced_at),
+    detailError: row.detail_error ? asString(row.detail_error) : null,
+    testingState: row.testing_state ? asString(row.testing_state) as NormalizedPullRequest["testingState"] : "not_ready",
+    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
+    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
+    testingQueueAgeHours:
+      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
+        ? null
+        : asNumber(row.testing_queue_age_hours),
+    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
+    sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
+    visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
+    isComplete: asBoolean(row.is_complete),
+    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+  }));
+}
+
 export async function upsertPullRequest(repoId: number, pr: NormalizedPullRequest): Promise<NormalizedPullRequest> {
   const now = nowSql();
   let next = pr;

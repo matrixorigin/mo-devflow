@@ -2,6 +2,7 @@ import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   issueAttentionRuleKeys,
   listCachedIssuesForRules,
+  listCachedPullRequestsForRules,
   listNotificationCandidates,
   isNotificationInCooldown,
   pullRequestAttentionRuleKeys,
@@ -30,6 +31,7 @@ import {
 } from "@mo-devflow/github";
 import { buildWeComMarkdown, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
+  aiDriftSignalsForPullRequest,
   aiDriftSignalsForIssue,
   criticalAttentionForIssue,
   linkedPrAuthorsByIssueNumber,
@@ -244,7 +246,11 @@ export async function recomputeAiDriftFromCache(): Promise<DriftSyncResult> {
   const startedAt = new Date().toISOString();
   const repoId = await upsertRepoProfile(profile);
   const issues = await listCachedIssuesForRules(repoId);
-  const aiDriftSignals = issues.flatMap((issue) => aiDriftSignalsForIssue(profile, issue));
+  const pullRequests = await listCachedPullRequestsForRules(repoId);
+  const aiDriftSignals = [
+    ...issues.flatMap((issue) => aiDriftSignalsForIssue(profile, issue)),
+    ...pullRequests.flatMap((pr) => aiDriftSignalsForPullRequest(profile, pr))
+  ];
   await replaceAiDriftSignals(repoId, aiDriftSignals);
   await recordSyncRun({
     repoId,
@@ -734,7 +740,6 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       });
     }
     await replaceWorkflowViolations(repoId, workflowViolations);
-    await replaceAiDriftSignals(repoId, aiDriftSignals);
 
     for (const rawPr of snapshot.pullRequests) {
       const commentResult = snapshot.issueComments.get(rawPr.number);
@@ -781,6 +786,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         });
       }
       const cachedPr = await upsertPullRequest(repoId, pr);
+      aiDriftSignals.push(...aiDriftSignalsForPullRequest(profile, cachedPr));
       prCount += 1;
       const prActiveAttentionDedupeKeys = new Set<string>();
       for (const flag of cachedPr.attentionFlags) {
@@ -807,6 +813,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         objectNumber: cachedPr.number
       });
     }
+    await replaceAiDriftSignals(repoId, aiDriftSignals);
     const snapshotComplete = snapshot.issuesComplete && snapshot.openPullRequestsComplete;
     if (snapshotComplete) {
       resolvedAttentionItems += await resolveStaleAttentionItems({
