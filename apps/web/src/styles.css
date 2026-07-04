@@ -274,6 +274,74 @@ body {
   display: block;
 }
 
+.cache-impact-board {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.cache-impact-heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cache-impact-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  min-width: 0;
+}
+
+.cache-impact-card {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #111827;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  text-align: left;
+}
+
+.cache-impact-card:hover,
+.cache-impact-card:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.cache-impact-card span {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.cache-impact-card strong {
+  font-size: 22px;
+  line-height: 1.05;
+}
+
+.cache-impact-card small {
+  color: #4b5563;
+  line-height: 1.35;
+}
+
+.cache-impact-card-critical {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+
+.cache-impact-card-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
 .cache-repair-plan {
   border-top: 1px solid #e5e7eb;
   display: grid;

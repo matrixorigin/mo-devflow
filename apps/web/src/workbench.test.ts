@@ -143,7 +143,7 @@ describe("work item attention reasons", () => {
     expect(criticalIssueReasons(issue)).toEqual([
       "ai-easy has exceeded target",
       "No linked PR visible",
-      "Partial cache evidence",
+      "Incomplete cache evidence",
       "ai-easy"
     ]);
   });

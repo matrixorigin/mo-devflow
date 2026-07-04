@@ -306,7 +306,7 @@ export function criticalIssueReasons(issue: CriticalIssueView): string[] {
   const blockers = issue.blockers.filter((blocker) => blocker.severity !== "info").map((blocker) => blocker.message);
   const evidence = [
     issue.linkedPullRequests.length === 0 ? "No linked PR visible" : null,
-    !issue.isComplete ? "Partial cache evidence" : null,
+    !issue.isComplete ? "Incomplete cache evidence" : null,
     effectiveAiEffortLabel(issue.aiEffortLabel)
   ].filter((reason): reason is string => reason !== null);
 
@@ -318,7 +318,7 @@ export function personalIssueReasons(issue: PersonalIssueView): string[] {
     issue.lifecycleState === "needs-triage" ? "Waiting triage decision" : null,
     issue.lifecycleState === "deferred" ? "Deferred follow-up" : null,
     issue.severity ? issue.severity : null,
-    !issue.isComplete ? "Partial cache evidence" : null
+    !issue.isComplete ? "Incomplete cache evidence" : null
   ].filter((reason): reason is string => reason !== null);
 
   if (reasons.length > 0) {

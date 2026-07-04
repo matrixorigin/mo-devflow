@@ -132,6 +132,7 @@ type PrScopeFilter =
   | "conflict"
   | "no_issue"
   | "issue_link_pending"
+  | "evidence_pending"
   | "no_action_24h";
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
@@ -1059,6 +1060,9 @@ function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "issue_link_pending") {
     return "issue link sync pending";
   }
+  if (filter === "evidence_pending") {
+    return "PR evidence pending";
+  }
   if (filter === "no_action_24h") {
     return "no action 24h";
   }
@@ -1194,6 +1198,10 @@ function prIssueLinkUnknown(pr: PendingPrView): boolean {
   return pr.linkedIssueNumbers.length === 0 && !prIssueRelationshipComplete(pr);
 }
 
+function prEvidencePending(pr: PendingPrView): boolean {
+  return !pr.isComplete || pr.detailSyncedAt === null || pr.detailError !== null;
+}
+
 function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean {
   if (scopeFilter === "attention") {
     return pr.attentionFlags.length > 0;
@@ -1221,6 +1229,9 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
   }
   if (scopeFilter === "issue_link_pending") {
     return prIssueLinkUnknown(pr);
+  }
+  if (scopeFilter === "evidence_pending") {
+    return prEvidencePending(pr);
   }
   if (scopeFilter === "no_action_24h") {
     return pr.attentionFlags.includes("no_human_action_24h");
@@ -1362,6 +1373,7 @@ function PrFilterBar({
             { label: "Conflict", value: "conflict" },
             { label: "Unlinked", value: "no_issue" },
             { label: "Link sync pending", value: "issue_link_pending" },
+            { label: "Evidence pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -2303,9 +2315,90 @@ function WorkObjectLink({ href, children, icon }: { href: string; children: Reac
 }
 
 type CacheEvidenceSample = DashboardSummary["sync"]["staleSamples"][number];
+type CacheEvidenceImpactTarget = "issues" | "prs" | "testing" | "drift";
+
+interface CacheEvidenceImpactItem {
+  key: string;
+  target: CacheEvidenceImpactTarget;
+  label: string;
+  value: number;
+  detail: string;
+  tone: "critical" | "attention" | "normal";
+}
 
 function cacheEvidenceObjectLabel(sample: CacheEvidenceSample): string {
   return sample.objectType === "pull_request" ? `PR #${sample.number}` : `Issue #${sample.number}`;
+}
+
+function uniqueSampleNumbers(
+  samples: CacheEvidenceSample[],
+  objectType: CacheEvidenceSample["objectType"]
+): Set<number> {
+  return new Set(samples.filter((sample) => sample.objectType === objectType).map((sample) => sample.number));
+}
+
+function cacheEvidenceImpactItems(data: DashboardSummary): CacheEvidenceImpactItem[] {
+  const samples = [...data.sync.staleSamples, ...data.sync.partialSamples];
+  const sampledIssueNumbers = uniqueSampleNumbers(samples, "issue");
+  const sampledPrNumbers = uniqueSampleNumbers(samples, "pull_request");
+  const criticalNumbers = new Set(data.criticalIssues.map((issue) => issue.number));
+  const pendingPrNumbers = new Set(data.pendingPrs.map((pr) => pr.number));
+  const sampledActiveIssues = Array.from(sampledIssueNumbers).filter((number) => criticalNumbers.has(number)).length;
+  const sampledPendingPrs = Array.from(sampledPrNumbers).filter((number) => pendingPrNumbers.has(number)).length;
+  const timelineMissingIssues = data.criticalIssues.filter(
+    (issue) => issue.criticalAgeEvidence === "missing_timeline"
+  ).length;
+  const evidencePendingPrs = data.pendingPrs.filter(prEvidencePending).length;
+  const testingEvidenceGaps =
+    data.pendingPrs.filter(isTestingEvidenceGapPr).length +
+    data.testing.issues.filter(
+      (issue) => issue.queueAgeEvidence === "issue_cache_timestamp" || !issue.isComplete || issue.syncError !== null
+    ).length;
+  const partialDriftSignals = data.aiDriftSignals.filter(
+    (signal) => signal.sourceCompleteness === "partial_cache"
+  ).length;
+
+  const items: CacheEvidenceImpactItem[] = [
+    {
+      key: "active-issues",
+      target: "issues",
+      label: "Active issues",
+      value: Math.max(sampledActiveIssues, timelineMissingIssues),
+      detail:
+        sampledActiveIssues > 0
+          ? `${sampledActiveIssues} sampled active issue objects need cache attention`
+          : `${timelineMissingIssues} active issues are missing severity timeline evidence`,
+      tone: timelineMissingIssues > 0 ? "attention" : "normal"
+    },
+    {
+      key: "pending-prs",
+      target: "prs",
+      label: "Pending PRs",
+      value: Math.max(sampledPendingPrs, evidencePendingPrs),
+      detail:
+        sampledPendingPrs > 0
+          ? `${sampledPendingPrs} sampled pending PR objects need cache attention`
+          : `${evidencePendingPrs} pending PRs have incomplete review, CI, merge, or link evidence`,
+      tone: evidencePendingPrs > 0 ? "attention" : "normal"
+    },
+    {
+      key: "testing",
+      target: "testing",
+      label: "Testing flow",
+      value: testingEvidenceGaps,
+      detail: `${testingEvidenceGaps} issue or PR testing records depend on incomplete cache evidence`,
+      tone: testingEvidenceGaps > 0 ? "attention" : "normal"
+    },
+    {
+      key: "drift",
+      target: "drift",
+      label: "AI drift",
+      value: partialDriftSignals,
+      detail: `${partialDriftSignals} drift signals are based on incomplete cache evidence`,
+      tone: partialDriftSignals > 0 ? "attention" : "normal"
+    }
+  ];
+  return items.filter((item) => item.value > 0);
 }
 
 function cacheEvidenceReasonLabel(sample: CacheEvidenceSample): string {
@@ -2423,11 +2516,46 @@ function CacheEvidenceSamples({ sync }: { sync: DashboardSummary["sync"] }) {
         emptyText="No open visible stale objects were returned in the diagnostic sample."
       />
       <CacheEvidenceSampleGroup
-        title="Partial workflow evidence"
+        title="Incomplete workflow evidence"
         total={sync.partialObjects}
         samples={sync.partialSamples}
-        emptyText="Partial objects exist in the cache, but no open visible objects were returned in the sample."
+        emptyText="Incomplete objects exist in the cache, but no open visible objects were returned in the sample."
       />
+    </div>
+  );
+}
+
+function CacheEvidenceImpactBoard({
+  items,
+  onSelect
+}: {
+  items: CacheEvidenceImpactItem[];
+  onSelect: (target: CacheEvidenceImpactTarget) => void;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="cache-impact-board" aria-label="Cache evidence impact by board">
+      <div className="cache-impact-heading">
+        <Text strong>Board impact</Text>
+        <Text type="secondary">Where this cache condition can change visible workflow conclusions.</Text>
+      </div>
+      <div className="cache-impact-grid">
+        {items.map((item) => (
+          <button
+            type="button"
+            className={`cache-impact-card cache-impact-card-${item.tone}`}
+            onClick={() => onSelect(item.target)}
+            key={item.key}
+          >
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2505,8 +2633,10 @@ function CacheEvidenceBanner({
   sync,
   authenticated,
   saving,
+  impactItems,
   expanded,
   onExpandedChange,
+  onImpactSelect,
   onPrepare,
   onQueue
 }: {
@@ -2514,8 +2644,10 @@ function CacheEvidenceBanner({
   sync: DashboardSummary["sync"];
   authenticated: boolean;
   saving: boolean;
+  impactItems: CacheEvidenceImpactItem[];
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  onImpactSelect: (target: CacheEvidenceImpactTarget) => void;
   onPrepare: (layers: ManualRefreshLayer[]) => void;
   onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
@@ -2559,6 +2691,7 @@ function CacheEvidenceBanner({
           {expanded ? (
             <>
               <CacheEvidenceSamples sync={sync} />
+              <CacheEvidenceImpactBoard items={impactItems} onSelect={onImpactSelect} />
               <CacheRepairPlan
                 sync={sync}
                 authenticated={authenticated}
@@ -2860,6 +2993,7 @@ function PrBoardSummary({
   const conflictPrs = prs.filter(prHasConflict).length;
   const noIssuePrs = prs.filter(prHasNoLinkedIssue).length;
   const issueLinkPendingPrs = prs.filter(prIssueLinkUnknown).length;
+  const evidencePendingPrs = prs.filter(prEvidencePending).length;
   const noActionPrs = prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length;
 
   return (
@@ -2933,6 +3067,13 @@ function PrBoardSummary({
         tone={issueLinkPendingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "issue_link_pending"}
         onClick={() => onScopeFilterChange("issue_link_pending")}
+      />
+      <CriticalBoardStat
+        label="PR evidence pending"
+        value={evidencePendingPrs}
+        tone={evidencePendingPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "evidence_pending"}
+        onClick={() => onScopeFilterChange("evidence_pending")}
       />
       <CriticalBoardStat
         label="no action 24h"
@@ -3886,7 +4027,7 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
       {reasons.length > 0 ? (
         <div className="work-reasons">
           {reasons.slice(0, 4).map((reason) => (
-            <Tag color={reason.includes("Partial") ? "gold" : "orange"} key={reason}>
+            <Tag color={reason.toLowerCase().includes("partial") ? "gold" : "orange"} key={reason}>
               {reason}
             </Tag>
           ))}
@@ -4761,7 +4902,7 @@ function activityReasonColor(reason: string): string {
   if (normalized.includes("failed") || normalized.includes("conflict") || normalized.includes("changes requested")) {
     return "red";
   }
-  if (normalized.includes("partial") || normalized.includes("pending")) {
+  if (normalized.includes("partial") || normalized.includes("pending") || normalized.includes("incomplete")) {
     return "gold";
   }
   return "orange";
@@ -5896,6 +6037,22 @@ export default function App() {
     selectView("PRs");
   }
 
+  function openCacheEvidenceImpact(target: CacheEvidenceImpactTarget) {
+    if (target === "issues") {
+      openIssuesWithFilter({ scope: "timeline_missing" });
+      return;
+    }
+    if (target === "prs") {
+      openPrsWithFilter("evidence_pending");
+      return;
+    }
+    if (target === "testing") {
+      openPrsWithFilter("testing_evidence_gap");
+      return;
+    }
+    selectView("Drift");
+  }
+
   function openPeopleWithFilter(scope: PeopleScopeFilter) {
     setPeopleScopeFilter(scope);
     selectView("People");
@@ -6307,7 +6464,7 @@ export default function App() {
             title={
               issue.lastHumanActionEvidence === "complete_cache"
                 ? `From complete cached issue comments. Cache synced ${formatDate(issue.lastSyncedAt)}`
-                : `Partial evidence from cached issue update time. Cache synced ${formatDate(issue.lastSyncedAt)}`
+                : `Fallback evidence from cached issue update time. Cache synced ${formatDate(issue.lastSyncedAt)}`
             }
           >
             <Space size={4}>
@@ -6974,6 +7131,7 @@ export default function App() {
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const freshness = data ? summarizeFreshness(data.sync) : null;
   const cacheEvidence = data ? summarizeCacheEvidence({ sync: data.sync, visibility: data.visibility }) : null;
+  const cacheImpactItems = data ? cacheEvidenceImpactItems(data) : [];
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
@@ -7158,8 +7316,10 @@ export default function App() {
                 sync={data.sync}
                 authenticated={Boolean(session?.authenticated)}
                 saving={manualRefreshSaving}
+                impactItems={cacheImpactItems}
                 expanded={cacheEvidenceExpanded}
                 onExpandedChange={setCacheEvidenceExpanded}
+                onImpactSelect={openCacheEvidenceImpact}
                 onPrepare={openManualRefreshModal}
                 onQueue={(layers) => void queueManualRefreshForLayers(layers)}
               />
@@ -7600,7 +7760,7 @@ export default function App() {
               <section className="section">
                 <div className="section-heading">
                   <Title level={4}>AI Drift</Title>
-                  <Text type="secondary">Partial cache evidence until timeline and issue testing backfill</Text>
+                  <Text type="secondary">Incomplete cache evidence until timeline and issue testing backfill</Text>
                 </div>
                 <Table
                   rowKey={(signal) => `${signal.objectType}-${signal.objectNumber}-${signal.ruleKey}`}
