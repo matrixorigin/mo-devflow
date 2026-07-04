@@ -8768,7 +8768,7 @@ export default function App() {
         return;
       }
       if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+        throw await responseApiError(response);
       }
       setData((await response.json()) as DashboardSummary);
       setLastDashboardLoadedAt(loadedAt);

@@ -20,6 +20,7 @@ import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashboardCache";
 import { readCookieValue, sessionCookieName } from "./sessionCookie";
+import { dashboardQueryFailurePayload, publicStartupMigrationError } from "./apiErrors";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -108,7 +109,7 @@ app.get("/health", async (_request, reply) => {
       operationalError,
       migration: {
         status: startupMigrationError ? "failed" : "ok",
-        error: startupMigrationError
+        error: publicStartupMigrationError(startupMigrationError)
       },
       generatedAt: new Date().toISOString()
     });
@@ -119,7 +120,7 @@ app.get("/health", async (_request, reply) => {
       database: "disconnected",
       migration: {
         status: startupMigrationError ? "failed" : "unknown",
-        error: startupMigrationError
+        error: publicStartupMigrationError(startupMigrationError)
       },
       generatedAt: new Date().toISOString()
     });
@@ -178,10 +179,7 @@ app.get("/api/dashboard", async (request, reply) => {
     return result.summary;
   } catch (error) {
     app.log.error({ error }, "dashboard query failed");
-    return reply.status(500).send({
-      error: "dashboard_query_failed",
-      message: error instanceof Error ? error.message : String(error)
-    });
+    return reply.status(500).send(dashboardQueryFailurePayload());
   }
 });
 
