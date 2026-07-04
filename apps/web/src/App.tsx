@@ -2146,12 +2146,13 @@ export default function App() {
               </>
             ) : null}
 
-            {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
+            {data.sync.jobQueue.status === "attention" ? (
               <Alert
                 className="band"
                 type="warning"
                 title="Worker job queue needs attention"
                 description={
+                  data.sync.jobQueue.recommendedAction ??
                   data.sync.jobQueue.latestFailure ??
                   `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.blockedJobs} blocked jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
                 }

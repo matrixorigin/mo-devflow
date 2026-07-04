@@ -69,9 +69,11 @@ flow.
 
 The worker is driven by the MatrixOne-backed `jobs` table. Recurring GitHub
 sync, rule, metric, AI drift, and notification jobs use leases, retry backoff,
-and queue health surfaced on the dashboard. Worker processes also write
-heartbeats so the dashboard and `/health` can distinguish an empty queue from a
-stopped or stale background process.
+and queue health surfaced on the dashboard and `/health`. Worker processes also
+write heartbeats so the dashboard and `/health` can distinguish an empty queue
+from a stopped or stale background process. Queue health is degraded when jobs
+are failed, blocked, have stale leases, or the oldest due job exceeds
+`MO_DEVFLOW_JOB_QUEUE_PENDING_WARN_HOURS`.
 Logged-in users can queue layer-scoped refresh jobs from the dashboard instead
 of spending GitHub rate limit on every sync layer.
 GitHub rate-limit failures are retried after the advertised reset window, while

@@ -718,7 +718,10 @@ export interface SyncHealth {
   rateLimitRemaining: number | null;
 }
 
+export type JobQueueHealthStatus = "healthy" | "attention";
+
 export interface JobQueueHealth {
+  status: JobQueueHealthStatus;
   queueDepth: number;
   runningJobs: number;
   failedJobs: number;
@@ -727,6 +730,7 @@ export interface JobQueueHealth {
   oldestPendingAgeHours: number | null;
   nextRunAt: string | null;
   latestFailure: string | null;
+  recommendedAction: string | null;
 }
 
 export type WorkerHealthStatus = "offline" | "active" | "stale" | "failed";

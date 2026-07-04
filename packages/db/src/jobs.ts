@@ -280,6 +280,47 @@ export async function blockLeasedJob(input: {
   }
 }
 
+export function jobQueueOldestPendingWarnHoursFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const configured = Number(env.MO_DEVFLOW_JOB_QUEUE_PENDING_WARN_HOURS);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(0.05, configured);
+  }
+  return 0.25;
+}
+
+export function jobQueueRecommendedAction(
+  health: Pick<
+    JobQueueHealth,
+    "blockedJobs" | "failedJobs" | "staleLeases" | "oldestPendingAgeHours" | "latestFailure"
+  >,
+  oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv()
+): string | null {
+  const latestFailure = health.latestFailure ? ` Latest failure: ${health.latestFailure}` : "";
+  if (health.blockedJobs > 0) {
+    return `${health.blockedJobs} blocked jobs need credentials, permissions, or configuration changes before retry.${latestFailure}`;
+  }
+  if (health.staleLeases > 0) {
+    return `${health.staleLeases} running job leases are stale; check worker.log and restart the worker if it is stuck.${latestFailure}`;
+  }
+  if (health.failedJobs > 0) {
+    return `${health.failedJobs} failed jobs are waiting for retry; inspect the latest failure before queueing more work.${latestFailure}`;
+  }
+  if (health.oldestPendingAgeHours !== null && health.oldestPendingAgeHours >= oldestPendingWarnHours) {
+    return `The oldest due job has waited ${health.oldestPendingAgeHours}h; check worker heartbeat and job lease progress.`;
+  }
+  return null;
+}
+
+export function jobQueueHealthStatus(
+  health: Pick<
+    JobQueueHealth,
+    "blockedJobs" | "failedJobs" | "staleLeases" | "oldestPendingAgeHours" | "latestFailure"
+  >,
+  oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv()
+): JobQueueHealth["status"] {
+  return jobQueueRecommendedAction(health, oldestPendingWarnHours) ? "attention" : "healthy";
+}
+
 export async function getJobQueueHealth(): Promise<JobQueueHealth> {
   const pool = getPool();
   const [queueRows] = await pool.execute<RowData[]>(
@@ -323,8 +364,7 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestPendingAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
   const failure = failureRows[0];
-
-  return {
+  const baseHealth = {
     queueDepth: asNumber(queueRow.queue_depth),
     runningJobs: asNumber(runningRows[0]?.running_jobs),
     failedJobs: asNumber(failedRows[0]?.failed_jobs),
@@ -333,5 +373,12 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
     oldestPendingAgeHours,
     nextRunAt: fromSqlDate(nextRows[0]?.next_run_at),
     latestFailure: failure ? `${asString(failure.job_key)}: ${asString(failure.last_error)}` : null
+  };
+  const oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv();
+
+  return {
+    status: jobQueueHealthStatus(baseHealth, oldestPendingWarnHours),
+    ...baseHealth,
+    recommendedAction: jobQueueRecommendedAction(baseHealth, oldestPendingWarnHours)
   };
 }

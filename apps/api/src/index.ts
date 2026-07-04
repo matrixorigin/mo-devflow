@@ -1,9 +1,18 @@
 import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
-import { getDashboardSummary, getRepoId, getWorkerHealth, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
+import {
+  getDashboardSummary,
+  getJobQueueHealth,
+  getRepoId,
+  getWorkerHealth,
+  migrate,
+  pingDatabase,
+  upsertRepoProfile
+} from "@mo-devflow/db";
 import { registerApiSecurity } from "./apiSecurity";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
+import { apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
@@ -50,11 +59,12 @@ await registerWebhookRoutes(app);
 app.get("/health", async () => {
   try {
     await pingDatabase();
-    const worker = await getWorkerHealth();
+    const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
     return {
-      status: worker.status === "active" ? "healthy" : "degraded",
+      status: apiHealthStatus({ worker, jobQueue }),
       database: "connected",
       worker,
+      jobQueue,
       generatedAt: new Date().toISOString()
     };
   } catch (error) {

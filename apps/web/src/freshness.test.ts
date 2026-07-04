@@ -25,6 +25,7 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
     oldestCacheAgeHours: 1,
     partialObjects: 0,
     jobQueue: {
+      status: "healthy",
       queueDepth: 0,
       runningJobs: 0,
       failedJobs: 0,
@@ -32,7 +33,8 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
       staleLeases: 0,
       oldestPendingAgeHours: null,
       nextRunAt: null,
-      latestFailure: null
+      latestFailure: null,
+      recommendedAction: null
     },
     worker: {
       status: "active",
