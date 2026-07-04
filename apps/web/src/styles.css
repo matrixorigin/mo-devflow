@@ -123,6 +123,21 @@ body {
   width: 100%;
 }
 
+.evidence-alert .ant-alert-description {
+  max-width: 100%;
+}
+
+.evidence-alert .ant-tag {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.evidence-detail-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .config-snippet {
   background: #111827;
   border-radius: 8px;

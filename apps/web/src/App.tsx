@@ -65,7 +65,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from "echarts/compon
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
-import { summarizeFreshness } from "./freshness";
+import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
 
 const { Header, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
@@ -1877,6 +1877,7 @@ export default function App() {
     : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const freshness = data ? summarizeFreshness(data.sync) : null;
+  const cacheEvidence = data ? summarizeCacheEvidence({ sync: data.sync, visibility: data.visibility }) : null;
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
@@ -2015,36 +2016,38 @@ export default function App() {
               </section>
             ) : null}
 
-            {data.sync.staleObjects > 0 ? (
+            {cacheEvidence && cacheEvidence.severity !== "ok" ? (
               <Alert
-                className="band"
-                type="warning"
-                title={`${data.sync.staleObjects} cached objects are stale`}
-                description={`Oldest visible cache age is ${
-                  data.sync.oldestCacheAgeHours === null ? "unknown" : hours(data.sync.oldestCacheAgeHours)
-                }; stale threshold is ${hours(data.sync.staleThresholdHours)}.`}
-                showIcon
-              />
-            ) : null}
-
-            {data.sync.partialObjects > 0 ? (
-              <Alert
-                className="band"
-                type="warning"
-                title={`${data.sync.partialObjects} cached objects are partial`}
-                description="Timeline, review, or CI backfill is not complete yet; stale decisions stay visible as partial evidence."
-                showIcon
-              />
-            ) : null}
-
-            {data.visibility.hiddenObjects > 0 ? (
-              <Alert
-                className="band"
-                type="info"
-                title="This view is filtered by repository visibility policy"
-                description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${
-                  data.visibility.visibleClasses.map(labelText).join(", ") || "none"
-                }.`}
+                className="band evidence-alert"
+                type={cacheEvidence.alertType}
+                title={cacheEvidence.title}
+                description={
+                  <Space orientation="vertical" size={8} className="full-width">
+                    <Text>{cacheEvidence.description}</Text>
+                    {cacheEvidence.facts.length > 0 ? (
+                      <Space size={[4, 4]} wrap>
+                        {cacheEvidence.facts.map((fact) => (
+                          <Tag key={fact}>{fact}</Tag>
+                        ))}
+                      </Space>
+                    ) : null}
+                    {cacheEvidence.affectedConclusions.length > 0 ? (
+                      <div className="evidence-detail-list">
+                        <Text type="secondary">Affected conclusions</Text>
+                        <Space size={[4, 4]} wrap>
+                          {cacheEvidence.affectedConclusions.map((item) => (
+                            <Tag color={cacheEvidence.severity === "critical" ? "red" : "orange"} key={item}>
+                              {item}
+                            </Tag>
+                          ))}
+                        </Space>
+                      </div>
+                    ) : null}
+                    {cacheEvidence.recommendedAction ? (
+                      <Text type="secondary">{cacheEvidence.recommendedAction}</Text>
+                    ) : null}
+                  </Space>
+                }
                 showIcon
               />
             ) : null}
