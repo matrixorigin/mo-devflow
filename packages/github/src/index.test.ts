@@ -5,7 +5,8 @@ import {
   classifyGitHubError,
   fetchIssueWritePermission,
   configuredGitHubSourceAuthType,
-  githubLinkHeaderHasNextPage
+  githubLinkHeaderHasNextPage,
+  linkedIssueNumbersFromPullRequestGraphqlResponse
 } from "./index";
 
 const octokitMocks = vi.hoisted(() => ({
@@ -433,5 +434,55 @@ describe("GitHub pagination metadata", () => {
       })
     ).toBe(false);
     expect(githubLinkHeaderHasNextPage({})).toBe(false);
+  });
+});
+
+describe("pull request linked issue GraphQL response", () => {
+  test("combines closing references with manually connected issues", () => {
+    expect(
+      linkedIssueNumbersFromPullRequestGraphqlResponse({
+        repository: {
+          pullRequest: {
+            closingIssuesReferences: { nodes: [{ number: 42 }] },
+            timelineItems: {
+              nodes: [
+                {
+                  __typename: "ConnectedEvent",
+                  createdAt: "2026-07-03T01:00:00Z",
+                  subject: { __typename: "Issue", number: 24994 }
+                }
+              ]
+            }
+          }
+        },
+        rateLimit: { remaining: 98 }
+      })
+    ).toEqual([42, 24994]);
+  });
+
+  test("does not keep an issue after a later disconnect event", () => {
+    expect(
+      linkedIssueNumbersFromPullRequestGraphqlResponse({
+        repository: {
+          pullRequest: {
+            closingIssuesReferences: { nodes: [] },
+            timelineItems: {
+              nodes: [
+                {
+                  __typename: "ConnectedEvent",
+                  createdAt: "2026-07-03T01:00:00Z",
+                  subject: { __typename: "Issue", number: 24994 }
+                },
+                {
+                  __typename: "DisconnectedEvent",
+                  createdAt: "2026-07-03T02:00:00Z",
+                  subject: { __typename: "Issue", number: 24994 }
+                }
+              ]
+            }
+          }
+        }
+      })
+    ).toEqual([]);
   });
 });

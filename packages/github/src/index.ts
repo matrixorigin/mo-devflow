@@ -23,6 +23,16 @@ interface LinkedPullRequestIssuesResponse {
       closingIssuesReferences: {
         nodes: Array<{ number: number } | null> | null;
       } | null;
+      timelineItems: {
+        nodes: Array<{
+          __typename?: string | null;
+          createdAt?: string | null;
+          subject?: {
+            __typename?: string | null;
+            number?: number | null;
+          } | null;
+        } | null> | null;
+      } | null;
     } | null;
   } | null;
   rateLimit?: {
@@ -754,6 +764,36 @@ function uniqueIssueNumbers(values: number[]): number[] {
   );
 }
 
+export function linkedIssueNumbersFromPullRequestGraphqlResponse(response: LinkedPullRequestIssuesResponse): number[] {
+  const pullRequest = response.repository?.pullRequest;
+  const closingIssueNumbers = pullRequest?.closingIssuesReferences?.nodes?.map((node) => node?.number ?? 0) ?? [];
+  const connectedIssueNumbers = new Set<number>();
+  const timelineNodes = [...(pullRequest?.timelineItems?.nodes ?? [])]
+    .filter((node): node is NonNullable<typeof node> => node !== null)
+    .sort((left, right) => {
+      const leftAt = left.createdAt ?? "";
+      const rightAt = right.createdAt ?? "";
+      if (leftAt !== rightAt) {
+        return leftAt.localeCompare(rightAt);
+      }
+      return (left.__typename ?? "").localeCompare(right.__typename ?? "");
+    });
+
+  for (const node of timelineNodes) {
+    const issueNumber = node.subject?.__typename === "Issue" ? (node.subject.number ?? 0) : 0;
+    if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+      continue;
+    }
+    if (node.__typename === "ConnectedEvent") {
+      connectedIssueNumbers.add(issueNumber);
+    } else if (node.__typename === "DisconnectedEvent") {
+      connectedIssueNumbers.delete(issueNumber);
+    }
+  }
+
+  return uniqueIssueNumbers([...closingIssueNumbers, ...connectedIssueNumbers]);
+}
+
 async function fetchPullRequestLinkedIssueNumbers(
   octokit: Octokit,
   owner: string,
@@ -769,6 +809,29 @@ async function fetchPullRequestLinkedIssueNumbers(
               number
             }
           }
+          timelineItems(first: 100, itemTypes: [CONNECTED_EVENT, DISCONNECTED_EVENT]) {
+            nodes {
+              __typename
+              ... on ConnectedEvent {
+                createdAt
+                subject {
+                  __typename
+                  ... on Issue {
+                    number
+                  }
+                }
+              }
+              ... on DisconnectedEvent {
+                createdAt
+                subject {
+                  __typename
+                  ... on Issue {
+                    number
+                  }
+                }
+              }
+            }
+          }
         }
       }
       rateLimit {
@@ -777,11 +840,8 @@ async function fetchPullRequestLinkedIssueNumbers(
     }`,
     { owner, repo, number: pullNumber }
   );
-  const linkedIssueNumbers = uniqueIssueNumbers(
-    response.repository?.pullRequest?.closingIssuesReferences?.nodes?.map((node) => node?.number ?? 0) ?? []
-  );
   return {
-    linkedIssueNumbers,
+    linkedIssueNumbers: linkedIssueNumbersFromPullRequestGraphqlResponse(response),
     rateLimitRemaining: response.rateLimit?.remaining ?? null
   };
 }

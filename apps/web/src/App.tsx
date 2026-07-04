@@ -126,12 +126,12 @@ type PrScopeFilter =
   | "attention"
   | "testing"
   | "stale_testing"
-  | "testing_owner_gap"
   | "testing_evidence_gap"
   | "ci_failed"
   | "request_changes"
   | "conflict"
   | "no_issue"
+  | "issue_link_pending"
   | "no_action_24h";
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
@@ -522,6 +522,22 @@ function testingStateColor(state: TestingFlowState): string {
     return "blue";
   }
   return "default";
+}
+
+function testingStateBusinessLabel(state: TestingFlowState): string {
+  if (state === "test_requested" || state === "testing" || state === "dev_done") {
+    return "linked issue in test";
+  }
+  if (state === "test_changes_requested") {
+    return "test requested changes";
+  }
+  if (state === "test_passed") {
+    return "test passed";
+  }
+  if (state === "closed_or_merged") {
+    return "closed";
+  }
+  return "not in test";
 }
 
 function ciColor(value: string): string {
@@ -997,11 +1013,8 @@ function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "stale_testing") {
     return "waiting on test";
   }
-  if (filter === "testing_owner_gap") {
-    return "sent to test with no tester";
-  }
   if (filter === "testing_evidence_gap") {
-    return "sent to test with incomplete data";
+    return "test evidence pending";
   }
   if (filter === "ci_failed") {
     return "CI failed";
@@ -1013,7 +1026,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no linked issue";
+    return "unlinked after sync";
+  }
+  if (filter === "issue_link_pending") {
+    return "issue link sync pending";
   }
   if (filter === "no_action_24h") {
     return "no action 24h";
@@ -1160,9 +1176,6 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
   if (scopeFilter === "stale_testing") {
     return isTestingStalePr(pr);
   }
-  if (scopeFilter === "testing_owner_gap") {
-    return isTestingOwnerGapPr(pr);
-  }
   if (scopeFilter === "testing_evidence_gap") {
     return isTestingEvidenceGapPr(pr);
   }
@@ -1177,6 +1190,9 @@ function prMatchesScope(pr: PendingPrView, scopeFilter: PrScopeFilter): boolean 
   }
   if (scopeFilter === "no_issue") {
     return prHasNoLinkedIssue(pr);
+  }
+  if (scopeFilter === "issue_link_pending") {
+    return prIssueLinkUnknown(pr);
   }
   if (scopeFilter === "no_action_24h") {
     return pr.attentionFlags.includes("no_human_action_24h");
@@ -1316,7 +1332,8 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No linked issue", value: "no_issue" },
+            { label: "Unlinked", value: "no_issue" },
+            { label: "Link sync pending", value: "issue_link_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -1617,7 +1634,7 @@ function TeamFlowRiskStrip({
       <TeamFlowRiskCard
         label="Data risk"
         value={dataRiskCount}
-        detail={`${data.sync.staleObjects} stale | ${data.sync.partialObjects} partial | ${labelText(
+        detail={`${data.sync.staleObjects} stale | ${data.sync.partialObjects} incomplete | ${labelText(
           data.sync.worker.status
         )}`}
         tone={dataRiskCount > 0 || data.sync.worker.status !== "active" ? dataRiskTone : "good"}
@@ -1789,7 +1806,8 @@ function TeamCriticalIssueRow({ issue }: { issue: CriticalIssueView }) {
             {linkedPrs.map((pr) => (
               <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
                 <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
-                  #{pr.number} {labelText(pr.testingState)}
+                  #{pr.number}
+                  {pr.testingState !== "not_ready" ? ` ${testingStateBusinessLabel(pr.testingState)}` : ""}
                 </a>
               </Tooltip>
             ))}
@@ -1827,7 +1845,7 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
           </WorkObjectLink>
           <Tag>{hours(pr.ageHours)}</Tag>
           {pr.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
           ) : null}
         </div>
         <a className="team-work-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
@@ -1847,9 +1865,6 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
               {reason}
             </Tag>
           ))}
-          {pr.testingState !== "not_ready" && pr.testingTesters.length === 0 ? (
-            <Tag color="red">no tester on linked issue</Tag>
-          ) : null}
         </div>
         <div className={`team-linked-row ${linkedIssues.length === 0 ? "team-linked-row-missing" : ""}`}>
           {linkedIssues.length > 0 ? (
@@ -1864,8 +1879,10 @@ function TeamPrRiskRow({ pr }: { pr: PendingPrView }) {
                 <span>+{pr.linkedIssueNumbers.length - linkedIssues.length}</span>
               ) : null}
             </>
+          ) : prIssueLinkUnknown(pr) ? (
+            "Issue link sync pending"
           ) : (
-            "No linked issue visible"
+            "Unlinked after sync"
           )}
         </div>
       </div>
@@ -1938,7 +1955,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
       <div className="team-status-list">
         <TeamStatusRow
           label="Cache"
-          value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} partial`}
+          value={`${data.sync.staleObjects} stale / ${data.sync.partialObjects} incomplete`}
           onClick={() => onNavigate("Analytics")}
         />
         <TeamStatusRow
@@ -2051,14 +2068,12 @@ function pendingPrRiskScore(pr: PendingPrView): number {
 
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
-    return pr.testingTesters.length > 0
-      ? `testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "no tester on linked issue";
+    return pr.testingTesters.length > 0 ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
   }
-  return prIssueLinkUnknown(pr) ? "issue link unknown" : "no linked issue";
+  return prIssueLinkUnknown(pr) ? "issue link sync pending" : "unlinked after sync";
 }
 
 function teamPrNextAction(pr: PendingPrView): string {
@@ -2267,7 +2282,10 @@ function cacheEvidenceObjectLabel(sample: CacheEvidenceSample): string {
 
 function cacheEvidenceReasonLabel(sample: CacheEvidenceSample): string {
   if (sample.reason === "stale_and_partial") {
-    return "stale + partial";
+    return "stale + incomplete";
+  }
+  if (sample.reason === "partial") {
+    return "incomplete";
   }
   return sample.reason;
 }
@@ -2406,7 +2424,7 @@ function CacheRepairPlan({
         <div>
           <Text strong>Repair plan</Text>
           <Text type="secondary">
-            Suggested worker layers based on the sampled stale/partial objects and sync health.
+            Suggested worker layers based on the sampled stale or incomplete objects and sync health.
           </Text>
         </div>
         <Tooltip
@@ -2550,7 +2568,7 @@ function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
     });
   }
   if (!issue.isComplete) {
-    tags.push({ key: "partial", label: "partial cache", color: "gold" });
+    tags.push({ key: "sync-pending", label: "issue detail sync pending", color: "gold" });
   }
   if (issue.syncError) {
     tags.push({ key: "sync-error", label: "sync error", color: "red", tooltip: issue.syncError });
@@ -2790,12 +2808,12 @@ function PrBoardSummary({
   const attentionPrs = prs.filter((pr) => pr.attentionFlags.length > 0).length;
   const testingPrs = prs.filter(isTestingQueuePr).length;
   const staleTestingPrs = prs.filter(isTestingStalePr).length;
-  const testingOwnerGapPrs = prs.filter(isTestingOwnerGapPr).length;
   const testingEvidenceGapPrs = prs.filter(isTestingEvidenceGapPr).length;
   const ciFailedPrs = prs.filter(prHasFailedCi).length;
   const requestedChangePrs = prs.filter(prHasRequestChanges).length;
   const conflictPrs = prs.filter(prHasConflict).length;
   const noIssuePrs = prs.filter(prHasNoLinkedIssue).length;
+  const issueLinkPendingPrs = prs.filter(prIssueLinkUnknown).length;
   const noActionPrs = prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length;
 
   return (
@@ -2815,28 +2833,21 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="testing"
+        label="issue in test"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
-        label="stale testing"
+        label="test wait >24h"
         value={staleTestingPrs}
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
         onClick={() => onScopeFilterChange("stale_testing")}
       />
       <CriticalBoardStat
-        label="no tester"
-        value={testingOwnerGapPrs}
-        tone={testingOwnerGapPrs > 0 ? "attention" : "good"}
-        active={scopeFilter === "testing_owner_gap"}
-        onClick={() => onScopeFilterChange("testing_owner_gap")}
-      />
-      <CriticalBoardStat
-        label="test data gap"
+        label="test evidence pending"
         value={testingEvidenceGapPrs}
         tone={testingEvidenceGapPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing_evidence_gap"}
@@ -2864,11 +2875,18 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("conflict")}
       />
       <CriticalBoardStat
-        label="no linked issue"
+        label="unlinked after sync"
         value={noIssuePrs}
         tone={noIssuePrs > 0 ? "attention" : "good"}
         active={scopeFilter === "no_issue"}
         onClick={() => onScopeFilterChange("no_issue")}
+      />
+      <CriticalBoardStat
+        label="issue link sync pending"
+        value={issueLinkPendingPrs}
+        tone={issueLinkPendingPrs > 0 ? "attention" : "good"}
+        active={scopeFilter === "issue_link_pending"}
+        onClick={() => onScopeFilterChange("issue_link_pending")}
       />
       <CriticalBoardStat
         label="no action 24h"
@@ -3076,18 +3094,11 @@ function CriticalIssueBoardRow({ issue }: { issue: CriticalIssueView }) {
 }
 
 function isTestingQueuePr(pr: PendingPrView): boolean {
-  return (
-    pr.testingQueueAgeHours !== null ||
-    ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
-  );
+  return pr.testingQueueAgeHours !== null || pr.testingTesters.length > 0;
 }
 
 function isTestingStalePr(pr: PendingPrView): boolean {
   return pr.attentionFlags.includes("testing_stalled") || (pr.testingQueueAgeHours ?? 0) >= 24;
-}
-
-function isTestingOwnerGapPr(pr: PendingPrView): boolean {
-  return isTestingQueuePr(pr) && pr.testingTesters.length === 0;
 }
 
 function isTestingEvidenceGapPr(pr: PendingPrView): boolean {
@@ -3116,9 +3127,6 @@ function testingQueueAgeText(pr: PendingPrView): string {
 }
 
 function testingQueueNextAction(pr: PendingPrView): string {
-  if (pr.testingTesters.length === 0) {
-    return "Assign tester on linked issue";
-  }
   if (pr.testingState === "test_changes_requested" || pr.reviewDecision === "changes_requested") {
     return "Handle requested changes";
   }
@@ -3139,14 +3147,11 @@ function testingQueueNextAction(pr: PendingPrView): string {
 
 function testingQueueRiskTags(pr: PendingPrView): string[] {
   const tags = pr.attentionFlags.map(labelText);
-  if (pr.testingTesters.length === 0) {
-    tags.push("no tester");
-  }
   if (pr.testingQueueAgeHours === null) {
     tags.push("test wait unknown");
   }
   if (!pr.isComplete) {
-    tags.push("partial cache");
+    tags.push("PR detail sync pending");
   }
   if (pr.reviewDecision === "changes_requested") {
     tags.push("changes requested");
@@ -3166,12 +3171,11 @@ function testingRiskColor(risk: string): string {
     normalized.includes("stalled") ||
     normalized.includes("changes") ||
     normalized.includes("failed") ||
-    normalized.includes("conflict") ||
-    normalized.includes("no tester")
+    normalized.includes("conflict")
   ) {
     return "red";
   }
-  if (normalized.includes("partial") || normalized.includes("unknown")) {
+  if (normalized.includes("pending") || normalized.includes("unknown")) {
     return "gold";
   }
   return "orange";
@@ -3188,11 +3192,8 @@ function TestingCommandBoard({
 }) {
   const queuePrs = sortTestingQueuePrs(pendingPrs.filter(isTestingQueuePr));
   const stalePrs = queuePrs.filter(isTestingStalePr);
-  const missingTesterPrs = queuePrs.filter(isTestingOwnerGapPr);
   const evidenceGapPrs = queuePrs.filter(isTestingEvidenceGapPr);
-  const activePrs = queuePrs.filter(
-    (pr) => !isTestingStalePr(pr) && !isTestingOwnerGapPr(pr) && !isTestingEvidenceGapPr(pr)
-  );
+  const activePrs = queuePrs.filter((pr) => !isTestingStalePr(pr) && !isTestingEvidenceGapPr(pr));
   const partialTransitions = testing.recentTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
@@ -3208,7 +3209,7 @@ function TestingCommandBoard({
 
   if (testing.issues.length === 0 && queuePrs.length === 0 && testing.testers.length === 0) {
     return (
-      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No linked issue is currently assigned to testers" />
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue is currently assigned to configured testers" />
     );
   }
 
@@ -3249,13 +3250,7 @@ function TestingCommandBoard({
           onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
-          label="no tester"
-          value={missingTesterPrs.length}
-          tone={missingTesterPrs.length > 0 ? "attention" : "normal"}
-          onClick={() => onOpenPrsFilter("testing_owner_gap")}
-        />
-        <TestingBoardStat
-          label="data gaps"
+          label="test evidence pending"
           value={evidenceGapPrs.length}
           tone={evidenceGapPrs.length > 0 ? "attention" : "normal"}
           onClick={() => onOpenPrsFilter("testing_evidence_gap")}
@@ -3267,7 +3262,7 @@ function TestingCommandBoard({
           onClick={() => onOpenPrsFilter("testing")}
         />
         <TestingBoardStat
-          label="partial records"
+          label="incomplete history"
           value={partialTransitions}
           tone={partialTransitions > 0 ? "attention" : "normal"}
           onClick={() => onOpenPrsFilter("testing_evidence_gap")}
@@ -3297,23 +3292,15 @@ function TestingCommandBoard({
 
       <div className="testing-command-lanes">
         <TestingQueueLane
-          title="Waiting On Test"
+          title="Test Wait Over 24h"
           description="PRs whose linked issues are assigned to testers and have waited more than a day."
           prs={stalePrs}
           visibleLimit={8}
           tone="critical"
-          emptyText="No linked issue test queue is waiting more than a day"
+          emptyText="No issue in test has waited more than a day"
         />
         <TestingQueueLane
-          title="Missing Tester"
-          description="PRs linked to issues that appear sent to test but have no tester visible in cache."
-          prs={missingTesterPrs}
-          visibleLimit={6}
-          tone="attention"
-          emptyText="All visible test queues have a tester"
-        />
-        <TestingQueueLane
-          title="Incomplete Test Data"
+          title="Test Evidence Pending"
           description="PRs linked to test issues where wait time or cache evidence is incomplete."
           prs={evidenceGapPrs}
           visibleLimit={6}
@@ -3321,8 +3308,8 @@ function TestingCommandBoard({
           emptyText="No incomplete linked-issue test data in cached pending PRs"
         />
         <TestingQueueLane
-          title="Moving Through Test"
-          description="PRs linked to test issues without current wait, owner, or cache evidence problems."
+          title="Linked PRs In Test"
+          description="PRs attached to issues already assigned to testers, without current blocker evidence."
           prs={activePrs}
           visibleLimit={6}
           tone="normal"
@@ -3402,9 +3389,9 @@ function TestingIssueQueueRow({ issue }: { issue: TestingIssueQueueView }) {
           </WorkObjectLink>
           <Tag color={isTestingIssueStale(issue) ? "red" : "blue"}>{testingIssueWaitText(issue)}</Tag>
           <Tag color={issue.queueAgeEvidence === "issue_assignment_event" ? "green" : "gold"}>
-            {issue.queueAgeEvidence === "issue_assignment_event" ? "assignment event" : "cache timestamp"}
+            {issue.queueAgeEvidence === "issue_assignment_event" ? "from tester assignment" : "from issue update time"}
           </Tag>
-          {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+          {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
           {issue.syncError ? (
             <Tooltip title={issue.syncError}>
               <Tag color="red">sync error</Tag>
@@ -3617,9 +3604,9 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
             PR #{pr.number}
           </WorkObjectLink>
-          <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+          <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
           <Tag>{testingQueueAgeText(pr)}</Tag>
-          {!pr.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+          {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
         </div>
         <a className="testing-queue-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
           {pr.title}
@@ -3633,7 +3620,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           {pr.testingTesters.length > 0 ? (
             <span>testers {pr.testingTesters.slice(0, 3).join(", ")}</span>
           ) : (
-            <span>no tester on linked issue</span>
+            <span>tester assignment is on the linked issue</span>
           )}
         </div>
       </div>
@@ -3662,7 +3649,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
             {issueLinks.length > 4 ? <span>+{issueLinks.length - 4}</span> : null}
           </div>
         ) : (
-          <Text type="secondary">No linked issue visible</Text>
+          <Text type="secondary">Issue link sync pending</Text>
         )}
       </div>
     </article>
@@ -3829,7 +3816,7 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
             last action {formatDate(issue.lastHumanActionAt)}
           </Tag>
         ) : null}
-        {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+        {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
         {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
         {critical && issue.workflowSkipped ? (
           <Tooltip title={workflowSkipTooltip()}>
@@ -3842,7 +3829,8 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
           {issue.linkedPullRequests.slice(0, 4).map((pr) => (
             <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
               <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
-                #{pr.number} {labelText(pr.testingState)}
+                #{pr.number}
+                {pr.testingState !== "not_ready" ? ` ${testingStateBusinessLabel(pr.testingState)}` : ""}
               </a>
             </Tooltip>
           ))}
@@ -3892,8 +3880,10 @@ function PullRequestWorkCard({ pr, emphasized = false }: { pr: PersonalPullReque
         {pr.mergeStateStatus ? (
           <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
         ) : null}
-        <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
-        {!pr.isComplete ? <Tag color="gold">partial</Tag> : null}
+        {isTestingQueuePr(pr) ? (
+          <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+        ) : null}
+        {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
       </div>
       <div className="work-meta-row">
         <span>
@@ -4235,9 +4225,9 @@ function PersonalActionQueueItem({ item, index }: { item: PersonalActivityItem; 
               <Tag color={actionTone}>{item.phase}</Tag>
               {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
               {item.testingState && item.testingState !== "not_ready" ? (
-                <Tag color={testingStateColor(item.testingState)}>{labelText(item.testingState)}</Tag>
+                <Tag color={testingStateColor(item.testingState)}>{testingStateBusinessLabel(item.testingState)}</Tag>
               ) : null}
-              {!item.isComplete ? <Tag color="gold">partial cache</Tag> : null}
+              {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
             </div>
             <a className="activity-title" href={item.htmlUrl} target="_blank" rel="noreferrer">
               {item.title}
@@ -4657,7 +4647,7 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
             <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           {pr.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
           ) : null}
         </div>
         {linkedIssues.length > 0 ? (
@@ -4725,7 +4715,7 @@ function activityReasonColor(reason: string): string {
   if (normalized.includes("failed") || normalized.includes("conflict") || normalized.includes("changes requested")) {
     return "red";
   }
-  if (normalized.includes("partial")) {
+  if (normalized.includes("partial") || normalized.includes("pending")) {
     return "gold";
   }
   return "orange";
@@ -4816,7 +4806,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="Issues in test"
             value={person.testingPrs.length}
-            detail={`${testingStalePrs.length} waiting | ${personalTestingOwnerGaps(person.testingPrs)} no tester`}
+            detail={`${testingStalePrs.length} waiting >24h | ${oldestPersonalTestingText(person.testingPrs)}`}
             tone={testingStalePrs.length > 0 ? "critical" : person.testingPrs.length > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("testing")}
           />
@@ -4944,7 +4934,8 @@ function PersonalRotationThreadRow({ row }: { row: PersonalGanttRow }) {
               <span>PRs</span>
               {row.prs.slice(0, 5).map((pr) => (
                 <a href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
-                  #{pr.number} {labelText(pr.testingState)}
+                  #{pr.number}
+                  {pr.testingState !== "not_ready" ? ` ${testingStateBusinessLabel(pr.testingState)}` : ""}
                 </a>
               ))}
               {row.prs.length > 5 ? <span>+{row.prs.length - 5}</span> : null}
@@ -5012,8 +5003,14 @@ function oldestPersonalPrText(prs: PersonalPullRequestView[]): string {
   return `oldest ${hours(Math.max(...prs.map((pr) => pr.ageHours)))}`;
 }
 
-function personalTestingOwnerGaps(prs: PersonalPullRequestView[]): number {
-  return prs.filter((pr) => isTestingQueuePr(pr) && pr.testingTesters.length === 0).length;
+function oldestPersonalTestingText(prs: PersonalPullRequestView[]): string {
+  const waits = prs
+    .map((pr) => pr.testingQueueAgeHours)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  if (waits.length === 0) {
+    return "wait unknown";
+  }
+  return `max wait ${hours(Math.max(...waits))}`;
 }
 
 function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
@@ -6161,7 +6158,7 @@ export default function App() {
             <Tag>{labelText(issue.lifecycleState)}</Tag>
             <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown"}</Tag>
             <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
-            {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+            {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
             {issue.syncError ? (
               <Tooltip title={issue.syncError}>
                 <Tag color="red">sync error</Tag>
@@ -6184,7 +6181,7 @@ export default function App() {
                     <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
                       #{pr.number}
                     </a>{" "}
-                    {labelText(pr.testingState)}
+                    {pr.testingState !== "not_ready" ? testingStateBusinessLabel(pr.testingState) : ""}
                   </Tag>
                 </Tooltip>
               ))}
@@ -6265,7 +6262,7 @@ export default function App() {
           >
             <Space size={4}>
               <Text>{formatDate(value)}</Text>
-              {issue.lastHumanActionEvidence === "partial_cache" ? <Tag color="gold">partial</Tag> : null}
+              {issue.lastHumanActionEvidence === "partial_cache" ? <Tag color="gold">cached update time</Tag> : null}
             </Space>
           </Tooltip>
         )
@@ -6279,111 +6276,108 @@ export default function App() {
       {
         title: "PR",
         dataIndex: "number",
-        width: 88,
+        width: 360,
         render: (_, pr) => (
-          <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
-            #{pr.number}
-          </a>
-        )
-      },
-      {
-        title: "Title",
-        dataIndex: "title",
-        ellipsis: true,
-        render: (title, pr) => (
-          <Space size={8} className="table-title-cell">
-            {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
-            {!pr.isComplete ? <Badge color="#d97706" /> : null}
-            <Text ellipsis={{ tooltip: title }}>{title}</Text>
+          <Space direction="vertical" size={2} className="table-title-cell">
+            <Space size={6} wrap>
+              <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                #{pr.number}
+              </a>
+              {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
+              {pr.draft ? <Tag color="gold">draft</Tag> : null}
+            </Space>
+            <Text ellipsis={{ tooltip: pr.title }}>{pr.title}</Text>
           </Space>
         )
       },
       { title: "Owner", dataIndex: "ownerLogin", width: 136, render: (owner) => <Tag>{owner}</Tag> },
-      { title: "Age", dataIndex: "ageHours", width: 92, render: (age) => hours(age) },
       {
-        title: "Review",
-        width: 150,
+        title: "Age",
+        dataIndex: "ageHours",
+        width: 104,
+        render: (age) => <Tag color={age >= 24 ? "orange" : "default"}>{hours(age)}</Tag>
+      },
+      {
+        title: "Attention",
+        width: 250,
+        render: (_, pr) => {
+          const reasons = prAttentionReasons(pr);
+          return reasons.length === 0 ? (
+            <Tag color="green">clear</Tag>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {reasons.slice(0, 4).map((reason) => (
+                <Tag color={activityReasonColor(reason)} key={reason}>
+                  {reason}
+                </Tag>
+              ))}
+              {reasons.length > 4 ? <Tag>+{reasons.length - 4}</Tag> : null}
+            </Space>
+          );
+        }
+      },
+      {
+        title: "PR blockers",
+        width: 260,
+        render: (_, pr) => {
+          const hasBlocker =
+            pr.draft ||
+            prHasRequestChanges(pr) ||
+            prHasFailedCi(pr) ||
+            prHasConflict(pr) ||
+            pr.attentionFlags.includes("review_requested_no_response");
+          return hasBlocker ? (
+            <Space size={[4, 4]} wrap>
+              {pr.draft ? <Tag color="gold">draft</Tag> : null}
+              {pr.reviewDecision ? (
+                <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
+                  review {labelText(pr.reviewDecision)}
+                </Tag>
+              ) : pr.attentionFlags.includes("review_requested_no_response") ? (
+                <Tag color="orange">review waiting</Tag>
+              ) : null}
+              {pr.ciState ? <Tag color={ciColor(pr.ciState)}>CI {labelText(pr.ciState)}</Tag> : null}
+              {pr.mergeStateStatus ? (
+                <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+              ) : null}
+            </Space>
+          ) : (
+            <Tag color="green">no cached blocker</Tag>
+          );
+        }
+      },
+      {
+        title: "Issue relation",
+        width: 300,
         render: (_, pr) => (
           <Space size={[4, 4]} wrap>
-            {pr.draft ? <Tag color="gold">draft</Tag> : null}
-            {pr.reviewDecision ? (
-              <Tag
-                color={
-                  pr.reviewDecision === "changes_requested"
-                    ? "red"
-                    : pr.reviewDecision === "approved"
-                      ? "green"
-                      : "blue"
-                }
-              >
-                {labelText(pr.reviewDecision)}
-              </Tag>
-            ) : pr.attentionFlags.includes("review_requested_no_response") ? (
-              <Tag color="orange">review waiting</Tag>
+            {prIssueLinkUnknown(pr) ? (
+              <Tooltip title="PR detail or relationship sync has not completed. GitHub linked issues may still be missing from cache.">
+                <Tag color="gold">issue link sync pending</Tag>
+              </Tooltip>
+            ) : pr.linkedIssueNumbers.length === 0 ? (
+              <Tooltip title="PR detail sync completed, and no related issue was found in GitHub relationship data or PR text.">
+                <Tag color="orange">unlinked after sync</Tag>
+              </Tooltip>
             ) : (
-              <Text type="secondary">-</Text>
+              pr.linkedIssueNumbers.slice(0, 3).map((number) => (
+                <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
+                  #{number}
+                </a>
+              ))
             )}
+            {pr.linkedIssueNumbers.length > 3 ? <Tag>+{pr.linkedIssueNumbers.length - 3}</Tag> : null}
+            {isTestingQueuePr(pr) ? (
+              <>
+                <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
+                {pr.testingQueueAgeHours !== null ? <Tag>test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+              </>
+            ) : null}
           </Space>
         )
       },
       {
-        title: "CI",
-        width: 132,
-        render: (_, pr) =>
-          pr.ciState ? <Tag color={ciColor(pr.ciState)}>{labelText(pr.ciState)}</Tag> : <Text type="secondary">-</Text>
-      },
-      {
-        title: "Merge",
-        width: 132,
-        render: (_, pr) =>
-          pr.mergeStateStatus ? (
-            <Tag color={mergeColor(pr.mergeStateStatus)}>{labelText(pr.mergeStateStatus)}</Tag>
-          ) : (
-            <Text type="secondary">-</Text>
-          )
-      },
-      {
-        title: "Linked issues",
-        width: 220,
-        render: (_, pr) =>
-          prIssueLinkUnknown(pr) ? (
-            <Tooltip title="PR relationship sync has not completed. GitHub linked issues may still be missing from cache.">
-              <Tag color="gold">link unknown</Tag>
-            </Tooltip>
-          ) : pr.linkedIssueNumbers.length === 0 ? (
-            <Tooltip title="No linked issue was found after PR detail relationship sync.">
-              <Tag>none</Tag>
-            </Tooltip>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {pr.linkedIssueNumbers.slice(0, 3).map((number) => (
-                <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
-                  #{number}
-                </a>
-              ))}
-              {pr.linkedIssueNumbers.length > 3 ? <Tag>+{pr.linkedIssueNumbers.length - 3}</Tag> : null}
-            </Space>
-          )
-      },
-      {
-        title: "Issue in test",
-        width: 240,
-        render: (_, pr) =>
-          isTestingQueuePr(pr) ? (
-            <Space size={[4, 4]} wrap>
-              <Tag color={testingStateColor(pr.testingState)}>issue in test</Tag>
-              {pr.testingTesters.slice(0, 2).map((tester) => (
-                <Tag key={tester}>{tester}</Tag>
-              ))}
-              {pr.testingTesters.length > 2 ? <Tag>+{pr.testingTesters.length - 2}</Tag> : null}
-              {pr.testingQueueAgeHours !== null ? <Tag>wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
-            </Space>
-          ) : (
-            <Text type="secondary">not in test</Text>
-          )
-      },
-      {
-        title: "Cache",
+        title: "Evidence",
         width: 172,
         render: (_, pr) =>
           pr.detailError ? (
@@ -6392,7 +6386,7 @@ export default function App() {
             </Tooltip>
           ) : !pr.isComplete || !pr.detailSyncedAt ? (
             <Tooltip title="PR detail backfill has not completed yet. Review, CI, merge, and issue-link evidence may be incomplete.">
-              <Tag color="gold">detail pending</Tag>
+              <Tag color="gold">PR detail sync pending</Tag>
             </Tooltip>
           ) : (
             <Tag color="green">synced</Tag>
@@ -6403,21 +6397,6 @@ export default function App() {
         dataIndex: "lastHumanActionAt",
         width: 168,
         render: (value) => formatDate(value)
-      },
-      {
-        title: "Flags",
-        dataIndex: "attentionFlags",
-        width: 260,
-        render: (flags: string[]) =>
-          flags.length === 0 ? (
-            <Tag>clear</Tag>
-          ) : (
-            flags.map((flag) => (
-              <Tag color={flagColor(flag)} key={flag}>
-                {labelText(flag)}
-              </Tag>
-            ))
-          )
       }
     ],
     []
@@ -6588,7 +6567,7 @@ export default function App() {
         ellipsis: true,
         render: (value, signal) => (
           <Space size={6}>
-            {signal.sourceCompleteness === "partial_cache" ? <Tag>partial</Tag> : null}
+            {signal.sourceCompleteness === "partial_cache" ? <Tag>incomplete evidence</Tag> : null}
             <Text ellipsis={{ tooltip: value }}>{value}</Text>
           </Space>
         )
@@ -6915,7 +6894,7 @@ export default function App() {
         width: 116,
         render: (value) => (
           <Tag color={value === "complete_cache" ? "green" : "orange"}>
-            {value === "complete_cache" ? "complete" : "partial"}
+            {value === "complete_cache" ? "complete" : "incomplete"}
           </Tag>
         )
       }
@@ -7104,7 +7083,7 @@ export default function App() {
                   </Tag>
                   <Tag color={data.sync.staleObjects > 0 ? "orange" : "green"}>{data.sync.staleObjects} stale</Tag>
                   <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>
-                    {data.sync.partialObjects} partial
+                    {data.sync.partialObjects} incomplete
                   </Tag>
                   <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
                     {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
