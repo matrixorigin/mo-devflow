@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
-import { buildDailyDigestNotificationCandidate, deliveryStatusRequiresAcknowledgement } from "./notifications";
+import {
+  buildDailyDigestNotificationCandidate,
+  dailyDigestMetricDate,
+  deliveryStatusRequiresAcknowledgement
+} from "./notifications";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -45,6 +49,10 @@ const profile: RepoProfile = {
 };
 
 describe("daily digest notification candidates", () => {
+  test("uses the previous repo-local calendar day as the digest metric date", () => {
+    expect(dailyDigestMetricDate("Asia/Shanghai", new Date("2026-07-04T01:00:00.000Z"))).toBe("2026-07-03");
+  });
+
   test("builds a maintainer digest from cached daily metrics", () => {
     const candidate = buildDailyDigestNotificationCandidate({
       profile,

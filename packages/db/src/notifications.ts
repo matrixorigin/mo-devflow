@@ -8,6 +8,7 @@ import type {
 } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql } from "./client";
+import { addDaysToDateKey, dateKeyInTimezone } from "./time";
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
@@ -74,6 +75,14 @@ function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
 
+export function dailyDigestMetricDate(timezone: string, now = new Date()): string {
+  const today = dateKeyInTimezone(now, timezone);
+  if (!today) {
+    throw new Error(`Unable to derive daily digest date in timezone ${timezone}.`);
+  }
+  return addDaysToDateKey(today, -1);
+}
+
 export interface DailyDigestTeamMetrics {
   prsCreated: number;
   prsMerged: number;
@@ -129,18 +138,11 @@ export function buildDailyDigestNotificationCandidate(input: {
   };
 }
 
-async function getLatestDailyDigestCandidate(
+async function getDailyDigestCandidate(
   repoId: number,
   profile: RepoProfile
 ): Promise<NotificationCandidate | null> {
-  const [dateRows] = await getPool().execute<RowData[]>(
-    "SELECT MAX(metric_date) AS metric_date FROM daily_metrics WHERE repo_id = ?",
-    [repoId]
-  );
-  const metricDate = dateRows[0]?.metric_date ? asString(dateRows[0].metric_date) : "";
-  if (!metricDate) {
-    return null;
-  }
+  const metricDate = dailyDigestMetricDate(profile.reporting.timezone);
   const [metricRows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM daily_metrics
@@ -290,7 +292,7 @@ export async function listNotificationCandidates(
   }
 
   if (candidates.length < limit) {
-    const digest = await getLatestDailyDigestCandidate(repoId, profile);
+    const digest = await getDailyDigestCandidate(repoId, profile);
     if (digest) {
       candidates.push(digest);
     }
