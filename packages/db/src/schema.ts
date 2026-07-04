@@ -141,7 +141,7 @@ const schemaStatements = [
     github_login VARCHAR(255) NOT NULL,
     action_key VARCHAR(128) NOT NULL,
     object_type VARCHAR(64) NOT NULL,
-    object_number INT NOT NULL,
+    object_number BIGINT NOT NULL,
     rule_key VARCHAR(128) NOT NULL,
     status VARCHAR(32) NOT NULL,
     preview_json LONGTEXT NOT NULL,
@@ -157,7 +157,7 @@ const schemaStatements = [
     github_login VARCHAR(255) NOT NULL,
     action_key VARCHAR(128) NOT NULL,
     object_type VARCHAR(64) NOT NULL,
-    object_number INT NOT NULL,
+    object_number BIGINT NOT NULL,
     status VARCHAR(64) NOT NULL,
     operations_json LONGTEXT NOT NULL,
     before_state_json LONGTEXT,
@@ -450,20 +450,38 @@ async function executeIgnoringDuplicateIndex(connection: mysql.Connection, state
 interface SchemaColumnRow extends RowDataPacket {
   table_name: string;
   column_name: string;
+  column_type: string;
   is_nullable: string;
 }
 
 export interface ExpectedSchemaColumn {
+  columnType: string;
   nullable: boolean;
 }
 
 export interface SchemaDrift {
   missingColumns: string[];
   unexpectedColumns: string[];
+  typeMismatches: string[];
   nullabilityMismatches: string[];
 }
 
 const tableConstraintTokens = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK"]);
+
+function normalizeColumnType(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .replace(/\b(BIGINT|INT|TINYINT|DATETIME|DOUBLE|TEXT)\(\d+\)/g, "$1")
+    .replace(/\bLONGTEXT\b/g, "TEXT");
+}
+
+function columnTypeFromColumnDefinition(line: string): string {
+  const [, remainder = ""] = line.match(/^`?[a-z_][a-z0-9_]*`?\s+(.+)$/i) ?? [];
+  const typeMatch = remainder.match(/^[a-z]+(?:\s*\([^)]*\))?/i);
+  return normalizeColumnType(typeMatch?.[0] ?? "");
+}
 
 export function expectedSchemaColumnSpecsFromStatements(
   statements: readonly string[] = schemaStatements
@@ -487,6 +505,7 @@ export function expectedSchemaColumnSpecsFromStatements(
         continue;
       }
       columns.set(token, {
+        columnType: columnTypeFromColumnDefinition(line),
         nullable: !/\bNOT\s+NULL\b/i.test(line) && !/\bPRIMARY\s+KEY\b/i.test(line)
       });
     }
@@ -505,19 +524,23 @@ export function expectedSchemaColumnsFromStatements(
 
 export function detectSchemaDrift(
   expected: Map<string, Map<string, ExpectedSchemaColumn>>,
-  actualRows: Array<{ table_name: string; column_name: string; is_nullable: string }>
+  actualRows: Array<{ table_name: string; column_name: string; column_type: string; is_nullable: string }>
 ): SchemaDrift {
   const actual = new Map<string, Map<string, ExpectedSchemaColumn>>();
   for (const row of actualRows) {
     const tableName = row.table_name;
     const columnName = row.column_name;
     const existing = actual.get(tableName) ?? new Map<string, ExpectedSchemaColumn>();
-    existing.set(columnName, { nullable: row.is_nullable.toUpperCase() === "YES" });
+    existing.set(columnName, {
+      columnType: normalizeColumnType(row.column_type),
+      nullable: row.is_nullable.toUpperCase() === "YES"
+    });
     actual.set(tableName, existing);
   }
 
   const missingColumns: string[] = [];
   const unexpectedColumns: string[] = [];
+  const typeMismatches: string[] = [];
   const nullabilityMismatches: string[] = [];
   for (const [tableName, expectedColumns] of expected.entries()) {
     const actualColumns = actual.get(tableName) ?? new Map<string, ExpectedSchemaColumn>();
@@ -526,6 +549,11 @@ export function detectSchemaDrift(
       if (!actualSpec) {
         missingColumns.push(`${tableName}.${expectedColumn}`);
         continue;
+      }
+      if (actualSpec.columnType !== expectedSpec.columnType) {
+        typeMismatches.push(
+          `${tableName}.${expectedColumn} expected ${expectedSpec.columnType} but found ${actualSpec.columnType}`
+        );
       }
       if (actualSpec.nullable !== expectedSpec.nullable) {
         nullabilityMismatches.push(
@@ -545,6 +573,7 @@ export function detectSchemaDrift(
   return {
     missingColumns: missingColumns.sort(),
     unexpectedColumns: unexpectedColumns.sort(),
+    typeMismatches: typeMismatches.sort(),
     nullabilityMismatches: nullabilityMismatches.sort()
   };
 }
@@ -553,7 +582,7 @@ async function assertCurrentSchema(connection: mysql.Connection, database: strin
   const expected = expectedSchemaColumnSpecsFromStatements();
   const tableNames = Array.from(expected.keys());
   const [rows] = await connection.query<SchemaColumnRow[]>(
-    `SELECT table_name, column_name, is_nullable
+    `SELECT table_name, column_name, column_type, is_nullable
      FROM information_schema.columns
      WHERE table_schema = ? AND table_name IN (${tableNames.map(() => "?").join(", ")})`,
     [database, ...tableNames]
@@ -562,6 +591,7 @@ async function assertCurrentSchema(connection: mysql.Connection, database: strin
   if (
     drift.missingColumns.length === 0 &&
     drift.unexpectedColumns.length === 0 &&
+    drift.typeMismatches.length === 0 &&
     drift.nullabilityMismatches.length === 0
   ) {
     return;
@@ -574,6 +604,7 @@ async function assertCurrentSchema(connection: mysql.Connection, database: strin
       "Reset the development database or add an explicit schema migration.",
       `Missing columns: ${drift.missingColumns.join(", ") || "none"}.`,
       `Unexpected columns: ${drift.unexpectedColumns.join(", ") || "none"}.`,
+      `Type mismatches: ${drift.typeMismatches.join(", ") || "none"}.`,
       `Nullability mismatches: ${drift.nullabilityMismatches.join(", ") || "none"}.`
     ].join(" ")
   );

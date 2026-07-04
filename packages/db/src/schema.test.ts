@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { detectSchemaDrift, expectedSchemaColumnSpecsFromStatements, expectedSchemaColumnsFromStatements } from "./schema";
 
+function column(columnType: string, nullable: boolean) {
+  return { columnType, nullable };
+}
+
 describe("schema contract", () => {
   test("derives expected columns from current create-table statements", () => {
     const expected = expectedSchemaColumnsFromStatements();
@@ -16,7 +20,15 @@ describe("schema contract", () => {
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");
 
     const specs = expectedSchemaColumnSpecsFromStatements();
-    expect(specs.get("attention_items")?.get("dashboard_url")).toEqual({ nullable: false });
+    expect(specs.get("attention_items")?.get("dashboard_url")).toEqual({ columnType: "TEXT", nullable: false });
+    expect(specs.get("write_action_executions")?.get("object_number")).toEqual({
+      columnType: "BIGINT",
+      nullable: false
+    });
+    expect(specs.get("notification_deliveries")?.get("payload_json")).toEqual({
+      columnType: "TEXT",
+      nullable: true
+    });
   });
 
   test("reports missing and unexpected columns instead of repairing them", () => {
@@ -24,31 +36,32 @@ describe("schema contract", () => {
       [
         "issues",
         new Map([
-          ["id", { nullable: false }],
-          ["number", { nullable: false }],
-          ["source_user_id", { nullable: true }]
+          ["id", column("BIGINT", false)],
+          ["number", column("BIGINT", false)],
+          ["source_user_id", column("BIGINT", true)]
         ])
       ],
       [
         "pull_requests",
         new Map([
-          ["id", { nullable: false }],
-          ["number", { nullable: false }]
+          ["id", column("BIGINT", false)],
+          ["number", column("INT", false)]
         ])
       ]
     ]);
 
     expect(
       detectSchemaDrift(expected, [
-        { table_name: "issues", column_name: "id", is_nullable: "NO" },
-        { table_name: "issues", column_name: "number", is_nullable: "YES" },
-        { table_name: "issues", column_name: "legacy_column", is_nullable: "YES" },
-        { table_name: "pull_requests", column_name: "id", is_nullable: "NO" },
-        { table_name: "pull_requests", column_name: "number", is_nullable: "NO" }
+        { table_name: "issues", column_name: "id", column_type: "BIGINT(64)", is_nullable: "NO" },
+        { table_name: "issues", column_name: "number", column_type: "INT(32)", is_nullable: "YES" },
+        { table_name: "issues", column_name: "legacy_column", column_type: "TEXT", is_nullable: "YES" },
+        { table_name: "pull_requests", column_name: "id", column_type: "BIGINT(64)", is_nullable: "NO" },
+        { table_name: "pull_requests", column_name: "number", column_type: "INT(32)", is_nullable: "NO" }
       ])
     ).toEqual({
       missingColumns: ["issues.source_user_id"],
       unexpectedColumns: ["issues.legacy_column"],
+      typeMismatches: ["issues.number expected BIGINT but found INT"],
       nullabilityMismatches: ["issues.number expected NOT NULL but found NULL"]
     });
   });

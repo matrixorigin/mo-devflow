@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getRepoId: vi.fn(),
   getSessionRecordFromRequest: vi.fn(),
   loadRepoProfile: vi.fn(),
+  recordProductWriteActionExecution: vi.fn(),
   requestNotificationDeliveryRetry: vi.fn(),
   upsertRepoProfile: vi.fn()
 }));
@@ -25,6 +26,7 @@ vi.mock("@mo-devflow/db", () => ({
   acknowledgeNotificationDelivery: mocks.acknowledgeNotificationDelivery,
   enqueueJobsNow: mocks.enqueueJobsNow,
   getRepoId: mocks.getRepoId,
+  recordProductWriteActionExecution: mocks.recordProductWriteActionExecution,
   requestNotificationDeliveryRetry: mocks.requestNotificationDeliveryRetry,
   upsertRepoProfile: mocks.upsertRepoProfile
 }));
@@ -95,6 +97,15 @@ describe("notification routes", () => {
           })
         })
       ]);
+      expect(mocks.recordProductWriteActionExecution).toHaveBeenCalledWith({
+        repoId: 7,
+        userId: 1,
+        githubLogin: "alice",
+        actionKey: "retry_notification",
+        objectType: "notification_delivery",
+        objectNumber: 11,
+        status: "success"
+      });
       expect(response.json()).toMatchObject({
         deliveryId: 10,
         retryDeliveryId: 11,
@@ -128,6 +139,53 @@ describe("notification routes", () => {
         deliveryStatus: "retry_requested"
       });
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(mocks.recordProductWriteActionExecution).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("records notification acknowledgements in the write audit", async () => {
+    const app = Fastify();
+    await registerNotificationRoutes(app);
+    mocks.acknowledgeNotificationDelivery.mockResolvedValue({
+      outcome: "acknowledged",
+      deliveryId: 10,
+      acknowledgedAt: "2026-07-04T02:03:04.000Z",
+      acknowledgedBy: "alice"
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/notifications/deliveries/10/acknowledge",
+        headers: csrfHeaders
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.acknowledgeNotificationDelivery).toHaveBeenCalledWith({
+        repoId: 7,
+        deliveryId: 10,
+        userId: 1,
+        githubLogin: "alice",
+        profile: { key: "matrixorigin/matrixone" },
+        viewer: { authenticated: true, userId: 1 }
+      });
+      expect(mocks.recordProductWriteActionExecution).toHaveBeenCalledWith({
+        repoId: 7,
+        userId: 1,
+        githubLogin: "alice",
+        actionKey: "acknowledge_notification",
+        objectType: "notification_delivery",
+        objectNumber: 10,
+        status: "success",
+        occurredAt: "2026-07-04T02:03:04.000Z"
+      });
+      expect(response.json()).toEqual({
+        deliveryId: 10,
+        acknowledgedAt: "2026-07-04T02:03:04.000Z",
+        acknowledgedBy: "alice"
+      });
     } finally {
       await app.close();
     }

@@ -5,6 +5,7 @@ import {
   acknowledgeNotificationDelivery,
   enqueueJobsNow,
   getRepoId,
+  recordProductWriteActionExecution,
   requestNotificationDeliveryRetry,
   upsertRepoProfile
 } from "@mo-devflow/db";
@@ -77,6 +78,15 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
           }
         }
       ]);
+      await recordProductWriteActionExecution({
+        repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        actionKey: "retry_notification",
+        objectType: "notification_delivery",
+        objectNumber: retryRequest.retryDeliveryId,
+        status: "success"
+      });
       return {
         deliveryId: retryRequest.deliveryId,
         retryDeliveryId: retryRequest.retryDeliveryId,
@@ -84,9 +94,9 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
         queuedJobs
       };
     } catch (error) {
-      app.log.error({ error, deliveryId: retryRequest.deliveryId }, "notification retry queueing failed");
+      app.log.error({ error, deliveryId: retryRequest.deliveryId }, "notification retry processing failed");
       return reply.status(500).send({
-        error: "notification_retry_queueing_failed",
+        error: "notification_retry_processing_failed",
         message: error instanceof Error ? error.message : String(error)
       });
     }
@@ -137,6 +147,17 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
         deliveryStatus: acknowledgement.deliveryStatus
       });
     }
+
+    await recordProductWriteActionExecution({
+      repoId,
+      userId: session.userId,
+      githubLogin: session.githubLogin,
+      actionKey: "acknowledge_notification",
+      objectType: "notification_delivery",
+      objectNumber: acknowledgement.deliveryId,
+      status: "success",
+      occurredAt: acknowledgement.acknowledgedAt
+    });
 
     return {
       deliveryId: acknowledgement.deliveryId,

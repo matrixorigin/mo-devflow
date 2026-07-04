@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   acknowledgeNotificationDelivery: vi.fn(),
   enqueueJobsNow: vi.fn(),
   getRepoId: vi.fn(),
+  recordProductWriteActionExecution: vi.fn(),
   recordManualRefreshRequest: vi.fn(),
   requestNotificationDeliveryRetry: vi.fn(),
   upsertRepoProfile: vi.fn()
@@ -26,6 +27,7 @@ vi.mock("@mo-devflow/db", () => ({
   acknowledgeNotificationDelivery: mocks.acknowledgeNotificationDelivery,
   enqueueJobsNow: mocks.enqueueJobsNow,
   getRepoId: mocks.getRepoId,
+  recordProductWriteActionExecution: mocks.recordProductWriteActionExecution,
   recordManualRefreshRequest: mocks.recordManualRefreshRequest,
   requestNotificationDeliveryRetry: mocks.requestNotificationDeliveryRetry,
   upsertRepoProfile: mocks.upsertRepoProfile
@@ -82,6 +84,7 @@ describe("CSRF protected routes", () => {
         message: "Refresh the session and retry the request."
       });
       expect(mocks.acknowledgeNotificationDelivery).not.toHaveBeenCalled();
+      expect(mocks.recordProductWriteActionExecution).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -104,6 +107,7 @@ describe("CSRF protected routes", () => {
       });
       expect(mocks.requestNotificationDeliveryRetry).not.toHaveBeenCalled();
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(mocks.recordProductWriteActionExecution).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

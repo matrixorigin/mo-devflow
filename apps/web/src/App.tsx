@@ -386,6 +386,16 @@ function workflowOperationSummary(operation: WriteActionExecutionView["executedO
   return "comment";
 }
 
+function writeActionObjectLabel(objectType: WriteActionExecutionView["objectType"]): string {
+  if (objectType === "issue") {
+    return "Issue";
+  }
+  if (objectType === "pull_request") {
+    return "PR";
+  }
+  return labelText(objectType);
+}
+
 function NotificationTraceTag({ notification }: { notification: NotificationTraceView }) {
   if (!notification.status) {
     return <Tag color="default">not sent</Tag>;
@@ -1600,11 +1610,11 @@ export default function App() {
         render: (_, execution) =>
           execution.htmlUrl ? (
             <a href={execution.htmlUrl} target="_blank" rel="noreferrer">
-              {execution.objectType === "issue" ? "Issue" : "PR"} #{execution.objectNumber}
+              {writeActionObjectLabel(execution.objectType)} #{execution.objectNumber}
             </a>
           ) : (
             <Text>
-              {labelText(execution.objectType)} #{execution.objectNumber}
+              {writeActionObjectLabel(execution.objectType)} #{execution.objectNumber}
             </Text>
           )
       },
@@ -2350,7 +2360,7 @@ export default function App() {
                     <ClipboardCheck size={18} />
                     <Title level={4}>Write Audit</Title>
                   </Space>
-                  <Text type="secondary">{session?.authenticated ? "Recent confirmed workflow fixes" : "Login required"}</Text>
+                  <Text type="secondary">{session?.authenticated ? "Recent write actions" : "Login required"}</Text>
                 </div>
                 <Table
                   rowKey="id"
@@ -2364,7 +2374,7 @@ export default function App() {
                       <Empty
                         description={
                           session?.authenticated
-                            ? "No workflow fix executions visible in cache"
+                            ? "No write actions visible in cache"
                             : "Connect GitHub token to view write audit"
                         }
                       />

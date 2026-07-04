@@ -472,6 +472,9 @@ export type WorkflowFixExecutionStatus =
   | "stale_preview"
   | "blocked"
   | "token_unavailable";
+export type WriteActionKey = WorkflowFixActionKey | "acknowledge_notification" | "retry_notification";
+export type WriteActionObjectType = WorkflowViolationObjectType | "notification_delivery";
+export type WriteActionStatus = WorkflowFixExecutionStatus;
 
 export interface WorkflowFixExecutionResult {
   previewId: string;
@@ -488,12 +491,12 @@ export interface WriteActionExecutionView {
   id: number;
   previewId: string;
   githubLogin: string;
-  actionKey: WorkflowFixActionKey;
-  objectType: WorkflowViolationObjectType;
+  actionKey: WriteActionKey;
+  objectType: WriteActionObjectType;
   objectNumber: number;
   title: string;
   htmlUrl: string | null;
-  status: WorkflowFixExecutionStatus;
+  status: WriteActionStatus;
   executedOperations: WorkflowFixOperation[];
   errorMessage: string | null;
   startedAt: string;

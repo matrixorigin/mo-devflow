@@ -198,6 +198,40 @@ describe("write action audit view", () => {
       finishedAt: "2026-07-04T01:02:04Z"
     });
   });
+
+  test("maps notification delivery write audit rows", () => {
+    expect(
+      writeActionExecutionViewFromRow({
+        id: 13,
+        preview_id: "audit:00000000-0000-4000-8000-000000000000",
+        github_login: "alice",
+        action_key: "acknowledge_notification",
+        object_type: "notification_delivery",
+        object_number: "900719",
+        object_title: "notification_delivery #900719",
+        object_html_url: null,
+        status: "success",
+        operations_json: JSON.stringify([]),
+        error_message: null,
+        started_at: "2026-07-04 02:03:04",
+        finished_at: "2026-07-04 02:03:04"
+      })
+    ).toEqual({
+      id: 13,
+      previewId: "audit:00000000-0000-4000-8000-000000000000",
+      githubLogin: "alice",
+      actionKey: "acknowledge_notification",
+      objectType: "notification_delivery",
+      objectNumber: 900719,
+      title: "notification_delivery #900719",
+      htmlUrl: null,
+      status: "success",
+      executedOperations: [],
+      errorMessage: null,
+      startedAt: "2026-07-04T02:03:04Z",
+      finishedAt: "2026-07-04T02:03:04Z"
+    });
+  });
 });
 
 describe("cache freshness", () => {

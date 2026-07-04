@@ -6,11 +6,14 @@ import type {
   WorkflowFixOperation,
   WorkflowFixPreview,
   WorkflowViolationView,
+  WriteActionKey,
   WriteActionExecutionView
 } from "@mo-devflow/shared";
 import { emptyNotificationTrace, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
+import { randomUUID } from "node:crypto";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
+import { notificationDeliveryVisibilityWhereSql } from "./notifications";
 import { dashboardVisibilityFilter, type DashboardViewer } from "./visibility";
 
 interface RowData extends RowDataPacket {
@@ -254,6 +257,43 @@ export async function recordWorkflowFixExecution(input: {
   );
 }
 
+export async function recordProductWriteActionExecution(input: {
+  repoId: number;
+  userId: number;
+  githubLogin: string;
+  actionKey: WriteActionKey;
+  objectType: WriteActionExecutionView["objectType"];
+  objectNumber: number;
+  status: WriteActionExecutionView["status"];
+  operations?: WorkflowFixOperation[];
+  errorMessage?: string | null;
+  occurredAt?: string;
+}): Promise<void> {
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const previewId = `audit:${randomUUID()}`;
+  await getPool().execute(
+    `INSERT INTO write_action_executions(
+      preview_id, repo_id, user_id, github_login, action_key, object_type,
+      object_number, status, operations_json, before_state_json, after_state_json, github_response_json, error_message,
+      started_at, finished_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)`,
+    [
+      previewId,
+      input.repoId,
+      input.userId,
+      input.githubLogin,
+      input.actionKey,
+      input.objectType,
+      input.objectNumber,
+      input.status,
+      stringify(input.operations ?? []),
+      input.errorMessage ?? null,
+      sqlDate(occurredAt),
+      sqlDate(occurredAt)
+    ]
+  );
+}
+
 export function workflowFixOperationsFromJson(value: string | null | undefined): WorkflowFixOperation[] {
   const parsed = parseJsonRecord<unknown>(value, []);
   if (!Array.isArray(parsed)) {
@@ -311,6 +351,7 @@ export async function listWriteActionExecutionsForDashboard(input: {
   const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)));
   const issueVisibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
   const pullRequestVisibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
+  const notificationVisibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT
        e.id,
@@ -341,10 +382,18 @@ export async function listWriteActionExecutionsForDashboard(input: {
          (e.object_type = 'issue' AND i.id IS NOT NULL AND ${issueVisibility.sql})
          OR
          (e.object_type = 'pull_request' AND p.id IS NOT NULL AND ${pullRequestVisibility.sql})
+         OR
+         (e.object_type = 'notification_delivery' AND EXISTS (
+           SELECT 1
+           FROM notification_deliveries d
+           WHERE d.id = e.object_number
+             AND d.repo_id = e.repo_id
+             AND ${notificationVisibility.sql}
+         ))
        )
      ORDER BY e.finished_at DESC, e.id DESC
      LIMIT ${limit}`,
-    [input.repoId, ...issueVisibility.params, ...pullRequestVisibility.params]
+    [input.repoId, ...issueVisibility.params, ...pullRequestVisibility.params, ...notificationVisibility.params]
   );
 
   return rows.map(writeActionExecutionViewFromRow);
