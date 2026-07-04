@@ -7,6 +7,13 @@ export type LifecycleState = "needs-triage" | "deferred" | "active" | "other";
 export type AttentionSeverity = "info" | "warning" | "critical";
 export type TestingHandoffScope = "issue";
 
+export interface TestingHandoffSignals {
+  labels: string[];
+  reviewerUsers: string[];
+  assigneeUsers: string[];
+  comments: string[];
+}
+
 export const supportedGitHubWebhookEvents = [
   "issues",
   "issue_comment",
@@ -65,6 +72,7 @@ export interface RepoProfile {
   };
   testing: {
     handoffScope?: TestingHandoffScope;
+    handoffSignals?: TestingHandoffSignals;
   };
   workflow: {
     skipUsers: string[];

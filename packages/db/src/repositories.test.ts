@@ -695,6 +695,19 @@ describe("profile configuration guidance", () => {
       })
     ).toEqual([]);
   });
+
+  test("treats configured testing assignee handoff signals as testing workflow input", () => {
+    expect(
+      profileConfigurationWarnings({
+        profile: {
+          ...baseProfile,
+          people: { watchedUsers: ["alice"], testers: [] },
+          testing: { handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: ["qa-a"], comments: [] } }
+        },
+        env: { MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret" }
+      })
+    ).toEqual([]);
+  });
 });
 
 describe("linked PR issue references", () => {

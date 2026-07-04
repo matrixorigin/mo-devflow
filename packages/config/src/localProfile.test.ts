@@ -58,6 +58,16 @@ people:
 workflow:
   skip_users:
     - workflow-skip-user-a
+testing:
+  handoff_signals:
+    labels:
+      - testing
+    reviewer_users:
+      - tester-reviewer-a
+    assignee_users:
+      - tester-a
+    comments:
+      - /test
 notifications:
   routing:
     critical_issue_stalled:
@@ -73,6 +83,12 @@ notifications:
     expect(profile.people.watchedUsers).toEqual(["watched-user-a", "watched-user-b"]);
     expect(profile.people.testers).toEqual(["tester-a"]);
     expect(profile.workflow.skipUsers).toEqual(["workflow-skip-user-a"]);
+    expect(profile.testing.handoffSignals).toEqual({
+      labels: ["testing"],
+      reviewerUsers: ["tester-reviewer-a"],
+      assigneeUsers: ["tester-a"],
+      comments: ["/test"]
+    });
     expect(profile.notifications.wecom.webhookUrlEnv).toBe("MO_DEVFLOW_WECOM_WEBHOOK_URL");
     expect(profile.notifications.routing).toMatchObject({
       cooldownHours: 8,

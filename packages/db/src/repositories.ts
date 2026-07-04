@@ -314,7 +314,7 @@ export function testingIssueTransitionsFromQueueIssues(
 
 function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
   const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
-  return Boolean(issueAssignee && normalizedLoginSet(profile.people.testers).has(normalizedLogin(issueAssignee[1])));
+  return Boolean(issueAssignee && testingAssigneeLoginSet(profile).has(normalizedLogin(issueAssignee[1])));
 }
 
 type TestingTurnoverMetrics = Pick<
@@ -662,7 +662,15 @@ export function criticalIssueOwnerCoverage(
 }
 
 function hasTestingHandoffSignal(profile: RepoProfile): boolean {
-  return profile.people.testers.length > 0;
+  return testingAssigneeLogins(profile).length > 0;
+}
+
+function testingAssigneeLogins(profile: RepoProfile): string[] {
+  return uniqueValues([...(profile.people.testers ?? []), ...(profile.testing.handoffSignals?.assigneeUsers ?? [])]);
+}
+
+function testingAssigneeLoginSet(profile: RepoProfile): Set<string> {
+  return normalizedLoginSet(testingAssigneeLogins(profile));
 }
 
 const attentionSeverityRank: Record<AttentionSeverity, number> = {
@@ -871,8 +879,8 @@ export function profileConfigurationWarnings(input: {
       severity: "warning",
       title: "Testing handoff rules are not configured",
       description:
-        "Testing queue and tester turnover views cannot reflect the real workflow until people.testers is configured. Issue assignees matching those testers are treated as sent to test.",
-      action: "Configure people.testers for the repo workflow."
+        "Testing queue and tester turnover views cannot reflect the real workflow until tester assignee signals are configured. Issue assignees matching those testers are treated as sent to test.",
+      action: "Configure people.testers or testing.handoff_signals.assignee_users for the repo workflow."
     });
   }
 
@@ -2170,7 +2178,7 @@ function uniqueValues(values: string[]): string[] {
 }
 
 function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Map<number, TestingIssueContext> {
-  const testerLogins = normalizedLoginSet(profile.people.testers);
+  const testerLogins = testingAssigneeLoginSet(profile);
   const contexts = new Map<number, TestingIssueContext>();
   if (testerLogins.size === 0) {
     return contexts;
@@ -4006,7 +4014,7 @@ export async function getDashboardSummary(
     .map((issue) => issue.queueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
   const testerKeys = new Set([
-    ...profile.people.testers,
+    ...testingAssigneeLogins(profile),
     ...testingIssueViews.flatMap((issue) => issue.testers),
     ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
   ]);
