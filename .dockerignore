@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+apps/web/dist
+coverage
+*.log
+*.pid
+api_smoke.log
+deployment/all-in-one/.env

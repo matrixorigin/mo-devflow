@@ -26,6 +26,19 @@ Default local services:
 - Web: `http://localhost:5173`
 - MatrixOne database: `mo_devflow`
 
+## All-In-One Docker Deployment
+
+For a single-host deployment that connects to an existing MatrixOne instance:
+
+```bash
+cd deployment/all-in-one
+cp .env.example .env
+docker compose up --build -d
+```
+
+The compose stack runs API, worker, and static web services. MatrixOne is
+external and configured through `deployment/all-in-one/.env`.
+
 The API only emits credentialed CORS headers for explicit browser origins.
 Local development defaults to `http://localhost:${MO_DEVFLOW_WEB_PORT}` and
 `http://127.0.0.1:${MO_DEVFLOW_WEB_PORT}`. Set

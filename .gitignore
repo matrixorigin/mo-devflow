@@ -3,6 +3,7 @@ dist/
 build/
 .vite/
 .env
+deployment/all-in-one/.env
 *.log
 *.pid
 coverage/

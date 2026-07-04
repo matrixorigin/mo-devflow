@@ -11,6 +11,7 @@
     "dev:api": "tsx watch apps/api/src/index.ts",
     "start:api": "tsx apps/api/src/index.ts",
     "dev:worker": "tsx watch apps/worker/src/index.ts",
+    "start:worker": "tsx apps/worker/src/index.ts",
     "dev:web": "npm --workspace @mo-devflow/web run dev",
     "db:migrate": "tsx packages/db/src/migrate.ts",
     "sync:once": "tsx apps/worker/src/sync-once.ts",

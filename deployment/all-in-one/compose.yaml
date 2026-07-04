@@ -1,0 +1,60 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: deployment/all-in-one/runtime.Dockerfile
+    command: ["npm", "run", "start:api"]
+    env_file:
+      - .env
+    environment:
+      MO_DEVFLOW_API_HOST: 0.0.0.0
+      MO_DEVFLOW_API_PORT: 18081
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../../config/repos:/app/config/repos:ro
+    ports:
+      - "${MO_DEVFLOW_API_BIND:-127.0.0.1:18081}:18081"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:18081/health').then(r=>process.exit(r.status < 500 ? 0 : 1)).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deployment/all-in-one/runtime.Dockerfile
+    command: ["npm", "run", "start:worker"]
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../../config/repos:/app/config/repos:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deployment/all-in-one/web.Dockerfile
+    ports:
+      - "${MO_DEVFLOW_WEB_BIND:-0.0.0.0:5173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
