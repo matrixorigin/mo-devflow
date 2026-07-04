@@ -5,7 +5,7 @@ export type VisibilityClass = "anonymous_readable" | "logged_in_readable" | "tok
 export type LifecycleState = "needs-triage" | "deferred" | "active" | "other";
 
 export type AttentionSeverity = "info" | "warning" | "critical";
-export type TestingHandoffScope = "issue" | "pull_request";
+export type TestingHandoffScope = "issue";
 
 export const supportedGitHubWebhookEvents = [
   "issues",

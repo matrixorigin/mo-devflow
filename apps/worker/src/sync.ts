@@ -379,13 +379,6 @@ function cacheSourceForWebhook(): CacheSource {
   return { authType: "service_read_token", userId: null };
 }
 
-function hasTestingCommentHandoffSignals(profile: ReturnType<typeof loadRepoProfile>): boolean {
-  return (
-    (profile.testing.handoffScope ?? "issue") === "pull_request" &&
-    profile.testing.handoffSignals.comments.some((signal) => signal.trim().length > 0)
-  );
-}
-
 export async function recomputeWorkflowViolationsFromCache(): Promise<RuleSyncResult> {
   loadEnv();
   const profile = loadRepoProfile();
@@ -829,7 +822,7 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
 
   const candidates = await listIssueCommentBackfillCandidates(repoId, {
     criticalLabels: profile.labels.critical,
-    includePullRequests: hasTestingCommentHandoffSignals(profile),
+    includePullRequests: false,
     limit
   });
   summary.selected = candidates.length;

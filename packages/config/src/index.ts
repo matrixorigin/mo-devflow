@@ -75,7 +75,7 @@ const profileSchema = z.object({
     }),
   testing: z
     .object({
-      handoff_scope: z.enum(["issue", "pull_request"]).default("issue"),
+      handoff_scope: z.literal("issue").default("issue"),
       handoff_signals: z
         .object({
           labels: z.array(z.string()).default([]),

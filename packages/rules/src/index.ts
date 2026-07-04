@@ -180,10 +180,6 @@ function normalizeState(value: string | null | undefined): string | null {
   return value.toLowerCase().replaceAll("-", "_");
 }
 
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean)));
-}
-
 function normalizedLogin(login: string): string {
   return login.trim().toLowerCase();
 }
@@ -210,15 +206,7 @@ function prMatchesSkipList(profile: RepoProfile, pr: NormalizedPullRequest): boo
   return [pr.authorLogin, pr.ownerLogin, ...pr.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
 }
 
-function deriveTestingFlow(
-  profile: RepoProfile,
-  pr: GitHubPullRequestLike,
-  labels: string[],
-  assignees: string[],
-  requestedReviewers: string[],
-  insight?: PullRequestInsight,
-  commentEvidence?: IssueCommentEvidence
-): TestingFlowDerivation {
+function deriveTestingFlow(pr: GitHubPullRequestLike): TestingFlowDerivation {
   if (pr.state === "closed") {
     return {
       state: "closed_or_merged",
@@ -228,74 +216,11 @@ function deriveTestingFlow(
     };
   }
 
-  if ((profile.testing.handoffScope ?? "issue") !== "pull_request") {
-    return {
-      state: "not_ready",
-      testers: [],
-      signals: [],
-      queueAgeHours: null
-    };
-  }
-
-  const configuredReviewerHandoffUsers = new Set(profile.testing.handoffSignals.reviewerUsers.map(normalizedLogin));
-  const configuredAssigneeHandoffUsers = new Set(profile.testing.handoffSignals.assigneeUsers.map(normalizedLogin));
-  const signals: string[] = [];
-  const testers: string[] = [];
-
-  for (const label of profile.testing.handoffSignals.labels) {
-    if (labels.includes(label)) {
-      signals.push(`label:${label}`);
-    }
-  }
-  for (const reviewer of requestedReviewers) {
-    if (configuredReviewerHandoffUsers.has(normalizedLogin(reviewer))) {
-      signals.push(`reviewer:${reviewer}`);
-      testers.push(reviewer);
-    }
-  }
-  for (const assignee of assignees) {
-    if (configuredAssigneeHandoffUsers.has(normalizedLogin(assignee))) {
-      signals.push(`assignee:${assignee}`);
-      testers.push(assignee);
-    }
-  }
-  if (commentEvidence?.isComplete) {
-    for (const signal of profile.testing.handoffSignals.comments) {
-      const normalizedSignal = signal.trim().toLowerCase();
-      if (!normalizedSignal) {
-        continue;
-      }
-      const matched = commentEvidence.comments.some((comment) => comment.body.toLowerCase().includes(normalizedSignal));
-      if (matched) {
-        signals.push(`comment:${signal}`);
-      }
-    }
-  }
-
-  if (signals.length === 0) {
-    return {
-      state: "not_ready",
-      testers: [],
-      signals: [],
-      queueAgeHours: null
-    };
-  }
-
-  let state: TestingFlowState = "test_requested";
-  const reviewDecision = normalizeState(insight?.reviewDecision);
-  const latestReviewState = normalizeState(insight?.latestReviewState);
-  if (reviewDecision === "changes_requested" || latestReviewState === "changes_requested") {
-    state = "test_changes_requested";
-  } else if (reviewDecision === "approved" || latestReviewState === "approved") {
-    state = "test_passed";
-  }
-
   return {
-    state,
-    testers: unique(testers),
-    signals: unique(signals),
-    queueAgeHours:
-      state === "test_passed" ? null : hoursBetween(pr.updated_at ?? pr.created_at ?? new Date().toISOString())
+    state: "not_ready",
+    testers: [],
+    signals: [],
+    queueAgeHours: null
   };
 }
 
@@ -402,7 +327,7 @@ export function normalizePullRequest(
     ...(insight?.linkedIssueNumbers ?? []),
     ...extractLinkedIssueNumbers(`${pr.title ?? ""}\n${pr.body ?? ""}`)
   ]);
-  const testingFlow = deriveTestingFlow(profile, pr, labels, assignees, requestedReviewers, insight, commentEvidence);
+  const testingFlow = deriveTestingFlow(pr);
   const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
   const lastHumanActionAt = insight
     ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt)

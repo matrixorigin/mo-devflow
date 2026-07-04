@@ -280,26 +280,8 @@ export function recentTestingTransitionsForProfile(
 }
 
 function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): boolean {
-  if ((profile.testing.handoffScope ?? "issue") === "issue") {
-    const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
-    return Boolean(issueAssignee && normalizedLoginSet(profile.people.testers).has(normalizedLogin(issueAssignee[1])));
-  }
-
-  if (signal.startsWith("label:")) {
-    return profile.testing.handoffSignals.labels.includes(signal.slice("label:".length));
-  }
-  if (signal.startsWith("reviewer:")) {
-    const reviewers = normalizedLoginSet(profile.testing.handoffSignals.reviewerUsers);
-    return reviewers.has(normalizedLogin(signal.slice("reviewer:".length)));
-  }
-  if (signal.startsWith("assignee:")) {
-    const assignees = normalizedLoginSet(profile.testing.handoffSignals.assigneeUsers);
-    return assignees.has(normalizedLogin(signal.slice("assignee:".length)));
-  }
-  if (signal.startsWith("comment:")) {
-    return profile.testing.handoffSignals.comments.includes(signal.slice("comment:".length));
-  }
-  return false;
+  const issueAssignee = signal.match(/^issue_assignee:#\d+:(.+)$/);
+  return Boolean(issueAssignee && normalizedLoginSet(profile.people.testers).has(normalizedLogin(issueAssignee[1])));
 }
 
 type TestingTurnoverMetrics = Pick<
@@ -570,11 +552,6 @@ const criticalOwnerScopeRank: Record<CriticalIssueOwnerScope, number> = {
   watched: 2
 };
 
-export interface TestingReviewerCandidate {
-  login: string;
-  openPrs: number;
-}
-
 export interface NotificationEmployeeMappingCandidate {
   login: string;
   attentionItems: number;
@@ -644,47 +621,8 @@ export function criticalIssueOwnerCoverage(
     });
 }
 
-export function testingReviewerCoverage(
-  pullRequests: Array<{ requestedReviewers: string[] }>
-): TestingReviewerCandidate[] {
-  const reviewers = new Map<string, { login: string; openPrs: number }>();
-
-  for (const pullRequest of pullRequests) {
-    const seenInPullRequest = new Set<string>();
-    for (const reviewer of pullRequest.requestedReviewers) {
-      const key = normalizedLogin(reviewer);
-      if (!key || seenInPullRequest.has(key)) {
-        continue;
-      }
-      seenInPullRequest.add(key);
-      const existing = reviewers.get(key);
-      if (existing) {
-        existing.openPrs += 1;
-      } else {
-        reviewers.set(key, { login: reviewer, openPrs: 1 });
-      }
-    }
-  }
-
-  return Array.from(reviewers.values()).sort((left, right) => {
-    if (right.openPrs !== left.openPrs) {
-      return right.openPrs - left.openPrs;
-    }
-    return left.login.localeCompare(right.login);
-  });
-}
-
 function hasTestingHandoffSignal(profile: RepoProfile): boolean {
-  if ((profile.testing.handoffScope ?? "issue") === "issue") {
-    return profile.people.testers.length > 0;
-  }
-  const handoffSignals = profile.testing.handoffSignals;
-  return (
-    handoffSignals.labels.length > 0 ||
-    handoffSignals.reviewerUsers.length > 0 ||
-    handoffSignals.assigneeUsers.length > 0 ||
-    handoffSignals.comments.length > 0
-  );
+  return profile.people.testers.length > 0;
 }
 
 const attentionSeverityRank: Record<AttentionSeverity, number> = {
@@ -767,7 +705,6 @@ export function notificationEmployeeMappingCandidates(
 export function profileActionSuggestions(
   profile: RepoProfile,
   criticalOwnerCoverage: CriticalOwnerCoverageView[],
-  testingReviewerCandidates: TestingReviewerCandidate[],
   notificationMappingCandidates: NotificationEmployeeMappingCandidate[]
 ): ProfileActionSuggestion[] {
   const suggestions: ProfileActionSuggestion[] = [];
@@ -788,38 +725,6 @@ export function profileActionSuggestions(
       action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
       relatedLogins: candidateLogins,
       yamlSnippet: `people:\n  watched_users:\n${candidateLogins.map((login) => `    - ${login}`).join("\n")}`
-    });
-  }
-
-  const configuredTestingLogins = normalizedLoginSet([
-    ...profile.people.testers,
-    ...profile.testing.handoffSignals.reviewerUsers,
-    ...profile.testing.handoffSignals.assigneeUsers
-  ]);
-  const testingReviewerLogins = testingReviewerCandidates
-    .filter(
-      (candidate) =>
-        !configuredTestingLogins.has(normalizedLogin(candidate.login)) && !skipped.has(normalizedLogin(candidate.login))
-    )
-    .map((candidate) => candidate.login)
-    .slice(0, 12);
-  if (
-    (profile.testing.handoffScope ?? "issue") === "pull_request" &&
-    !hasTestingHandoffSignal(profile) &&
-    testingReviewerLogins.length > 0
-  ) {
-    suggestions.push({
-      key: "profile:testing_reviewer_candidates",
-      severity: "warning",
-      title: "Testing reviewer candidates found",
-      description: `${testingReviewerLogins.length} requested reviewers appear on open PRs while testing handoff is not configured.`,
-      action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
-      relatedLogins: testingReviewerLogins,
-      yamlSnippet: `people:\n  testers:\n${testingReviewerLogins
-        .map((login) => `    - ${login}`)
-        .join(
-          "\n"
-        )}\ntesting:\n  handoff_signals:\n    reviewer_users:\n${testingReviewerLogins.map((login) => `      - ${login}`).join("\n")}`
     });
   }
 
@@ -871,7 +776,6 @@ function yamlList(values: string[], indent: string): string[] {
 
 export function profileSetupPlan(profile: RepoProfile, actions: ProfileActionSuggestion[]): ProfileSetupPlan {
   const watchedUsers = uniqueLogins(actionLogins(actions, "profile:watched_users_candidates"));
-  const testingReviewers = uniqueLogins(actionLogins(actions, "profile:testing_reviewer_candidates"));
   const notificationLogins = uniqueLogins(actionLogins(actions, "profile:notification_employee_mapping_candidates"));
   const missingCapabilities: ProfileSetupCapability[] = [];
   const patchLines: string[] = [];
@@ -879,24 +783,15 @@ export function profileSetupPlan(profile: RepoProfile, actions: ProfileActionSug
   if (watchedUsers.length > 0) {
     missingCapabilities.push("watched_users");
   }
-  if (testingReviewers.length > 0) {
-    missingCapabilities.push("testing_handoff");
-  }
   if (notificationLogins.length > 0) {
     missingCapabilities.push("notification_employees");
   }
 
-  if (watchedUsers.length > 0 || testingReviewers.length > 0) {
+  if (watchedUsers.length > 0) {
     patchLines.push("people:");
     if (watchedUsers.length > 0) {
       patchLines.push("  watched_users:", ...yamlList(watchedUsers, "    "));
     }
-    if (testingReviewers.length > 0) {
-      patchLines.push("  testers:", ...yamlList(testingReviewers, "    "));
-    }
-  }
-  if (testingReviewers.length > 0) {
-    patchLines.push("testing:", "  handoff_signals:", "    reviewer_users:", ...yamlList(testingReviewers, "      "));
   }
   if (notificationLogins.length > 0) {
     patchLines.push("notifications:", "  employees:");
@@ -908,7 +803,7 @@ export function profileSetupPlan(profile: RepoProfile, actions: ProfileActionSug
   return {
     status: missingCapabilities.length > 0 ? "action_required" : "complete",
     missingCapabilities,
-    candidateLogins: uniqueLogins([...watchedUsers, ...testingReviewers, ...notificationLogins]),
+    candidateLogins: uniqueLogins([...watchedUsers, ...notificationLogins]),
     yamlPatch: patchLines.length > 0 ? patchLines.join("\n") : null
   };
 }
@@ -931,17 +826,13 @@ export function profileConfigurationWarnings(input: {
   }
 
   if (!hasTestingHandoffSignal(profile)) {
-    const issueScoped = (profile.testing.handoffScope ?? "issue") === "issue";
     warnings.push({
       key: "profile:testing_handoff_unconfigured",
       severity: "warning",
       title: "Testing handoff rules are not configured",
-      description: issueScoped
-        ? "Testing queue and tester turnover views cannot reflect the real workflow until people.testers is configured. Issue assignees matching those testers are treated as sent to test."
-        : "Testing queue and tester turnover views cannot reflect the real workflow until a PR handoff label, reviewer, assignee, or comment signal is configured.",
-      action: issueScoped
-        ? "Configure people.testers for the repo workflow."
-        : "Configure testing.handoff_signals and people.testers for the repo workflow."
+      description:
+        "Testing queue and tester turnover views cannot reflect the real workflow until people.testers is configured. Issue assignees matching those testers are treated as sent to test.",
+      action: "Configure people.testers for the repo workflow."
     });
   }
 
@@ -4034,11 +3925,6 @@ export async function getDashboardSummary(
   });
   const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
   const criticalOwnerCoverage = criticalIssueOwnerCoverage(criticalIssues);
-  const testingReviewerCandidates = testingReviewerCoverage(
-    allPrRows.map((row) => ({
-      requestedReviewers: parseJsonArray(asString(row.requested_reviewers_json))
-    }))
-  );
   const notificationMappingCandidates = notificationEmployeeMappingCandidates(profile, [
     ...attentionItemRows.map((row) => ({
       relatedLogin: row.related_login ? asString(row.related_login) : null,
@@ -4063,12 +3949,7 @@ export async function getDashboardSummary(
   const oldestCacheAgeHours = oldestSyncedAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestSyncedAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
-  const profileActions = profileActionSuggestions(
-    profile,
-    criticalOwnerCoverage,
-    testingReviewerCandidates,
-    notificationMappingCandidates
-  );
+  const profileActions = profileActionSuggestions(profile, criticalOwnerCoverage, notificationMappingCandidates);
 
   return {
     repo: {

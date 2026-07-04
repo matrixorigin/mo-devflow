@@ -482,14 +482,14 @@ describe("rules", () => {
     expect(criticalAttentionForIssue(profile, issue)).toEqual([]);
   });
 
-  test("testing flow detects configured tester reviewer handoff", () => {
+  test("testing flow ignores configured PR reviewer handoff", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
         people: { ...profile.people, testers: ["tester-a"] },
         testing: {
           ...profile.testing,
-          handoffScope: "pull_request",
+          handoffScope: "issue",
           handoffSignals: {
             ...profile.testing.handoffSignals,
             reviewerUsers: ["tester-a"]
@@ -512,10 +512,10 @@ describe("rules", () => {
       anonymousSource
     );
 
-    expect(pr.testingState).toBe("test_requested");
-    expect(pr.testingTesters).toEqual(["tester-a"]);
-    expect(pr.testingSignals).toContain("reviewer:tester-a");
-    expect(pr.testingQueueAgeHours).not.toBeNull();
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingTesters).toEqual([]);
+    expect(pr.testingSignals).toEqual([]);
+    expect(pr.testingQueueAgeHours).toBeNull();
   });
 
   test("pull-request scoped testing does not treat every configured tester review request as handoff", () => {
@@ -523,7 +523,7 @@ describe("rules", () => {
       {
         ...profile,
         people: { ...profile.people, testers: ["tester-a"] },
-        testing: { ...profile.testing, handoffScope: "pull_request" }
+        testing: { ...profile.testing, handoffScope: "issue" }
       },
       {
         id: 12,
@@ -574,7 +574,7 @@ describe("rules", () => {
     expect(pr.testingQueueAgeHours).toBeNull();
   });
 
-  test("testing handoff that exceeds attention threshold is flagged as stalled", () => {
+  test("stale PR reviewer handoff does not produce testing stalled attention", () => {
     const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const pr = normalizePullRequest(
       {
@@ -582,7 +582,7 @@ describe("rules", () => {
         people: { ...profile.people, testers: ["tester-a"] },
         testing: {
           ...profile.testing,
-          handoffScope: "pull_request",
+          handoffScope: "issue",
           handoffSignals: {
             ...profile.testing.handoffSignals,
             reviewerUsers: ["tester-a"]
@@ -605,12 +605,12 @@ describe("rules", () => {
       anonymousSource
     );
 
-    expect(pr.testingState).toBe("test_requested");
-    expect(pr.testingQueueAgeHours).toBeGreaterThanOrEqual(profile.thresholds.prNoActionAttentionHours);
-    expect(pr.attentionFlags).toContain("testing_stalled");
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingQueueAgeHours).toBeNull();
+    expect(pr.attentionFlags).not.toContain("testing_stalled");
   });
 
-  test("testing handoff that has passed does not produce a testing stalled flag", () => {
+  test("PR approval does not produce a testing pass state", () => {
     const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const now = new Date().toISOString();
     const pr = normalizePullRequest(
@@ -619,7 +619,7 @@ describe("rules", () => {
         people: { ...profile.people, testers: ["tester-a"] },
         testing: {
           ...profile.testing,
-          handoffScope: "pull_request",
+          handoffScope: "issue",
           handoffSignals: {
             ...profile.testing.handoffSignals,
             reviewerUsers: ["tester-a"]
@@ -654,17 +654,17 @@ describe("rules", () => {
       }
     );
 
-    expect(pr.testingState).toBe("test_passed");
+    expect(pr.testingState).toBe("not_ready");
     expect(pr.testingQueueAgeHours).toBeNull();
     expect(pr.attentionFlags).not.toContain("testing_stalled");
   });
 
-  test("testing flow supports label and assignee handoff signals", () => {
+  test("testing flow ignores PR label and assignee handoff signals", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
         testing: {
-          handoffScope: "pull_request",
+          handoffScope: "issue",
           handoffSignals: {
             labels: ["testing/requested"],
             reviewerUsers: [],
@@ -690,17 +690,17 @@ describe("rules", () => {
       anonymousSource
     );
 
-    expect(pr.testingState).toBe("test_requested");
-    expect(pr.testingTesters).toEqual(["qa-owner"]);
-    expect(pr.testingSignals).toEqual(expect.arrayContaining(["label:testing/requested", "assignee:qa-owner"]));
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingTesters).toEqual([]);
+    expect(pr.testingSignals).toEqual([]);
   });
 
-  test("testing flow supports configured comment handoff signals", () => {
+  test("testing flow ignores configured PR comment handoff signals", () => {
     const pr = normalizePullRequest(
       {
         ...profile,
         testing: {
-          handoffScope: "pull_request",
+          handoffScope: "issue",
           handoffSignals: {
             labels: [],
             reviewerUsers: [],
@@ -738,8 +738,8 @@ describe("rules", () => {
       }
     );
 
-    expect(pr.testingState).toBe("test_requested");
-    expect(pr.testingSignals).toContain("comment:ready for testing");
+    expect(pr.testingState).toBe("not_ready");
+    expect(pr.testingSignals).toEqual([]);
     expect(pr.lastHumanActionAt).toBe("2026-07-02T00:30:00Z");
   });
 
@@ -851,13 +851,13 @@ describe("rules", () => {
     expect(aiDriftSignalsForPullRequest(profile, pr)).toEqual([]);
   });
 
-  test("testing flow reflects requested changes, approval, and close states", () => {
+  test("testing flow ignores PR review states and still reflects closed PRs", () => {
     const testProfile = {
       ...profile,
       people: { ...profile.people, testers: ["tester-a"] },
       testing: {
         ...profile.testing,
-        handoffScope: "pull_request" as const,
+        handoffScope: "issue" as const,
         handoffSignals: {
           ...profile.testing.handoffSignals,
           reviewerUsers: ["tester-a"]
@@ -905,8 +905,8 @@ describe("rules", () => {
     });
     const closed = normalizePullRequest(testProfile, { ...basePr, state: "closed", closed_at: now }, anonymousSource);
 
-    expect(changesRequested.testingState).toBe("test_changes_requested");
-    expect(approved.testingState).toBe("test_passed");
+    expect(changesRequested.testingState).toBe("not_ready");
+    expect(approved.testingState).toBe("not_ready");
     expect(closed.testingState).toBe("closed_or_merged");
   });
 

@@ -32,7 +32,6 @@ import {
   testingTurnoverMetricsFromTransitions,
   testingTransitionBelongsToProfile,
   testingTransitionViewFromRow,
-  testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
 import { workflowFixOperationsFromJson, writeActionExecutionViewFromRow } from "./writeActions";
@@ -421,19 +420,6 @@ describe("critical issue ownership counts", () => {
 });
 
 describe("profile configuration guidance", () => {
-  test("summarizes testing reviewer candidates from open pull requests", () => {
-    expect(
-      testingReviewerCoverage([
-        { requestedReviewers: ["qa-a", "qa-b", "QA-A"] },
-        { requestedReviewers: ["qa-b"] },
-        { requestedReviewers: [""] }
-      ])
-    ).toEqual([
-      { login: "qa-b", openPrs: 2 },
-      { login: "qa-a", openPrs: 1 }
-    ]);
-  });
-
   test("suggests watched users from non-watched critical owners", () => {
     expect(
       profileActionSuggestions(
@@ -456,7 +442,6 @@ describe("profile configuration guidance", () => {
           },
           { ownerLogin: "carol", ownerScope: "watched", workflowSkipped: false, criticalIssues: 4, averageAgeHours: 6 }
         ],
-        [],
         []
       )
     ).toEqual([
@@ -476,7 +461,7 @@ describe("profile configuration guidance", () => {
     const actions = profileActionSuggestions(
       {
         ...baseProfile,
-        testing: { ...baseProfile.testing, handoffScope: "pull_request" },
+        testing: { ...baseProfile.testing, handoffScope: "issue" },
         notifications: {
           ...baseProfile.notifications,
           wecom: { enabled: false, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
@@ -499,10 +484,6 @@ describe("profile configuration guidance", () => {
         }
       ],
       [
-        { login: "qa-a", openPrs: 8 },
-        { login: "qa-b", openPrs: 4 }
-      ],
-      [
         { login: "alice", attentionItems: 3, highestSeverity: "critical" },
         { login: "qa-a", attentionItems: 1, highestSeverity: "warning" }
       ]
@@ -510,21 +491,13 @@ describe("profile configuration guidance", () => {
 
     expect(profileSetupPlan(baseProfile, actions)).toEqual({
       status: "action_required",
-      missingCapabilities: ["watched_users", "testing_handoff", "notification_employees"],
-      candidateLogins: ["alice", "bob", "qa-a", "qa-b"],
+      missingCapabilities: ["watched_users", "notification_employees"],
+      candidateLogins: ["alice", "bob", "qa-a"],
       yamlPatch:
         "people:\n" +
         "  watched_users:\n" +
         "    - alice\n" +
         "    - bob\n" +
-        "  testers:\n" +
-        "    - qa-a\n" +
-        "    - qa-b\n" +
-        "testing:\n" +
-        "  handoff_signals:\n" +
-        "    reviewer_users:\n" +
-        "      - qa-a\n" +
-        "      - qa-b\n" +
         "notifications:\n" +
         "  employees:\n" +
         "    alice:\n" +
@@ -562,7 +535,7 @@ describe("profile configuration guidance", () => {
   test("excludes workflow skip users from configuration suggestions", () => {
     const profile = {
       ...baseProfile,
-      testing: { ...baseProfile.testing, handoffScope: "pull_request" as const },
+      testing: { ...baseProfile.testing, handoffScope: "issue" as const },
       workflow: { skipUsers: ["skip-me", "qa-skip"] },
       notifications: {
         ...baseProfile.notifications,
@@ -590,10 +563,6 @@ describe("profile configuration guidance", () => {
           }
         ],
         [
-          { login: "qa-skip", openPrs: 8 },
-          { login: "qa-a", openPrs: 4 }
-        ],
-        [
           { login: "skip-me", attentionItems: 3, highestSeverity: "critical" },
           { login: "alice", attentionItems: 1, highestSeverity: "warning" }
         ]
@@ -607,15 +576,6 @@ describe("profile configuration guidance", () => {
         action: "Review and add confirmed GitHub logins under people.watched_users in the active repo profile.",
         relatedLogins: ["alice"],
         yamlSnippet: "people:\n  watched_users:\n    - alice"
-      },
-      {
-        key: "profile:testing_reviewer_candidates",
-        severity: "warning",
-        title: "Testing reviewer candidates found",
-        description: "1 requested reviewers appear on open PRs while testing handoff is not configured.",
-        action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
-        relatedLogins: ["qa-a"],
-        yamlSnippet: "people:\n  testers:\n    - qa-a\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a"
       },
       {
         key: "profile:notification_employee_mapping_candidates",
@@ -638,58 +598,6 @@ describe("profile configuration guidance", () => {
         [
           { ownerLogin: null, ownerScope: "unowned", workflowSkipped: false, criticalIssues: 3, averageAgeHours: 12 },
           { ownerLogin: "alice", ownerScope: "watched", workflowSkipped: false, criticalIssues: 5, averageAgeHours: 8 }
-        ],
-        [],
-        []
-      )
-    ).toEqual([]);
-  });
-
-  test("suggests testing reviewers when testing handoff is unconfigured", () => {
-    expect(
-      profileActionSuggestions(
-        { ...baseProfile, testing: { ...baseProfile.testing, handoffScope: "pull_request" } },
-        [],
-        [
-          { login: "qa-a", openPrs: 8 },
-          { login: "qa-b", openPrs: 4 }
-        ],
-        []
-      )
-    ).toEqual([
-      {
-        key: "profile:testing_reviewer_candidates",
-        severity: "warning",
-        title: "Testing reviewer candidates found",
-        description: "2 requested reviewers appear on open PRs while testing handoff is not configured.",
-        action: "Review and add confirmed testers under people.testers and testing.handoff_signals.reviewer_users.",
-        relatedLogins: ["qa-a", "qa-b"],
-        yamlSnippet:
-          "people:\n  testers:\n    - qa-a\n    - qa-b\ntesting:\n  handoff_signals:\n    reviewer_users:\n      - qa-a\n      - qa-b"
-      }
-    ]);
-  });
-
-  test("does not suggest already configured testing reviewers", () => {
-    expect(
-      profileActionSuggestions(
-        {
-          ...baseProfile,
-          people: { watchedUsers: [], testers: ["qa-a"] },
-          testing: {
-            handoffScope: "pull_request",
-            handoffSignals: {
-              labels: [],
-              reviewerUsers: ["qa-b"],
-              assigneeUsers: [],
-              comments: []
-            }
-          }
-        },
-        [],
-        [
-          { login: "qa-a", openPrs: 8 },
-          { login: "qa-b", openPrs: 4 }
         ],
         []
       )
@@ -734,7 +642,6 @@ describe("profile configuration guidance", () => {
             wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
           }
         },
-        [],
         [],
         [
           { login: "Bob", attentionItems: 2, highestSeverity: "critical" },
@@ -956,7 +863,7 @@ describe("pull request testing transition events", () => {
     baseRef: "main",
     labels: [],
     assignees: [],
-    requestedReviewers: ["tester-a"],
+    requestedReviewers: [],
     ageHours: 48,
     lastHumanActionAt: "2026-07-02T08:00:00.000Z",
     lastSystemActionAt: null,
@@ -970,7 +877,7 @@ describe("pull request testing transition events", () => {
     detailError: null,
     testingState: "test_requested",
     testingTesters: ["tester-a"],
-    testingSignals: ["reviewer:tester-a"],
+    testingSignals: ["issue_assignee:#42:tester-a"],
     testingQueueAgeHours: 16,
     attentionFlags: [],
     linkedIssueNumbers: [42],
@@ -994,7 +901,7 @@ describe("pull request testing transition events", () => {
       fromState: "not_ready",
       toState: "test_requested",
       testingTesters: ["tester-a"],
-      testingSignals: ["reviewer:tester-a"],
+      testingSignals: ["issue_assignee:#42:tester-a"],
       occurredAt: "2026-07-02T08:00:00.000Z",
       sourceCompleteness: "complete_cache",
       sourceAuthType: "service_read_token",
@@ -1125,7 +1032,7 @@ describe("pull request testing transition events", () => {
         from_state: "test_requested",
         to_state: "test_passed",
         testing_testers_json: JSON.stringify(["tester-a"]),
-        testing_signals_json: JSON.stringify(["review:APPROVED", "reviewer:tester-a"]),
+        testing_signals_json: JSON.stringify(["issue_assignee:#42:tester-a"]),
         occurred_at: "2026-07-03 02:00:00",
         source_completeness: "complete_cache"
       })
@@ -1135,7 +1042,7 @@ describe("pull request testing transition events", () => {
       fromState: "test_requested",
       toState: "test_passed",
       testingTesters: ["tester-a"],
-      testingSignals: ["review:APPROVED", "reviewer:tester-a"],
+      testingSignals: ["issue_assignee:#42:tester-a"],
       occurredAt: "2026-07-03T02:00:00Z",
       sourceCompleteness: "complete_cache"
     });
@@ -1164,7 +1071,7 @@ describe("pull request testing transition events", () => {
       ...issueScopedProfile,
       testing: {
         ...baseProfile.testing,
-        handoffScope: "pull_request",
+        handoffScope: "issue",
         handoffSignals: baseProfile.testing.handoffSignals
       }
     };
@@ -1182,7 +1089,7 @@ describe("pull request testing transition events", () => {
     expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
     expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
     expect(testingTransitionBelongsToProfile(pullRequestScopedProfile, reviewerTransition)).toBe(false);
-    expect(testingTransitionBelongsToProfile(explicitReviewerProfile, reviewerTransition)).toBe(true);
+    expect(testingTransitionBelongsToProfile(explicitReviewerProfile, reviewerTransition)).toBe(false);
   });
 
   test("selects recent testing transitions after filtering by current workflow", () => {
@@ -1224,7 +1131,7 @@ describe("pull request testing transition events", () => {
         fromState: "not_ready",
         toState: "test_requested",
         testingTesters: ["tester-a"],
-        testingSignals: ["reviewer:tester-a"],
+        testingSignals: ["issue_assignee:#42:tester-a"],
         occurredAt: "2026-07-01T00:00:00.000Z",
         sourceCompleteness: "complete_cache"
       },
@@ -1234,7 +1141,7 @@ describe("pull request testing transition events", () => {
         fromState: "test_requested",
         toState: "test_passed",
         testingTesters: ["tester-a"],
-        testingSignals: ["review:APPROVED"],
+        testingSignals: ["issue_assignee:#42:tester-a"],
         occurredAt: "2026-07-02T12:00:00.000Z",
         sourceCompleteness: "complete_cache"
       },
@@ -1254,7 +1161,7 @@ describe("pull request testing transition events", () => {
         fromState: "not_ready",
         toState: "test_requested",
         testingTesters: ["tester-b"],
-        testingSignals: ["reviewer:tester-b"],
+        testingSignals: ["issue_assignee:#43:tester-b"],
         occurredAt: "2026-07-01T00:00:00.000Z",
         sourceCompleteness: "partial_cache"
       },
@@ -1264,7 +1171,7 @@ describe("pull request testing transition events", () => {
         fromState: "not_ready",
         toState: "test_requested",
         testingTesters: ["tester-c"],
-        testingSignals: ["reviewer:tester-c"],
+        testingSignals: ["issue_assignee:#44:tester-c"],
         occurredAt: "2026-07-01T08:00:00.000Z",
         sourceCompleteness: "partial_cache"
       },

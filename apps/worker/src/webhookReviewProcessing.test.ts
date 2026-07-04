@@ -121,8 +121,8 @@ const profile: RepoProfile = {
     aiEasyCriticalCriticalDays: 14
   },
   testing: {
-    handoffScope: "pull_request",
-    handoffSignals: { labels: [], reviewerUsers: ["tester-a"], assigneeUsers: [], comments: [] }
+    handoffScope: "issue",
+    handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: [], comments: [] }
   },
   workflow: {
     skipUsers: []
@@ -357,7 +357,7 @@ describe("webhook review processing", () => {
         number: 42,
         reviewDecision: "changes_requested",
         latestReviewState: "changes_requested",
-        testingState: "test_changes_requested",
+        testingState: "not_ready",
         isComplete: true,
         attentionFlags: expect.arrayContaining(["requested_changes"])
       })
@@ -470,13 +470,13 @@ describe("webhook review processing", () => {
     );
   });
 
-  test("refreshes PR comments from issue_comment webhooks before deriving testing handoff", async () => {
+  test("refreshes PR comments from issue_comment webhooks without deriving testing handoff", async () => {
     const { processWebhookPayload } = await import("./sync");
     const now = "2026-07-04T00:00:00.000Z";
     const commentProfile: RepoProfile = {
       ...profile,
       testing: {
-        handoffScope: "pull_request",
+        handoffScope: "issue",
         handoffSignals: {
           labels: [],
           reviewerUsers: [],
@@ -578,8 +578,8 @@ describe("webhook review processing", () => {
       10,
       expect.objectContaining({
         number: 45,
-        testingState: "test_requested",
-        testingSignals: ["comment:ready for testing"]
+        testingState: "not_ready",
+        testingSignals: []
       })
     );
   });
