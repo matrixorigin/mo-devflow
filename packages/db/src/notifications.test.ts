@@ -7,7 +7,8 @@ import {
   dailyDigestMetricDate,
   notificationDeliveryVisibilityWhereSql,
   notificationSourceObjectVisibilityWhereSql,
-  notificationRecipient
+  notificationRecipient,
+  notificationRecipientScope
 } from "./notifications";
 
 const profile: RepoProfile = {
@@ -180,5 +181,10 @@ describe("notification recipient routing", () => {
   test("uses the configured fallback recipient when mapping is missing", () => {
     expect(notificationRecipient(profile, "missing-user")).toBe("maintainer_group");
     expect(notificationRecipient(profile, null)).toBe("maintainer_group");
+  });
+
+  test("classifies delivery recipient scope for dashboard display", () => {
+    expect(notificationRecipientScope(profile, "maintainer_group")).toBe("fallback");
+    expect(notificationRecipientScope(profile, "alice-wecom")).toBe("mapped_employee");
   });
 });

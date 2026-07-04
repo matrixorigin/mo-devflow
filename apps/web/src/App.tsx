@@ -34,6 +34,7 @@ import type {
   MetricPeriod,
   NotificationDeliveryView,
   NotificationStatus,
+  NotificationTraceView,
   PendingPrView,
   PersonalActionView,
   PersonalIssueView,
@@ -257,6 +258,45 @@ function notificationStatusColor(value: NotificationStatus): string {
     return "orange";
   }
   return "default";
+}
+
+function NotificationTraceTag({ notification }: { notification: NotificationTraceView }) {
+  if (!notification.status) {
+    return <Tag color="default">not sent</Tag>;
+  }
+  const statusTag = <Tag color={notificationStatusColor(notification.status)}>{labelText(notification.status)}</Tag>;
+  const routeTag = notification.recipientScope ? <Tag>{labelText(notification.recipientScope)}</Tag> : null;
+  const attempted = notification.attemptedAt ? formatDate(notification.attemptedAt) : null;
+  if (notification.acknowledgedAt) {
+    return (
+      <Tooltip title={`Sent ${attempted ?? "-"}; acknowledged by ${notification.acknowledgedBy ?? "unknown"}`}>
+        <Space size={[4, 4]} wrap>
+          {statusTag}
+          {routeTag}
+          <Tag color="green">ack {formatDate(notification.acknowledgedAt)}</Tag>
+        </Space>
+      </Tooltip>
+    );
+  }
+  if (notificationStatusRequiresAcknowledgement(notification.status)) {
+    return (
+      <Tooltip title={`Sent ${attempted ?? "-"}; acknowledgement pending`}>
+        <Space size={[4, 4]} wrap>
+          {statusTag}
+          {routeTag}
+          <Tag color="orange">unacknowledged</Tag>
+        </Space>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip title={attempted ? `Attempted ${attempted}` : undefined}>
+      <Space size={[4, 4]} wrap>
+        {statusTag}
+        {routeTag}
+      </Space>
+    </Tooltip>
+  );
 }
 
 function workerStatusColor(value: DashboardSummary["sync"]["worker"]["status"]): string {
@@ -1109,6 +1149,11 @@ export default function App() {
         render: (login) => (login ? <Tag>{login}</Tag> : <Tag color="red">unowned</Tag>)
       },
       {
+        title: "Notification",
+        width: 220,
+        render: (_, violation) => <NotificationTraceTag notification={violation.notification} />
+      },
+      {
         title: "Evidence",
         dataIndex: "evidenceSummary",
         width: 320,
@@ -1208,6 +1253,11 @@ export default function App() {
         dataIndex: "aiEffortLabel",
         width: 128,
         render: (label) => (label ? <Tag color="blue">{label}</Tag> : <Tag color="orange">missing</Tag>)
+      },
+      {
+        title: "Notification",
+        width: 220,
+        render: (_, signal) => <NotificationTraceTag notification={signal.notification} />
       },
       {
         title: "Elapsed",
@@ -2032,7 +2082,7 @@ export default function App() {
                   size="middle"
                   columns={driftColumns}
                   dataSource={data.aiDriftSignals}
-                  scroll={{ x: 1480 }}
+                  scroll={{ x: 1700 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No active AI drift signals in cache" /> }}
                 />
@@ -2053,7 +2103,7 @@ export default function App() {
                   size="middle"
                   columns={violationColumns}
                   dataSource={data.workflowViolations}
-                  scroll={{ x: 1360 }}
+                  scroll={{ x: 1580 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No active workflow violations in cache" /> }}
                 />

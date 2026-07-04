@@ -6,7 +6,7 @@ import type {
   WorkflowFixPreview,
   WorkflowViolationView
 } from "@mo-devflow/shared";
-import { parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
+import { emptyNotificationTrace, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
 import { dashboardVisibilityFilter, type DashboardViewer } from "./visibility";
@@ -140,7 +140,8 @@ export async function getActiveWorkflowViolation(input: {
     suggestedAction: asString(row.suggested_action),
     fixable: asNumber(row.fixable) === 1,
     firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
-    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
+    notification: emptyNotificationTrace()
   };
 }
 

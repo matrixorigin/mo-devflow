@@ -355,6 +355,7 @@ export interface WorkflowViolation {
 export interface WorkflowViolationView extends WorkflowViolation {
   firstDetectedAt: string;
   lastDetectedAt: string;
+  notification: NotificationTraceView;
 }
 
 export type WorkflowFixActionKey = "add_needs_triage" | "move_to_deferred";
@@ -445,6 +446,7 @@ export interface AiDriftSignal {
 export interface AiDriftSignalView extends AiDriftSignal {
   firstDetectedAt: string;
   lastDetectedAt: string;
+  notification: NotificationTraceView;
 }
 
 export type DailyMetricScopeType = "team" | "person";
@@ -492,6 +494,26 @@ export type NotificationStatus =
   | "skipped_no_webhook"
   | "skipped_quiet_hours";
 
+export type NotificationRecipientScope = "fallback" | "mapped_employee";
+
+export interface NotificationTraceView {
+  status: NotificationStatus | null;
+  recipientScope: NotificationRecipientScope | null;
+  attemptedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+}
+
+export function emptyNotificationTrace(): NotificationTraceView {
+  return {
+    status: null,
+    recipientScope: null,
+    attemptedAt: null,
+    acknowledgedAt: null,
+    acknowledgedBy: null
+  };
+}
+
 export interface NotificationCandidate {
   sourceType: NotificationSourceType;
   sourceId: number;
@@ -515,7 +537,7 @@ export interface NotificationDeliveryView {
   ruleKey: string;
   objectType: string;
   objectNumber: number | null;
-  recipientScope: "fallback" | "mapped_employee";
+  recipientScope: NotificationRecipientScope;
   channel: string;
   status: NotificationStatus;
   errorMessage: string | null;

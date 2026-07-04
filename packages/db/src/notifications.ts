@@ -74,7 +74,10 @@ export function notificationRecipient(profile: RepoProfile, login: string | null
   return profile.notifications.routing.fallbackRecipient;
 }
 
-function recipientScope(profile: RepoProfile, recipient: unknown): NotificationDeliveryView["recipientScope"] {
+export function notificationRecipientScope(
+  profile: RepoProfile,
+  recipient: unknown
+): NotificationDeliveryView["recipientScope"] {
   return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
 }
 
@@ -553,7 +556,7 @@ export async function getNotificationHealth(input: {
     ruleKey: asString(row.rule_key),
     objectType: asString(row.object_type),
     objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
-    recipientScope: recipientScope(input.profile, row.recipient),
+    recipientScope: notificationRecipientScope(input.profile, row.recipient),
     channel: asString(row.channel),
     status: asString(row.status) as NotificationDeliveryView["status"],
     errorMessage: row.error_message ? asString(row.error_message) : null,

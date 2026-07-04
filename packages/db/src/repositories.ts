@@ -14,6 +14,7 @@ import type {
   DashboardSummary,
   NormalizedIssue,
   NormalizedPullRequest,
+  NotificationTraceView,
   PendingPrView,
   PersonalActionView,
   PersonalIssueView,
@@ -34,7 +35,7 @@ import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthL
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth } from "./jobs";
-import { getNotificationHealth } from "./notifications";
+import { getNotificationHealth, notificationRecipientScope } from "./notifications";
 import { addDaysToDateKey, dateKeyInTimezone, previousCalendarDayRange } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 import { getWebhookIngestionHealth } from "./webhooks";
@@ -1377,6 +1378,16 @@ function toPersonalPullRequestView(row: RowData): PersonalPullRequestView {
   };
 }
 
+function notificationTraceFromRow(profile: RepoProfile, row: RowData): NotificationTraceView {
+  return {
+    status: row.notification_status ? (asString(row.notification_status) as NotificationTraceView["status"]) : null,
+    recipientScope: row.notification_recipient ? notificationRecipientScope(profile, row.notification_recipient) : null,
+    attemptedAt: fromSqlDate(row.notification_attempted_at),
+    acknowledgedAt: fromSqlDate(row.notification_acknowledged_at),
+    acknowledgedBy: row.notification_acknowledged_by ? asString(row.notification_acknowledged_by) : null
+  };
+}
+
 function recentDateKeys(days: number, timezone: string): string[] {
   const keys: string[] = [];
   const now = Date.now();
@@ -1745,8 +1756,26 @@ export async function getDashboardSummary(
     [...hiddenPrVisibility.params, repoId]
   );
   const [violationRows] = await pool.execute<RowData[]>(
-    `SELECT v.*
+    `SELECT v.*,
+            vnd.status AS notification_status,
+            vnd.recipient AS notification_recipient,
+            vnd.attempted_at AS notification_attempted_at,
+            vna.acknowledged_at AS notification_acknowledged_at,
+            vna.github_login AS notification_acknowledged_by
      FROM workflow_violations v
+     LEFT JOIN (
+       SELECT nd.*
+       FROM notification_deliveries nd
+       INNER JOIN (
+         SELECT repo_id, source_type, source_id, MAX(id) AS latest_id
+         FROM notification_deliveries
+         WHERE source_type = 'workflow_violation'
+         GROUP BY repo_id, source_type, source_id
+       ) latest ON latest.latest_id = nd.id
+     ) vnd ON vnd.repo_id = v.repo_id
+       AND vnd.source_type = 'workflow_violation'
+       AND vnd.source_id = v.id
+     LEFT JOIN notification_acknowledgements vna ON vna.notification_delivery_id = vnd.id
      WHERE v.repo_id = ? AND v.resolved_at IS NULL
        AND (
          (v.object_type = 'issue' AND EXISTS (
@@ -1796,8 +1825,26 @@ export async function getDashboardSummary(
     [repoId]
   );
   const [driftRows] = await pool.execute<RowData[]>(
-    `SELECT d.*
+    `SELECT d.*,
+            dnd.status AS notification_status,
+            dnd.recipient AS notification_recipient,
+            dnd.attempted_at AS notification_attempted_at,
+            dna.acknowledged_at AS notification_acknowledged_at,
+            dna.github_login AS notification_acknowledged_by
      FROM ai_drift_signals d
+     LEFT JOIN (
+       SELECT nd.*
+       FROM notification_deliveries nd
+       INNER JOIN (
+         SELECT repo_id, source_type, source_id, MAX(id) AS latest_id
+         FROM notification_deliveries
+         WHERE source_type = 'ai_drift_signal'
+         GROUP BY repo_id, source_type, source_id
+       ) latest ON latest.latest_id = nd.id
+     ) dnd ON dnd.repo_id = d.repo_id
+       AND dnd.source_type = 'ai_drift_signal'
+       AND dnd.source_id = d.id
+     LEFT JOIN notification_acknowledgements dna ON dna.notification_delivery_id = dnd.id
      WHERE d.repo_id = ? AND d.resolved_at IS NULL
        AND (
          (d.object_type = 'issue' AND EXISTS (
@@ -1897,7 +1944,8 @@ export async function getDashboardSummary(
     suggestedAction: asString(row.suggested_action),
     fixable: asNumber(row.fixable) === 1,
     firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
-    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
+    notification: notificationTraceFromRow(profile, row)
   }));
 
   const aiDriftSignals: AiDriftSignalView[] = driftRows.map((row) => ({
@@ -1915,7 +1963,8 @@ export async function getDashboardSummary(
     suggestedAction: asString(row.suggested_action),
     sourceCompleteness: asString(row.source_completeness) as AiDriftSignalView["sourceCompleteness"],
     firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
-    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString()
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
+    notification: notificationTraceFromRow(profile, row)
   }));
 
   const people: PersonSummary[] = profile.people.watchedUsers.map((login) => {

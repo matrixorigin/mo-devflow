@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { NormalizedIssue, RepoProfile, WorkflowViolationView } from "@mo-devflow/shared";
+import { emptyNotificationTrace } from "@mo-devflow/shared";
 import { buildWorkflowFixPreview } from "./actions";
 
 const profile: RepoProfile = {
@@ -83,7 +84,8 @@ const violation: WorkflowViolationView = {
   suggestedAction: "Add needs-triage or move it to an explicit lifecycle state.",
   fixable: true,
   firstDetectedAt: "2026-07-03T00:00:00.000Z",
-  lastDetectedAt: "2026-07-03T00:00:00.000Z"
+  lastDetectedAt: "2026-07-03T00:00:00.000Z",
+  notification: emptyNotificationTrace()
 };
 
 describe("workflow fix previews", () => {
