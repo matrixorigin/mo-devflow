@@ -1,7 +1,7 @@
-import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import { getDashboardSummary, getRepoId, getWorkerHealth, migrate, pingDatabase, upsertRepoProfile } from "@mo-devflow/db";
+import { registerApiSecurity } from "./apiSecurity";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
 import { registerNotificationRoutes } from "./notificationRoutes";
@@ -39,10 +39,7 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (request, bo
   }
 });
 
-await app.register(cors, {
-  origin: true,
-  credentials: true
-});
+await registerApiSecurity(app);
 
 await registerAuthRoutes(app);
 await registerActionRoutes(app);

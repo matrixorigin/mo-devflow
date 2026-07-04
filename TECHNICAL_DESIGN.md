@@ -295,6 +295,7 @@ Token requirements:
 - Store encrypted at rest.
 - Never expose to frontend after submission.
 - Never log raw token values.
+- Restrict credentialed browser API access to configured CORS origins.
 - Track which user initiated every write.
 - Show write previews before execution.
 - Validate token scopes or capabilities before enabling write actions.

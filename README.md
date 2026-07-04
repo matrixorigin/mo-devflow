@@ -26,6 +26,12 @@ Default local services:
 - Web: `http://localhost:5173`
 - MatrixOne database: `mo_devflow`
 
+The API only emits credentialed CORS headers for explicit browser origins.
+Local development defaults to `http://localhost:${MO_DEVFLOW_WEB_PORT}` and
+`http://127.0.0.1:${MO_DEVFLOW_WEB_PORT}`. Set
+`MO_DEVFLOW_ALLOWED_ORIGINS` to a comma-separated allowlist for deployed
+frontends; each value must be an origin only, with no path, query, or fragment.
+
 To enable personal GitHub token binding, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY`
 to a 32-byte base64 key, for example `openssl rand -base64 32`.
 
