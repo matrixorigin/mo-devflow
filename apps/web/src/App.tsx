@@ -60,6 +60,7 @@ import {
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
+import { summarizeFreshness } from "./freshness";
 
 const { Header, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
@@ -1587,6 +1588,7 @@ export default function App() {
   const criticalOwnerCoverageRows =
     data ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched").slice(0, 8) : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
+  const freshness = data ? summarizeFreshness(data.sync) : null;
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
@@ -1694,6 +1696,30 @@ export default function App() {
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : data ? (
           <>
+            {freshness ? (
+              <section className="freshness-bar">
+                <Space className="freshness-main" size={[8, 8]} wrap>
+                  <Text strong>Freshness</Text>
+                  <Tag color={freshness.tagColor}>{freshness.label}</Tag>
+                  <Tag>generated {formatDate(data.sync.generatedAt)}</Tag>
+                  <Tag color={freshness.oldestLayerSuccessAt ? "default" : "red"}>
+                    oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
+                  </Tag>
+                  <Tag color={data.sync.staleObjects > 0 ? "orange" : "green"}>{data.sync.staleObjects} stale</Tag>
+                  <Tag color={data.sync.partialObjects > 0 ? "orange" : "green"}>{data.sync.partialObjects} partial</Tag>
+                </Space>
+                <Space className="freshness-layers" size={[4, 4]} wrap>
+                  {data.sync.health.map((item) => (
+                    <Tooltip title={syncHealthTooltip(item)} key={item.layer}>
+                      <Tag color={syncHealthTagColor(item.status)}>
+                        {labelText(item.layer)} {formatDate(item.lastSuccessfulAt)}
+                      </Tag>
+                    </Tooltip>
+                  ))}
+                </Space>
+              </section>
+            ) : null}
+
             {data.sync.staleObjects > 0 ? (
               <Alert
                 className="band"
