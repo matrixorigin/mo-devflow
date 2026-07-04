@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -64,8 +64,31 @@ import { BarChart, LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { BellRing, ClipboardCheck, KeyRound, LogOut, RefreshCcw, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  BellRing,
+  CircleAlert,
+  ClipboardCheck,
+  ExternalLink,
+  GitMerge,
+  GitPullRequest,
+  KeyRound,
+  LogOut,
+  RefreshCcw,
+  RefreshCw,
+  ShieldAlert,
+  TimerReset,
+  UserRound
+} from "lucide-react";
 import { summarizeCacheEvidence, summarizeFreshness } from "./freshness";
+import {
+  criticalIssueReasons,
+  personPrimaryReasons,
+  personWorkloadStatus,
+  personalIssueReasons,
+  prAttentionReasons,
+  sortPeopleByWorkload,
+  type WorkloadStatus
+} from "./workbench";
 
 const { Header, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
@@ -219,6 +242,22 @@ function ownerScopeTooltip(scope: CriticalIssueOwnerScope): string {
 
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function workloadStatusColor(status: WorkloadStatus): string {
+  if (status === "critical") {
+    return "red";
+  }
+  if (status === "attention") {
+    return "orange";
+  }
+  if (status === "triage") {
+    return "gold";
+  }
+  if (status === "active") {
+    return "blue";
+  }
+  return "green";
 }
 
 function capabilityStatusColor(status: GitHubWriteCapability["status"]): string {
@@ -702,6 +741,393 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
   return <div className="chart-canvas" ref={chartRef} />;
 }
 
+function WorkObjectLink({ href, children, icon }: { href: string; children: ReactNode; icon: ReactNode }) {
+  return (
+    <a className="work-object-link" href={href} target="_blank" rel="noreferrer">
+      {icon}
+      <span>{children}</span>
+      <ExternalLink size={13} aria-hidden="true" />
+    </a>
+  );
+}
+
+function PersonWorkloadBoard({
+  people,
+  personalViews,
+  selectedLogin,
+  onSelect,
+  compact = false
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  selectedLogin: string | null;
+  onSelect: (login: string) => void;
+  compact?: boolean;
+}) {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const sortedPeopleByWorkload = sortPeopleByWorkload(people);
+  const sortedPeople =
+    compact && selectedLogin
+      ? [
+          ...sortedPeopleByWorkload.filter((person) => person.login === selectedLogin),
+          ...sortedPeopleByWorkload.filter((person) => person.login !== selectedLogin)
+        ]
+      : sortedPeopleByWorkload;
+
+  if (sortedPeople.length === 0) {
+    return <Empty description="No watched users configured" />;
+  }
+
+  return (
+    <div className={`person-board${compact ? " person-board-compact" : ""}`} role="list">
+      {sortedPeople.map((person) => {
+        const personal = personalByLogin.get(person.login);
+        const testingPrs = personal?.testingPrs.length ?? 0;
+        const status = personWorkloadStatus(person);
+        const reasons = personPrimaryReasons(person, testingPrs);
+        const selected = selectedLogin === person.login;
+
+        return (
+          <button
+            type="button"
+            className={`person-card person-card-${status}${selected ? " is-selected" : ""}`}
+            aria-pressed={selected}
+            aria-label={`Open ${person.login} workbench`}
+            key={person.login}
+            onClick={() => onSelect(person.login)}
+          >
+            <span className="person-card-header">
+              <span className="person-avatar" aria-hidden="true">
+                {person.login.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="person-card-title">
+                <Text strong>{person.login}</Text>
+                <Tag color={workloadStatusColor(status)}>{labelText(status)}</Tag>
+              </span>
+            </span>
+            <span className="person-stat-grid">
+              <span>
+                <strong>{person.activeCriticalIssues}</strong>
+                <small>critical</small>
+              </span>
+              <span>
+                <strong>{person.attentionPrs}</strong>
+                <small>attention</small>
+              </span>
+              <span>
+                <strong>{person.needsTriageIssues}</strong>
+                <small>triage</small>
+              </span>
+              <span>
+                <strong>{person.pendingPrs}</strong>
+                <small>pending PR</small>
+              </span>
+              <span>
+                <strong>{testingPrs}</strong>
+                <small>testing</small>
+              </span>
+              <span>
+                <strong>
+                  {person.prsCreatedYesterday}/{person.prsMergedYesterday}
+                </strong>
+                <small>PR yday</small>
+              </span>
+            </span>
+            <span className="person-reasons">
+              {reasons.slice(0, 3).map((reason) => (
+                <span key={reason}>{reason}</span>
+              ))}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function isCriticalIssueView(issue: CriticalIssueView | PersonalIssueView): issue is CriticalIssueView {
+  return "linkedPullRequests" in issue;
+}
+
+function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView }) {
+  const critical = isCriticalIssueView(issue);
+  const reasons = critical ? criticalIssueReasons(issue) : personalIssueReasons(issue);
+
+  return (
+    <article className={`work-item-card ${critical ? "work-item-critical" : ""}`}>
+      <div className="work-item-header">
+        <WorkObjectLink href={issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
+          Issue #{issue.number}
+        </WorkObjectLink>
+        <Tag>{hours(issue.ageHours)}</Tag>
+      </div>
+      <a className="work-item-title" href={issue.htmlUrl} target="_blank" rel="noreferrer">
+        {issue.title}
+      </a>
+      <div className="work-tag-row">
+        <Tag>{labelText(issue.lifecycleState)}</Tag>
+        {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
+        {critical && issue.aiEffortLabel ? <Tag color="blue">{issue.aiEffortLabel}</Tag> : null}
+        {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
+        {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
+      </div>
+      {critical && issue.linkedPullRequests.length > 0 ? (
+        <div className="linked-pr-strip">
+          {issue.linkedPullRequests.slice(0, 4).map((pr) => (
+            <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
+              <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                #{pr.number} {labelText(pr.testingState)}
+              </a>
+            </Tooltip>
+          ))}
+          {issue.linkedPullRequests.length > 4 ? <span>+{issue.linkedPullRequests.length - 4}</span> : null}
+        </div>
+      ) : null}
+      {reasons.length > 0 ? (
+        <div className="work-reasons">
+          {reasons.slice(0, 4).map((reason) => (
+            <Tag color={reason.includes("Partial") ? "gold" : "orange"} key={reason}>
+              {reason}
+            </Tag>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PullRequestWorkCard({ pr, emphasized = false }: { pr: PersonalPullRequestView; emphasized?: boolean }) {
+  const attentionReasons = prAttentionReasons(pr);
+
+  return (
+    <article className={`work-item-card ${emphasized || attentionReasons.length > 0 ? "work-item-attention" : ""}`}>
+      <div className="work-item-header">
+        <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
+          PR #{pr.number}
+        </WorkObjectLink>
+        <Tag>{hours(pr.ageHours)}</Tag>
+      </div>
+      <a className="work-item-title" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+        {pr.title}
+      </a>
+      <div className="work-tag-row">
+        <Tag color={pr.state === "open" ? "green" : "default"}>{pr.state}</Tag>
+        {pr.draft ? <Tag color="gold">draft</Tag> : null}
+        {pr.reviewDecision ? (
+          <Tag
+            color={
+              pr.reviewDecision === "changes_requested" ? "red" : pr.reviewDecision === "approved" ? "green" : "blue"
+            }
+          >
+            {labelText(pr.reviewDecision)}
+          </Tag>
+        ) : null}
+        {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+        {pr.mergeStateStatus ? (
+          <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+        ) : null}
+        <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
+        {!pr.isComplete ? <Tag color="gold">partial</Tag> : null}
+      </div>
+      <div className="work-meta-row">
+        <span>
+          <UserRound size={13} aria-hidden="true" />
+          {pr.ownerLogin}
+        </span>
+        <span>
+          <TimerReset size={13} aria-hidden="true" />
+          {formatDate(pr.lastHumanActionAt)}
+        </span>
+        {pr.mergedAt ? (
+          <span>
+            <GitMerge size={13} aria-hidden="true" />
+            {formatDate(pr.mergedAt)}
+          </span>
+        ) : null}
+      </div>
+      {pr.testingTesters.length > 0 ? (
+        <div className="work-tag-row">
+          {pr.testingTesters.map((tester) => (
+            <Tag key={tester}>{tester}</Tag>
+          ))}
+          {pr.testingQueueAgeHours !== null ? <Tag>{hours(pr.testingQueueAgeHours)}</Tag> : null}
+        </div>
+      ) : null}
+      {attentionReasons.length > 0 ? (
+        <div className="work-reasons">
+          {attentionReasons.map((reason) => (
+            <Tag
+              color={
+                reason.includes("failed") || reason.includes("conflict") || reason.includes("Changes")
+                  ? "red"
+                  : "orange"
+              }
+              key={reason}
+            >
+              {reason}
+            </Tag>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function WorkLane({
+  title,
+  count,
+  tone,
+  children
+}: {
+  title: string;
+  count: number;
+  tone: "critical" | "attention" | "normal";
+  children: ReactNode;
+}) {
+  return (
+    <section className={`work-lane work-lane-${tone}`}>
+      <div className="work-lane-heading">
+        <Title level={5}>{title}</Title>
+        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{count}</Tag>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function IssueCardList({
+  issues,
+  emptyText
+}: {
+  issues: Array<CriticalIssueView | PersonalIssueView>;
+  emptyText: string;
+}) {
+  if (issues.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
+  }
+
+  return (
+    <div className="work-item-list">
+      {issues.map((issue) => (
+        <IssueWorkCard issue={issue} key={issue.number} />
+      ))}
+    </div>
+  );
+}
+
+function PullRequestCardList({
+  prs,
+  emptyText,
+  emphasized = false
+}: {
+  prs: PersonalPullRequestView[];
+  emptyText: string;
+  emphasized?: boolean;
+}) {
+  if (prs.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
+  }
+
+  return (
+    <div className="work-item-list">
+      {prs.map((pr) => (
+        <PullRequestWorkCard emphasized={emphasized} pr={pr} key={pr.number} />
+      ))}
+    </div>
+  );
+}
+
+function SelectedPersonWorkbench({
+  person,
+  analyticsPeriod,
+  trendPoints,
+  onAnalyticsPeriodChange
+}: {
+  person: PersonalActionView;
+  analyticsPeriod: MetricPeriod;
+  trendPoints: TrendMetricPoint[];
+  onAnalyticsPeriodChange: (period: MetricPeriod) => void;
+}) {
+  const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
+  const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
+
+  return (
+    <div className="selected-person-workbench">
+      <div className="person-focus-header">
+        <div className="person-focus-title">
+          <span className="person-avatar person-avatar-large" aria-hidden="true">
+            {person.login.slice(0, 1).toUpperCase()}
+          </span>
+          <div>
+            <Title level={4}>{person.login}</Title>
+            <Space size={[6, 6]} wrap>
+              <Tag color={person.summary.activeCriticalIssues > 0 ? "red" : "default"}>
+                {person.summary.activeCriticalIssues} critical
+              </Tag>
+              <Tag color={person.summary.attentionPrs > 0 ? "orange" : "default"}>
+                {person.summary.attentionPrs} PR attention
+              </Tag>
+              <Tag color={person.summary.needsTriageIssues > 0 ? "gold" : "default"}>
+                {person.summary.needsTriageIssues} needs triage
+              </Tag>
+              <Tag>{person.testingPrs.length} testing</Tag>
+              <Tag>
+                yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday}
+              </Tag>
+            </Space>
+          </div>
+        </div>
+      </div>
+
+      <div className="work-lane-grid work-lane-grid-priority">
+        <WorkLane title="Active Critical Issues" count={person.activeCriticalIssues.length} tone="critical">
+          <IssueCardList issues={person.activeCriticalIssues} emptyText="No active critical issues" />
+        </WorkLane>
+        <WorkLane title="PR Attention" count={person.attentionPrs.length} tone="attention">
+          <PullRequestCardList emphasized prs={person.attentionPrs} emptyText="No PR attention items" />
+        </WorkLane>
+        <WorkLane title="Needs Triage" count={person.needsTriageIssues.length} tone="attention">
+          <IssueCardList issues={person.needsTriageIssues} emptyText="No needs-triage issues" />
+        </WorkLane>
+      </div>
+
+      <div className="work-lane-grid">
+        <WorkLane title="Pending PRs" count={routinePendingPrs.length} tone="normal">
+          <PullRequestCardList prs={routinePendingPrs} emptyText="No routine pending PRs" />
+        </WorkLane>
+        <WorkLane title="Testing Handoff" count={person.testingPrs.length} tone="normal">
+          <PullRequestCardList prs={person.testingPrs} emptyText="No testing handoff PRs" />
+        </WorkLane>
+        <WorkLane title="Deferred Issues" count={person.deferredIssues.length} tone="normal">
+          <IssueCardList issues={person.deferredIssues} emptyText="No deferred issues" />
+        </WorkLane>
+      </div>
+
+      <div className="work-lane-grid work-lane-grid-secondary">
+        <WorkLane title="PRs Created Yesterday" count={person.prsCreatedYesterday.length} tone="normal">
+          <PullRequestCardList prs={person.prsCreatedYesterday} emptyText="No PRs created yesterday" />
+        </WorkLane>
+        <WorkLane title="PRs Merged Yesterday" count={person.prsMergedYesterday.length} tone="normal">
+          <PullRequestCardList prs={person.prsMergedYesterday} emptyText="No PRs merged yesterday" />
+        </WorkLane>
+      </div>
+
+      <section className="trend-panel">
+        <div className="subsection-heading">
+          <Title level={5}>Personal Trend</Title>
+          <Segmented
+            size="small"
+            value={analyticsPeriod}
+            onChange={(value) => onAnalyticsPeriodChange(value as MetricPeriod)}
+            options={metricPeriodOptions}
+          />
+        </div>
+        <TrendChart points={trendPoints} />
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
@@ -813,6 +1239,11 @@ export default function App() {
     if (window.location.hash !== nextHash) {
       window.history.replaceState(null, "", nextHash);
     }
+  }
+
+  function openPersonWorkbench(login: string) {
+    setSelectedPerson(login);
+    selectView("Personal");
   }
 
   function openManualRefreshModal() {
@@ -1140,76 +1571,6 @@ export default function App() {
     []
   );
 
-  const peopleColumns: ColumnsType<PersonSummary> = useMemo(
-    () => [
-      { title: "Person", dataIndex: "login", render: (login) => <Text strong>{login}</Text> },
-      { title: "Critical", dataIndex: "activeCriticalIssues", width: 104 },
-      { title: "Needs triage", dataIndex: "needsTriageIssues", width: 128 },
-      { title: "Deferred", dataIndex: "deferredIssues", width: 104 },
-      { title: "PR created", dataIndex: "prsCreatedYesterday", width: 112 },
-      { title: "PR merged", dataIndex: "prsMergedYesterday", width: 112 },
-      { title: "Pending PR", dataIndex: "pendingPrs", width: 112 },
-      {
-        title: "Attention",
-        dataIndex: "attentionPrs",
-        width: 112,
-        render: (value) => (value > 0 ? <Tag color="orange">{value}</Tag> : <Tag>0</Tag>)
-      }
-    ],
-    []
-  );
-
-  const personalIssueColumns: ColumnsType<PersonalIssueView> = useMemo(
-    () => [
-      {
-        title: "Issue",
-        dataIndex: "number",
-        width: 92,
-        render: (_, issue) => (
-          <a href={issue.htmlUrl} target="_blank" rel="noreferrer">
-            #{issue.number}
-          </a>
-        )
-      },
-      {
-        title: "Title",
-        dataIndex: "title",
-        ellipsis: true,
-        render: (title, issue) => (
-          <Space size={8} className="table-title-cell">
-            {!issue.isComplete ? <Badge color="#d97706" /> : null}
-            <Text ellipsis={{ tooltip: title }}>{title}</Text>
-          </Space>
-        )
-      },
-      {
-        title: "State",
-        width: 220,
-        render: (_, issue) => (
-          <Space size={[4, 4]} wrap>
-            <Tag>{labelText(issue.lifecycleState)}</Tag>
-            {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
-          </Space>
-        )
-      },
-      { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
-      {
-        title: "Labels",
-        dataIndex: "labels",
-        width: 300,
-        render: (labels: string[]) => (
-          <Space size={[4, 4]} wrap>
-            {labels.slice(0, 6).map((label) => (
-              <Tag key={label}>{label}</Tag>
-            ))}
-            {labels.length > 6 ? <Tag>+{labels.length - 6}</Tag> : null}
-          </Space>
-        )
-      }
-    ],
-    []
-  );
-
   const prColumns: ColumnsType<PendingPrView> = useMemo(
     () => [
       {
@@ -1282,76 +1643,6 @@ export default function App() {
           </Space>
         )
       },
-      {
-        title: "Last human action",
-        dataIndex: "lastHumanActionAt",
-        width: 168,
-        render: (value) => formatDate(value)
-      },
-      {
-        title: "Flags",
-        dataIndex: "attentionFlags",
-        width: 260,
-        render: (flags: string[]) =>
-          flags.length === 0 ? (
-            <Tag>clear</Tag>
-          ) : (
-            flags.map((flag) => (
-              <Tag color={flagColor(flag)} key={flag}>
-                {labelText(flag)}
-              </Tag>
-            ))
-          )
-      }
-    ],
-    []
-  );
-
-  const personalPrColumns: ColumnsType<PersonalPullRequestView> = useMemo(
-    () => [
-      {
-        title: "PR",
-        dataIndex: "number",
-        width: 88,
-        render: (_, pr) => (
-          <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
-            #{pr.number}
-          </a>
-        )
-      },
-      {
-        title: "Title",
-        dataIndex: "title",
-        ellipsis: true,
-        render: (title, pr) => (
-          <Space size={8} className="table-title-cell">
-            {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
-            {!pr.isComplete ? <Badge color="#d97706" /> : null}
-            <Text ellipsis={{ tooltip: title }}>{title}</Text>
-          </Space>
-        )
-      },
-      {
-        title: "State",
-        width: 360,
-        render: (_, pr) => (
-          <Space size={[4, 4]} wrap>
-            <Tag color={pr.state === "open" ? "green" : "default"}>{pr.state}</Tag>
-            {pr.draft ? <Tag color="gold">draft</Tag> : null}
-            {pr.reviewDecision ? (
-              <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
-                {labelText(pr.reviewDecision)}
-              </Tag>
-            ) : null}
-            {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-            {pr.mergeStateStatus ? (
-              <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
-            ) : null}
-            <Tag color={testingStateColor(pr.testingState)}>{labelText(pr.testingState)}</Tag>
-          </Space>
-        )
-      },
-      { title: "Age", dataIndex: "ageHours", width: 96, render: (age) => hours(age) },
       {
         title: "Last human action",
         dataIndex: "lastHumanActionAt",
@@ -2579,139 +2870,33 @@ export default function App() {
             ) : null}
 
             {view === "Personal" ? (
-              <section className="section">
+              <section className="workbench-section">
                 <div className="section-heading">
-                  <Title level={4}>Personal Action List</Title>
-                  {data.personalViews.length > 0 ? (
-                    <Segmented
-                      value={selectedPersonalView?.login}
-                      onChange={(value) => setSelectedPerson(String(value))}
-                      options={data.personalViews.map((person) => person.login)}
-                    />
-                  ) : null}
-                </div>
-                {selectedPersonalView ? (
-                  <Space orientation="vertical" size={16} className="token-modal-body">
-                    <Space size={[6, 6]} wrap>
-                      <Tag color={selectedPersonalView.summary.activeCriticalIssues > 0 ? "red" : "default"}>
-                        {selectedPersonalView.summary.activeCriticalIssues} critical
-                      </Tag>
-                      <Tag color={selectedPersonalView.summary.needsTriageIssues > 0 ? "orange" : "default"}>
-                        {selectedPersonalView.summary.needsTriageIssues} needs triage
-                      </Tag>
-                      <Tag>{selectedPersonalView.summary.deferredIssues} deferred</Tag>
-                      <Tag color={selectedPersonalView.summary.pendingPrs > 0 ? "blue" : "default"}>
-                        {selectedPersonalView.summary.pendingPrs} pending PRs
-                      </Tag>
-                      <Tag color={selectedPersonalView.summary.attentionPrs > 0 ? "orange" : "default"}>
-                        {selectedPersonalView.summary.attentionPrs} PR attention
-                      </Tag>
-                      <Tag>{selectedPersonalView.summary.prsCreatedYesterday} PRs created yesterday</Tag>
-                      <Tag>{selectedPersonalView.summary.prsMergedYesterday} PRs merged yesterday</Tag>
-                    </Space>
-
-                    <div>
-                      <Title level={5}>Active Critical Issues</Title>
-                      <Table
-                        rowKey="number"
-                        size="small"
-                        columns={criticalColumns}
-                        dataSource={selectedPersonalView.activeCriticalIssues}
-                        scroll={{ x: 1700 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No active critical issues for this user" /> }}
-                      />
-                    </div>
-
-                    <div>
-                      <Title level={5}>Needs Triage Issues</Title>
-                      <Table
-                        rowKey="number"
-                        size="small"
-                        columns={personalIssueColumns}
-                        dataSource={selectedPersonalView.needsTriageIssues}
-                        scroll={{ x: 860 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No needs-triage issues for this user" /> }}
-                      />
-                    </div>
-
-                    <div>
-                      <Title level={5}>Deferred Issues</Title>
-                      <Table
-                        rowKey="number"
-                        size="small"
-                        columns={personalIssueColumns}
-                        dataSource={selectedPersonalView.deferredIssues}
-                        scroll={{ x: 860 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No deferred issues for this user" /> }}
-                      />
-                    </div>
-
-                    <div>
-                      <Title level={5}>Pending PRs</Title>
-                      <Table
-                        rowKey="number"
-                        size="small"
-                        columns={personalPrColumns}
-                        dataSource={selectedPersonalView.pendingPrs}
-                        scroll={{ x: 1220 }}
-                        pagination={{ pageSize: 6 }}
-                        locale={{ emptyText: <Empty description="No pending PRs for this user" /> }}
-                      />
-                    </div>
-
-                    <div>
-                      <Title level={5}>Testing Handoff PRs</Title>
-                      <Table
-                        rowKey="number"
-                        size="small"
-                        columns={personalPrColumns}
-                        dataSource={selectedPersonalView.testingPrs}
-                        scroll={{ x: 1220 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{
-                          emptyText: <Empty description="No PRs currently in testing handoff for this user" />
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <Title level={5}>Yesterday PR Flow</Title>
-                      <Table
-                        rowKey={(pr) => `created-${pr.number}`}
-                        size="small"
-                        columns={personalPrColumns}
-                        dataSource={selectedPersonalView.prsCreatedYesterday}
-                        scroll={{ x: 1220 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No PRs created yesterday for this user" /> }}
-                      />
-                      <Table
-                        rowKey={(pr) => `merged-${pr.number}`}
-                        size="small"
-                        columns={personalPrColumns}
-                        dataSource={selectedPersonalView.prsMergedYesterday}
-                        scroll={{ x: 1220 }}
-                        pagination={{ pageSize: 5 }}
-                        locale={{ emptyText: <Empty description="No PRs merged yesterday for this user" /> }}
-                      />
-                    </div>
-
-                    <div>
-                      <div className="subsection-heading">
-                        <Title level={5}>Personal Trend</Title>
-                        <Segmented
-                          size="small"
-                          value={analyticsPeriod}
-                          onChange={(value) => setAnalyticsPeriod(value as MetricPeriod)}
-                          options={metricPeriodOptions}
-                        />
-                      </div>
-                      <TrendChart points={personalTrendPoints} />
-                    </div>
+                  <Title level={4}>Personal Workbench</Title>
+                  <Space size={[6, 6]} wrap>
+                    <Tag color={selectedPersonalView?.summary.activeCriticalIssues ? "red" : "default"}>
+                      {selectedPersonalView?.summary.activeCriticalIssues ?? 0} critical
+                    </Tag>
+                    <Tag color={selectedPersonalView?.summary.attentionPrs ? "orange" : "default"}>
+                      {selectedPersonalView?.summary.attentionPrs ?? 0} PR attention
+                    </Tag>
+                    <Tag>{selectedPersonalView?.testingPrs.length ?? 0} testing</Tag>
                   </Space>
+                </div>
+                <PersonWorkloadBoard
+                  compact
+                  people={data.people}
+                  personalViews={data.personalViews}
+                  selectedLogin={selectedPersonalView?.login ?? null}
+                  onSelect={setSelectedPerson}
+                />
+                {selectedPersonalView ? (
+                  <SelectedPersonWorkbench
+                    person={selectedPersonalView}
+                    analyticsPeriod={analyticsPeriod}
+                    trendPoints={personalTrendPoints}
+                    onAnalyticsPeriodChange={setAnalyticsPeriod}
+                  />
                 ) : (
                   <Empty description="No watched users configured for personal action lists" />
                 )}
@@ -2800,19 +2985,24 @@ export default function App() {
             </section>
 
             {view === "People" || view === "Overview" ? (
-              <section className="section">
+              <section className="workbench-section">
                 <div className="section-heading">
-                  <Title level={4}>People</Title>
-                  <Text type="secondary">Watched users only</Text>
+                  <Title level={4}>People Workbench</Title>
+                  <Space size={[6, 6]} wrap>
+                    <Tag>{data.people.length} watched</Tag>
+                    <Tag color={data.people.some((person) => person.activeCriticalIssues > 0) ? "red" : "default"}>
+                      {data.people.reduce((sum, person) => sum + person.activeCriticalIssues, 0)} critical
+                    </Tag>
+                    <Tag color={data.people.some((person) => person.attentionPrs > 0) ? "orange" : "default"}>
+                      {data.people.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
+                    </Tag>
+                  </Space>
                 </div>
-                <Table
-                  rowKey="login"
-                  size="middle"
-                  columns={peopleColumns}
-                  dataSource={data.people}
-                  scroll={{ x: 900 }}
-                  pagination={false}
-                  locale={{ emptyText: <Empty description="No watched users configured" /> }}
+                <PersonWorkloadBoard
+                  people={data.people}
+                  personalViews={data.personalViews}
+                  selectedLogin={selectedPersonalView?.login ?? null}
+                  onSelect={openPersonWorkbench}
                 />
               </section>
             ) : null}
