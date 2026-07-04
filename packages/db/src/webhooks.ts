@@ -1,4 +1,5 @@
 import type {
+  GitHubWebhookEventHealth,
   GitHubWebhookDeliveryStatus,
   GitHubWebhookDeliveryView,
   WebhookIngestionHealth
@@ -302,6 +303,29 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
      LIMIT 1`,
     [repoId]
   );
+  const [eventRows] = await getPool().execute<RowData[]>(
+    `SELECT
+       event_name,
+       SUM(CASE WHEN status IN ('received', 'processing') THEN 1 ELSE 0 END) AS pending_deliveries,
+       SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_deliveries,
+       SUM(CASE WHEN status IN ('failed', 'failed_normalization') THEN 1 ELSE 0 END) AS failed_deliveries,
+       SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_deliveries,
+       SUM(duplicate_count) AS duplicate_deliveries,
+       MAX(received_at) AS last_received_at,
+       MAX(processed_at) AS last_processed_at
+     FROM github_webhook_deliveries
+     WHERE repo_id = ?
+     GROUP BY event_name
+     ORDER BY MAX(received_at) DESC, event_name ASC`,
+    [repoId]
+  );
+  const [eventFailureRows] = await getPool().execute<RowData[]>(
+    `SELECT event_name, error_message
+     FROM github_webhook_deliveries
+     WHERE repo_id = ? AND status IN ('failed', 'failed_normalization')
+     ORDER BY event_name ASC, received_at DESC, id DESC`,
+    [repoId]
+  );
   const [recentRows] = await getPool().execute<RowData[]>(
     `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,
             received_at, processed_at, error_message
@@ -323,6 +347,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
   const row = statusRows[0] ?? {};
   const failure = failureRows[0];
   const diagnosticDeliveries = new Map<string, GitHubWebhookDeliveryView>();
+  const latestFailureByEvent = latestWebhookFailureByEvent(eventFailureRows);
   for (const delivery of [...recentRows, ...recentFailureRows].map(toGitHubWebhookDeliveryView)) {
     diagnosticDeliveries.set(delivery.deliveryId, delivery);
   }
@@ -336,9 +361,40 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     duplicateDeliveries: asNumber(row.duplicate_deliveries),
     lastReceivedAt: fromSqlDate(row.last_received_at),
     latestFailure: failure ? `${asString(failure.delivery_id)}: ${asString(failure.error_message)}` : null,
+    eventSummaries: eventRows.map((eventRow) =>
+      toGitHubWebhookEventHealth(eventRow, latestFailureByEvent.get(asString(eventRow.event_name)) ?? null)
+    ),
     recentDeliveries: [...diagnosticDeliveries.values()].sort(
       (left, right) => new Date(right.receivedAt).getTime() - new Date(left.receivedAt).getTime()
     )
+  };
+}
+
+function latestWebhookFailureByEvent(rows: RowData[]): Map<string, string | null> {
+  const failures = new Map<string, string | null>();
+  for (const row of rows) {
+    const eventName = asString(row.event_name);
+    if (!failures.has(eventName)) {
+      failures.set(
+        eventName,
+        row.error_message === null || row.error_message === undefined ? null : asString(row.error_message)
+      );
+    }
+  }
+  return failures;
+}
+
+function toGitHubWebhookEventHealth(row: RowData, latestFailure: string | null): GitHubWebhookEventHealth {
+  return {
+    eventName: asString(row.event_name),
+    pendingDeliveries: asNumber(row.pending_deliveries),
+    processedDeliveries: asNumber(row.processed_deliveries),
+    failedDeliveries: asNumber(row.failed_deliveries),
+    ignoredDeliveries: asNumber(row.ignored_deliveries),
+    duplicateDeliveries: asNumber(row.duplicate_deliveries),
+    lastReceivedAt: fromSqlDate(row.last_received_at),
+    lastProcessedAt: fromSqlDate(row.last_processed_at),
+    latestFailure: latestFailure && latestFailure.length > 0 ? latestFailure : null
   };
 }
 

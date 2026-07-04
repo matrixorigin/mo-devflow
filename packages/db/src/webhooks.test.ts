@@ -17,6 +17,32 @@ vi.mock("./client", () => ({
 describe("webhook ingestion health", () => {
   test("includes recent delivery rows for dashboard diagnosis", async () => {
     mocks.execute.mockImplementation(async (sql: string) => {
+      if (sql.includes("GROUP BY event_name")) {
+        return [
+          [
+            {
+              event_name: "issues",
+              pending_deliveries: 1,
+              processed_deliveries: 4,
+              failed_deliveries: 1,
+              ignored_deliveries: 0,
+              duplicate_deliveries: 2,
+              last_received_at: "2026-07-04 12:00:00",
+              last_processed_at: "2026-07-04 12:01:00"
+            },
+            {
+              event_name: "pull_request",
+              pending_deliveries: 1,
+              processed_deliveries: 1,
+              failed_deliveries: 0,
+              ignored_deliveries: 1,
+              duplicate_deliveries: 0,
+              last_received_at: "2026-07-04 11:00:00",
+              last_processed_at: "2026-07-04 11:02:00"
+            }
+          ]
+        ];
+      }
       if (sql.includes("SUM(CASE")) {
         return [
           [
@@ -34,6 +60,9 @@ describe("webhook ingestion health", () => {
       }
       if (sql.includes("SELECT delivery_id, error_message")) {
         return [[{ delivery_id: "delivery-bad", error_message: "bad payload" }]];
+      }
+      if (sql.includes("SELECT event_name, error_message")) {
+        return [[{ event_name: "issues", error_message: "bad payload" }]];
       }
       if (sql.includes("SELECT delivery_id, event_name")) {
         return [
@@ -64,6 +93,30 @@ describe("webhook ingestion health", () => {
       duplicateDeliveries: 2,
       lastReceivedAt: "2026-07-04T12:00:00.000Z",
       latestFailure: "delivery-bad: bad payload",
+      eventSummaries: [
+        {
+          eventName: "issues",
+          pendingDeliveries: 1,
+          processedDeliveries: 4,
+          failedDeliveries: 1,
+          ignoredDeliveries: 0,
+          duplicateDeliveries: 2,
+          lastReceivedAt: "2026-07-04T12:00:00.000Z",
+          lastProcessedAt: "2026-07-04T12:01:00.000Z",
+          latestFailure: "bad payload"
+        },
+        {
+          eventName: "pull_request",
+          pendingDeliveries: 1,
+          processedDeliveries: 1,
+          failedDeliveries: 0,
+          ignoredDeliveries: 1,
+          duplicateDeliveries: 0,
+          lastReceivedAt: "2026-07-04T11:00:00.000Z",
+          lastProcessedAt: "2026-07-04T11:02:00.000Z",
+          latestFailure: null
+        }
+      ],
       recentDeliveries: [
         {
           deliveryId: "delivery-bad",

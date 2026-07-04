@@ -1219,6 +1219,56 @@ function webhookDeliveryStatusColor(status: GitHubWebhookDeliveryView["status"])
   return "blue";
 }
 
+type WebhookEventHealthView = DashboardSummary["webhooks"]["eventSummaries"][number];
+
+function webhookEventHealthColor(summary: WebhookEventHealthView | undefined): string {
+  if (!summary) {
+    return "default";
+  }
+  if (summary.failedDeliveries > 0) {
+    return "red";
+  }
+  if (summary.pendingDeliveries > 0) {
+    return "gold";
+  }
+  if (summary.processedDeliveries > 0) {
+    return "green";
+  }
+  return "default";
+}
+
+function webhookEventHealthLabel(summary: WebhookEventHealthView | undefined): string {
+  if (!summary) {
+    return "not observed";
+  }
+  if (summary.failedDeliveries > 0) {
+    return `${summary.failedDeliveries} failed`;
+  }
+  if (summary.pendingDeliveries > 0) {
+    return `${summary.pendingDeliveries} pending`;
+  }
+  if (summary.processedDeliveries > 0) {
+    return "observed";
+  }
+  return "ignored only";
+}
+
+function webhookEventHealthDetail(summary: WebhookEventHealthView | undefined): string {
+  if (!summary) {
+    return "No delivery recorded for this event yet.";
+  }
+  if (summary.latestFailure) {
+    return summary.latestFailure;
+  }
+  if (summary.lastProcessedAt) {
+    return `processed ${formatDate(summary.lastProcessedAt)}`;
+  }
+  if (summary.lastReceivedAt) {
+    return `received ${formatDate(summary.lastReceivedAt)}`;
+  }
+  return "Delivery exists but timestamp is unavailable.";
+}
+
 function writeAuditScopeLabel(filter: WriteAuditScopeFilter): string {
   if (filter === "attention") {
     return "attention";
@@ -7658,6 +7708,11 @@ function WebhookIngestionBoard({
   const pendingDeliveries = data.webhooks.pendingDeliveries;
   const failedDeliveries = data.webhooks.failedDeliveries;
   const duplicateDeliveries = data.webhooks.duplicateDeliveries;
+  const eventSummaryByName = new Map(data.webhooks.eventSummaries.map((summary) => [summary.eventName, summary]));
+  const observedUnsupportedEvents = data.webhooks.eventSummaries.filter(
+    (summary) =>
+      !supportedGitHubWebhookEvents.includes(summary.eventName as (typeof supportedGitHubWebhookEvents)[number])
+  );
   const columns: ColumnsType<GitHubWebhookDeliveryView> = [
     {
       title: "Delivery",
@@ -7807,14 +7862,34 @@ function WebhookIngestionBoard({
         </div>
 
         <div className="webhook-event-panel">
-          <Text strong>Accepted Events</Text>
-          <div className="webhook-event-list">
-            {supportedGitHubWebhookEvents.map((eventName) => (
-              <Tag color="blue" key={eventName}>
-                {eventName}
-              </Tag>
-            ))}
+          <div className="webhook-event-heading">
+            <Text strong>Event Coverage</Text>
+            <Text type="secondary">Which GitHub changes have actually reached this cache.</Text>
           </div>
+          <div className="webhook-event-list">
+            {supportedGitHubWebhookEvents.map((eventName) => {
+              const summary = eventSummaryByName.get(eventName);
+              return (
+                <div className="webhook-event-card" key={eventName}>
+                  <div>
+                    <Text code>{eventName}</Text>
+                    <Tag color={webhookEventHealthColor(summary)}>{webhookEventHealthLabel(summary)}</Tag>
+                  </div>
+                  <span>{webhookEventHealthDetail(summary)}</span>
+                </div>
+              );
+            })}
+          </div>
+          {observedUnsupportedEvents.length > 0 ? (
+            <div className="webhook-extra-events">
+              <Text type="secondary">Ignored or repo-mismatched events</Text>
+              <Space size={[4, 4]} wrap>
+                {observedUnsupportedEvents.map((summary) => (
+                  <Tag key={summary.eventName}>{summary.eventName}</Tag>
+                ))}
+              </Space>
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -77,6 +77,7 @@ function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardS
     duplicateDeliveries: 0,
     lastReceivedAt: null,
     latestFailure: null,
+    eventSummaries: [],
     recentDeliveries: [],
     ...input
   };

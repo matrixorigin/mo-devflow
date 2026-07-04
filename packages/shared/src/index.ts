@@ -870,7 +870,20 @@ export interface WebhookIngestionHealth {
   duplicateDeliveries: number;
   lastReceivedAt: string | null;
   latestFailure: string | null;
+  eventSummaries: GitHubWebhookEventHealth[];
   recentDeliveries: GitHubWebhookDeliveryView[];
+}
+
+export interface GitHubWebhookEventHealth {
+  eventName: string;
+  pendingDeliveries: number;
+  processedDeliveries: number;
+  failedDeliveries: number;
+  ignoredDeliveries: number;
+  duplicateDeliveries: number;
+  lastReceivedAt: string | null;
+  lastProcessedAt: string | null;
+  latestFailure: string | null;
 }
 
 export type GitHubWebhookDeliveryStatus =
