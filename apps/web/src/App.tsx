@@ -131,6 +131,13 @@ type PrScopeFilter =
 type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "yesterday_pr" | "threads";
+interface WebhookRetryResult {
+  retriedDeliveries: number;
+  requestId: number | null;
+  requestedLayers: ManualRefreshLayer[];
+  queuedJobs: ManualRefreshResult["queuedJobs"];
+  requestedAt: string;
+}
 const viewOptions = [
   "Overview",
   "Issues",
@@ -4718,6 +4725,9 @@ export default function App() {
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
+  const [webhookRetrySaving, setWebhookRetrySaving] = useState(false);
+  const [webhookRetryResult, setWebhookRetryResult] = useState<WebhookRetryResult | null>(null);
+  const [webhookRetryError, setWebhookRetryError] = useState<string | null>(null);
   const [cacheEvidenceExpanded, setCacheEvidenceExpanded] = useState(false);
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
@@ -4914,6 +4924,33 @@ export default function App() {
       setManualRefreshError(displayError(err));
     } finally {
       setManualRefreshSaving(false);
+    }
+  }
+
+  async function retryFailedWebhooks() {
+    if (!session?.authenticated) {
+      setWebhookRetryError("Connect GitHub token before retrying failed webhooks.");
+      return;
+    }
+    setWebhookRetrySaving(true);
+    setWebhookRetryError(null);
+    setWebhookRetryResult(null);
+    try {
+      const response = await fetch("/api/refresh/webhooks/retry-failed", {
+        method: "POST",
+        headers: csrfHeaders(),
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setWebhookRetryResult((await response.json()) as WebhookRetryResult);
+      void load({ silent: true });
+    } catch (err) {
+      setWebhookRetryError(displayError(err));
+      void loadSession();
+    } finally {
+      setWebhookRetrySaving(false);
     }
   }
 
@@ -5992,6 +6029,32 @@ export default function App() {
             showIcon
           />
         ) : null}
+        {webhookRetryError ? (
+          <Alert
+            className="band"
+            type="error"
+            title="Webhook retry was not queued"
+            description={webhookRetryError}
+            showIcon
+          />
+        ) : null}
+        {webhookRetryResult ? (
+          <Alert
+            className="band"
+            type={webhookRetryResult.retriedDeliveries > 0 ? "success" : "info"}
+            title={
+              webhookRetryResult.retriedDeliveries > 0
+                ? `Retried ${webhookRetryResult.retriedDeliveries} failed webhook deliveries`
+                : "No failed webhook deliveries to retry"
+            }
+            description={
+              webhookRetryResult.retriedDeliveries > 0
+                ? `Queued ${webhookRetryResult.queuedJobs.length} repair jobs at ${formatDate(webhookRetryResult.requestedAt)}.`
+                : "Webhook failure state was already clear when the retry was requested."
+            }
+            showIcon
+          />
+        ) : null}
         {autoRefreshError && data ? (
           <Alert
             className="band"
@@ -6211,6 +6274,16 @@ export default function App() {
                 title="Webhook ingestion has failed deliveries"
                 description={
                   data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`
+                }
+                action={
+                  <Button
+                    size="small"
+                    disabled={!session?.authenticated}
+                    loading={webhookRetrySaving}
+                    onClick={() => void retryFailedWebhooks()}
+                  >
+                    Retry failed webhooks
+                  </Button>
                 }
                 showIcon
               />

@@ -120,7 +120,10 @@ worker processes stored issue and pull request deliveries asynchronously into
 the MatrixOne cache.
 Malformed payloads for supported webhook events are marked as
 `failed_normalization`; the raw payload stays stored on the delivery row for
-inspection, and the dashboard counts them with webhook failures.
+inspection, and the dashboard counts them with webhook failures. Logged-in
+operators can retry failed webhook deliveries from the dashboard; retrying moves
+failed deliveries back to the received queue and immediately schedules webhook,
+rules, metrics, AI drift, and notification worker jobs.
 
 The current implementation covers read-only cached observability for repo-wide
 critical issues, watched-user summaries, pending PRs, workflow violations, AI

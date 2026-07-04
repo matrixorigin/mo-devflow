@@ -90,3 +90,22 @@ export function webhookDeliveryRefreshJobs(input: {
     payload
   }));
 }
+
+export function webhookRetryRefreshJobs(input: {
+  repoKey: string;
+  githubLogin: string;
+  requestedAt: string;
+  retriedDeliveries: number;
+}): RefreshJobSeed[] {
+  const payload = {
+    trigger: "webhook_retry",
+    requestedBy: input.githubLogin,
+    requestedAt: input.requestedAt,
+    retriedDeliveries: input.retriedDeliveries
+  };
+  return (["webhooks", "rules", "metrics", "ai_drift", "notifications"] as const).map((layer) => ({
+    jobKey: jobKeyForLayer(layer, input.repoKey),
+    jobType: layer,
+    payload
+  }));
+}

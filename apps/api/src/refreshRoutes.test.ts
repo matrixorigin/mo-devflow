@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getSessionRecordFromRequest: vi.fn(),
   loadRepoProfile: vi.fn(),
   recordManualRefreshRequest: vi.fn(),
+  retryFailedGitHubWebhookDeliveries: vi.fn(),
   upsertRepoProfile: vi.fn()
 }));
 
@@ -24,6 +25,7 @@ vi.mock("@mo-devflow/db", () => ({
   enqueueJobsNow: mocks.enqueueJobsNow,
   getRepoId: mocks.getRepoId,
   recordManualRefreshRequest: mocks.recordManualRefreshRequest,
+  retryFailedGitHubWebhookDeliveries: mocks.retryFailedGitHubWebhookDeliveries,
   upsertRepoProfile: mocks.upsertRepoProfile
 }));
 
@@ -45,6 +47,7 @@ describe("refresh routes", () => {
     });
     mocks.loadRepoProfile.mockReturnValue({ key: "matrixorigin/matrixone" });
     mocks.getRepoId.mockResolvedValue(7);
+    mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 0 });
   });
 
   test("queues only selected manual refresh layers", async () => {
@@ -119,6 +122,107 @@ describe("refresh routes", () => {
       });
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
       expect(mocks.recordManualRefreshRequest).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("resets failed webhook deliveries and queues webhook repair jobs", async () => {
+    const app = Fastify();
+    await registerRefreshRoutes(app);
+    mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 3 });
+    mocks.enqueueJobsNow.mockResolvedValue([
+      { jobKey: "webhooks:matrixorigin/matrixone", jobType: "webhooks", status: "pending", nextRunAt: null },
+      { jobKey: "rules:matrixorigin/matrixone", jobType: "rules", status: "pending", nextRunAt: null }
+    ]);
+    mocks.recordManualRefreshRequest.mockResolvedValue({
+      requestId: 9,
+      requestedLayers: ["webhooks", "rules", "metrics", "ai_drift", "notifications"],
+      queuedJobs: [],
+      requestedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed",
+        headers: csrfHeaders
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        retriedDeliveries: 3,
+        requestId: 9,
+        requestedLayers: ["webhooks", "rules", "metrics", "ai_drift", "notifications"]
+      });
+      expect(mocks.retryFailedGitHubWebhookDeliveries).toHaveBeenCalledWith({ repoId: 7 });
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledWith([
+        expect.objectContaining({
+          jobKey: "webhooks:matrixorigin/matrixone",
+          jobType: "webhooks",
+          payload: expect.objectContaining({ trigger: "webhook_retry", requestedBy: "alice", retriedDeliveries: 3 })
+        }),
+        expect.objectContaining({ jobKey: "rules:matrixorigin/matrixone", jobType: "rules" }),
+        expect.objectContaining({ jobKey: "metrics:matrixorigin/matrixone", jobType: "metrics" }),
+        expect.objectContaining({ jobKey: "ai-drift:matrixorigin/matrixone", jobType: "ai_drift" }),
+        expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
+      ]);
+      expect(mocks.recordManualRefreshRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 7,
+          userId: 1,
+          githubLogin: "alice",
+          requestedLayers: ["webhooks", "rules", "metrics", "ai_drift", "notifications"]
+        })
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("does not queue webhook repair jobs when there are no failed deliveries", async () => {
+    const app = Fastify();
+    await registerRefreshRoutes(app);
+    mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 0 });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed",
+        headers: csrfHeaders
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        retriedDeliveries: 0,
+        requestId: null,
+        requestedLayers: [],
+        queuedJobs: []
+      });
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(mocks.recordManualRefreshRequest).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects webhook retry before resetting deliveries when CSRF is missing", async () => {
+    const app = Fastify();
+    await registerRefreshRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed"
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({
+        error: "csrf_required",
+        message: "Refresh the session and retry the request."
+      });
+      expect(mocks.retryFailedGitHubWebhookDeliveries).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

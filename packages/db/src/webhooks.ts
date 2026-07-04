@@ -254,6 +254,28 @@ export async function failGitHubWebhookDelivery(input: {
   }
 }
 
+export async function retryFailedGitHubWebhookDeliveries(input: {
+  repoId: number;
+}): Promise<{ retriedDeliveries: number }> {
+  const [result] = await getPool().execute<ResultSetHeader>(
+    `UPDATE github_webhook_deliveries
+     SET status = 'received',
+         processing_owner = NULL,
+         processing_started_at = NULL,
+         processing_expires_at = NULL,
+         processing_result_json = NULL,
+         processed_at = NULL,
+         error_message = NULL
+     WHERE repo_id = ?
+       AND status IN ('failed', 'failed_normalization')`,
+    [input.repoId]
+  );
+
+  return {
+    retriedDeliveries: Number(result.affectedRows ?? 0)
+  };
+}
+
 export async function getWebhookIngestionHealth(repoId: number): Promise<WebhookIngestionHealth> {
   const [statusRows] = await getPool().execute<RowData[]>(
     `SELECT
