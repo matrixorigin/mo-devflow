@@ -146,12 +146,31 @@ function dashboardViewFromHash(hash: string): DashboardView {
   return hashViewMap[key] ?? "Overview";
 }
 
-function dashboardHashForView(view: DashboardView): string {
-  return view.toLowerCase();
+function dashboardHashParams(hash: string): URLSearchParams {
+  const query = hash.replace(/^#/, "").split("?")[1] ?? "";
+  return new URLSearchParams(query);
+}
+
+function selectedPersonFromHash(hash: string): string | null {
+  const person = dashboardHashParams(hash).get("person")?.trim();
+  return person && person.length > 0 ? person : null;
+}
+
+function dashboardHashForView(view: DashboardView, personLogin?: string | null): string {
+  const base = view.toLowerCase();
+  if (view !== "Personal" || !personLogin) {
+    return base;
+  }
+  const params = new URLSearchParams({ person: personLogin });
+  return `${base}?${params.toString()}`;
 }
 
 function initialDashboardView(): DashboardView {
   return typeof window === "undefined" ? "Overview" : dashboardViewFromHash(window.location.hash);
+}
+
+function initialSelectedPerson(): string | null {
+  return typeof window === "undefined" ? null : selectedPersonFromHash(window.location.hash);
 }
 
 function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
@@ -2619,7 +2638,7 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
-  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(initialSelectedPerson);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
@@ -2715,18 +2734,32 @@ export default function App() {
     }
   }
 
-  function selectView(nextView: DashboardView) {
-    setView(nextView);
-    setCacheEvidenceExpanded(nextView === "Overview");
-    const nextHash = `#${dashboardHashForView(nextView)}`;
+  function replaceDashboardHash(nextView: DashboardView, personLogin: string | null = selectedPerson) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const nextHash = `#${dashboardHashForView(nextView, personLogin)}`;
     if (window.location.hash !== nextHash) {
       window.history.replaceState(null, "", nextHash);
     }
   }
 
+  function selectView(nextView: DashboardView, personLogin: string | null = selectedPerson) {
+    setView(nextView);
+    setCacheEvidenceExpanded(nextView === "Overview");
+    replaceDashboardHash(nextView, personLogin);
+  }
+
+  function selectPerson(login: string) {
+    setSelectedPerson(login);
+    if (view === "Personal") {
+      replaceDashboardHash("Personal", login);
+    }
+  }
+
   function openPersonWorkbench(login: string) {
     setSelectedPerson(login);
-    selectView("Personal");
+    selectView("Personal", login);
   }
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
@@ -2897,6 +2930,9 @@ export default function App() {
       const nextView = dashboardViewFromHash(window.location.hash);
       setView(nextView);
       setCacheEvidenceExpanded(nextView === "Overview");
+      if (nextView === "Personal") {
+        setSelectedPerson(selectedPersonFromHash(window.location.hash));
+      }
     };
     window.addEventListener("hashchange", syncViewFromHash);
     return () => window.removeEventListener("hashchange", syncViewFromHash);
@@ -2907,9 +2943,13 @@ export default function App() {
       return;
     }
     if (!selectedPerson || !data.personalViews.some((person) => person.login === selectedPerson)) {
-      setSelectedPerson(data.personalViews[0].login);
+      const fallbackLogin = data.personalViews[0].login;
+      setSelectedPerson(fallbackLogin);
+      if (view === "Personal") {
+        replaceDashboardHash("Personal", fallbackLogin);
+      }
     }
-  }, [data, selectedPerson]);
+  }, [data, selectedPerson, view]);
 
   const criticalOwnerCoverageColumns: ColumnsType<CriticalOwnerCoverageView> = useMemo(
     () => [
@@ -4404,7 +4444,7 @@ export default function App() {
                   people={data.people}
                   personalViews={data.personalViews}
                   selectedLogin={selectedPersonalView?.login ?? null}
-                  onSelect={setSelectedPerson}
+                  onSelect={selectPerson}
                 />
                 {selectedPersonalView ? (
                   <SelectedPersonWorkbench
