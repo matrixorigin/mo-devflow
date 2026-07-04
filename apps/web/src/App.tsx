@@ -1521,7 +1521,7 @@ export default function App() {
                 />
               </div>
               <div className="metric">
-                <Statistic title="Notification Failures" value={data.notifications.failedDeliveries} />
+                <Statistic title="Active Notification Failures" value={data.notifications.failedDeliveries} />
                 <Progress
                   percent={Math.min(100, data.notifications.failedDeliveries * 20)}
                   showInfo={false}
@@ -1789,7 +1789,7 @@ export default function App() {
                   <Alert
                     className="band"
                     type="warning"
-                    message={`${data.notifications.failedDeliveries} failed notification deliveries need attention.`}
+                    message={`${data.notifications.failedDeliveries} active failed notification deliveries need attention.`}
                     showIcon
                   />
                 ) : null}

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { RepoProfile } from "@mo-devflow/shared";
 import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import {
+  activeNotificationDeliverySourceWhereSql,
   buildDailyDigestNotificationCandidate,
   dailyDigestMetricDate,
   notificationRecipient
@@ -100,6 +101,19 @@ describe("notification acknowledgement health", () => {
     expect(notificationStatusRequiresAcknowledgement("skipped_disabled")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_no_webhook")).toBe(false);
     expect(notificationStatusRequiresAcknowledgement("skipped_quiet_hours")).toBe(false);
+  });
+
+  test("builds strict active-source filter for notification health counters", () => {
+    expect(activeNotificationDeliverySourceWhereSql("d")).toBe(
+      [
+        "(",
+        "d.source_type = 'daily_digest'",
+        "OR (d.source_type = 'attention_item' AND EXISTS (SELECT 1 FROM attention_items ai WHERE ai.repo_id = d.repo_id AND ai.id = d.source_id AND ai.resolved_at IS NULL))",
+        "OR (d.source_type = 'workflow_violation' AND EXISTS (SELECT 1 FROM workflow_violations wv WHERE wv.repo_id = d.repo_id AND wv.id = d.source_id AND wv.resolved_at IS NULL))",
+        "OR (d.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = d.repo_id AND ad.id = d.source_id AND ad.resolved_at IS NULL))",
+        ")"
+      ].join(" ")
+    );
   });
 });
 

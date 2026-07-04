@@ -77,6 +77,17 @@ function recipientScope(profile: RepoProfile, recipient: unknown): NotificationD
   return asString(recipient) === profile.notifications.routing.fallbackRecipient ? "fallback" : "mapped_employee";
 }
 
+export function activeNotificationDeliverySourceWhereSql(deliveryAlias: "d" = "d"): string {
+  return [
+    "(",
+    `${deliveryAlias}.source_type = 'daily_digest'`,
+    `OR (${deliveryAlias}.source_type = 'attention_item' AND EXISTS (SELECT 1 FROM attention_items ai WHERE ai.repo_id = ${deliveryAlias}.repo_id AND ai.id = ${deliveryAlias}.source_id AND ai.resolved_at IS NULL))`,
+    `OR (${deliveryAlias}.source_type = 'workflow_violation' AND EXISTS (SELECT 1 FROM workflow_violations wv WHERE wv.repo_id = ${deliveryAlias}.repo_id AND wv.id = ${deliveryAlias}.source_id AND wv.resolved_at IS NULL))`,
+    `OR (${deliveryAlias}.source_type = 'ai_drift_signal' AND EXISTS (SELECT 1 FROM ai_drift_signals ad WHERE ad.repo_id = ${deliveryAlias}.repo_id AND ad.id = ${deliveryAlias}.source_id AND ad.resolved_at IS NULL))`,
+    ")"
+  ].join(" ");
+}
+
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
   return asString(value) === "complete_cache" ? "complete_cache" : "partial_cache";
 }
@@ -445,6 +456,7 @@ export async function acknowledgeNotificationDelivery(input: {
 }
 
 export async function getNotificationHealth(repoId: number, profile: RepoProfile): Promise<NotificationHealth> {
+  const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
        d.*,
@@ -459,8 +471,9 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
   );
   const [deliveryFailureRows] = await getPool().execute<RowData[]>(
     `SELECT COUNT(*) AS failed_count
-     FROM notification_deliveries
-     WHERE repo_id = ? AND status = 'failed'`,
+     FROM notification_deliveries d
+     WHERE d.repo_id = ? AND d.status = 'failed'
+       AND ${activeSourceWhere}`,
     [repoId]
   );
   const [unacknowledgedRows] = await getPool().execute<RowData[]>(
@@ -469,7 +482,8 @@ export async function getNotificationHealth(repoId: number, profile: RepoProfile
      LEFT JOIN notification_acknowledgements a ON a.notification_delivery_id = d.id
      WHERE d.repo_id = ?
        AND d.status = 'sent'
-       AND a.id IS NULL`,
+       AND a.id IS NULL
+       AND ${activeSourceWhere}`,
     [repoId]
   );
 
