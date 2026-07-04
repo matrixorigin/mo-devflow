@@ -171,7 +171,8 @@ type PrScopeFilter =
   | "evidence_pending"
   | "no_action_24h";
 type PrBoardTab = "rotation" | "testing";
-type PeopleScopeFilter = "all" | "critical" | "attention" | "triage" | "pending_pr" | "testing" | "yesterday_pr";
+type PeopleScopeFilter =
+  "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
 type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
@@ -1623,6 +1624,9 @@ function peopleScopeLabel(filter: PeopleScopeFilter): string {
   if (filter === "triage") {
     return "needs triage";
   }
+  if (filter === "deferred") {
+    return "deferred";
+  }
   if (filter === "pending_pr") {
     return "pending PR";
   }
@@ -1662,6 +1666,9 @@ function personMatchesScope(
   if (scopeFilter === "triage") {
     return person.needsTriageIssues > 0;
   }
+  if (scopeFilter === "deferred") {
+    return person.deferredIssues > 0;
+  }
   if (scopeFilter === "pending_pr") {
     return person.pendingPrs > 0;
   }
@@ -1698,6 +1705,9 @@ function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleSc
   }
   if (filter === "triage") {
     return "triage";
+  }
+  if (filter === "deferred") {
+    return "deferred";
   }
   if (filter === "yesterday_pr") {
     return "yesterday_pr";
@@ -1838,6 +1848,7 @@ function PeopleFilterBar({
             { label: "s-1/s0", value: "critical" },
             { label: "PR attention", value: "attention" },
             { label: "Triage", value: "triage" },
+            { label: "Deferred", value: "deferred" },
             { label: "Pending PR", value: "pending_pr" },
             { label: "Issue in test", value: "testing" },
             { label: "Yesterday PR", value: "yesterday_pr" }
@@ -4855,6 +4866,7 @@ function PeopleBoardSummary({
   const criticalPeople = people.filter((person) => person.activeCriticalIssues > 0).length;
   const attentionPeople = people.filter((person) => person.attentionPrs > 0).length;
   const triagePeople = people.filter((person) => person.needsTriageIssues > 0).length;
+  const deferredPeople = people.filter((person) => person.deferredIssues > 0).length;
   const pendingPrPeople = people.filter((person) => person.pendingPrs > 0).length;
   const testingPeople = people.filter((person) => testingCountForPeople(person.login, personalByLogin) > 0).length;
   const yesterdayPrPeople = people.filter(
@@ -4890,6 +4902,13 @@ function PeopleBoardSummary({
         tone={triagePeople > 0 ? "attention" : "good"}
         active={scopeFilter === "triage"}
         onClick={() => onScopeFilterChange("triage")}
+      />
+      <CriticalBoardStat
+        label="deferred"
+        value={deferredPeople}
+        tone={deferredPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "deferred"}
+        onClick={() => onScopeFilterChange("deferred")}
       />
       <CriticalBoardStat
         label="pending PR"
@@ -12027,6 +12046,15 @@ export default function App() {
                       onClick={() => setPeopleScopeFilter("attention")}
                     >
                       {peopleBoardPeople.reduce((sum, person) => sum + person.attentionPrs, 0)} PR attention
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${
+                        peopleBoardPeople.some((person) => person.deferredIssues > 0) ? "" : "inline-filter-chip-muted"
+                      } ${peopleScopeFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => setPeopleScopeFilter("deferred")}
+                    >
+                      {peopleBoardPeople.reduce((sum, person) => sum + person.deferredIssues, 0)} deferred
                     </button>
                   </Space>
                 </div>
