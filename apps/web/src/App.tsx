@@ -379,7 +379,7 @@ function linkedPrTooltip(pr: CriticalIssueLinkedPullRequestView): string {
 function WorkflowStateSnapshot({ title, snapshot }: { title: string; snapshot: WorkflowFixStateSnapshot }) {
   return (
     <div className="preview-state-panel">
-      <Space direction="vertical" size={6}>
+      <Space orientation="vertical" size={6}>
         <Space size={6} wrap>
           <Text strong>{title}</Text>
           <Tag>{snapshot.source}</Tag>
@@ -1432,15 +1432,15 @@ export default function App() {
         </Space>
       </Header>
       <Content className="content">
-        {error ? <Alert className="band" type="error" message="Dashboard unavailable" description={error} showIcon /> : null}
+        {error ? <Alert className="band" type="error" title="Dashboard unavailable" description={error} showIcon /> : null}
         {manualRefreshError ? (
-          <Alert className="band" type="error" message="Refresh was not queued" description={manualRefreshError} showIcon />
+          <Alert className="band" type="error" title="Refresh was not queued" description={manualRefreshError} showIcon />
         ) : null}
         {manualRefreshResult ? (
           <Alert
             className="band"
             type="success"
-            message={`Queued ${manualRefreshResult.queuedJobs.length} refresh jobs`}
+            title={`Queued ${manualRefreshResult.queuedJobs.length} refresh jobs`}
             description={`Request #${manualRefreshResult.requestId} at ${formatDate(manualRefreshResult.requestedAt)}: ${manualRefreshResult.requestedLayers
               .map(labelText)
               .join(", ")}`}
@@ -1455,7 +1455,7 @@ export default function App() {
               <Alert
                 className="band"
                 type="warning"
-                message={`${data.sync.staleObjects} cached objects are stale`}
+                title={`${data.sync.staleObjects} cached objects are stale`}
                 description={`Oldest visible cache age is ${
                   data.sync.oldestCacheAgeHours === null ? "unknown" : hours(data.sync.oldestCacheAgeHours)
                 }; stale threshold is ${hours(data.sync.staleThresholdHours)}.`}
@@ -1467,7 +1467,7 @@ export default function App() {
               <Alert
                 className="band"
                 type="warning"
-                message={`${data.sync.partialObjects} cached objects are partial`}
+                title={`${data.sync.partialObjects} cached objects are partial`}
                 description="Timeline, review, or CI backfill is not complete yet; stale decisions stay visible as partial evidence."
                 showIcon
               />
@@ -1477,7 +1477,7 @@ export default function App() {
               <Alert
                 className="band"
                 type="info"
-                message="This view is filtered by repository visibility policy"
+                title="This view is filtered by repository visibility policy"
                 description={`${data.visibility.note ?? ""} Scope: ${labelText(data.visibility.scope)}. Visible classes: ${data.visibility.visibleClasses
                   .map(labelText)
                   .join(", ") || "none"}.`}
@@ -1489,180 +1489,184 @@ export default function App() {
               <Alert
                 className="band"
                 type="warning"
-                message="Some sync layers have never run"
+                title="Some sync layers have never run"
                 description={`Missing layers: ${notStartedSyncLayers.map((item) => labelText(item.layer)).join(", ")}.`}
                 showIcon
               />
             ) : null}
 
-            <section className="kpi-grid">
-              <div className="metric">
-                <Statistic title="Critical Issues" value={data.counts.criticalIssues} />
-                <Progress percent={Math.min(100, data.counts.criticalIssues * 10)} showInfo={false} strokeColor="#dc2626" />
-              </div>
-              <div className="metric">
-                <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
-                <Progress percent={Math.min(100, data.counts.unownedCriticalIssues * 20)} showInfo={false} strokeColor="#d97706" />
-              </div>
-              <div className="metric">
-                <Statistic title="Non-watched Critical" value={data.counts.nonWatchedCriticalIssues} />
-                <Progress percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)} showInfo={false} strokeColor="#ca8a04" />
-              </div>
-              <div className="metric">
-                <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
-                <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
-              </div>
-              <div className="metric">
-                <Statistic title="Stale Cache" value={data.sync.staleObjects} />
-                <Progress
-                  percent={Math.min(100, data.sync.staleObjects * 5)}
-                  showInfo={false}
-                  strokeColor={data.sync.staleObjects > 0 ? "#d97706" : "#16a34a"}
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
-                <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
-              </div>
-              <div className="metric">
-                <Statistic title="Testing Queue" value={data.testing.queuePrs} />
-                <Progress
-                  percent={Math.min(100, data.testing.queuePrs * 20 + data.testing.staleQueuePrs * 25)}
-                  showInfo={false}
-                  strokeColor={data.testing.staleQueuePrs > 0 ? "#dc2626" : "#2563eb"}
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
-                <Progress
-                  percent={Math.min(100, data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations)}
-                  showInfo={false}
-                  strokeColor="#7c3aed"
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="AI Drift Signals" value={data.counts.aiDriftSignals} />
-                <Progress
-                  percent={Math.min(100, data.counts.criticalAiDriftSignals * 25 + data.counts.aiDriftSignals)}
-                  showInfo={false}
-                  strokeColor="#9333ea"
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="Active Notification Failures" value={data.notifications.failedDeliveries} />
-                <Progress
-                  percent={Math.min(100, data.notifications.failedDeliveries * 20)}
-                  showInfo={false}
-                  strokeColor={data.notifications.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="Job Queue" value={data.sync.jobQueue.queueDepth} />
-                <Progress
-                  percent={Math.min(
-                    100,
-                    data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25 + data.sync.jobQueue.blockedJobs * 30
-                  )}
-                  showInfo={false}
-                  strokeColor={
-                    data.sync.jobQueue.failedJobs > 0 ||
-                    data.sync.jobQueue.blockedJobs > 0 ||
-                    data.sync.jobQueue.staleLeases > 0
-                      ? "#dc2626"
-                      : "#16a34a"
-                  }
-                />
-              </div>
-              <div className="metric">
-                <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
-                <Progress
-                  percent={Math.min(
-                    100,
-                    data.webhooks.pendingDeliveries * 20 +
-                      data.webhooks.failedDeliveries * 25 +
-                      data.webhooks.ignoredDeliveries * 5
-                  )}
-                  showInfo={false}
-                  strokeColor={data.webhooks.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
-                />
-              </div>
-            </section>
-
-            {data.profileWarnings.map((warning) => (
-              <Alert
-                key={warning.key}
-                className="band"
-                type={profileWarningAlertType(warning.severity)}
-                message={warning.title}
-                description={`${warning.description} ${warning.action}`}
-                showIcon
-              />
-            ))}
-
-            {data.profileActions.length > 0 ? (
-              <section className="section">
-                <div className="section-heading">
-                  <Title level={4}>Profile Actions</Title>
-                  <Tag color="orange">{data.profileActions.length}</Tag>
-                </div>
-                <Space direction="vertical" size={12} className="full-width">
-                  {data.profileActions.map((suggestion) => (
-                    <Alert
-                      key={suggestion.key}
-                      type={profileWarningAlertType(suggestion.severity)}
-                      message={suggestion.title}
-                      description={
-                        <Space direction="vertical" size={8} className="full-width">
-                          <Text>
-                            {suggestion.description} {suggestion.action}
-                          </Text>
-                          {suggestion.relatedLogins.length > 0 ? (
-                            <Space size={[4, 4]} wrap>
-                              {suggestion.relatedLogins.map((login) => (
-                                <Tag color={attentionSeverityColor(suggestion.severity)} key={login}>
-                                  {login}
-                                </Tag>
-                              ))}
-                            </Space>
-                          ) : null}
-                          {suggestion.yamlSnippet ? (
-                            <Paragraph className="config-snippet" copyable={{ text: suggestion.yamlSnippet }}>
-                              {suggestion.yamlSnippet}
-                            </Paragraph>
-                          ) : null}
-                        </Space>
-                      }
-                      showIcon
+            {view === "Overview" ? (
+              <>
+                <section className="kpi-grid">
+                  <div className="metric">
+                    <Statistic title="Critical Issues" value={data.counts.criticalIssues} />
+                    <Progress percent={Math.min(100, data.counts.criticalIssues * 10)} showInfo={false} strokeColor="#dc2626" />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Unowned Critical" value={data.counts.unownedCriticalIssues} />
+                    <Progress percent={Math.min(100, data.counts.unownedCriticalIssues * 20)} showInfo={false} strokeColor="#d97706" />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Non-watched Critical" value={data.counts.nonWatchedCriticalIssues} />
+                    <Progress percent={Math.min(100, data.counts.nonWatchedCriticalIssues * 20)} showInfo={false} strokeColor="#ca8a04" />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Pending PRs" value={data.counts.pendingPrs} />
+                    <Progress percent={Math.min(100, data.counts.pendingPrs)} showInfo={false} strokeColor="#2563eb" />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Stale Cache" value={data.sync.staleObjects} />
+                    <Progress
+                      percent={Math.min(100, data.sync.staleObjects * 5)}
+                      showInfo={false}
+                      strokeColor={data.sync.staleObjects > 0 ? "#d97706" : "#16a34a"}
                     />
-                  ))}
-                </Space>
-              </section>
-            ) : null}
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Attention PRs" value={data.counts.attentionPrs} />
+                    <Progress percent={Math.min(100, data.counts.attentionPrs * 10)} showInfo={false} strokeColor="#ca8a04" />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Testing Queue" value={data.testing.queuePrs} />
+                    <Progress
+                      percent={Math.min(100, data.testing.queuePrs * 20 + data.testing.staleQueuePrs * 25)}
+                      showInfo={false}
+                      strokeColor={data.testing.staleQueuePrs > 0 ? "#dc2626" : "#2563eb"}
+                    />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Workflow Violations" value={data.counts.workflowViolations} />
+                    <Progress
+                      percent={Math.min(100, data.counts.criticalWorkflowViolations * 25 + data.counts.workflowViolations)}
+                      showInfo={false}
+                      strokeColor="#7c3aed"
+                    />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="AI Drift Signals" value={data.counts.aiDriftSignals} />
+                    <Progress
+                      percent={Math.min(100, data.counts.criticalAiDriftSignals * 25 + data.counts.aiDriftSignals)}
+                      showInfo={false}
+                      strokeColor="#9333ea"
+                    />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Active Notification Failures" value={data.notifications.failedDeliveries} />
+                    <Progress
+                      percent={Math.min(100, data.notifications.failedDeliveries * 20)}
+                      showInfo={false}
+                      strokeColor={data.notifications.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
+                    />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Job Queue" value={data.sync.jobQueue.queueDepth} />
+                    <Progress
+                      percent={Math.min(
+                        100,
+                        data.sync.jobQueue.queueDepth * 20 + data.sync.jobQueue.failedJobs * 25 + data.sync.jobQueue.blockedJobs * 30
+                      )}
+                      showInfo={false}
+                      strokeColor={
+                        data.sync.jobQueue.failedJobs > 0 ||
+                        data.sync.jobQueue.blockedJobs > 0 ||
+                        data.sync.jobQueue.staleLeases > 0
+                          ? "#dc2626"
+                          : "#16a34a"
+                      }
+                    />
+                  </div>
+                  <div className="metric">
+                    <Statistic title="Webhook Pending" value={data.webhooks.pendingDeliveries} />
+                    <Progress
+                      percent={Math.min(
+                        100,
+                        data.webhooks.pendingDeliveries * 20 +
+                          data.webhooks.failedDeliveries * 25 +
+                          data.webhooks.ignoredDeliveries * 5
+                      )}
+                      showInfo={false}
+                      strokeColor={data.webhooks.failedDeliveries > 0 ? "#dc2626" : "#16a34a"}
+                    />
+                  </div>
+                </section>
 
-            {criticalOwnerCoverageRows.length > 0 ? (
-              <section className="section">
-                <div className="section-heading">
-                  <Title level={4}>Critical Owner Coverage</Title>
-                  <Space size={[4, 4]} wrap>
-                    <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
-                    <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
-                  </Space>
-                </div>
-                <Table
-                  size="small"
-                  rowKey={(owner) => owner.ownerLogin ?? "unowned"}
-                  columns={criticalOwnerCoverageColumns}
-                  dataSource={criticalOwnerCoverageRows}
-                  pagination={false}
-                />
-              </section>
+                {data.profileWarnings.map((warning) => (
+                  <Alert
+                    key={warning.key}
+                    className="band"
+                    type={profileWarningAlertType(warning.severity)}
+                    title={warning.title}
+                    description={`${warning.description} ${warning.action}`}
+                    showIcon
+                  />
+                ))}
+
+                {data.profileActions.length > 0 ? (
+                  <section className="section">
+                    <div className="section-heading">
+                      <Title level={4}>Profile Actions</Title>
+                      <Tag color="orange">{data.profileActions.length}</Tag>
+                    </div>
+                    <Space orientation="vertical" size={12} className="full-width">
+                      {data.profileActions.map((suggestion) => (
+                        <Alert
+                          key={suggestion.key}
+                          type={profileWarningAlertType(suggestion.severity)}
+                          title={suggestion.title}
+                          description={
+                            <Space orientation="vertical" size={8} className="full-width">
+                              <Text>
+                                {suggestion.description} {suggestion.action}
+                              </Text>
+                              {suggestion.relatedLogins.length > 0 ? (
+                                <Space size={[4, 4]} wrap>
+                                  {suggestion.relatedLogins.map((login) => (
+                                    <Tag color={attentionSeverityColor(suggestion.severity)} key={login}>
+                                      {login}
+                                    </Tag>
+                                  ))}
+                                </Space>
+                              ) : null}
+                              {suggestion.yamlSnippet ? (
+                                <Paragraph className="config-snippet" copyable={{ text: suggestion.yamlSnippet }}>
+                                  {suggestion.yamlSnippet}
+                                </Paragraph>
+                              ) : null}
+                            </Space>
+                          }
+                          showIcon
+                        />
+                      ))}
+                    </Space>
+                  </section>
+                ) : null}
+
+                {criticalOwnerCoverageRows.length > 0 ? (
+                  <section className="section">
+                    <div className="section-heading">
+                      <Title level={4}>Critical Owner Coverage</Title>
+                      <Space size={[4, 4]} wrap>
+                        <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
+                        <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
+                      </Space>
+                    </div>
+                    <Table
+                      size="small"
+                      rowKey={(owner) => owner.ownerLogin ?? "unowned"}
+                      columns={criticalOwnerCoverageColumns}
+                      dataSource={criticalOwnerCoverageRows}
+                      pagination={false}
+                    />
+                  </section>
+                ) : null}
+              </>
             ) : null}
 
             {data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0 || data.sync.jobQueue.staleLeases > 0 ? (
               <Alert
                 className="band"
                 type="warning"
-                message="Worker job queue needs attention"
+                title="Worker job queue needs attention"
                 description={
                   data.sync.jobQueue.latestFailure ??
                   `${data.sync.jobQueue.failedJobs} failed jobs, ${data.sync.jobQueue.blockedJobs} blocked jobs, ${data.sync.jobQueue.staleLeases} stale leases.`
@@ -1675,7 +1679,7 @@ export default function App() {
               <Alert
                 className="band"
                 type={data.sync.worker.status === "failed" ? "error" : "warning"}
-                message="Worker heartbeat needs attention"
+                title="Worker heartbeat needs attention"
                 description={workerStatusDescription(data.sync.worker)}
                 showIcon
               />
@@ -1685,7 +1689,7 @@ export default function App() {
               <Alert
                 className="band"
                 type={latestRateLimitRemaining <= 0 ? "error" : "warning"}
-                message="GitHub API rate limit is low"
+                title="GitHub API rate limit is low"
                 description={`Latest ${latestRateLimitHealth?.layer ?? "sync"} run reported ${latestRateLimitRemaining} requests remaining.`}
                 showIcon
               />
@@ -1695,7 +1699,7 @@ export default function App() {
               <Alert
                 className="band"
                 type="warning"
-                message={`${data.testing.staleQueuePrs} PRs are stale in testing`}
+                title={`${data.testing.staleQueuePrs} PRs are stale in testing`}
                 description="Testing queue age currently uses cached PR update time until timeline handoff events are backfilled."
                 showIcon
               />
@@ -1705,7 +1709,7 @@ export default function App() {
               <Alert
                 className="band"
                 type="warning"
-                message="Webhook ingestion has failed deliveries"
+                title="Webhook ingestion has failed deliveries"
                 description={data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`}
                 showIcon
               />
@@ -1721,7 +1725,7 @@ export default function App() {
                   <Statistic
                     title="Worker"
                     value={labelText(data.sync.worker.status)}
-                    valueStyle={{ color: workerStatusColor(data.sync.worker.status) }}
+                    styles={{ content: { color: workerStatusColor(data.sync.worker.status) } }}
                   />
                   <Statistic title="Worker Phase" value={data.sync.worker.phase ? labelText(data.sync.worker.phase) : "-"} />
                   <Statistic title="Last Heartbeat" value={formatDate(data.sync.worker.heartbeatAt)} />
@@ -1729,7 +1733,7 @@ export default function App() {
                   <Statistic
                     title="GitHub Rate"
                     value={latestRateLimitRemaining === null ? "-" : latestRateLimitRemaining}
-                    valueStyle={{ color: rateLimitColor(latestRateLimitRemaining) }}
+                    styles={{ content: { color: rateLimitColor(latestRateLimitRemaining) } }}
                   />
                   <Statistic title="Stale Objects" value={data.sync.staleObjects} />
                   <Statistic title="Oldest Cache" value={data.sync.oldestCacheAgeHours === null ? "-" : hours(data.sync.oldestCacheAgeHours)} />
@@ -1754,9 +1758,9 @@ export default function App() {
                   <Statistic title="Testing Queue" value={data.testing.queuePrs} />
                   <Statistic title="Avg Testing Age" value={data.testing.averageQueueAgeHours === null ? "-" : hours(data.testing.averageQueueAgeHours)} />
                 </div>
-                <Space size={[6, 6]} wrap>
+                <Space className="sync-health-tags" size={[6, 6]} wrap>
                   {data.sync.health.map((item) => (
-                    <Space key={item.layer} size={2}>
+                    <Space className="sync-health-layer" key={item.layer} size={2}>
                       <Tooltip title={syncHealthTooltip(item)}>
                         <Tag color={syncHealthTagColor(item.status)}>
                           {item.layer}: {item.status}
@@ -1800,7 +1804,7 @@ export default function App() {
                   <Alert
                     className="band"
                     type="error"
-                    message="Notification acknowledgement failed"
+                    title="Notification acknowledgement failed"
                     description={notificationAckError}
                     showIcon
                   />
@@ -1809,21 +1813,21 @@ export default function App() {
                   <Alert
                     className="band"
                     type="info"
-                    message="WeCom delivery is disabled; notification runs are recorded as skipped without sending external requests."
+                    title="WeCom delivery is disabled; notification runs are recorded as skipped without sending external requests."
                     showIcon
                   />
                 ) : !data.notifications.webhookConfigured ? (
                   <Alert
                     className="band"
                     type="error"
-                    message="WeCom delivery is enabled but the webhook environment variable is not configured."
+                    title="WeCom delivery is enabled but the webhook environment variable is not configured."
                     showIcon
                   />
                 ) : data.notifications.failedDeliveries > 0 ? (
                   <Alert
                     className="band"
                     type="warning"
-                    message={`${data.notifications.failedDeliveries} active failed notification deliveries need attention.`}
+                    title={`${data.notifications.failedDeliveries} active failed notification deliveries need attention.`}
                     showIcon
                   />
                 ) : null}
@@ -1872,7 +1876,7 @@ export default function App() {
                   ) : null}
                 </div>
                 {selectedPersonalView ? (
-                  <Space direction="vertical" size={16} className="token-modal-body">
+                  <Space orientation="vertical" size={16} className="token-modal-body">
                     <Space size={[6, 6]} wrap>
                       <Tag color={selectedPersonalView.summary.activeCriticalIssues > 0 ? "red" : "default"}>
                         {selectedPersonalView.summary.activeCriticalIssues} critical
@@ -2012,7 +2016,7 @@ export default function App() {
                     options={metricPeriodOptions}
                   />
                 </div>
-                <Alert className="band" type="info" message={data.analytics.sourceNote} showIcon />
+                <Alert className="band" type="info" title={data.analytics.sourceNote} showIcon />
                 <TrendChart points={teamTrendPoints} />
               </section>
             ) : null}
@@ -2127,7 +2131,7 @@ export default function App() {
           setTokenError(null);
         }}
       >
-        <Space direction="vertical" size={12} className="token-modal-body">
+        <Space orientation="vertical" size={12} className="token-modal-body">
           <Input.Password
             aria-label="GitHub token"
             value={tokenInput}
@@ -2135,7 +2139,7 @@ export default function App() {
             placeholder="GitHub token"
             onChange={(event) => setTokenInput(event.target.value)}
           />
-          {tokenError ? <Alert type="error" message={tokenError} showIcon /> : null}
+          {tokenError ? <Alert type="error" title={tokenError} showIcon /> : null}
         </Space>
       </Modal>
       <Modal
@@ -2160,10 +2164,10 @@ export default function App() {
         }}
         onCancel={() => setPreviewModalOpen(false)}
       >
-        {previewError ? <Alert type="error" message={previewError} showIcon /> : null}
+        {previewError ? <Alert type="error" title={previewError} showIcon /> : null}
         {!previewError && !workflowPreview ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
         {workflowPreview ? (
-          <Space direction="vertical" size={12} className="token-modal-body">
+          <Space orientation="vertical" size={12} className="token-modal-body">
             <Space size={[6, 6]} wrap>
               <Tag color={workflowPreview.blockedReason ? "red" : "green"}>
                 {workflowPreview.blockedReason ? "blocked" : "ready"}
@@ -2179,7 +2183,7 @@ export default function App() {
               <WorkflowStateSnapshot title="Current" snapshot={workflowPreview.currentState} />
               <WorkflowStateSnapshot title="Proposed" snapshot={workflowPreview.proposedState} />
             </div>
-            {workflowPreview.blockedReason ? <Alert type="warning" message={workflowPreview.blockedReason} showIcon /> : null}
+            {workflowPreview.blockedReason ? <Alert type="warning" title={workflowPreview.blockedReason} showIcon /> : null}
             {workflowPreview.operations.length > 0 ? (
               <div className="preview-operations">
                 {workflowPreview.operations.map((operation, index) => (
@@ -2191,12 +2195,12 @@ export default function App() {
               </div>
             ) : null}
             {workflowPreview.warnings.map((warning) => (
-              <Alert key={warning} type="info" message={warning} showIcon />
+              <Alert key={warning} type="info" title={warning} showIcon />
             ))}
             {workflowExecution ? (
               <Alert
                 type={workflowExecution.status === "success" ? "success" : "warning"}
-                message={labelText(workflowExecution.status)}
+                title={labelText(workflowExecution.status)}
                 description={workflowExecution.errorMessage ?? workflowExecution.message}
                 showIcon
               />
