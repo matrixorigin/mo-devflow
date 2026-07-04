@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { WeComSendError } from "@mo-devflow/notifications";
+import type { NormalizedIssue } from "@mo-devflow/shared";
 import {
   commentBackfillLimitFromEnv,
+  issueEvidence,
   metricsRetentionDaysFromEnv,
   notificationFailureStatus,
   prDetailBackfillLimitFromEnv,
@@ -23,6 +25,63 @@ describe("PR attention evidence", () => {
     expect(prEvidence("ci_failed", 42, true)).toBe("PR #42 has failing CI checks.");
   });
 });
+
+describe("issue attention evidence", () => {
+  test("names partial issue update evidence for critical stale issues", () => {
+    expect(issueEvidence("critical_no_human_action", normalizedIssue())).toContain(
+      "partial cached issue update time until issue comments are backfilled"
+    );
+  });
+
+  test("names complete issue comment evidence when comment backfill is complete", () => {
+    expect(
+      issueEvidence("critical_no_human_action", {
+        ...normalizedIssue(),
+        commentEvidence: {
+          isComplete: true,
+          lastSyncedAt: "2026-07-04T00:00:00Z",
+          syncError: null,
+          comments: [
+            {
+              authorLogin: "alice",
+              body: "Still working on this.",
+              createdAt: "2026-07-03T00:00:00Z",
+              updatedAt: "2026-07-03T00:00:00Z"
+            }
+          ]
+        }
+      })
+    ).toContain("complete cached issue comments");
+  });
+});
+
+function normalizedIssue(): NormalizedIssue {
+  return {
+    githubId: 1,
+    number: 42,
+    title: "critical issue",
+    body: "",
+    state: "open",
+    authorLogin: "alice",
+    htmlUrl: "https://example.test/42",
+    createdAt: "2026-07-01T00:00:00Z",
+    updatedAt: "2026-07-02T00:00:00Z",
+    closedAt: null,
+    labels: ["kind/bug", "severity/s0"],
+    assignees: ["alice"],
+    ownerLogin: "alice",
+    ownerReason: "assignee",
+    lifecycleState: "active",
+    severity: "severity/s0",
+    aiEffortLabel: "ai-easy",
+    isPullRequest: false,
+    sourceAuthType: "anonymous",
+    sourceUserId: null,
+    visibilityClass: "anonymous_readable",
+    isComplete: false,
+    rawPayload: {}
+  };
+}
 
 describe("metrics retention", () => {
   test("uses a monthly-digest-safe default retention window", () => {

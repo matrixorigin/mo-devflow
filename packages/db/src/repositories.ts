@@ -1331,11 +1331,13 @@ export async function listPullRequestNumbersForDetailBackfill(repoId: number, li
 
 export async function listIssueCommentBackfillCandidates(
   repoId: number,
-  input: { includePullRequests: boolean; limit: number }
+  input: { criticalLabels: string[]; includePullRequests: boolean; limit: number }
 ): Promise<IssueCommentBackfillCandidate[]> {
   if (input.limit <= 0) {
     return [];
   }
+  const criticalLabels = input.criticalLabels.length > 0 ? input.criticalLabels : ["__mo_devflow_no_critical_label__"];
+  const criticalPlaceholders = criticalLabels.map(() => "?").join(", ");
   const issueSelect = `
     SELECT i.number AS issue_number,
            'issue' AS object_type,
@@ -1348,7 +1350,7 @@ export async function listIssueCommentBackfillCandidates(
     WHERE i.repo_id = ?
       AND i.state = 'open'
       AND i.is_pull_request = 0
-      AND i.lifecycle_state = 'deferred'
+      AND (i.lifecycle_state = 'deferred' OR i.severity IN (${criticalPlaceholders}))
       AND (
         s.issue_number IS NULL
         OR s.is_complete = 0
@@ -1374,8 +1376,8 @@ export async function listIssueCommentBackfillCandidates(
       )`;
   const selects = input.includePullRequests ? [issueSelect, pullRequestSelect] : [issueSelect];
   const params = input.includePullRequests
-    ? [repoId, repoId, Math.floor(input.limit)]
-    : [repoId, Math.floor(input.limit)];
+    ? [repoId, ...criticalLabels, repoId, Math.floor(input.limit)]
+    : [repoId, ...criticalLabels, Math.floor(input.limit)];
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT *
      FROM (${selects.join(" UNION ALL ")}) comment_candidates
@@ -1949,15 +1951,42 @@ export function criticalIssueBlockersFromCache(input: {
   return blockers.slice(0, 12);
 }
 
+function criticalIssueLastHumanAction(input: {
+  row: RowData;
+  commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>;
+}): Pick<CriticalIssueView, "lastHumanActionAt" | "lastHumanActionEvidence"> {
+  if (input.commentEvidence?.isComplete) {
+    const latestHumanCommentAt = input.commentEvidence.comments
+      .filter((comment) => !isBotLogin(comment.authorLogin))
+      .map((comment) => comment.updatedAt || comment.createdAt)
+      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
+    return {
+      lastHumanActionAt: latestHumanCommentAt ?? fromSqlDate(input.row.created_at),
+      lastHumanActionEvidence: "complete_cache"
+    };
+  }
+  return {
+    lastHumanActionAt: fromSqlDate(input.row.updated_at) ?? fromSqlDate(input.row.created_at),
+    lastHumanActionEvidence: "partial_cache"
+  };
+}
+
+function isBotLogin(login: string): boolean {
+  const normalized = login.toLowerCase();
+  return normalized.endsWith("[bot]") || normalized.includes("bot");
+}
+
 function toCriticalIssueView(
   row: RowData,
   linkedPullRequests: CriticalIssueLinkedPullRequestView[] = [],
-  watchedUsers: string[] = []
+  watchedUsers: string[] = [],
+  commentEvidence?: NonNullable<NormalizedIssue["commentEvidence"]>
 ): CriticalIssueView {
   const ownerLogin = row.owner_login ? asString(row.owner_login) : null;
   const aiEffortLabel = row.ai_effort_label ? asString(row.ai_effort_label) : "ai-easy";
   const syncError = row.sync_error ? asString(row.sync_error) : null;
   const isComplete = asNumber(row.is_complete) === 1;
+  const lastHumanAction = criticalIssueLastHumanAction({ row, commentEvidence });
   return {
     number: asNumber(row.number),
     title: asString(row.title),
@@ -1969,6 +1998,8 @@ function toCriticalIssueView(
     lifecycleState: asString(row.lifecycle_state) as CriticalIssueView["lifecycleState"],
     aiEffortLabel,
     ageHours: issueAgeHours(row),
+    lastHumanActionAt: lastHumanAction.lastHumanActionAt,
+    lastHumanActionEvidence: lastHumanAction.lastHumanActionEvidence,
     sourceUpdatedAt: fromSqlDate(row.updated_at) ?? new Date().toISOString(),
     lastSyncedAt: fromSqlDate(row.last_synced_at) ?? new Date().toISOString(),
     syncError,
@@ -2801,8 +2832,17 @@ export async function getDashboardSummary(
           [repoId, ...linkedPrVisibility.params]
         );
   const linkedPrsByIssueNumber = linkedPullRequestsByIssueNumber(linkedPrCandidateRows, criticalIssueNumbers);
+  const criticalIssueCommentEvidence = await issueCommentEvidenceByIssueNumber(
+    repoId,
+    Array.from(criticalIssueNumbers)
+  );
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
-    toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [], profile.people.watchedUsers)
+    toCriticalIssueView(
+      row,
+      linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
+      profile.people.watchedUsers,
+      criticalIssueCommentEvidence.get(asNumber(row.number))
+    )
   );
   const pendingPrs: PendingPrView[] = prRows.map(toPendingPrView);
 
@@ -2934,7 +2974,12 @@ export async function getDashboardSummary(
       activeCriticalIssues: ownedIssues
         .filter((row) => profile.labels.critical.includes(asString(row.severity)))
         .map((row) =>
-          toCriticalIssueView(row, linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [], profile.people.watchedUsers)
+          toCriticalIssueView(
+            row,
+            linkedPrsByIssueNumber.get(asNumber(row.number)) ?? [],
+            profile.people.watchedUsers,
+            criticalIssueCommentEvidence.get(asNumber(row.number))
+          )
         ),
       needsTriageIssues: ownedIssues
         .filter((row) =>

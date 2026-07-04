@@ -322,7 +322,7 @@ function activityFromIssue(
     tone,
     priority,
     ageHours: issue.ageHours,
-    lastHumanActionAt: null,
+    lastHumanActionAt: criticalIssue ? issue.lastHumanActionAt : null,
     testingQueueAgeHours: null,
     severity: issue.severity,
     lifecycleState: issue.lifecycleState,

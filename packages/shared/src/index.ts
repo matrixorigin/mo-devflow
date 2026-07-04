@@ -261,6 +261,8 @@ export interface CriticalIssueView {
   lifecycleState: LifecycleState;
   aiEffortLabel: string | null;
   ageHours: number;
+  lastHumanActionAt: string | null;
+  lastHumanActionEvidence: MetricSourceCompleteness;
   sourceUpdatedAt: string;
   lastSyncedAt: string;
   syncError: string | null;

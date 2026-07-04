@@ -1022,6 +1022,11 @@ function IssueWorkCard({ issue }: { issue: CriticalIssueView | PersonalIssueView
         <Tag>{labelText(issue.lifecycleState)}</Tag>
         {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
         {critical ? <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag> : null}
+        {critical && issue.lastHumanActionAt ? (
+          <Tag color={issue.lastHumanActionEvidence === "complete_cache" ? "green" : "gold"}>
+            last action {formatDate(issue.lastHumanActionAt)}
+          </Tag>
+        ) : null}
         {!issue.isComplete ? <Tag color="gold">partial</Tag> : null}
         {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
       </div>
@@ -1871,12 +1876,21 @@ export default function App() {
         render: (age) => hours(age)
       },
       {
-        title: "Updated",
-        dataIndex: "sourceUpdatedAt",
+        title: "Last action",
+        dataIndex: "lastHumanActionAt",
         width: 168,
         render: (value, issue) => (
-          <Tooltip title={`Cache synced ${formatDate(issue.lastSyncedAt)}`}>
-            <Text>{formatDate(value)}</Text>
+          <Tooltip
+            title={
+              issue.lastHumanActionEvidence === "complete_cache"
+                ? `From complete cached issue comments. Cache synced ${formatDate(issue.lastSyncedAt)}`
+                : `Partial evidence from cached issue update time. Cache synced ${formatDate(issue.lastSyncedAt)}`
+            }
+          >
+            <Space size={4}>
+              <Text>{formatDate(value)}</Text>
+              {issue.lastHumanActionEvidence === "partial_cache" ? <Tag color="gold">partial</Tag> : null}
+            </Space>
           </Tooltip>
         )
       }

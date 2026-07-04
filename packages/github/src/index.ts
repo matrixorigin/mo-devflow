@@ -867,7 +867,10 @@ function issueCommentBackfillCandidates(profile: RepoProfile, issues: IssueListI
     if (issue.pull_request) {
       return testingCommentSignalsConfigured;
     }
-    return issueHasLabel(issue, profile.labels.deferred);
+    return (
+      issueHasLabel(issue, profile.labels.deferred) ||
+      profile.labels.critical.some((label) => issueHasLabel(issue, label))
+    );
   });
 }
 

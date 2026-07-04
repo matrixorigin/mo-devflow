@@ -479,6 +479,17 @@ function latestHumanCommentTimestamp(commentEvidence: IssueCommentEvidence | und
   );
 }
 
+export function issueLastHumanActionAt(issue: NormalizedIssue): string {
+  const latestCommentAt = latestHumanCommentTimestamp(issue.commentEvidence);
+  if (latestCommentAt) {
+    return latestCommentAt;
+  }
+  if (issue.commentEvidence?.isComplete) {
+    return issue.createdAt;
+  }
+  return issue.updatedAt;
+}
+
 function isBotLogin(login: string): boolean {
   const normalized = login.toLowerCase();
   return normalized.endsWith("[bot]") || normalized.includes("bot");
@@ -491,7 +502,7 @@ export function criticalAttentionForIssue(profile: RepoProfile, issue: Normalize
   if (issue.state !== "open" || !issue.severity || !profile.labels.critical.includes(issue.severity)) {
     return [];
   }
-  if (hoursBetween(issue.updatedAt) >= profile.thresholds.criticalNoActionAttentionHours) {
+  if (hoursBetween(issueLastHumanActionAt(issue)) >= profile.thresholds.criticalNoActionAttentionHours) {
     return ["critical_no_human_action"];
   }
   return [];

@@ -4,6 +4,7 @@ import {
   aiDriftSignalsForIssue,
   aiDriftSignalsForPullRequest,
   criticalAttentionForIssue,
+  issueLastHumanActionAt,
   linkedPrAuthorsByIssueNumber,
   normalizeIssue,
   normalizePullRequest,
@@ -436,6 +437,43 @@ describe("rules", () => {
     expect(workflowViolationsForIssue(skippedProfile, issue)).toEqual([]);
     expect(aiDriftSignalsForIssue(skippedProfile, issue)).toEqual([]);
     expect(criticalAttentionForIssue(skippedProfile, issue)).toEqual([]);
+  });
+
+  test("critical issue attention uses complete human comment evidence when available", () => {
+    const updatedAt = "2026-01-02T00:00:00Z";
+    const recentCommentAt = new Date().toISOString();
+    const issue = normalizeIssue(
+      profile,
+      {
+        id: 51,
+        number: 51,
+        title: "critical with recent discussion",
+        state: "open",
+        user: { login: "reporter" },
+        html_url: "https://example.test/51",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: updatedAt,
+        labels: [{ name: "kind/bug" }, { name: "severity/s0" }],
+        assignees: [{ login: "alice" }]
+      },
+      anonymousSource
+    );
+    issue.commentEvidence = {
+      isComplete: true,
+      lastSyncedAt: recentCommentAt,
+      syncError: null,
+      comments: [
+        {
+          authorLogin: "alice",
+          body: "Still investigating the active s0 path.",
+          createdAt: recentCommentAt,
+          updatedAt: recentCommentAt
+        }
+      ]
+    };
+
+    expect(issueLastHumanActionAt(issue)).toBe(recentCommentAt);
+    expect(criticalAttentionForIssue(profile, issue)).toEqual([]);
   });
 
   test("testing flow detects configured tester reviewer handoff", () => {

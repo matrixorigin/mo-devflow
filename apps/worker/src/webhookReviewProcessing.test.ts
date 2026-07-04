@@ -256,6 +256,7 @@ describe("webhook review processing", () => {
       workflowViolations: 0
     });
     expect(mocks.listIssueCommentBackfillCandidates).toHaveBeenCalledWith(10, {
+      criticalLabels: ["severity/s-1", "severity/s0"],
       includePullRequests: false,
       limit: 2
     });

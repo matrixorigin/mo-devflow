@@ -41,6 +41,7 @@ import {
   aiDriftSignalsForPullRequest,
   aiDriftSignalsForIssue,
   criticalAttentionForIssue,
+  issueLastHumanActionAt,
   linkedPrAuthorsByIssueNumber,
   normalizeIssueComment,
   normalizeIssue,
@@ -207,6 +208,18 @@ export function prEvidence(flag: string, prNumber: number, isComplete: boolean):
   return isComplete
     ? evidence
     : `${evidence} Evidence is partial until PR detail, review, and timeline backfill completes.`;
+}
+
+export function issueEvidence(flag: string, issue: NormalizedIssue): string {
+  if (flag === "critical_no_human_action") {
+    const source = issue.commentEvidence?.isComplete
+      ? "complete cached issue comments"
+      : "partial cached issue update time until issue comments are backfilled";
+    return `Active s-1/s0 issue #${issue.number} has no recent human action since ${issueLastHumanActionAt(
+      issue
+    )}. Evidence uses ${source}.`;
+  }
+  return `Issue #${issue.number} needs attention: ${flag}.`;
 }
 
 function notificationLimitFromEnv(): number {
@@ -688,6 +701,7 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
   }
 
   const candidates = await listIssueCommentBackfillCandidates(repoId, {
+    criticalLabels: profile.labels.critical,
     includePullRequests: hasTestingCommentHandoffSignals(profile),
     limit
   });
@@ -815,7 +829,7 @@ export async function processWebhookPayload(input: {
         relatedLogin: issue.ownerLogin,
         targetRecipient: issue.ownerLogin,
         dedupeKey,
-        evidenceSummary: `Active s-1/s0 issue #${issue.number} has no recent human action.`,
+        evidenceSummary: issueEvidence(flag, issue),
         dashboardUrl: attentionDashboardUrl("issue")
       });
     }
@@ -1036,7 +1050,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           relatedLogin: issue.ownerLogin,
           targetRecipient: issue.ownerLogin,
           dedupeKey,
-          evidenceSummary: `Active s-1/s0 issue #${issue.number} has no recent human action.`,
+          evidenceSummary: issueEvidence(flag, issueWithComments),
           dashboardUrl: attentionDashboardUrl("issue")
         });
       }
