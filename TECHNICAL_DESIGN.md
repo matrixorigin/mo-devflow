@@ -319,6 +319,8 @@ Write flow:
 
 The API should reject or re-preview a write when the fresh GitHub state no longer matches the preview assumptions. This prevents applying stale label or comment changes after another maintainer has already updated the issue or PR.
 
+The dashboard should expose a read-only write audit for logged-in users. Audit rows must be filtered by the same cached object visibility policy as issues and PRs, and should include only summary fields required for operator review: GitHub login, target object, action key, execution status, operation summary, error summary, and timestamps. Raw tokens and full provider responses must never be returned to the frontend.
+
 Potential actions:
 
 - Add `needs-triage`.

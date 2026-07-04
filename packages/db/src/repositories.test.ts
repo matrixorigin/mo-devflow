@@ -21,6 +21,7 @@ import {
   testingReviewerCoverage,
   visibleClassesForDashboard
 } from "./repositories";
+import { workflowFixOperationsFromJson, writeActionExecutionViewFromRow } from "./writeActions";
 
 const baseProfile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -117,6 +118,73 @@ describe("dashboard visibility", () => {
     expect(dashboardVisibilityFilter("i", baseProfile, { authenticated: true, userId: 42 })).toEqual({
       sql: "(i.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (i.visibility_class = 'token_owner_only' AND i.source_user_id = ?))",
       params: [42]
+    });
+  });
+});
+
+describe("write action audit view", () => {
+  test("parses only supported workflow operations for dashboard audit output", () => {
+    expect(
+      workflowFixOperationsFromJson(
+        JSON.stringify([
+          { type: "add_label", label: "needs-triage" },
+          { type: "remove_label", label: "severity/s0" },
+          { type: "add_comment", body: "Deferred with reason." },
+          { type: "add_label", label: "" },
+          { type: "unknown", label: "ignored" },
+          "not-an-operation"
+        ])
+      )
+    ).toEqual([
+      { type: "add_label", label: "needs-triage" },
+      { type: "remove_label", label: "severity/s0" },
+      { type: "add_comment", body: "Deferred with reason." }
+    ]);
+  });
+
+  test("drops malformed workflow operation JSON instead of exposing raw payloads", () => {
+    expect(workflowFixOperationsFromJson("{not-json")).toEqual([]);
+    expect(workflowFixOperationsFromJson(JSON.stringify({ type: "add_label", label: "needs-triage" }))).toEqual([]);
+  });
+
+  test("maps write execution rows to frontend-safe audit summaries", () => {
+    expect(
+      writeActionExecutionViewFromRow({
+        id: 12,
+        preview_id: "preview-1",
+        github_login: "alice",
+        action_key: "move_to_deferred",
+        object_type: "issue",
+        object_number: 42,
+        object_title: "panic on insert",
+        object_html_url: "https://github.com/matrixorigin/matrixone/issues/42",
+        status: "success",
+        operations_json: JSON.stringify([
+          { type: "remove_label", label: "severity/s0" },
+          { type: "add_label", label: "deferred" }
+        ]),
+        github_response_json: JSON.stringify({ provider: "not returned by mapper" }),
+        error_message: null,
+        started_at: "2026-07-04 01:02:03",
+        finished_at: "2026-07-04 01:02:04"
+      })
+    ).toEqual({
+      id: 12,
+      previewId: "preview-1",
+      githubLogin: "alice",
+      actionKey: "move_to_deferred",
+      objectType: "issue",
+      objectNumber: 42,
+      title: "panic on insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+      status: "success",
+      executedOperations: [
+        { type: "remove_label", label: "severity/s0" },
+        { type: "add_label", label: "deferred" }
+      ],
+      errorMessage: null,
+      startedAt: "2026-07-04T01:02:03Z",
+      finishedAt: "2026-07-04T01:02:04Z"
     });
   });
 });

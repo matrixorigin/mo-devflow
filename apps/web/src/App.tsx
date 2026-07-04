@@ -43,6 +43,7 @@ import type {
   ProfileConfigurationWarning,
   SessionView,
   TestingFlowState,
+  WriteActionExecutionView,
   WorkflowFixActionKey,
   WorkflowFixExecutionResult,
   WorkflowFixPreview,
@@ -258,6 +259,29 @@ function notificationStatusColor(value: NotificationStatus): string {
     return "orange";
   }
   return "default";
+}
+
+function workflowExecutionStatusColor(value: WriteActionExecutionView["status"]): string {
+  if (value === "success") {
+    return "green";
+  }
+  if (value === "failed" || value === "token_unavailable") {
+    return "red";
+  }
+  if (value === "stale_preview" || value === "blocked") {
+    return "orange";
+  }
+  return "default";
+}
+
+function workflowOperationSummary(operation: WriteActionExecutionView["executedOperations"][number]): string {
+  if (operation.type === "add_label") {
+    return `+ ${operation.label}`;
+  }
+  if (operation.type === "remove_label") {
+    return `- ${operation.label}`;
+  }
+  return "comment";
 }
 
 function NotificationTraceTag({ notification }: { notification: NotificationTraceView }) {
@@ -1372,6 +1396,86 @@ export default function App() {
     [notificationAckSavingId, session]
   );
 
+  const writeActionColumns: ColumnsType<WriteActionExecutionView> = useMemo(
+    () => [
+      {
+        title: "Status",
+        dataIndex: "status",
+        width: 148,
+        render: (status) => <Tag color={workflowExecutionStatusColor(status)}>{labelText(status)}</Tag>
+      },
+      {
+        title: "Actor",
+        dataIndex: "githubLogin",
+        width: 140,
+        render: (login) => <Tag>{login}</Tag>
+      },
+      {
+        title: "Object",
+        width: 132,
+        render: (_, execution) =>
+          execution.htmlUrl ? (
+            <a href={execution.htmlUrl} target="_blank" rel="noreferrer">
+              {execution.objectType === "issue" ? "Issue" : "PR"} #{execution.objectNumber}
+            </a>
+          ) : (
+            <Text>
+              {labelText(execution.objectType)} #{execution.objectNumber}
+            </Text>
+          )
+      },
+      {
+        title: "Title",
+        dataIndex: "title",
+        ellipsis: true,
+        render: (title) => <Text ellipsis={{ tooltip: title }}>{title}</Text>
+      },
+      {
+        title: "Action",
+        dataIndex: "actionKey",
+        width: 180,
+        render: (action) => <Tag color="blue">{labelText(action)}</Tag>
+      },
+      {
+        title: "Operations",
+        dataIndex: "executedOperations",
+        width: 300,
+        render: (operations: WriteActionExecutionView["executedOperations"]) =>
+          operations.length === 0 ? (
+            <Tag>none</Tag>
+          ) : (
+            <Space size={[4, 4]} wrap>
+              {operations.slice(0, 4).map((operation, index) => (
+                <Tooltip
+                  key={`${operation.type}-${index}`}
+                  title={operation.type === "add_comment" ? operation.body : undefined}
+                >
+                  <Tag color={operation.type === "remove_label" ? "orange" : "green"}>
+                    {workflowOperationSummary(operation)}
+                  </Tag>
+                </Tooltip>
+              ))}
+              {operations.length > 4 ? <Tag>+{operations.length - 4}</Tag> : null}
+            </Space>
+          )
+      },
+      {
+        title: "Finished",
+        dataIndex: "finishedAt",
+        width: 168,
+        render: (value) => formatDate(value)
+      },
+      {
+        title: "Error",
+        dataIndex: "errorMessage",
+        width: 300,
+        ellipsis: true,
+        render: (value) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : <Text type="secondary">-</Text>)
+      }
+    ],
+    []
+  );
+
   const testerColumns: ColumnsType<DashboardSummary["testing"]["testers"][number]> = useMemo(
     () => [
       { title: "Tester", dataIndex: "login", render: (login) => <Tag>{login}</Tag> },
@@ -1414,7 +1518,7 @@ export default function App() {
               className="view-tabs"
               value={view}
               onChange={(value) => setView(String(value))}
-              options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications"]}
+              options={["Overview", "Personal", "Analytics", "People", "PRs", "Violations", "Drift", "Notifications", "Audit"]}
             />
           </div>
           {authenticatedUser && headerIssueLabelCapability ? (
@@ -1889,6 +1993,37 @@ export default function App() {
                   scroll={{ x: 1220 }}
                   pagination={{ pageSize: 8 }}
                   locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
+                />
+              </section>
+            ) : null}
+
+            {view === "Audit" || view === "Overview" ? (
+              <section className="section">
+                <div className="section-heading">
+                  <Space>
+                    <ClipboardCheck size={18} />
+                    <Title level={4}>Write Audit</Title>
+                  </Space>
+                  <Text type="secondary">{session?.authenticated ? "Recent confirmed workflow fixes" : "Login required"}</Text>
+                </div>
+                <Table
+                  rowKey="id"
+                  size="middle"
+                  columns={writeActionColumns}
+                  dataSource={data.writeActions}
+                  scroll={{ x: 1420 }}
+                  pagination={{ pageSize: 8 }}
+                  locale={{
+                    emptyText: (
+                      <Empty
+                        description={
+                          session?.authenticated
+                            ? "No workflow fix executions visible in cache"
+                            : "Connect GitHub token to view write audit"
+                        }
+                      />
+                    )
+                  }}
                 />
               </section>
             ) : null}

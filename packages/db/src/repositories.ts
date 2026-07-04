@@ -30,7 +30,8 @@ import type {
   TestingSummary,
   WorkerHealth,
   WorkflowViolation,
-  WorkflowViolationView
+  WorkflowViolationView,
+  WriteActionExecutionView
 } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers, parseJsonArray, parseJsonRecord, syncHealthLayers } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
@@ -41,6 +42,7 @@ import { addDaysToDateKey, dateKeyInTimezone, previousCalendarDayRange } from ".
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 import { getWebhookIngestionHealth } from "./webhooks";
 import { getWorkerHealth } from "./workerHealth";
+import { listWriteActionExecutionsForDashboard } from "./writeActions";
 
 export { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 export { calendarDayRangeInTimezone, dateKeyInTimezone, previousCalendarDayRange } from "./time";
@@ -2318,6 +2320,11 @@ export async function getDashboardSummary(
   const worker: WorkerHealth = await getWorkerHealth();
   const notifications = await getNotificationHealth({ repoId, profile, viewer });
   const webhooks = await getWebhookIngestionHealth(repoId);
+  const writeActions: WriteActionExecutionView[] = await listWriteActionExecutionsForDashboard({
+    repoId,
+    profile,
+    viewer
+  });
   const criticalOwnershipCounts = criticalIssueOwnershipCounts(criticalIssues, profile.people.watchedUsers);
   const criticalOwnerCoverage = criticalIssueOwnerCoverage(criticalIssues);
   const testingReviewerCandidates = testingReviewerCoverage(
@@ -2387,6 +2394,7 @@ export async function getDashboardSummary(
     pendingPrs,
     workflowViolations,
     aiDriftSignals,
+    writeActions,
     analytics,
     testing,
     notifications,

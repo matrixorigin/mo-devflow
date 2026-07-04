@@ -625,6 +625,8 @@ Audit records should include:
 - Provider response or error.
 - Time of execution.
 
+The UI should expose recent write executions to logged-in users without exposing raw GitHub tokens or full provider payloads.
+
 ## 15. MVP Scope
 
 The first usable version should be delivered in phases.

@@ -3,8 +3,10 @@ import type {
   RepoProfile,
   WorkflowFixExecutionResult,
   WorkflowFixExecutionStatus,
+  WorkflowFixOperation,
   WorkflowFixPreview,
-  WorkflowViolationView
+  WorkflowViolationView,
+  WriteActionExecutionView
 } from "@mo-devflow/shared";
 import { emptyNotificationTrace, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
@@ -250,4 +252,100 @@ export async function recordWorkflowFixExecution(input: {
       sqlDate(input.result.executedAt)
     ]
   );
+}
+
+export function workflowFixOperationsFromJson(value: string | null | undefined): WorkflowFixOperation[] {
+  const parsed = parseJsonRecord<unknown>(value, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const operations: WorkflowFixOperation[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const operation = item as Record<string, unknown>;
+    if (
+      (operation.type === "add_label" || operation.type === "remove_label") &&
+      typeof operation.label === "string" &&
+      operation.label.trim()
+    ) {
+      operations.push({ type: operation.type, label: operation.label });
+    }
+    if (operation.type === "add_comment" && typeof operation.body === "string" && operation.body.trim()) {
+      operations.push({ type: "add_comment", body: operation.body });
+    }
+  }
+  return operations;
+}
+
+export function writeActionExecutionViewFromRow(row: Record<string, unknown>): WriteActionExecutionView {
+  return {
+    id: asNumber(row.id),
+    previewId: asString(row.preview_id),
+    githubLogin: asString(row.github_login),
+    actionKey: asString(row.action_key) as WriteActionExecutionView["actionKey"],
+    objectType: asString(row.object_type) as WriteActionExecutionView["objectType"],
+    objectNumber: asNumber(row.object_number),
+    title: asString(row.object_title),
+    htmlUrl: row.object_html_url ? asString(row.object_html_url) : null,
+    status: asString(row.status) as WriteActionExecutionView["status"],
+    executedOperations: workflowFixOperationsFromJson(asString(row.operations_json)),
+    errorMessage: row.error_message ? asString(row.error_message) : null,
+    startedAt: fromSqlDate(row.started_at) ?? new Date(0).toISOString(),
+    finishedAt: fromSqlDate(row.finished_at) ?? new Date(0).toISOString()
+  };
+}
+
+export async function listWriteActionExecutionsForDashboard(input: {
+  repoId: number;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
+  limit?: number;
+}): Promise<WriteActionExecutionView[]> {
+  if (!input.viewer.authenticated) {
+    return [];
+  }
+
+  const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)));
+  const issueVisibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT
+       e.id,
+       e.preview_id,
+       e.github_login,
+       e.action_key,
+       e.object_type,
+       e.object_number,
+       e.status,
+       e.operations_json,
+       e.error_message,
+       e.started_at,
+       e.finished_at,
+       COALESCE(i.title, p.title, CONCAT(e.object_type, ' #', e.object_number)) AS object_title,
+       COALESCE(i.html_url, p.html_url) AS object_html_url
+     FROM write_action_executions e
+     LEFT JOIN issues i
+       ON e.object_type = 'issue'
+      AND i.repo_id = e.repo_id
+      AND i.number = e.object_number
+      AND i.is_pull_request = 0
+     LEFT JOIN pull_requests p
+       ON e.object_type = 'pull_request'
+      AND p.repo_id = e.repo_id
+      AND p.number = e.object_number
+     WHERE e.repo_id = ?
+       AND (
+         (e.object_type = 'issue' AND i.id IS NOT NULL AND ${issueVisibility.sql})
+         OR
+         (e.object_type = 'pull_request' AND p.id IS NOT NULL AND ${pullRequestVisibility.sql})
+       )
+     ORDER BY e.finished_at DESC, e.id DESC
+     LIMIT ${limit}`,
+    [input.repoId, ...issueVisibility.params, ...pullRequestVisibility.params]
+  );
+
+  return rows.map(writeActionExecutionViewFromRow);
 }

@@ -452,6 +452,22 @@ export interface WorkflowFixExecutionResult {
   executedAt: string;
 }
 
+export interface WriteActionExecutionView {
+  id: number;
+  previewId: string;
+  githubLogin: string;
+  actionKey: WorkflowFixActionKey;
+  objectType: WorkflowViolationObjectType;
+  objectNumber: number;
+  title: string;
+  htmlUrl: string | null;
+  status: WorkflowFixExecutionStatus;
+  executedOperations: WorkflowFixOperation[];
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string;
+}
+
 export type AiDriftObjectType = "issue" | "pull_request";
 export type AiDriftSeverity = "info" | "warning" | "critical";
 
@@ -739,6 +755,7 @@ export interface DashboardSummary {
   pendingPrs: PendingPrView[];
   workflowViolations: WorkflowViolationView[];
   aiDriftSignals: AiDriftSignalView[];
+  writeActions: WriteActionExecutionView[];
   analytics: AnalyticsSummary;
   testing: TestingSummary;
   notifications: NotificationHealth;
