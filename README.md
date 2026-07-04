@@ -75,10 +75,12 @@ results are audited, and the dashboard exposes recent write executions in the
 Audit view for logged-in users. Current fixes can add `needs-triage` or move
 stale or premature active issues to `deferred` with an explanatory comment.
 Issue workflow fixes require a validated token with classic `repo` or
-`public_repo` scope before the UI and API will offer the action. Before a
-preview is recorded, the API also performs a fresh GitHub read with the user's
-token; rejected tokens are revoked locally so the UI moves back to the reconnect
-flow.
+`public_repo` scope and `triage`, `write`, `maintain`, or `admin` permission on
+the configured repository before the UI and API will offer the action. The
+session view exposes the current repository permission so users can distinguish
+scope problems from repo permission problems. Before a preview is recorded, the
+API also performs a fresh GitHub read with the user's token; rejected tokens are
+revoked locally so the UI moves back to the reconnect flow.
 
 The worker is driven by the MatrixOne-backed `jobs` table. Recurring GitHub
 sync, rule, metric, AI drift, and notification jobs use leases, retry backoff,

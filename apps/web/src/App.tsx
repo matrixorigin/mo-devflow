@@ -31,6 +31,7 @@ import type {
   CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardSummary,
+  GitHubWriteCapability,
   ManualRefreshLayer,
   ManualRefreshResult,
   MetricPeriod,
@@ -218,6 +219,64 @@ function ownerScopeTooltip(scope: CriticalIssueOwnerScope): string {
 
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function capabilityStatusColor(status: GitHubWriteCapability["status"]): string {
+  if (status === "ready") {
+    return "green";
+  }
+  if (status === "write_back_disabled") {
+    return "default";
+  }
+  if (status === "missing_token" || status === "scope_unverified" || status === "repo_permission_unverified") {
+    return "orange";
+  }
+  return "red";
+}
+
+function repoPermissionColor(permission: GitHubWriteCapability["repoPermission"]): string {
+  if (permission === "admin" || permission === "maintain" || permission === "write" || permission === "triage") {
+    return "green";
+  }
+  if (permission === "unverified") {
+    return "orange";
+  }
+  return "red";
+}
+
+function TokenCapabilityPanel({ capability }: { capability: GitHubWriteCapability }) {
+  return (
+    <Space orientation="vertical" size={8} className="token-capability-panel">
+      <Space size={[6, 6]} wrap>
+        <Tag color={capabilityStatusColor(capability.status)}>{labelText(capability.status)}</Tag>
+        <Tag color={repoPermissionColor(capability.repoPermission)}>repo: {capability.repoPermission}</Tag>
+      </Space>
+      <Text>{capability.message}</Text>
+      <div className="token-capability-row">
+        <Text type="secondary">Scopes</Text>
+        <Space size={[4, 4]} wrap>
+          {capability.currentScopes.length > 0 ? (
+            capability.currentScopes.map((scope) => <Tag key={scope}>{scope}</Tag>)
+          ) : (
+            <Tag color="orange">unreported</Tag>
+          )}
+        </Space>
+      </div>
+      <div className="token-capability-row">
+        <Text type="secondary">Required</Text>
+        <Space size={[4, 4]} wrap>
+          {capability.requiredScopes.map((scope) => (
+            <Tag key={scope}>{scope}</Tag>
+          ))}
+          {capability.requiredRepoPermissions.map((permission) => (
+            <Tag key={permission} color="blue">
+              repo:{permission}
+            </Tag>
+          ))}
+        </Space>
+      </div>
+    </Space>
+  );
 }
 
 function profileWarningAlertType(severity: ProfileConfigurationWarning["severity"]): "info" | "warning" | "error" {
@@ -1847,6 +1906,11 @@ export default function App() {
                 {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
               </Avatar>
               <Tag>{authenticatedUser.githubLogin}</Tag>
+              <Tooltip title={<TokenCapabilityPanel capability={headerIssueLabelCapability} />}>
+                <Tag color={capabilityStatusColor(headerIssueLabelCapability.status)}>
+                  {headerIssueLabelCapability.enabled ? "write ready" : labelText(headerIssueLabelCapability.status)}
+                </Tag>
+              </Tooltip>
               <Tooltip
                 title={
                   tokenEncryptionUnavailable
@@ -2784,6 +2848,15 @@ export default function App() {
         }}
       >
         <Space orientation="vertical" size={12} className="token-modal-body">
+          {authenticatedUser && headerIssueLabelCapability ? (
+            <TokenCapabilityPanel capability={headerIssueLabelCapability} />
+          ) : (
+            <Alert
+              type="info"
+              title="Token needs repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+              showIcon
+            />
+          )}
           <Input.Password
             aria-label="GitHub token"
             value={tokenInput}

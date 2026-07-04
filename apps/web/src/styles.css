@@ -247,6 +247,28 @@ body {
   width: 100%;
 }
 
+.token-capability-panel {
+  max-width: min(460px, calc(100vw - 64px));
+  width: 100%;
+}
+
+.token-capability-row {
+  align-items: flex-start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 74px minmax(0, 1fr);
+  width: 100%;
+}
+
+.token-capability-row .ant-space {
+  min-width: 0;
+}
+
+.token-capability-row .ant-tag {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .preview-operations {
   display: grid;
   gap: 8px;
