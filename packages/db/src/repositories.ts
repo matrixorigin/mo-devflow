@@ -877,11 +877,13 @@ function linkedPullRequestsByIssueNumber(
 }
 
 function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string): CriticalIssueBlockerView {
+  const message = (value: string): string =>
+    pr.isComplete ? value : `${value} Partial PR evidence until detail backfill completes.`;
   if (flag === "merge_conflict") {
     return {
       key: `pr:${pr.number}:merge_conflict`,
       severity: "critical",
-      message: `PR #${pr.number} has a merge conflict.`,
+      message: message(`PR #${pr.number} has a merge conflict.`),
       relatedPrNumber: pr.number
     };
   }
@@ -889,7 +891,7 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     return {
       key: `pr:${pr.number}:ci_failed`,
       severity: "warning",
-      message: `PR #${pr.number} has failing CI.`,
+      message: message(`PR #${pr.number} has failing CI.`),
       relatedPrNumber: pr.number
     };
   }
@@ -897,7 +899,7 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     return {
       key: `pr:${pr.number}:requested_changes`,
       severity: "warning",
-      message: `PR #${pr.number} has unresolved requested changes.`,
+      message: message(`PR #${pr.number} has unresolved requested changes.`),
       relatedPrNumber: pr.number
     };
   }
@@ -905,7 +907,7 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     return {
       key: `pr:${pr.number}:no_human_action_24h`,
       severity: "warning",
-      message: `PR #${pr.number} has no recent human action.`,
+      message: message(`PR #${pr.number} has no recent human action.`),
       relatedPrNumber: pr.number
     };
   }
@@ -913,14 +915,14 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     return {
       key: `pr:${pr.number}:testing_stalled`,
       severity: "warning",
-      message: `PR #${pr.number} is stalled in testing handoff.`,
+      message: message(`PR #${pr.number} is stalled in testing handoff.`),
       relatedPrNumber: pr.number
     };
   }
   return {
     key: `pr:${pr.number}:${flag}`,
     severity: "warning",
-    message: `PR #${pr.number} needs attention: ${flag}.`,
+    message: message(`PR #${pr.number} needs attention: ${flag}.`),
     relatedPrNumber: pr.number
   };
 }

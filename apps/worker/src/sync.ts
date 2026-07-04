@@ -103,20 +103,22 @@ function pullRequestAttentionDedupeKey(profileKey: string, prNumber: number, fla
   return `${profileKey}:pr:${prNumber}:${flag}`;
 }
 
-function prEvidence(flag: string, prNumber: number): string {
+export function prEvidence(flag: string, prNumber: number, isComplete: boolean): string {
+  let evidence: string;
   if (flag === "requested_changes") {
-    return `PR #${prNumber} has unresolved requested changes.`;
+    evidence = `PR #${prNumber} has unresolved requested changes.`;
+  } else if (flag === "ci_failed") {
+    evidence = `PR #${prNumber} has failing CI checks.`;
+  } else if (flag === "merge_conflict") {
+    evidence = `PR #${prNumber} has a merge conflict.`;
+  } else if (flag === "testing_stalled") {
+    evidence = `PR #${prNumber} is stalled in testing handoff.`;
+  } else {
+    evidence = `PR #${prNumber} has no recent human action.`;
   }
-  if (flag === "ci_failed") {
-    return `PR #${prNumber} has failing CI checks.`;
-  }
-  if (flag === "merge_conflict") {
-    return `PR #${prNumber} has a merge conflict.`;
-  }
-  if (flag === "testing_stalled") {
-    return `PR #${prNumber} is stalled in testing handoff.`;
-  }
-  return `PR #${prNumber} has no recent human action.`;
+  return isComplete
+    ? evidence
+    : `${evidence} Evidence is partial until PR detail, review, and timeline backfill completes.`;
 }
 
 function notificationLimitFromEnv(): number {
@@ -443,7 +445,7 @@ async function processWebhookPayload(input: {
         relatedLogin: cachedPr.ownerLogin,
         targetRecipient: cachedPr.ownerLogin,
         dedupeKey,
-        evidenceSummary: prEvidence(flag, cachedPr.number)
+        evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
       });
     }
     await resolveStaleAttentionItems({
@@ -604,7 +606,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           relatedLogin: cachedPr.ownerLogin,
           targetRecipient: cachedPr.ownerLogin,
           dedupeKey,
-          evidenceSummary: prEvidence(flag, cachedPr.number)
+          evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete)
         });
       }
       resolvedAttentionItems += await resolveStaleAttentionItems({

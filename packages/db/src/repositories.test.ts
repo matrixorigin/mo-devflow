@@ -270,6 +270,24 @@ describe("critical issue cache blockers", () => {
     });
   });
 
+  test("marks linked PR attention as partial when PR detail backfill is incomplete", () => {
+    const blockers = criticalIssueBlockersFromCache({
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      isComplete: true,
+      syncError: null,
+      linkedPullRequests: [
+        {
+          ...linkedPr,
+          isComplete: false,
+          attentionFlags: ["no_human_action_24h"]
+        }
+      ]
+    });
+
+    expect(blockers[0]?.message).toContain("Partial PR evidence");
+  });
+
   test("marks missing linked PR as informational cache evidence", () => {
     expect(
       criticalIssueBlockersFromCache({
