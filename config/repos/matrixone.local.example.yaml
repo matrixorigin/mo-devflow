@@ -5,6 +5,12 @@
 repo:
   local_path: /path/to/matrixone
 
+access:
+  # Keep committed profiles read-only by default. Set this only in a local
+  # untracked profile when you are ready to preview and confirm GitHub writes
+  # through your own connected token.
+  write_back_enabled: true
+
 people:
   watched_users:
     - developer-a

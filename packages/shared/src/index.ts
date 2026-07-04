@@ -125,6 +125,7 @@ export interface ProfileSetupPlan {
 
 export interface RepoProfileConfigurationStatus {
   localCheckoutConfigured: boolean;
+  writeBackEnabled: boolean;
   watchedUsersConfigured: boolean;
   watchedUserCount: number;
   testersConfigured: boolean;
@@ -153,6 +154,7 @@ export function repoProfileConfigurationStatus(
 
   return {
     localCheckoutConfigured: Boolean(profile.repo.localPath),
+    writeBackEnabled: profile.access.writeBackEnabled,
     watchedUsersConfigured: watchedUserCount > 0,
     watchedUserCount,
     testersConfigured: testerCount > 0,

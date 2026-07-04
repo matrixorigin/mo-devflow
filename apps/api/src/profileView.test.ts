@@ -81,6 +81,7 @@ describe("public repo profile view", () => {
     expect(view.repo).toEqual({ owner: "matrixorigin", name: "matrixone" });
     expect(view.configuration).toMatchObject({
       localCheckoutConfigured: true,
+      writeBackEnabled: false,
       watchedUsersConfigured: true,
       watchedUserCount: 1,
       testersConfigured: true,

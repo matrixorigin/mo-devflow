@@ -692,6 +692,15 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
       configured: configuration.localCheckoutConfigured
     },
     {
+      key: "workflow-fixes",
+      label: "Workflow fixes",
+      value: configuration.writeBackEnabled ? "enabled" : "read-only",
+      detail: configuration.writeBackEnabled
+        ? "Logged-in users with a capable token can preview and confirm workflow fixes."
+        : "GitHub write-back is disabled by the repository profile.",
+      configured: configuration.writeBackEnabled
+    },
+    {
       key: "notification-employees",
       label: "Notification mappings",
       value: configuration.notificationEmployeesConfigured

@@ -82,6 +82,10 @@ then confirm execution through their own GitHub token. Previews and execution
 results are audited, and the dashboard exposes recent write executions in the
 Audit view for logged-in users. Current fixes can add `needs-triage` or move
 stale or premature active issues to `deferred` with an explanatory comment.
+The committed MatrixOne profile keeps `access.write_back_enabled: false` as a
+safe default. For local development, put `access.write_back_enabled: true` in
+the ignored `config/repos/matrixone.local.yaml` after you are ready for
+confirmed GitHub writes through your own token.
 Issue workflow fixes require a validated token with classic `repo` or
 `public_repo` scope and `triage`, `write`, `maintain`, or `admin` permission on
 the configured repository before the UI and API will offer the action. The
