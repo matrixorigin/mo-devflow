@@ -211,6 +211,34 @@ function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
   return (syncHealthLayers as readonly string[]).includes(value);
 }
 
+function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
+  if (layer === "github_sync") {
+    return "Refresh open issue and PR cache from GitHub.";
+  }
+  if (layer === "pr_backfill") {
+    return "Repair PR review, CI, mergeability, and linked-issue evidence.";
+  }
+  if (layer === "issue_timeline_backfill") {
+    return "Repair severity promotion and tester assignment timelines.";
+  }
+  if (layer === "comment_backfill") {
+    return "Repair comment evidence for deferred reasons and handoff signals.";
+  }
+  if (layer === "webhooks") {
+    return "Process queued webhook deliveries and missed event repair.";
+  }
+  if (layer === "rules") {
+    return "Recompute workflow violations and attention items from cache.";
+  }
+  if (layer === "metrics") {
+    return "Recompute daily, weekly, and monthly flow metrics.";
+  }
+  if (layer === "ai_drift") {
+    return "Recompute AI effort drift signals.";
+  }
+  return "Send or retry eligible notification jobs.";
+}
+
 function hours(value: number): string {
   if (value < 24) {
     return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
@@ -2407,11 +2435,15 @@ function CacheEvidenceSamples({ sync }: { sync: DashboardSummary["sync"] }) {
 function CacheRepairPlan({
   sync,
   authenticated,
-  onPrepare
+  saving,
+  onPrepare,
+  onQueue
 }: {
   sync: DashboardSummary["sync"];
   authenticated: boolean;
+  saving: boolean;
   onPrepare: (layers: ManualRefreshLayer[]) => void;
+  onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
   const recommendation = recommendCacheRepair(sync);
   if (recommendation.layers.length === 0) {
@@ -2427,27 +2459,31 @@ function CacheRepairPlan({
             Suggested worker layers based on the sampled stale or incomplete objects and sync health.
           </Text>
         </div>
-        <Tooltip
-          title={authenticated ? "Preselect these layers in Queue Worker Refresh" : "Connect GitHub token first"}
-        >
-          <Button
-            size="small"
-            icon={<RefreshCcw size={14} />}
-            disabled={!authenticated}
-            onClick={() => onPrepare(recommendation.layers)}
-          >
-            Select layers
-          </Button>
+        <Tooltip title={authenticated ? "Queue these repair layers" : "Connect GitHub token first"}>
+          <Space size={6}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<RefreshCcw size={14} />}
+              disabled={!authenticated}
+              loading={saving}
+              onClick={() => onQueue(recommendation.layers)}
+            >
+              Queue repair
+            </Button>
+            <Button size="small" disabled={!authenticated} onClick={() => onPrepare(recommendation.layers)}>
+              Edit layers
+            </Button>
+          </Space>
         </Tooltip>
       </div>
       <Space size={[4, 4]} wrap>
         {recommendation.layers.map((layer) => (
-          <Tag
-            color={sync.health.find((item) => item.layer === layer)?.status === "success" ? "blue" : "orange"}
-            key={layer}
-          >
-            {labelText(layer)}
-          </Tag>
+          <Tooltip title={manualRefreshLayerDescription(layer)} key={layer}>
+            <Tag color={sync.health.find((item) => item.layer === layer)?.status === "success" ? "blue" : "orange"}>
+              {labelText(layer)}
+            </Tag>
+          </Tooltip>
         ))}
       </Space>
       <div className="cache-repair-reasons">
@@ -2468,16 +2504,20 @@ function CacheEvidenceBanner({
   cacheEvidence,
   sync,
   authenticated,
+  saving,
   expanded,
   onExpandedChange,
-  onPrepare
+  onPrepare,
+  onQueue
 }: {
   cacheEvidence: CacheEvidenceSummary;
   sync: DashboardSummary["sync"];
   authenticated: boolean;
+  saving: boolean;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   onPrepare: (layers: ManualRefreshLayer[]) => void;
+  onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
   return (
     <Alert
@@ -2519,7 +2559,13 @@ function CacheEvidenceBanner({
           {expanded ? (
             <>
               <CacheEvidenceSamples sync={sync} />
-              <CacheRepairPlan sync={sync} authenticated={authenticated} onPrepare={onPrepare} />
+              <CacheRepairPlan
+                sync={sync}
+                authenticated={authenticated}
+                saving={saving}
+                onPrepare={onPrepare}
+                onQueue={onQueue}
+              />
             </>
           ) : null}
           {cacheEvidence.recommendedAction ? <Text type="secondary">{cacheEvidence.recommendedAction}</Text> : null}
@@ -5863,8 +5909,8 @@ export default function App() {
     setManualRefreshModalOpen(true);
   }
 
-  async function queueManualRefresh() {
-    if (manualRefreshLayers.length === 0) {
+  async function queueManualRefreshForLayers(layers: ManualRefreshLayer[]) {
+    if (layers.length === 0) {
       setManualRefreshError("Select at least one refresh layer.");
       return;
     }
@@ -5876,7 +5922,7 @@ export default function App() {
         method: "POST",
         headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
-        body: JSON.stringify({ layers: manualRefreshLayers })
+        body: JSON.stringify({ layers })
       });
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -5889,6 +5935,10 @@ export default function App() {
     } finally {
       setManualRefreshSaving(false);
     }
+  }
+
+  async function queueManualRefresh() {
+    await queueManualRefreshForLayers(manualRefreshLayers);
   }
 
   async function retryFailedWebhooks() {
@@ -7107,9 +7157,11 @@ export default function App() {
                 cacheEvidence={cacheEvidence}
                 sync={data.sync}
                 authenticated={Boolean(session?.authenticated)}
+                saving={manualRefreshSaving}
                 expanded={cacheEvidenceExpanded}
                 onExpandedChange={setCacheEvidenceExpanded}
                 onPrepare={openManualRefreshModal}
+                onQueue={(layers) => void queueManualRefreshForLayers(layers)}
               />
             ) : null}
 
@@ -7789,7 +7841,10 @@ export default function App() {
             <Space orientation="vertical" size={8}>
               {syncHealthLayers.map((layer) => (
                 <Checkbox key={layer} value={layer}>
-                  {labelText(layer)}
+                  <Space orientation="vertical" size={0}>
+                    <Text>{labelText(layer)}</Text>
+                    <Text type="secondary">{manualRefreshLayerDescription(layer)}</Text>
+                  </Space>
                 </Checkbox>
               ))}
             </Space>
