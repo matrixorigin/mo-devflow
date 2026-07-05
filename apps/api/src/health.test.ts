@@ -95,7 +95,12 @@ describe("API health status", () => {
         staleLeases: 1,
         recommendedAction: "A running lease is stale."
       },
-      operational: { ...operational, status: "degraded", recommendedAction: "Cache objects are stale." },
+      operational: {
+        ...operational,
+        status: "degraded",
+        recommendedAction: "Cache objects are stale.",
+        cache: { ...operational.cache, partialObjects: 3 }
+      },
       operationalError: "Operational probe failed."
     });
 
@@ -103,7 +108,30 @@ describe("API health status", () => {
       { key: "worker", severity: "warning", message: "Restart the worker." },
       { key: "job_queue", severity: "critical", message: "A running lease is stale." },
       { key: "operational_summary", severity: "warning", message: "Operational probe failed." },
-      { key: "operational", severity: "warning", message: "Cache objects are stale." }
+      { key: "operational", severity: "warning", message: "Cache objects are stale." },
+      {
+        key: "partial_cache",
+        severity: "warning",
+        message:
+          "3 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final."
+      }
+    ]);
+  });
+
+  test("reports partial cache findings without degrading the service status", () => {
+    const partialOperational = {
+      ...operational,
+      cache: { ...operational.cache, status: "partial" as const, partialObjects: 5 }
+    };
+
+    expect(apiHealthStatus({ worker, jobQueue, operational: partialOperational })).toBe("healthy");
+    expect(apiHealthFindings({ worker, jobQueue, operational: partialOperational })).toEqual([
+      {
+        key: "partial_cache",
+        severity: "warning",
+        message:
+          "5 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final."
+      }
     ]);
   });
 });

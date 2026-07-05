@@ -74,5 +74,13 @@ export function apiHealthFindings(input: {
     });
   }
 
+  if (input.operational && input.operational.cache.partialObjects > 0) {
+    findings.push({
+      key: "partial_cache",
+      severity: "warning",
+      message: `${input.operational.cache.partialObjects} cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final.`
+    });
+  }
+
   return findings;
 }
