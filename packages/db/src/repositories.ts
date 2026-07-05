@@ -3795,6 +3795,7 @@ export async function getDashboardSummary(
   );
 
   const workflowViolations: WorkflowViolationView[] = violationRows.map((row) => ({
+    sourceId: asNumber(row.id),
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
     objectNumber: asNumber(row.object_number),
     title: asString(row.title),
@@ -3811,6 +3812,7 @@ export async function getDashboardSummary(
   }));
 
   const aiDriftSignals: AiDriftSignalView[] = driftRows.map((row) => ({
+    sourceId: asNumber(row.id),
     objectType: asString(row.object_type) as AiDriftSignalView["objectType"],
     objectNumber: asNumber(row.object_number),
     title: asString(row.title),

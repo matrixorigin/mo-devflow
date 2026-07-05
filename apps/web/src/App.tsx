@@ -293,6 +293,11 @@ function selectedPersonFromHash(hash: string): string | null {
 type DashboardObjectTarget =
   { objectType: "issue"; objectNumber: number } | { objectType: "pull_request"; objectNumber: number };
 
+type DashboardSourceTarget =
+  { sourceType: "workflow_violation"; sourceId: number } | { sourceType: "ai_drift_signal"; sourceId: number };
+
+const signalTargetPageSize = 8;
+
 function positiveHashNumberParam(params: URLSearchParams, key: string): number | null {
   const raw = params.get(key)?.trim();
   if (!raw) {
@@ -311,6 +316,21 @@ function dashboardObjectTargetFromHash(hash: string): DashboardObjectTarget | nu
   const pullRequestNumber = positiveHashNumberParam(params, "pr");
   if (pullRequestNumber) {
     return { objectType: "pull_request", objectNumber: pullRequestNumber };
+  }
+  return null;
+}
+
+function dashboardSourceTargetFromHash(hash: string): DashboardSourceTarget | null {
+  const sourceId = positiveHashNumberParam(dashboardHashParams(hash), "source_id");
+  if (!sourceId) {
+    return null;
+  }
+  const view = dashboardViewFromHash(hash);
+  if (view === "Violations") {
+    return { sourceType: "workflow_violation", sourceId };
+  }
+  if (view === "Drift") {
+    return { sourceType: "ai_drift_signal", sourceId };
   }
   return null;
 }
@@ -11124,10 +11144,13 @@ export default function App() {
   const [notificationRetryResult, setNotificationRetryResult] = useState<NotificationRetryRequestView | null>(null);
   const [notificationTestSaving, setNotificationTestSaving] = useState(false);
   const [notificationTestResult, setNotificationTestResult] = useState<NotificationTestResult | null>(null);
+  const [violationTablePage, setViolationTablePage] = useState(1);
+  const [driftTablePage, setDriftTablePage] = useState(1);
   const dashboardRefreshInFlight = useRef(false);
   const openedDashboardObjectTargetRef = useRef<string | null>(null);
   const latestDataRef = useRef<DashboardSummary | null>(null);
   const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
+  const dashboardSourceTarget = useMemo(() => dashboardSourceTargetFromHash(currentHash), [currentHash]);
   const criticalIssuesByPr = useMemo(
     () =>
       data
@@ -11135,6 +11158,18 @@ export default function App() {
         : new Map<number, PrCriticalIssueContext[]>(),
     [data]
   );
+  const targetedViolation =
+    dashboardSourceTarget?.sourceType === "workflow_violation" && data
+      ? (data.workflowViolations.find((violation) => violation.sourceId === dashboardSourceTarget.sourceId) ?? null)
+      : null;
+  const targetedDriftSignal =
+    dashboardSourceTarget?.sourceType === "ai_drift_signal" && data
+      ? (data.aiDriftSignals.find((signal) => signal.sourceId === dashboardSourceTarget.sourceId) ?? null)
+      : null;
+  const missingViolationTarget =
+    dashboardSourceTarget?.sourceType === "workflow_violation" && data !== null && !targetedViolation;
+  const missingDriftTarget =
+    dashboardSourceTarget?.sourceType === "ai_drift_signal" && data !== null && !targetedDriftSignal;
 
   useEffect(() => {
     latestDataRef.current = data;
@@ -11181,6 +11216,25 @@ export default function App() {
       });
     }
   }, [criticalIssuesByPr, currentHash, data]);
+
+  useEffect(() => {
+    if (!data || !dashboardSourceTarget) {
+      return;
+    }
+    if (dashboardSourceTarget.sourceType === "workflow_violation") {
+      const targetIndex = data.workflowViolations.findIndex(
+        (violation) => violation.sourceId === dashboardSourceTarget.sourceId
+      );
+      if (targetIndex >= 0) {
+        setViolationTablePage(Math.floor(targetIndex / signalTargetPageSize) + 1);
+      }
+      return;
+    }
+    const targetIndex = data.aiDriftSignals.findIndex((signal) => signal.sourceId === dashboardSourceTarget.sourceId);
+    if (targetIndex >= 0) {
+      setDriftTablePage(Math.floor(targetIndex / signalTargetPageSize) + 1);
+    }
+  }, [dashboardSourceTarget, data]);
 
   useEffect(() => {
     if (tokenRetryUntil === null) {
@@ -13639,13 +13693,39 @@ export default function App() {
                   <Title level={4}>AI Drift</Title>
                   <Text type="secondary">Incomplete cache evidence until timeline and issue testing backfill</Text>
                 </div>
+                {targetedDriftSignal ? (
+                  <Alert
+                    className="band"
+                    type="info"
+                    title="Notification target selected"
+                    description={`AI drift signal ${labelText(targetedDriftSignal.ruleKey)} on ${
+                      targetedDriftSignal.objectType === "issue" ? "issue" : "PR"
+                    } #${targetedDriftSignal.objectNumber}.`}
+                    showIcon
+                  />
+                ) : missingDriftTarget ? (
+                  <Alert
+                    className="band"
+                    type="warning"
+                    title="Notification target is not visible"
+                    description="The AI drift signal may be resolved, outside the current access scope, or absent from the current cache."
+                    showIcon
+                  />
+                ) : null}
                 <Table
-                  rowKey={(signal) => `${signal.objectType}-${signal.objectNumber}-${signal.ruleKey}`}
+                  rowKey={(signal) => signal.sourceId}
+                  rowClassName={(signal) =>
+                    targetedDriftSignal?.sourceId === signal.sourceId ? "dashboard-target-row" : ""
+                  }
                   size="middle"
                   columns={driftColumns}
                   dataSource={data.aiDriftSignals}
                   scroll={{ x: 1700 }}
-                  pagination={{ pageSize: 8 }}
+                  pagination={{
+                    current: driftTablePage,
+                    pageSize: signalTargetPageSize,
+                    onChange: setDriftTablePage
+                  }}
                   locale={{ emptyText: <Empty description="No active AI drift signals in cache" /> }}
                 />
               </section>
@@ -13660,13 +13740,39 @@ export default function App() {
                   </Space>
                   <Text type="secondary">Open cache-derived rule outputs</Text>
                 </div>
+                {targetedViolation ? (
+                  <Alert
+                    className="band"
+                    type="info"
+                    title="Notification target selected"
+                    description={`Workflow violation ${labelText(targetedViolation.ruleKey)} on ${
+                      targetedViolation.objectType === "issue" ? "issue" : "PR"
+                    } #${targetedViolation.objectNumber}.`}
+                    showIcon
+                  />
+                ) : missingViolationTarget ? (
+                  <Alert
+                    className="band"
+                    type="warning"
+                    title="Notification target is not visible"
+                    description="The workflow violation may be resolved, outside the current access scope, or absent from the current cache."
+                    showIcon
+                  />
+                ) : null}
                 <Table
-                  rowKey={(violation) => `${violation.objectType}-${violation.objectNumber}-${violation.ruleKey}`}
+                  rowKey={(violation) => violation.sourceId}
+                  rowClassName={(violation) =>
+                    targetedViolation?.sourceId === violation.sourceId ? "dashboard-target-row" : ""
+                  }
                   size="middle"
                   columns={violationColumns}
                   dataSource={data.workflowViolations}
                   scroll={{ x: 1580 }}
-                  pagination={{ pageSize: 8 }}
+                  pagination={{
+                    current: violationTablePage,
+                    pageSize: signalTargetPageSize,
+                    onChange: setViolationTablePage
+                  }}
                   locale={{ emptyText: <Empty description="No active workflow violations in cache" /> }}
                 />
               </section>

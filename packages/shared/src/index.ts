@@ -569,6 +569,7 @@ export interface WorkflowViolation {
 }
 
 export interface WorkflowViolationView extends WorkflowViolation {
+  sourceId: number;
   firstDetectedAt: string;
   lastDetectedAt: string;
   notification: NotificationTraceView;
@@ -688,6 +689,7 @@ export interface AiDriftSignal {
 }
 
 export interface AiDriftSignalView extends AiDriftSignal {
+  sourceId: number;
   firstDetectedAt: string;
   lastDetectedAt: string;
   notification: NotificationTraceView;

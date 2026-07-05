@@ -74,6 +74,7 @@ const issue: NormalizedIssue = {
 };
 
 const violation: WorkflowViolationView = {
+  sourceId: 7,
   objectType: "issue",
   objectNumber: 42,
   title: "panic on insert",

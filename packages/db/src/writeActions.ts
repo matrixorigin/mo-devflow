@@ -134,6 +134,7 @@ export async function getActiveWorkflowViolation(input: {
     return null;
   }
   return {
+    sourceId: asNumber(row.id),
     objectType: asString(row.object_type) as WorkflowViolationView["objectType"],
     objectNumber: asNumber(row.object_number),
     title: asString(row.title),

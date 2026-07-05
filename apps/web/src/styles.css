@@ -5826,6 +5826,15 @@ button.flow-diagnostic-card:focus-visible {
   border-radius: 8px;
 }
 
+.dashboard-target-row > td {
+  background: #eff6ff !important;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.dashboard-target-row:hover > td {
+  background: #dbeafe !important;
+}
+
 .table-title-cell {
   width: 100%;
   min-width: 0;
