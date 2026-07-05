@@ -136,6 +136,31 @@ export interface TrendEvidenceSummary {
   message: string;
 }
 
+export type TrendMomentumKey =
+  | "issue_drain"
+  | "pr_open_delta"
+  | "active_critical"
+  | "pr_attention"
+  | "testing_queue"
+  | "triage";
+
+export interface TrendMomentumItem {
+  key: TrendMomentumKey;
+  label: string;
+  value: number | null;
+  previousValue: number | null;
+  delta: number | null;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  target: FlowEfficiencyDiagnosticTarget;
+}
+
+export interface TrendMomentumSummary {
+  latestLabel: string | null;
+  previousLabel: string | null;
+  items: TrendMomentumItem[];
+}
+
 export function trendEvidenceSummary(
   points: ReadonlyArray<Pick<DailyMetricPoint, "sourceCompleteness" | "generatedAt">>
 ): TrendEvidenceSummary {
@@ -155,6 +180,173 @@ export function trendEvidenceSummary(
       partialPoints > 0
         ? "Trend lines include partial cache points; use them for direction, not final historical accounting."
         : "Every visible trend point is marked complete in the local cache."
+  };
+}
+
+type TrendMomentumPoint = Pick<
+  DailyMetricPoint,
+  | "date"
+  | "prsCreated"
+  | "prsMerged"
+  | "issuesOpened"
+  | "issuesClosed"
+  | "issuesDeferred"
+  | "activeCriticalIssues"
+  | "averageActiveCriticalIssueAgeHours"
+  | "needsTriageIssues"
+  | "deferredIssues"
+  | "pendingPrs"
+  | "attentionPrs"
+  | "testingQueuePrs"
+  | "averageTestingQueueAgeHours"
+  | "generatedAt"
+> & { label?: string };
+
+function trendMomentumPointLabel(point: TrendMomentumPoint): string {
+  return point.label ?? point.date;
+}
+
+function trendMomentumPointTime(point: TrendMomentumPoint): number {
+  const dateTime = Date.parse(point.date);
+  if (Number.isFinite(dateTime)) {
+    return dateTime;
+  }
+  const generatedTime = Date.parse(point.generatedAt);
+  return Number.isFinite(generatedTime) ? generatedTime : 0;
+}
+
+function nullableDelta(value: number | null, previousValue: number | null): number | null {
+  return value === null || previousValue === null ? null : value - previousValue;
+}
+
+function maybeHoursDetail(label: string, value: number | null): string {
+  return value === null ? `${label} unknown` : `${label} ${value}h`;
+}
+
+function signedHours(value: number): string {
+  return value > 0 ? `+${value}h` : `${value}h`;
+}
+
+function lowerIsBetterTone(value: number | null, delta: number | null): TrendMomentumItem["tone"] {
+  if ((value ?? 0) <= 0) {
+    return "good";
+  }
+  return delta !== null && delta > 0 ? "attention" : "normal";
+}
+
+function trendMomentumItem(input: {
+  key: TrendMomentumKey;
+  label: string;
+  value: number | null;
+  previousValue: number | null;
+  detail: string;
+  target: FlowEfficiencyDiagnosticTarget;
+  tone: TrendMomentumItem["tone"];
+}): TrendMomentumItem {
+  return {
+    ...input,
+    delta: nullableDelta(input.value, input.previousValue)
+  };
+}
+
+export function trendMomentumSummary(points: ReadonlyArray<TrendMomentumPoint>): TrendMomentumSummary {
+  const sortedPoints = [...points].sort(
+    (left, right) =>
+      trendMomentumPointTime(left) - trendMomentumPointTime(right) ||
+      Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
+  );
+  const latest = sortedPoints.at(-1) ?? null;
+  const previous = sortedPoints.at(-2) ?? null;
+  if (!latest) {
+    return { latestLabel: null, previousLabel: null, items: [] };
+  }
+
+  const latestIssueDrain = latest.issuesClosed + latest.issuesDeferred - latest.issuesOpened;
+  const previousIssueDrain = previous ? previous.issuesClosed + previous.issuesDeferred - previous.issuesOpened : null;
+  const latestPrOpenDelta = latest.prsCreated - latest.prsMerged;
+  const previousPrOpenDelta = previous ? previous.prsCreated - previous.prsMerged : null;
+  const activeCriticalDelta = nullableDelta(latest.activeCriticalIssues, previous?.activeCriticalIssues ?? null);
+  const prAttentionDelta = nullableDelta(latest.attentionPrs, previous?.attentionPrs ?? null);
+  const testingQueueDelta = nullableDelta(latest.testingQueuePrs, previous?.testingQueuePrs ?? null);
+  const triageDelta = nullableDelta(latest.needsTriageIssues, previous?.needsTriageIssues ?? null);
+  const testingWaitDelta = nullableDelta(
+    latest.averageTestingQueueAgeHours,
+    previous?.averageTestingQueueAgeHours ?? null
+  );
+  const activeCriticalTone =
+    latest.activeCriticalIssues > 0 && activeCriticalDelta !== null && activeCriticalDelta > 0
+      ? "critical"
+      : lowerIsBetterTone(latest.activeCriticalIssues, activeCriticalDelta);
+  const prAttentionTone =
+    latest.attentionPrs > 0 && prAttentionDelta !== null && prAttentionDelta > 0
+      ? "critical"
+      : lowerIsBetterTone(latest.attentionPrs, prAttentionDelta);
+  const testingTone =
+    latest.averageTestingQueueAgeHours !== null && latest.averageTestingQueueAgeHours >= 24
+      ? "critical"
+      : lowerIsBetterTone(latest.testingQueuePrs, testingQueueDelta);
+
+  return {
+    latestLabel: trendMomentumPointLabel(latest),
+    previousLabel: previous ? trendMomentumPointLabel(previous) : null,
+    items: [
+      trendMomentumItem({
+        key: "issue_drain",
+        label: "Issue drain",
+        value: latestIssueDrain,
+        previousValue: previousIssueDrain,
+        detail: `${latest.issuesClosed + latest.issuesDeferred} resolved / ${latest.issuesOpened} opened`,
+        target: "issue_drain",
+        tone: latestIssueDrain < 0 ? "attention" : "good"
+      }),
+      trendMomentumItem({
+        key: "pr_open_delta",
+        label: "PR open delta",
+        value: latestPrOpenDelta,
+        previousValue: previousPrOpenDelta,
+        detail: `${latest.prsCreated} created / ${latest.prsMerged} merged`,
+        target: "pr_flow",
+        tone: latestPrOpenDelta > 0 ? "attention" : "good"
+      }),
+      trendMomentumItem({
+        key: "active_critical",
+        label: "Active s-1/s0",
+        value: latest.activeCriticalIssues,
+        previousValue: previous?.activeCriticalIssues ?? null,
+        detail: maybeHoursDetail("avg active", latest.averageActiveCriticalIssueAgeHours),
+        target: "active_critical_age",
+        tone: activeCriticalTone
+      }),
+      trendMomentumItem({
+        key: "pr_attention",
+        label: "PR attention",
+        value: latest.attentionPrs,
+        previousValue: previous?.attentionPrs ?? null,
+        detail: `${latest.attentionPrs}/${latest.pendingPrs} pending`,
+        target: "pr_attention",
+        tone: prAttentionTone
+      }),
+      trendMomentumItem({
+        key: "testing_queue",
+        label: "Issue testing",
+        value: latest.testingQueuePrs,
+        previousValue: previous?.testingQueuePrs ?? null,
+        detail: `${maybeHoursDetail("avg wait", latest.averageTestingQueueAgeHours)}${
+          testingWaitDelta !== null ? `, wait delta ${signedHours(testingWaitDelta)}` : ""
+        }`,
+        target: "testing_queue",
+        tone: testingTone
+      }),
+      trendMomentumItem({
+        key: "triage",
+        label: "Needs triage",
+        value: latest.needsTriageIssues,
+        previousValue: previous?.needsTriageIssues ?? null,
+        detail: `${latest.deferredIssues} deferred`,
+        target: "triage_flow",
+        tone: lowerIsBetterTone(latest.needsTriageIssues, triageDelta)
+      })
+    ]
   };
 }
 

@@ -154,6 +154,7 @@ import {
   teamPeopleFocusSummary,
   teamTriageSnapshot,
   trendEvidenceSummary,
+  trendMomentumSummary,
   testingStateBusinessLabel,
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
@@ -175,6 +176,8 @@ import {
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
   type TeamOperatingSignal,
+  type TrendMomentumItem,
+  type TrendMomentumSummary,
   type WorkloadStatus
 } from "./workbench";
 
@@ -2466,6 +2469,7 @@ function AnalyticsDecisionPanel({
   summary: FlowEfficiencySummary;
 }) {
   const evidence = points.length > 0 ? trendEvidenceSummary(points) : null;
+  const momentum = trendMomentumSummary(points);
   const diagnostics = flowEfficiencyDiagnostics(summary);
   const primaryDiagnostic = diagnostics[0] ?? null;
   const primaryAction = primaryDiagnostic
@@ -2567,7 +2571,69 @@ function AnalyticsDecisionPanel({
           </button>
         ))}
       </div>
+      <AnalyticsMomentumStrip summary={momentum} actions={actions} />
     </section>
+  );
+}
+
+function AnalyticsMomentumStrip({
+  actions,
+  summary
+}: {
+  actions: FlowEfficiencyActions;
+  summary: TrendMomentumSummary;
+}) {
+  if (summary.items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="analytics-momentum-strip" aria-label="Latest period movement">
+      <div className="analytics-momentum-heading">
+        <span>Latest movement</span>
+        <strong>{summary.latestLabel}</strong>
+        <small>{summary.previousLabel ? `vs ${summary.previousLabel}` : "no previous point"}</small>
+      </div>
+      <div className="analytics-momentum-grid">
+        {summary.items.map((item) => (
+          <AnalyticsMomentumCard
+            item={item}
+            onClick={flowEfficiencyDiagnosticAction(item.target, actions)}
+            key={item.key}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function analyticsMomentumValue(item: TrendMomentumItem): string {
+  if (item.value === null) {
+    return "-";
+  }
+  return item.key === "issue_drain" || item.key === "pr_open_delta" ? signedNumber(item.value) : String(item.value);
+}
+
+function analyticsMomentumDelta(item: TrendMomentumItem): string {
+  if (item.delta === null) {
+    return "no previous point";
+  }
+  return item.delta === 0 ? "flat vs previous" : `${signedNumber(item.delta)} vs previous`;
+}
+
+function AnalyticsMomentumCard({ item, onClick }: { item: TrendMomentumItem; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`analytics-momentum-card analytics-momentum-${item.tone}`}
+      disabled={!onClick}
+      onClick={onClick}
+    >
+      <span>{item.label}</span>
+      <strong>{analyticsMomentumValue(item)}</strong>
+      <small>{item.detail}</small>
+      <em>{analyticsMomentumDelta(item)}</em>
+    </button>
   );
 }
 

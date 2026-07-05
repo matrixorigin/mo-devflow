@@ -7488,6 +7488,118 @@ button.testing-board-stat:focus-visible {
   border-left-color: #16a34a;
 }
 
+.analytics-momentum-strip {
+  border-top: 1px solid #eef2f7;
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.analytics-momentum-heading {
+  align-items: center;
+  color: #4b5563;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.analytics-momentum-heading span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.analytics-momentum-heading strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.analytics-momentum-heading small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.analytics-momentum-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  min-width: 0;
+}
+
+.analytics-momentum-card {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 7px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  text-align: left;
+}
+
+.analytics-momentum-card:hover,
+.analytics-momentum-card:focus-visible {
+  background: #f8fbff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.analytics-momentum-card span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.analytics-momentum-card strong {
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.analytics-momentum-card small {
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.analytics-momentum-card em {
+  color: #475569;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.analytics-momentum-critical {
+  background: #fff7f7;
+  border-left-color: #dc2626;
+}
+
+.analytics-momentum-attention {
+  background: #fffaf3;
+  border-left-color: #d97706;
+}
+
+.analytics-momentum-normal {
+  border-left-color: #2563eb;
+}
+
+.analytics-momentum-good {
+  border-left-color: #16a34a;
+}
+
 .trend-evidence-strip {
   align-items: center;
   background: #f8fafc;
@@ -8431,7 +8543,8 @@ button.flow-diagnostic-card:focus-visible {
 
 @media (max-width: 920px) {
   .analytics-decision-panel,
-  .analytics-action-grid {
+  .analytics-action-grid,
+  .analytics-momentum-grid {
     grid-template-columns: 1fr;
   }
 

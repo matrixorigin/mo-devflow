@@ -49,7 +49,8 @@ import {
   teamCommandSignals,
   testingStateBusinessLabel,
   testingStateHelpText,
-  trendEvidenceSummary
+  trendEvidenceSummary,
+  trendMomentumSummary
 } from "./workbench";
 
 describe("person workload summaries", () => {
@@ -1618,6 +1619,83 @@ describe("trend evidence summary", () => {
       latestGeneratedAt: "2026-07-04T00:03:00Z",
       evidenceLabel: "complete points",
       message: "Every visible trend point is marked complete in the local cache."
+    });
+  });
+});
+
+describe("trend momentum summary", () => {
+  it("summarizes latest metric movement against the previous point", () => {
+    const summary = trendMomentumSummary([
+      metricPoint({
+        date: "2026-07-03",
+        prsCreated: 2,
+        prsMerged: 3,
+        issuesOpened: 2,
+        issuesClosed: 3,
+        issuesDeferred: 0,
+        activeCriticalIssues: 1,
+        attentionPrs: 1,
+        pendingPrs: 3,
+        testingQueuePrs: 1,
+        averageTestingQueueAgeHours: 8,
+        needsTriageIssues: 1,
+        deferredIssues: 2
+      }),
+      metricPoint({
+        date: "2026-07-04",
+        prsCreated: 5,
+        prsMerged: 2,
+        issuesOpened: 4,
+        issuesClosed: 1,
+        issuesDeferred: 1,
+        activeCriticalIssues: 2,
+        averageActiveCriticalIssueAgeHours: 80,
+        attentionPrs: 3,
+        pendingPrs: 5,
+        testingQueuePrs: 2,
+        averageTestingQueueAgeHours: 30,
+        needsTriageIssues: 4,
+        deferredIssues: 1
+      })
+    ]);
+
+    expect(summary.latestLabel).toBe("2026-07-04");
+    expect(summary.previousLabel).toBe("2026-07-03");
+    expect(summary.items.find((item) => item.key === "issue_drain")).toMatchObject({
+      value: -2,
+      previousValue: 1,
+      delta: -3,
+      tone: "attention",
+      target: "issue_drain"
+    });
+    expect(summary.items.find((item) => item.key === "pr_open_delta")).toMatchObject({
+      value: 3,
+      previousValue: -1,
+      delta: 4,
+      tone: "attention",
+      target: "pr_flow"
+    });
+    expect(summary.items.find((item) => item.key === "active_critical")).toMatchObject({
+      value: 2,
+      previousValue: 1,
+      delta: 1,
+      tone: "critical",
+      target: "active_critical_age"
+    });
+    expect(summary.items.find((item) => item.key === "testing_queue")).toMatchObject({
+      value: 2,
+      previousValue: 1,
+      delta: 1,
+      tone: "critical",
+      target: "testing_queue"
+    });
+  });
+
+  it("returns no momentum cards without metrics", () => {
+    expect(trendMomentumSummary([])).toEqual({
+      latestLabel: null,
+      previousLabel: null,
+      items: []
     });
   });
 });
