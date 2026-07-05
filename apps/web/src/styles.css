@@ -1319,6 +1319,73 @@ button.freshness-path-card:focus-visible {
   border-left-color: #16a34a;
 }
 
+.team-data-status {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.team-data-status-tile {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-height: 72px;
+  min-width: 0;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.team-data-status-tile:hover,
+.team-data-status-tile:focus-visible {
+  background: #f8fbff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.team-data-status-tile span,
+.team-data-status-tile small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-data-status-tile strong {
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-data-status-critical {
+  border-left-color: #dc2626;
+}
+
+.team-data-status-attention {
+  border-left-color: #d97706;
+}
+
+.team-data-status-good {
+  border-left-color: #16a34a;
+}
+
+.team-data-status-normal {
+  border-left-color: #2563eb;
+}
+
 .team-evidence-disclosure {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -9294,6 +9361,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .team-data-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .freshness-update-path {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -10030,6 +10101,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-health-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .team-data-status {
     grid-template-columns: 1fr;
   }
 

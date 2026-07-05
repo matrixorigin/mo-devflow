@@ -4006,10 +4006,17 @@ function TeamRotationOverview({
           onOpenTestingIssueQueue={onOpenTestingIssueQueue}
           onOpenPeopleFilter={onOpenPeopleFilter}
         />
+        <TeamDataStatusStrip
+          data={data}
+          updatePipeline={updatePipeline}
+          productionReadiness={productionReadiness}
+          onNavigate={onNavigate}
+          onConnectToken={onConnectToken}
+        />
         <TeamCommandQueue actions={commandActions} />
         <details className="team-evidence-disclosure">
           <summary>
-            <span>Sync and access evidence</span>
+            <span>Detailed sync and access evidence</span>
             <Tag color={productionReadiness.blockers.length > 0 ? "orange" : "green"}>
               {productionReadiness.blockers.length > 0
                 ? `${productionReadiness.blockers.length} blockers`
@@ -4200,6 +4207,93 @@ function TeamRotationOverview({
         <TrendChart points={trendPoints} actions={trendActions} />
       </section>
     </div>
+  );
+}
+
+function TeamDataStatusStrip({
+  data,
+  updatePipeline,
+  productionReadiness,
+  onNavigate,
+  onConnectToken
+}: {
+  data: DashboardSummary;
+  updatePipeline: UpdatePipelineSummary;
+  productionReadiness: ProductionReadinessSummary;
+  onNavigate: (view: DashboardView) => void;
+  onConnectToken: () => void;
+}) {
+  const cacheTone =
+    data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good";
+  const cacheValue =
+    data.sync.staleObjects > 0
+      ? `${data.sync.staleObjects} stale`
+      : data.sync.partialObjects > 0
+        ? `${data.sync.partialObjects} partial`
+        : "fresh";
+  const cacheDetail =
+    data.sync.staleObjects > 0 || data.sync.partialObjects > 0
+      ? `oldest ${optionalHours(data.sync.oldestCacheAgeHours)}; refresh/backfill may change conclusions`
+      : `generated ${formatDate(data.sync.generatedAt)}`;
+  const readinessGate = productionReadiness.blockers[0] ?? productionReadiness.waiting[0] ?? null;
+  const readinessValue =
+    productionReadiness.blockers.length > 0
+      ? `${productionReadiness.blockers.length} blockers`
+      : `${productionReadiness.score}/100`;
+  const readinessDetail = readinessGate
+    ? `${readinessGate.label}: ${readinessGate.action}`
+    : productionReadiness.detail;
+
+  return (
+    <section className="team-data-status" aria-label="Dashboard data status">
+      <TeamDataStatusTile
+        label="Cache"
+        value={cacheValue}
+        detail={cacheDetail}
+        tone={cacheTone}
+        onClick={() => onNavigate("Health")}
+      />
+      <TeamDataStatusTile
+        label="Update path"
+        value={updatePipelineToneLabel(updatePipeline.tone)}
+        detail={updatePipeline.title}
+        tone={updatePipeline.tone}
+        onClick={() => onNavigate("Health")}
+      />
+      <TeamDataStatusTile
+        label="Setup"
+        value={readinessValue}
+        detail={readinessDetail}
+        tone={productionReadiness.tone}
+        onClick={() =>
+          readinessGate
+            ? openProductionReadinessTarget(readinessGate.target, onNavigate, onConnectToken)
+            : onNavigate("Health")
+        }
+      />
+    </section>
+  );
+}
+
+function TeamDataStatusTile({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: UpdatePipelineTone;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`team-data-status-tile team-data-status-${tone}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
