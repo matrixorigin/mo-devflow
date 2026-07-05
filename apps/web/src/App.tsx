@@ -5026,6 +5026,9 @@ function CacheEvidenceBanner({
   onQueue: (layers: ManualRefreshLayer[]) => void;
 }) {
   const compactDescription = "Cached facts remain visible; expand for affected conclusions and repair options.";
+  const compactImpactItems = impactItems.slice(0, 4);
+  const hiddenImpactItems = Math.max(0, impactItems.length - compactImpactItems.length);
+  const compactRepair = recommendCacheRepair(sync);
 
   return (
     <Alert
@@ -5045,6 +5048,51 @@ function CacheEvidenceBanner({
               {expanded ? "Hide evidence" : "Show evidence"}
             </Button>
           </div>
+          {!expanded && (compactImpactItems.length > 0 || compactRepair.layers.length > 0) ? (
+            <div className="evidence-alert-quick-row">
+              {compactImpactItems.length > 0 ? (
+                <div className="evidence-alert-impact-chips" aria-label="Affected boards">
+                  <Text type="secondary">Board impact</Text>
+                  <div>
+                    {compactImpactItems.map((item) => (
+                      <button
+                        type="button"
+                        className={`evidence-impact-chip evidence-impact-chip-${item.tone}`}
+                        title={item.detail}
+                        onClick={() => onImpactSelect(item.target)}
+                        key={item.key}
+                      >
+                        <strong>{item.value}</strong>
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                    {hiddenImpactItems > 0 ? <Tag color="orange">+{hiddenImpactItems} more</Tag> : null}
+                  </div>
+                </div>
+              ) : null}
+              {compactRepair.layers.length > 0 ? (
+                <Space size={6} wrap className="evidence-alert-repair-actions">
+                  <Tooltip
+                    title={authenticated ? "Queue the recommended cache repair layers" : "Connect GitHub token first"}
+                  >
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<RefreshCcw size={14} />}
+                      disabled={!authenticated}
+                      loading={saving}
+                      onClick={() => onQueue(compactRepair.layers)}
+                    >
+                      Queue repair
+                    </Button>
+                  </Tooltip>
+                  <Button size="small" disabled={!authenticated} onClick={() => onPrepare(compactRepair.layers)}>
+                    Edit layers
+                  </Button>
+                </Space>
+              ) : null}
+            </div>
+          ) : null}
           {expanded ? (
             <>
               {cacheEvidence.facts.length > 0 ? (
