@@ -2629,6 +2629,69 @@ function rateLimitHealthTagColor(remaining: number | null): string {
   return "green";
 }
 
+export interface SyncRateLimitSummary {
+  value: string;
+  detail: string;
+  tone: HealthTileTone;
+  lowestLayer: string | null;
+  lowestRemaining: number | null;
+  resetAt: string | null;
+  reportedLayers: number;
+  lowLayers: string[];
+  exhaustedLayers: string[];
+}
+
+export function syncRateLimitSummary(
+  health: Array<Pick<DashboardSummary["sync"]["health"][number], "layer" | "rateLimitRemaining" | "rateLimitResetAt">>
+): SyncRateLimitSummary {
+  const observed = health
+    .filter((item) => item.rateLimitRemaining !== null)
+    .sort((left, right) => (left.rateLimitRemaining ?? 0) - (right.rateLimitRemaining ?? 0));
+  if (observed.length === 0) {
+    return {
+      value: "unknown",
+      detail: "No GitHub rate limit headers recorded yet.",
+      tone: "normal",
+      lowestLayer: null,
+      lowestRemaining: null,
+      resetAt: null,
+      reportedLayers: 0,
+      lowLayers: [],
+      exhaustedLayers: []
+    };
+  }
+
+  const lowest = observed[0];
+  const lowestRemaining = lowest.rateLimitRemaining ?? 0;
+  const exhaustedLayers = observed.filter((item) => (item.rateLimitRemaining ?? 0) <= 0).map((item) => item.layer);
+  const lowLayers = observed
+    .filter((item) => (item.rateLimitRemaining ?? 0) > 0 && (item.rateLimitRemaining ?? 0) <= 10)
+    .map((item) => item.layer);
+  const tone: HealthTileTone = exhaustedLayers.length > 0 ? "critical" : lowLayers.length > 0 ? "attention" : "good";
+  const detail =
+    exhaustedLayers.length > 0
+      ? `${objectCountLabel(exhaustedLayers.length, "layer")} exhausted; lowest ${lowestRemaining} on ${labelText(
+          lowest.layer
+        )}`
+      : lowLayers.length > 0
+        ? `${objectCountLabel(lowLayers.length, "layer")} low; lowest ${lowestRemaining} on ${labelText(lowest.layer)}`
+        : `${objectCountLabel(observed.length, "layer")} reported; lowest ${lowestRemaining} on ${labelText(
+            lowest.layer
+          )}`;
+
+  return {
+    value: `${lowestRemaining} left`,
+    detail,
+    tone,
+    lowestLayer: lowest.layer,
+    lowestRemaining,
+    resetAt: lowest.rateLimitResetAt,
+    reportedLayers: observed.length,
+    lowLayers,
+    exhaustedLayers
+  };
+}
+
 function syncHealthTagColor(status: DashboardSummary["sync"]["health"][number]["status"]): string {
   if (status === "success") {
     return "green";
@@ -7328,7 +7391,7 @@ function TeamStatusRow({ label, value, onClick }: { label: string; value: string
   );
 }
 
-type HealthTileTone = "critical" | "attention" | "good" | "normal";
+export type HealthTileTone = "critical" | "attention" | "good" | "normal";
 type ApiHealthStatus = "healthy" | "degraded" | "unhealthy";
 type ApiHealthFindingSeverity = "warning" | "critical";
 
@@ -7472,13 +7535,15 @@ function apiAccessHealthItems(access: NonNullable<ApiHealthView["access"]>): Arr
 }
 
 function operationalHealthScore(data: DashboardSummary): { label: string; tone: HealthTileTone } {
+  const rateLimit = syncRateLimitSummary(data.sync.health);
   if (
     data.sync.worker.status === "failed" ||
     data.sync.worker.status === "offline" ||
     data.sync.jobQueue.failedJobs > 0 ||
     data.sync.jobQueue.blockedJobs > 0 ||
     webhookFailedDeliveryCount(data.webhooks) > 0 ||
-    data.notifications.failedDeliveries > 0
+    data.notifications.failedDeliveries > 0 ||
+    rateLimit.tone === "critical"
   ) {
     return { label: "action required", tone: "critical" };
   }
@@ -7487,7 +7552,8 @@ function operationalHealthScore(data: DashboardSummary): { label: string; tone: 
     data.sync.partialObjects > 0 ||
     data.sync.jobQueue.status === "attention" ||
     data.notifications.readiness.status === "action_required" ||
-    data.notifications.readiness.status === "degraded"
+    data.notifications.readiness.status === "degraded" ||
+    rateLimit.tone === "attention"
   ) {
     return { label: "needs attention", tone: "attention" };
   }
@@ -7864,6 +7930,10 @@ function HealthBoard({
   const webhookReadiness = summarizeWebhookReadiness(data);
   const webhookFailures = webhookFailedDeliveryCount(data.webhooks);
   const productionReadiness = summarizeProductionReadiness({ data, session });
+  const rateLimit = syncRateLimitSummary(data.sync.health);
+  const rateLimitDetail = rateLimit.resetAt
+    ? `${rateLimit.detail}; reset ${formatDate(rateLimit.resetAt)}`
+    : rateLimit.detail;
   const refreshDisabledReason = authenticated
     ? undefined
     : "Anonymous users can inspect cached health only. Sign in with GitHub to queue worker refresh jobs.";
@@ -7938,6 +8008,18 @@ function HealthBoard({
           onClick={() => onQueueLayers([...syncHealthLayers])}
         />
         <HealthMetricCard
+          label="GitHub quota"
+          value={rateLimit.value}
+          detail={rateLimitDetail}
+          tone={rateLimit.tone}
+          action="Sync layers"
+          onClick={() => {
+            if (typeof document !== "undefined") {
+              document.getElementById("health-sync-layers")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }}
+        />
+        <HealthMetricCard
           label="Worker and jobs"
           value={labelText(data.sync.worker.status)}
           detail={`${data.sync.jobQueue.queueDepth} queued, ${data.sync.jobQueue.runningJobs} running, ${data.sync.jobQueue.failedJobs} failed`}
@@ -7982,7 +8064,7 @@ function HealthBoard({
       ) : null}
 
       <div className="health-detail-grid">
-        <section className="health-panel">
+        <section className="health-panel" id="health-sync-layers">
           <div className="subsection-heading">
             <Title level={5}>Sync Layers</Title>
             <Tag color={unhealthyLayers > 0 ? "orange" : "green"}>{unhealthyLayers} need attention</Tag>

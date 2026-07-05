@@ -53,6 +53,7 @@ import {
   retryLaterErrorMessage,
   serviceReadTokenStatusText,
   sortPersonalPrList,
+  syncRateLimitSummary,
   syncHealthCursorText,
   testingIssueQueueFilterFromHash,
   testingIssueTesterFilterFromHash,
@@ -421,6 +422,42 @@ describe("dashboard hash filters", () => {
   it("labels the deployment service read token separately from personal sign-in", () => {
     expect(serviceReadTokenStatusText(true)).toBe("service ready");
     expect(serviceReadTokenStatusText(false)).toBe("service missing");
+  });
+
+  it("summarizes GitHub rate limits for operational health", () => {
+    expect(syncRateLimitSummary([])).toMatchObject({
+      value: "unknown",
+      detail: "No GitHub rate limit headers recorded yet.",
+      tone: "normal",
+      reportedLayers: 0
+    });
+
+    expect(
+      syncRateLimitSummary([
+        { layer: "rules", rateLimitRemaining: 42, rateLimitResetAt: "2026-07-05T10:00:00.000Z" },
+        { layer: "github_sync", rateLimitRemaining: 8, rateLimitResetAt: "2026-07-05T09:30:00.000Z" }
+      ])
+    ).toMatchObject({
+      value: "8 left",
+      detail: "1 layer low; lowest 8 on github sync",
+      tone: "attention",
+      lowestLayer: "github_sync",
+      lowestRemaining: 8,
+      lowLayers: ["github_sync"],
+      exhaustedLayers: []
+    });
+
+    expect(
+      syncRateLimitSummary([
+        { layer: "rules", rateLimitRemaining: 0, rateLimitResetAt: "2026-07-05T10:00:00.000Z" },
+        { layer: "metrics", rateLimitRemaining: 3, rateLimitResetAt: "2026-07-05T10:30:00.000Z" }
+      ])
+    ).toMatchObject({
+      value: "0 left",
+      detail: "1 layer exhausted; lowest 0 on rules",
+      tone: "critical",
+      exhaustedLayers: ["rules"]
+    });
   });
 
   it("describes PR issue-link scopes without implying incomplete evidence is a confirmed missing issue", () => {
