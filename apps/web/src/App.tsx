@@ -17579,6 +17579,14 @@ export default function App() {
 
   function openTokenReconnect() {
     if (!session?.authenticated) {
+      if (!session?.githubOAuthConfigured) {
+        setTokenError(
+          "GitHub OAuth sign-in is not configured on the API server. Configure OAuth before connecting personal write tokens."
+        );
+        setTokenInput("");
+        setTokenModalOpen(true);
+        return;
+      }
       signInWithGitHub();
       return;
     }
@@ -20717,7 +20725,10 @@ export default function App() {
             : tokenModalOkText(authenticatedUser)
         }
         confirmLoading={tokenSaving}
-        okButtonProps={{ disabled: tokenEncryptionUnavailable || tokenInput.trim().length < 20 || tokenRetryActive }}
+        okButtonProps={{
+          disabled:
+            !authenticatedUser || tokenEncryptionUnavailable || tokenInput.trim().length < 20 || tokenRetryActive
+        }}
         onOk={() => void connectGitHubToken()}
         onCancel={() => {
           setTokenModalOpen(false);
