@@ -18983,15 +18983,40 @@ export default function App() {
                   onSelect={openPeopleBoardPerson}
                   onMetricSelect={openPeopleBoardMetric}
                 />
-                <PersonWorkloadBoard
-                  people={filteredPeople}
-                  personalViews={data.personalViews}
-                  selectedLogin={selectedPersonalView?.login ?? null}
-                  sort={peopleSort}
-                  onSelect={openPeopleBoardPerson}
-                  onMetricSelect={openPeopleBoardMetric}
-                  mode={peopleBoardUsesObserved ? "observed" : "watched"}
-                />
+                <details className="secondary-disclosure people-roster-disclosure">
+                  <summary>
+                    <span>All people roster</span>
+                    <Space size={[4, 4]} wrap>
+                      <button
+                        type="button"
+                        className={`inline-filter-chip ${
+                          peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""
+                        }`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          changePeopleScopeFilter("all");
+                        }}
+                      >
+                        {filteredPeople.length}/{peopleBoardCounts.all} shown
+                      </button>
+                      <span className="secondary-summary-note">
+                        {peopleScopeLabel(peopleScopeFilter)} | sort {peopleSortLabel(peopleSort)}
+                      </span>
+                    </Space>
+                  </summary>
+                  <div className="secondary-disclosure-body">
+                    <PersonWorkloadBoard
+                      people={filteredPeople}
+                      personalViews={data.personalViews}
+                      selectedLogin={selectedPersonalView?.login ?? null}
+                      sort={peopleSort}
+                      onSelect={openPeopleBoardPerson}
+                      onMetricSelect={openPeopleBoardMetric}
+                      mode={peopleBoardUsesObserved ? "observed" : "watched"}
+                    />
+                  </div>
+                </details>
               </section>
             ) : null}
           </>
