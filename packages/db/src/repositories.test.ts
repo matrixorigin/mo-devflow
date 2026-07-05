@@ -22,6 +22,7 @@ import {
   dashboardVisibilityFilter,
   isPersonalNeedsTriageIssue,
   issueTimelineBackfillCandidatesFromRows,
+  metricSourceCompletenessForObject,
   notificationEmployeeMappingCandidates,
   previousCalendarDayRange,
   profileActionSuggestions,
@@ -1325,6 +1326,57 @@ describe("metric aggregation", () => {
       ageHours: null,
       evidence: "not_active"
     });
+  });
+
+  test("marks metric source complete only when cached object evidence is complete", () => {
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: true,
+        syncError: null
+      })
+    ).toBe("complete_cache");
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: false,
+        syncError: null
+      })
+    ).toBe("partial_cache");
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: true,
+        syncError: "GitHub timeout"
+      })
+    ).toBe("partial_cache");
+  });
+
+  test("marks PR metric source partial until PR detail evidence is synced", () => {
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: true,
+        syncError: null,
+        requireDetail: true,
+        detailSyncedAt: "2026-07-04T00:00:00.000Z",
+        detailError: null
+      })
+    ).toBe("complete_cache");
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: true,
+        syncError: null,
+        requireDetail: true,
+        detailSyncedAt: null,
+        detailError: null
+      })
+    ).toBe("partial_cache");
+    expect(
+      metricSourceCompletenessForObject({
+        isComplete: true,
+        syncError: null,
+        requireDetail: true,
+        detailSyncedAt: "2026-07-04T00:00:00.000Z",
+        detailError: "mergeability check failed"
+      })
+    ).toBe("partial_cache");
   });
 
   const points: DailyMetricPoint[] = [

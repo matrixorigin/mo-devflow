@@ -14,6 +14,7 @@ import type {
   DashboardVisibility,
   DashboardSummary,
   IssueCommentEvidenceSummary,
+  MetricSourceCompleteness,
   NormalizedIssue,
   NormalizedIssueComment,
   NormalizedIssueTimelineEvent,
@@ -2818,9 +2819,51 @@ function newMetricPoint(date: string, scopeType: "team" | "person", scopeKey: st
     mergeConflictPrs: 0,
     testingQueuePrs: 0,
     averageTestingQueueAgeHours: null,
-    sourceCompleteness: "partial_cache",
+    sourceCompleteness: "complete_cache",
     generatedAt: new Date().toISOString()
   };
+}
+
+export function metricSourceCompletenessForObject(input: {
+  isComplete: boolean;
+  syncError: string | null;
+  detailSyncedAt?: string | null;
+  detailError?: string | null;
+  requireDetail?: boolean;
+}): MetricSourceCompleteness {
+  if (!input.isComplete || input.syncError) {
+    return "partial_cache";
+  }
+  if (input.requireDetail && (!input.detailSyncedAt || input.detailError)) {
+    return "partial_cache";
+  }
+  return "complete_cache";
+}
+
+function markMetricPartial(
+  metrics: Map<string, DailyMetricPoint>,
+  dateKeys: Set<string>,
+  date: string | null,
+  scopeType: "team" | "person",
+  scopeKey: string
+): void {
+  if (!date || !dateKeys.has(date)) {
+    return;
+  }
+  const point = metrics.get(metricKey(date, scopeType, scopeKey));
+  if (point) {
+    point.sourceCompleteness = "partial_cache";
+  }
+}
+
+function rowMetricCompleteness(row: RowData, requireDetail = false): MetricSourceCompleteness {
+  return metricSourceCompletenessForObject({
+    isComplete: asBoolean(row.is_complete),
+    syncError: row.sync_error ? asString(row.sync_error) : null,
+    detailSyncedAt: fromSqlDate(row.detail_synced_at),
+    detailError: row.detail_error ? asString(row.detail_error) : null,
+    requireDetail
+  });
 }
 
 function metricKey(date: string, scopeType: "team" | "person", scopeKey: string): string {
@@ -3004,6 +3047,9 @@ function applyBacklogSnapshotMetrics(input: {
         if (ageHours === null) {
           continue;
         }
+        if (rowMetricCompleteness(row) === "partial_cache") {
+          point.sourceCompleteness = "partial_cache";
+        }
         const activeSnapshot = criticalActiveMetricSnapshot({
           severity,
           criticalLabels,
@@ -3039,6 +3085,9 @@ function applyBacklogSnapshotMetrics(input: {
         const ageHours = ageHoursAt(row, asOf);
         if (ageHours === null) {
           continue;
+        }
+        if (rowMetricCompleteness(row, true) === "partial_cache") {
+          point.sourceCompleteness = "partial_cache";
         }
         point.pendingPrs += 1;
         pendingPrAges.push(ageHours);
@@ -3198,7 +3247,8 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     `SELECT owner_login, created_at, closed_at, merged_at,
             requested_reviewers_json, review_decision, merge_state_status, ci_state,
             latest_review_state, latest_review_submitted_at,
-            attention_flags_json, testing_state, testing_queue_age_hours
+            attention_flags_json, testing_state, testing_queue_age_hours,
+            detail_synced_at, detail_error, is_complete, sync_error
      FROM pull_requests
      WHERE repo_id = ?`,
     [repoId]
@@ -3207,16 +3257,25 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     const owner = asString(row.owner_login);
     const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
     const mergedDate = dateKeyInTimezone(row.merged_at, profile.reporting.timezone);
+    const prCompleteness = rowMetricCompleteness(row, true);
     bumpMetric(metrics, keySet, createdDate, "team", "all", "prsCreated");
     bumpMetric(metrics, keySet, mergedDate, "team", "all", "prsMerged");
+    if (prCompleteness === "partial_cache") {
+      markMetricPartial(metrics, keySet, createdDate, "team", "all");
+      markMetricPartial(metrics, keySet, mergedDate, "team", "all");
+    }
     if (people.includes(owner)) {
       bumpMetric(metrics, keySet, createdDate, "person", owner, "prsCreated");
       bumpMetric(metrics, keySet, mergedDate, "person", owner, "prsMerged");
+      if (prCompleteness === "partial_cache") {
+        markMetricPartial(metrics, keySet, createdDate, "person", owner);
+        markMetricPartial(metrics, keySet, mergedDate, "person", owner);
+      }
     }
   }
 
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT number, owner_login, created_at, closed_at, lifecycle_state, severity
+    `SELECT number, owner_login, created_at, closed_at, lifecycle_state, severity, is_complete, sync_error
      FROM issues
      WHERE repo_id = ? AND is_pull_request = 0`,
     [repoId]
@@ -3232,16 +3291,25 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     const owner = row.owner_login ? asString(row.owner_login) : "";
     const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
     const closedDate = dateKeyInTimezone(row.closed_at, profile.reporting.timezone);
+    const issueCompleteness = rowMetricCompleteness(row);
     bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesOpened");
     bumpMetric(metrics, keySet, closedDate, "team", "all", "issuesClosed");
     if (row.lifecycle_state === "deferred") {
       bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesDeferred");
+    }
+    if (issueCompleteness === "partial_cache") {
+      markMetricPartial(metrics, keySet, createdDate, "team", "all");
+      markMetricPartial(metrics, keySet, closedDate, "team", "all");
     }
     if (people.includes(owner)) {
       bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesOpened");
       bumpMetric(metrics, keySet, closedDate, "person", owner, "issuesClosed");
       if (row.lifecycle_state === "deferred") {
         bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesDeferred");
+      }
+      if (issueCompleteness === "partial_cache") {
+        markMetricPartial(metrics, keySet, createdDate, "person", owner);
+        markMetricPartial(metrics, keySet, closedDate, "person", owner);
       }
     }
   }
