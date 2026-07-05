@@ -707,11 +707,16 @@ describe("dashboard hash filters", () => {
     expect(flow).toMatchObject({
       activeIssues: 2,
       issuesWithPr: 1,
+      issuesWithoutPr: 1,
       issuesInTesting: 1,
+      linkedIssueRatePercent: 50,
+      testingIssueRatePercent: 50,
+      averageActiveIssueAgeHours: 30,
       averageActiveToFirstPrHours: 18,
-      averageActiveToTestingHours: 42
+      averageActiveToTestingHours: 42,
+      slowEasyIssues: 0
     });
-    expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 with PR | 1 in test");
+    expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
   });
 });

@@ -17248,10 +17248,15 @@ export interface PersonalPrThroughputRow {
 export interface PersonalCriticalFlowEfficiency {
   activeIssues: number;
   issuesWithPr: number;
+  issuesWithoutPr: number;
   issuesInTesting: number;
+  linkedIssueRatePercent: number | null;
+  testingIssueRatePercent: number | null;
+  averageActiveIssueAgeHours: number | null;
   averageActiveToFirstPrHours: number | null;
   averageActiveToTestingHours: number | null;
   cachePendingIssues: number;
+  slowEasyIssues: number;
   rows: PersonalCriticalFlowEfficiencyRow[];
 }
 
@@ -17326,19 +17331,34 @@ export function personalCriticalFlowEfficiency(
   person: Pick<PersonalActionView, "activeCriticalIssues">
 ): PersonalCriticalFlowEfficiency {
   const rows = person.activeCriticalIssues.map(personalCriticalFlowEfficiencyRow);
+  const activeIssues = rows.length;
+  const issuesWithPr = rows.filter((row) => row.linkedPrs > 0).length;
+  const issuesInTesting = rows.filter((row) => row.testingAfterActiveHours !== null || row.cachePending).length;
   return {
-    activeIssues: rows.length,
-    issuesWithPr: rows.filter((row) => row.linkedPrs > 0).length,
-    issuesInTesting: rows.filter((row) => row.testingAfterActiveHours !== null || row.cachePending).length,
+    activeIssues,
+    issuesWithPr,
+    issuesWithoutPr: activeIssues - issuesWithPr,
+    issuesInTesting,
+    linkedIssueRatePercent: ratioPercentNumber(issuesWithPr, activeIssues),
+    testingIssueRatePercent: ratioPercentNumber(issuesInTesting, activeIssues),
+    averageActiveIssueAgeHours: averageNullable(rows.map((row) => row.activeAgeHours)),
     averageActiveToFirstPrHours: averageNullable(rows.map((row) => row.firstPrAfterActiveHours)),
     averageActiveToTestingHours: averageNullable(rows.map((row) => row.testingAfterActiveHours)),
     cachePendingIssues: rows.filter((row) => row.cachePending).length,
+    slowEasyIssues: rows.filter(
+      (row) =>
+        row.aiEffortLabel === "ai-easy" &&
+        (row.activeAgeHours ?? 0) >= personalSlowEasyCriticalIssueHours &&
+        row.testingAfterActiveHours === null
+    ).length,
     rows
   };
 }
 
 export function personalCriticalFlowEfficiencySummary(flow: PersonalCriticalFlowEfficiency): string {
-  return `${flow.issuesWithPr}/${flow.activeIssues} with PR | ${flow.issuesInTesting} in test`;
+  return `${flow.issuesWithPr}/${flow.activeIssues} linked (${percentText(
+    flow.linkedIssueRatePercent
+  )}) | ${flow.issuesInTesting}/${flow.activeIssues} in testing (${percentText(flow.testingIssueRatePercent)})`;
 }
 
 function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {
@@ -17375,6 +17395,15 @@ function averageNullable(values: Array<number | null>): number | null {
     return null;
   }
   return finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
+}
+
+const personalSlowEasyCriticalIssueHours = 7 * 24;
+
+function ratioPercentNumber(numerator: number, denominator: number): number | null {
+  if (denominator <= 0) {
+    return null;
+  }
+  return Math.round((numerator / denominator) * 100);
 }
 
 export function personalPrThroughputSelectionForPeriod(
@@ -17550,22 +17579,28 @@ function PersonalPrThroughputPanel({
 
         <div className="personal-flow-efficiency-card">
           <div className="personal-throughput-card-heading">
-            <Text strong>s-1/s0 → PR → Issue Testing</Text>
-            <Tag color={flow.cachePendingIssues > 0 ? "gold" : "blue"}>
-              {flow.cachePendingIssues > 0 ? `${flow.cachePendingIssues} cache pending` : "cache-derived"}
-            </Tag>
+            <div className="personal-flow-heading-copy">
+              <Text strong>s-1/s0 → PR → Issue Testing</Text>
+              <Text type="secondary">{personalCriticalFlowEfficiencySummary(flow)}</Text>
+            </div>
+            <Space size={[4, 4]} wrap>
+              {flow.slowEasyIssues > 0 ? <Tag color="red">{flow.slowEasyIssues} slow ai-easy</Tag> : null}
+              <Tag color={flow.cachePendingIssues > 0 ? "gold" : "blue"}>
+                {flow.cachePendingIssues > 0 ? `${flow.cachePendingIssues} cache pending` : "cache-derived"}
+              </Tag>
+            </Space>
           </div>
           <div className="personal-flow-efficiency-stats">
             <PersonalFlowEfficiencyMetric
               label="Active issues"
               value={flow.activeIssues}
-              detail="s-1/s0 now"
+              detail={`avg age ${optionalHours(flow.averageActiveIssueAgeHours)}`}
               onClick={() => onDrilldownChange("active_issues")}
             />
             <PersonalFlowEfficiencyMetric
               label="Linked PR"
               value={flow.issuesWithPr}
-              detail={`${flow.activeIssues - flow.issuesWithPr} no visible PR`}
+              detail={`${percentText(flow.linkedIssueRatePercent)} of active | ${flow.issuesWithoutPr} no PR`}
               onClick={() =>
                 onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
               }
@@ -17573,7 +17608,7 @@ function PersonalPrThroughputPanel({
             <PersonalFlowEfficiencyMetric
               label="In testing"
               value={flow.issuesInTesting}
-              detail="issue handoff"
+              detail={`${percentText(flow.testingIssueRatePercent)} of active`}
               onClick={() => onDrilldownChange("testing")}
             />
             <PersonalFlowEfficiencyMetric
