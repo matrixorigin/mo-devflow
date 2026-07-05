@@ -3940,8 +3940,11 @@ function TeamRotationOverview({
       </section>
 
       <TeamCriticalFlowPanel
+        issues={data.criticalIssues}
         rows={criticalFlowRows}
         generatedAt={generatedAt}
+        aiFilter={criticalAiFilter}
+        onAiFilterChange={onCriticalAiFilterChange}
         onOpenIssues={() => onOpenIssuesFilter({})}
         onOpenNoPrIssues={() => onOpenIssuesFilter({ scope: "no_pr" })}
         onOpenPrRisks={() => onOpenPrsFilter("attention")}
@@ -4708,15 +4711,21 @@ function ProductionReadinessGateButton({
 }
 
 function TeamCriticalFlowPanel({
+  issues,
   rows,
   generatedAt,
+  aiFilter,
+  onAiFilterChange,
   onOpenIssues,
   onOpenNoPrIssues,
   onOpenPrRisks,
   onPreviewIssue
 }: {
+  issues: CriticalIssueView[];
   rows: ObservedOwnerThread[];
   generatedAt: string;
+  aiFilter: CriticalIssueAiFilter;
+  onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onOpenIssues: () => void;
   onOpenNoPrIssues: () => void;
   onOpenPrRisks: () => void;
@@ -4733,19 +4742,30 @@ function TeamCriticalFlowPanel({
           <Title level={4}>Critical Issue / PR Flow</Title>
           <Text type="secondary">Active s-1/s0 issues linked to execution PRs and current blockers.</Text>
         </div>
-        <div className="team-critical-flow-counts">
-          <button type="button" onClick={onOpenIssues}>
-            <strong>{rows.length}</strong>
-            <span>active issues</span>
-          </button>
-          <button type="button" className={noVisiblePrRows > 0 ? "is-attention" : ""} onClick={onOpenNoPrIssues}>
-            <strong>{noVisiblePrRows}</strong>
-            <span>without visible PR</span>
-          </button>
-          <button type="button" className={blockedPrs > 0 ? "is-attention" : ""} onClick={onOpenPrRisks}>
-            <strong>{blockedPrs}</strong>
-            <span>blocked PRs</span>
-          </button>
+        <div className="team-critical-flow-tools">
+          <div className="board-filter-group board-filter-group-inline team-critical-flow-ai">
+            <Text type="secondary">AI</Text>
+            <Segmented
+              size="small"
+              value={aiFilter}
+              onChange={(value) => onAiFilterChange(String(value))}
+              options={criticalIssueAiOptions(issues)}
+            />
+          </div>
+          <div className="team-critical-flow-counts">
+            <button type="button" onClick={onOpenIssues}>
+              <strong>{rows.length}</strong>
+              <span>{aiFilter === "all" ? "active issues" : `${aiFilter} active`}</span>
+            </button>
+            <button type="button" className={noVisiblePrRows > 0 ? "is-attention" : ""} onClick={onOpenNoPrIssues}>
+              <strong>{noVisiblePrRows}</strong>
+              <span>without visible PR</span>
+            </button>
+            <button type="button" className={blockedPrs > 0 ? "is-attention" : ""} onClick={onOpenPrRisks}>
+              <strong>{blockedPrs}</strong>
+              <span>blocked PRs</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1865,6 +1865,18 @@ button.freshness-path-card:focus-visible {
   min-width: 0;
 }
 
+.team-critical-flow-tools {
+  align-items: flex-end;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  min-width: 0;
+}
+
+.team-critical-flow-ai {
+  justify-content: flex-end;
+}
+
 .team-critical-flow-counts button {
   appearance: none;
   background: #ffffff;
@@ -8854,6 +8866,16 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-critical-flow-counts {
+    justify-content: flex-start;
+  }
+
+  .team-critical-flow-tools {
+    align-items: flex-start;
+    justify-items: start;
+    width: 100%;
+  }
+
+  .team-critical-flow-ai {
     justify-content: flex-start;
   }
 
