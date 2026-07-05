@@ -1261,6 +1261,7 @@ interface MetricSeriesConfig {
 type FlowEfficiencyActions = Partial<{
   prFlow: () => void;
   issueDrain: () => void;
+  triageFlow: () => void;
   pendingPrAge: () => void;
   prAttention: () => void;
   activeCriticalAge: () => void;
@@ -1297,6 +1298,20 @@ function FlowEfficiencyStrip({
           tone={summary.issueOpenDelta > 0 ? "attention" : "good"}
           actionLabel="Open issues"
           onClick={actions.issueDrain}
+        />
+        <FlowEfficiencyItem
+          label="Triage decisions"
+          value={String(summary.needsTriageIssues)}
+          detail={`${summary.activeCriticalIssues} active | ${summary.deferredIssues} deferred`}
+          tone={
+            summary.needsTriageIssues > summary.activeCriticalIssues && summary.activeCriticalIssues <= 1
+              ? "attention"
+              : summary.needsTriageIssues > 0
+                ? "normal"
+                : "good"
+          }
+          actionLabel="Open people"
+          onClick={actions.triageFlow}
         />
         <FlowEfficiencyItem
           label="Pending PR age"
@@ -1366,6 +1381,9 @@ function flowEfficiencyDiagnosticAction(
   }
   if (target === "issue_drain") {
     return actions.issueDrain;
+  }
+  if (target === "triage_flow") {
+    return actions.triageFlow;
   }
   if (target === "pending_pr_age") {
     return actions.pendingPrAge;
@@ -2195,6 +2213,7 @@ function TeamRotationOverview({
   const peopleSourceIsObserved = data.people.length === 0 && observedPeople.length > 0;
   const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews).slice(0, 6);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
+  const triageSnapshot = teamTriageSnapshot(data);
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
   const productionReadiness = summarizeProductionReadiness({ data, session });
@@ -2256,6 +2275,14 @@ function TeamRotationOverview({
             <span>{teamFocus.detail}</span>
           </div>
         </div>
+        <TeamHealthStrip
+          data={data}
+          flowSummary={flowSummary}
+          triageSnapshot={triageSnapshot}
+          onOpenIssuesFilter={onOpenIssuesFilter}
+          onOpenPrsFilter={onOpenPrsFilter}
+          onOpenPeopleFilter={onOpenPeopleFilter}
+        />
         <TeamCommandQueue actions={commandActions} />
         <TeamFlowRiskStrip
           data={data}
@@ -2376,6 +2403,7 @@ function TeamRotationOverview({
             actions={{
               prFlow: () => onOpenPrsFilter("all"),
               issueDrain: () => onOpenIssuesFilter({}),
+              triageFlow: () => onOpenPeopleFilter("triage"),
               pendingPrAge: () => onOpenPrsFilter("all"),
               prAttention: () => onOpenPrsFilter("attention"),
               activeCriticalAge: () => onOpenIssuesFilter({}),
@@ -2429,10 +2457,13 @@ function teamCommandActions({
 }): TeamCommandAction[] {
   const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
   const blockerPrs = prRisks.filter((pr) => prAttentionReasons(pr).length > 0);
   const staleTestingRows = testingIssues.filter(
     (issue) => (issue.queueAgeHours ?? 0) >= 24 || issue.syncError !== null
   );
+  const triageSnapshot = teamTriageSnapshot(data);
+  const triageHeavy = triageSnapshot.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
   const criticalPeople = peopleFocus.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0);
   const actions: TeamCommandAction[] = [];
 
@@ -2458,6 +2489,17 @@ function teamCommandActions({
       onClick: () => onOpenIssuesFilter({ scope: "no_pr" })
     });
   }
+  if (staleActiveIssues.length > 0) {
+    actions.push({
+      key: "stale-active-issues",
+      title: `${staleActiveIssues.length} active s-1/s0 issues have aged over 3 days`,
+      detail: `oldest ${optionalHours(maxCriticalActiveAge(staleActiveIssues))}; check owner activity, linked PR, and next action`,
+      tone: "critical",
+      actionLabel: "Open active",
+      priority: 920,
+      onClick: () => onOpenIssuesFilter({})
+    });
+  }
   if (blockerPrs.length > 0) {
     actions.push({
       key: "pr-blockers",
@@ -2467,6 +2509,17 @@ function teamCommandActions({
       actionLabel: "Open PRs",
       priority: 900,
       onClick: () => onOpenPrsFilter("attention")
+    });
+  }
+  if (triageHeavy) {
+    actions.push({
+      key: "triage-heavy",
+      title: `${triageSnapshot.needsTriageIssues} needs-triage issues are not being converted`,
+      detail: `${data.counts.criticalIssues} active s-1/s0; ${triageSnapshot.deferredIssues} deferred; classify, start, or defer`,
+      tone: "attention",
+      actionLabel: "Open people",
+      priority: 880,
+      onClick: () => onOpenPeopleFilter("triage")
     });
   }
   if (staleTestingRows.length > 0) {
@@ -2588,6 +2641,141 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
           <span className="team-command-action-open">{action.actionLabel}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+interface TeamTriageSnapshot {
+  needsTriageIssues: number;
+  deferredIssues: number;
+  peopleWithNeedsTriage: number;
+  peopleWithDeferred: number;
+}
+
+function teamTriageSnapshot(data: DashboardSummary): TeamTriageSnapshot {
+  if (data.personalViews.length > 0) {
+    const needsTriageIssues = new Set<number>();
+    const deferredIssues = new Set<number>();
+    let peopleWithNeedsTriage = 0;
+    let peopleWithDeferred = 0;
+
+    for (const person of data.personalViews) {
+      if (person.needsTriageIssues.length > 0) {
+        peopleWithNeedsTriage += 1;
+      }
+      if (person.deferredIssues.length > 0) {
+        peopleWithDeferred += 1;
+      }
+      for (const issue of person.needsTriageIssues) {
+        needsTriageIssues.add(issue.number);
+      }
+      for (const issue of person.deferredIssues) {
+        deferredIssues.add(issue.number);
+      }
+    }
+
+    return {
+      needsTriageIssues: needsTriageIssues.size,
+      deferredIssues: deferredIssues.size,
+      peopleWithNeedsTriage,
+      peopleWithDeferred
+    };
+  }
+
+  return {
+    needsTriageIssues: data.people.reduce((total, person) => total + person.needsTriageIssues, 0),
+    deferredIssues: data.people.reduce((total, person) => total + person.deferredIssues, 0),
+    peopleWithNeedsTriage: data.people.filter((person) => person.needsTriageIssues > 0).length,
+    peopleWithDeferred: data.people.filter((person) => person.deferredIssues > 0).length
+  };
+}
+
+interface TeamPrBlockerSnapshot {
+  ciFailed: number;
+  requestedChanges: number;
+  conflicts: number;
+  idle: number;
+}
+
+function teamPrBlockerSnapshot(prs: PendingPrView[]): TeamPrBlockerSnapshot {
+  return {
+    ciFailed: prs.filter(prHasFailedCi).length,
+    requestedChanges: prs.filter(prHasRequestChanges).length,
+    conflicts: prs.filter(prHasConflict).length,
+    idle: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length
+  };
+}
+
+function teamPrBlockerDetail(snapshot: TeamPrBlockerSnapshot): string {
+  const parts = [
+    snapshot.ciFailed > 0 ? `${snapshot.ciFailed} CI` : null,
+    snapshot.requestedChanges > 0 ? `${snapshot.requestedChanges} changes` : null,
+    snapshot.conflicts > 0 ? `${snapshot.conflicts} conflicts` : null,
+    snapshot.idle > 0 ? `${snapshot.idle} idle` : null
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? "no blockers" : parts.slice(0, 3).join(" | ");
+}
+
+function TeamHealthStrip({
+  data,
+  flowSummary,
+  triageSnapshot,
+  onOpenIssuesFilter,
+  onOpenPrsFilter,
+  onOpenPeopleFilter
+}: {
+  data: DashboardSummary;
+  flowSummary: FlowEfficiencySummary | null;
+  triageSnapshot: TeamTriageSnapshot;
+  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
+}) {
+  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
+  const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
+  const testingCloseText =
+    data.testing.averageHandoffToCloseHours === null
+      ? `${data.testing.handoffToCloseSamples} close samples`
+      : `close ${optionalHours(data.testing.averageHandoffToCloseHours)} (${data.testing.handoffToCloseSamples})`;
+  const triageHeavy = triageSnapshot.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
+
+  return (
+    <div className="team-health-strip" aria-label="Team workflow health">
+      <TeamMonitorTile
+        label="Issue consumption"
+        value={data.counts.criticalIssues}
+        detail={`${staleActiveIssues.length} >3d | ${issuesWithoutPr.length} no PR | avg ${optionalHours(
+          flowSummary?.averageActiveIssueAgeHours ?? null
+        )}`}
+        tone={staleActiveIssues.length > 0 || issuesWithoutPr.length > 0 ? "critical" : "good"}
+        onClick={() => onOpenIssuesFilter({ scope: issuesWithoutPr.length > 0 ? "no_pr" : "all" })}
+      />
+      <TeamMonitorTile
+        label="PR pushing"
+        value={data.counts.attentionPrs}
+        detail={`${data.counts.pendingPrs} pending | ${teamPrBlockerDetail(prBlockers)} | avg ${optionalHours(
+          flowSummary?.averagePendingPrAgeHours ?? null
+        )}`}
+        tone={data.counts.attentionPrs > 0 ? "attention" : "good"}
+        onClick={() => onOpenPrsFilter(data.counts.attentionPrs > 0 ? "attention" : "all")}
+      />
+      <TeamMonitorTile
+        label="Testing validation"
+        value={data.testing.queueIssues}
+        detail={`${data.testing.staleQueueIssues} >24h | avg wait ${optionalHours(
+          data.testing.averageIssueQueueAgeHours
+        )} | ${testingCloseText}`}
+        tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
+        onClick={() => onOpenPrsFilter(data.testing.staleQueueIssues > 0 ? "stale_testing" : "testing")}
+      />
+      <TeamMonitorTile
+        label="Triage decisions"
+        value={triageSnapshot.needsTriageIssues}
+        detail={`${triageSnapshot.peopleWithNeedsTriage} people | ${data.counts.criticalIssues} active | ${triageSnapshot.deferredIssues} deferred`}
+        tone={triageHeavy || triageSnapshot.needsTriageIssues > 0 ? "attention" : "good"}
+        onClick={() => onOpenPeopleFilter(triageSnapshot.needsTriageIssues > 0 ? "triage" : "deferred")}
+      />
     </div>
   );
 }
@@ -12216,6 +12404,7 @@ export default function App() {
   const peopleBoardPeople = data ? (data.people.length > 0 ? data.people : observedPeople) : [];
   const peopleBoardCounts = peopleBoardScopeCounts(peopleBoardPeople, data?.personalViews ?? []);
   const teamTrendPoints = data ? teamMetricPoints(data.analytics, analyticsPeriod) : [];
+  const teamTriage = data ? teamTriageSnapshot(data) : null;
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
     ? sortPendingPrsForAction(filterPendingPrs(data.pendingPrs, prScopeFilter, criticalIssuesByPr), criticalIssuesByPr)
@@ -12238,7 +12427,9 @@ export default function App() {
         pendingPrs: data.pendingPrs,
         activeIssues: data.criticalIssues,
         testingQueuePrs: data.testing.queueIssues,
-        averageTestingQueueAgeHours: data.testing.averageIssueQueueAgeHours
+        averageTestingQueueAgeHours: data.testing.averageIssueQueueAgeHours,
+        needsTriageIssues: teamTriage?.needsTriageIssues ?? 0,
+        deferredIssues: teamTriage?.deferredIssues ?? 0
       })
     : null;
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
@@ -12347,14 +12538,20 @@ export default function App() {
                   {headerIssueLabelCapability.enabled ? null : headerWriteBackDisabled ? "Read-only" : "Reconnect"}
                 </Button>
               </Tooltip>
-              <Tooltip title="Disconnect GitHub token">
+              <Tooltip title="Sign out of this browser session">
                 <Button icon={<LogOut size={16} />} onClick={() => void disconnectSession()} />
               </Tooltip>
             </Space>
           ) : (
-            <Tooltip title={tokenEncryptionUnavailable ? tokenEncryptionSetupHint : "Connect GitHub token"}>
+            <Tooltip
+              title={
+                tokenEncryptionUnavailable
+                  ? tokenEncryptionSetupHint
+                  : "Connect your own GitHub token. Each teammate uses a separate session."
+              }
+            >
               <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={openTokenReconnect}>
-                Connect
+                Connect GitHub
               </Button>
             </Tooltip>
           )}
@@ -13404,7 +13601,11 @@ export default function App() {
         onClose={() => setObservedPersonPreviewState(null)}
       />
       <Modal
-        title="Connect GitHub Token"
+        title={
+          authenticatedUser
+            ? `Reconnect GitHub token for ${authenticatedUser.githubLogin}`
+            : "Connect Your GitHub Token"
+        }
         open={tokenModalOpen}
         okText={tokenRetryActive ? `Retry in ${retryDelayText(tokenRetryRemainingSeconds)}` : "Connect"}
         confirmLoading={tokenSaving}
@@ -13418,6 +13619,16 @@ export default function App() {
       >
         <Space orientation="vertical" size={12} className="token-modal-body">
           {tokenEncryptionUnavailable ? <Alert type="warning" title={tokenEncryptionSetupHint} showIcon /> : null}
+          <Alert
+            type="info"
+            title={
+              authenticatedUser
+                ? `This updates only ${authenticatedUser.githubLogin}'s token.`
+                : "Each teammate connects their own GitHub token."
+            }
+            description="Write actions run as the currently connected GitHub user; anonymous viewers stay read-only."
+            showIcon
+          />
           {authenticatedUser && headerIssueLabelCapability ? (
             <TokenCapabilityPanel capability={headerIssueLabelCapability} />
           ) : (

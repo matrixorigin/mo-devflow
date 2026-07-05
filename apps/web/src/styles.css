@@ -784,6 +784,13 @@ body {
   min-width: 0;
 }
 
+.team-health-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
 .team-flow-risk-card {
   appearance: none;
   background: #ffffff;
@@ -5178,7 +5185,7 @@ button.testing-board-stat:focus-visible {
   border-block: 1px solid #e5e7eb;
   display: grid;
   gap: 0;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   margin: 10px 0 14px;
 }
 
@@ -5652,6 +5659,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .team-health-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .team-critical-flow-row {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
   }
@@ -5807,6 +5818,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-flow-risk-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-health-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -6156,6 +6171,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .team-flow-risk-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-health-strip {
+    grid-template-columns: 1fr;
   }
 
   .update-pipeline-tiles {

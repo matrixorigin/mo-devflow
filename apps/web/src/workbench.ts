@@ -332,6 +332,8 @@ export interface FlowEfficiencySummary {
   prAttentionRatePercent: number | null;
   activeCriticalIssues: number;
   averageActiveIssueAgeHours: number | null;
+  needsTriageIssues: number;
+  deferredIssues: number;
   testingQueuePrs: number;
   averageTestingQueueAgeHours: number | null;
 }
@@ -342,6 +344,7 @@ export type FlowEfficiencyDiagnosticTarget =
   | "pending_pr_age"
   | "pr_attention"
   | "active_critical_age"
+  | "triage_flow"
   | "testing_queue"
   | "workflow_violations";
 
@@ -424,6 +427,8 @@ export function flowEfficiencySummary(input: {
   testingIssues?: Array<{ queueAgeHours: number | null }>;
   testingQueuePrs?: number;
   averageTestingQueueAgeHours?: number | null;
+  needsTriageIssues?: number;
+  deferredIssues?: number;
 }): FlowEfficiencySummary {
   const prsCreated = sumBy(input.points, (point) => point.prsCreated);
   const prsMerged = sumBy(input.points, (point) => point.prsMerged);
@@ -456,6 +461,8 @@ export function flowEfficiencySummary(input: {
     ),
     activeCriticalIssues: input.activeIssues.length,
     averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.ageHours)),
+    needsTriageIssues: input.needsTriageIssues ?? 0,
+    deferredIssues: input.deferredIssues ?? 0,
     testingQueuePrs: input.testingQueuePrs ?? testingPrs.length + testingIssues.length,
     averageTestingQueueAgeHours:
       input.averageTestingQueueAgeHours !== undefined ? input.averageTestingQueueAgeHours : average(testingWaits)
@@ -490,6 +497,20 @@ export function flowEfficiencyDiagnostics(summary: FlowEfficiencySummary): FlowE
       target: "pr_attention",
       tone: summary.prAttentionRatePercent !== null && summary.prAttentionRatePercent >= 50 ? "critical" : "attention",
       priority: summary.prAttentionRatePercent !== null && summary.prAttentionRatePercent >= 50 ? 940 : 840
+    });
+  }
+
+  if (summary.needsTriageIssues > 0) {
+    const triageHeavy = summary.needsTriageIssues > summary.activeCriticalIssues && summary.activeCriticalIssues <= 1;
+    diagnostics.push({
+      key: "triage-flow",
+      title: triageHeavy
+        ? `${summary.needsTriageIssues} needs-triage issues exceed active work`
+        : `${summary.needsTriageIssues} needs-triage issues need decisions`,
+      detail: `${summary.activeCriticalIssues} active s-1/s0; ${summary.deferredIssues} deferred; classify, start, or defer with reason`,
+      target: "triage_flow",
+      tone: triageHeavy ? "attention" : "normal",
+      priority: triageHeavy ? 910 : 610 + summary.needsTriageIssues
     });
   }
 

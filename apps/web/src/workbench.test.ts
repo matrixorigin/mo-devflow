@@ -476,7 +476,9 @@ describe("flow efficiency summary", () => {
         }),
         pullRequest({ ageHours: 12, attentionFlags: [], testingState: "not_ready", testingQueueAgeHours: null })
       ],
-      activeIssues: [criticalIssue({ ageHours: 48 }), criticalIssue({ ageHours: 24 })]
+      activeIssues: [criticalIssue({ ageHours: 48 }), criticalIssue({ ageHours: 24 })],
+      needsTriageIssues: 3,
+      deferredIssues: 1
     });
 
     expect(summary).toMatchObject({
@@ -495,6 +497,8 @@ describe("flow efficiency summary", () => {
       prAttentionRatePercent: 50,
       activeCriticalIssues: 2,
       averageActiveIssueAgeHours: 36,
+      needsTriageIssues: 3,
+      deferredIssues: 1,
       testingQueuePrs: 1,
       averageTestingQueueAgeHours: 30
     });
@@ -529,6 +533,8 @@ describe("flow efficiency summary", () => {
       prAttentionRatePercent: 75,
       activeCriticalIssues: 2,
       averageActiveIssueAgeHours: 96,
+      needsTriageIssues: 0,
+      deferredIssues: 0,
       testingQueuePrs: 2,
       averageTestingQueueAgeHours: 28
     });
@@ -542,6 +548,37 @@ describe("flow efficiency summary", () => {
     expect(diagnostics[0]).toMatchObject({
       title: "2 active s-1/s0 issues are aging",
       tone: "critical"
+    });
+  });
+
+  it("surfaces triage-heavy flow when candidates are not converted to active work", () => {
+    const diagnostics = flowEfficiencyDiagnostics({
+      prsCreated: 0,
+      prsMerged: 0,
+      prOpenDelta: 0,
+      prMergeRatePercent: null,
+      issuesOpened: 0,
+      issuesResolved: 0,
+      issueOpenDelta: 0,
+      issueDrainRatePercent: null,
+      workflowViolations: 0,
+      pendingPrs: 0,
+      averagePendingPrAgeHours: null,
+      attentionPrs: 0,
+      prAttentionRatePercent: null,
+      activeCriticalIssues: 1,
+      averageActiveIssueAgeHours: 8,
+      needsTriageIssues: 5,
+      deferredIssues: 2,
+      testingQueuePrs: 0,
+      averageTestingQueueAgeHours: null
+    });
+
+    expect(diagnostics[0]).toMatchObject({
+      key: "triage-flow",
+      title: "5 needs-triage issues exceed active work",
+      target: "triage_flow",
+      tone: "attention"
     });
   });
 
@@ -563,6 +600,8 @@ describe("flow efficiency summary", () => {
         prAttentionRatePercent: 0,
         activeCriticalIssues: 0,
         averageActiveIssueAgeHours: null,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
         testingQueuePrs: 0,
         averageTestingQueueAgeHours: null
       })
