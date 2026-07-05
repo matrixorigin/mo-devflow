@@ -8393,6 +8393,213 @@ function criticalIssueNextAction(issue: CriticalIssueView, generatedAt: string):
   return issue.severity === "severity/s-1" ? "Drive emergency closure" : "Drive active execution";
 }
 
+interface CriticalIssueOperationsSummaryCounts {
+  all: number;
+  sMinusOne: number;
+  sZero: number;
+  noHumanAction: number;
+  noLinkedPr: number;
+  ownerGaps: number;
+  unowned: number;
+  timelineMissing: number;
+}
+
+function criticalIssueOperationsSummaryCounts(
+  issues: CriticalIssueView[],
+  generatedAt: string
+): CriticalIssueOperationsSummaryCounts {
+  return {
+    all: issues.length,
+    sMinusOne: issues.filter((issue) => issue.severity === "severity/s-1").length,
+    sZero: issues.filter((issue) => issue.severity === "severity/s0").length,
+    noHumanAction: issues.filter((issue) => criticalIssueNoHumanAction(issue, generatedAt)).length,
+    noLinkedPr: issues.filter((issue) => issue.linkedPullRequests.length === 0).length,
+    ownerGaps: issues.filter((issue) => issue.ownerScope !== "watched").length,
+    unowned: issues.filter((issue) => issue.ownerScope === "unowned").length,
+    timelineMissing: issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length
+  };
+}
+
+function criticalIssueScopeOldestActiveAge(
+  issues: CriticalIssueView[],
+  scope: CriticalIssueScopeFilter,
+  generatedAt: string
+): number | null {
+  return maxCriticalActiveAge(issues.filter((issue) => criticalIssueMatchesScope(issue, scope, generatedAt)));
+}
+
+function criticalIssueOperationsFirstAction(
+  issues: CriticalIssueView[],
+  counts: CriticalIssueOperationsSummaryCounts,
+  generatedAt: string
+): {
+  scope: CriticalIssueScopeFilter;
+  title: string;
+  detail: string;
+} {
+  if (counts.sMinusOne > 0) {
+    return {
+      scope: "s-1",
+      title: "Drive s-1 issues first",
+      detail: `${counts.sMinusOne} emergency issues; oldest ${optionalHours(
+        criticalIssueScopeOldestActiveAge(issues, "s-1", generatedAt)
+      )}.`
+    };
+  }
+  if (counts.noHumanAction > 0) {
+    return {
+      scope: "no_action_24h",
+      title: "Ask owners for active issue updates",
+      detail: `${counts.noHumanAction} active issues have no cached human action in 24h.`
+    };
+  }
+  if (counts.noLinkedPr > 0) {
+    return {
+      scope: "no_pr",
+      title: "Make execution visible",
+      detail: `${counts.noLinkedPr} active issues have no visible linked PR.`
+    };
+  }
+  if (counts.unowned > 0) {
+    return {
+      scope: "unowned",
+      title: "Assign owners",
+      detail: `${counts.unowned} active issues have no configured owner.`
+    };
+  }
+  if (counts.ownerGaps > 0) {
+    return {
+      scope: "owner_gap",
+      title: "Review owner gaps",
+      detail: `${counts.ownerGaps} active issues are unowned or outside watched users.`
+    };
+  }
+  if (counts.timelineMissing > 0) {
+    return {
+      scope: "timeline_missing",
+      title: "Repair active-age evidence",
+      detail: `${counts.timelineMissing} active issues are missing severity timeline evidence.`
+    };
+  }
+  return {
+    scope: counts.all > 0 ? "all" : "all",
+    title: counts.all > 0 ? "Review active issue flow" : "No active s-1/s0 issues",
+    detail:
+      counts.all > 0
+        ? "No single issue blocker dominates the current filtered set."
+        : "Current cache has no active severity issues for this filter."
+  };
+}
+
+function CriticalIssueOperationsSummary({
+  issues,
+  filteredIssues,
+  generatedAt,
+  aiFilter,
+  ownerFilter,
+  scopeFilter,
+  sort,
+  onScopeFilterChange
+}: {
+  issues: CriticalIssueView[];
+  filteredIssues: CriticalIssueView[];
+  generatedAt: string;
+  aiFilter: CriticalIssueAiFilter;
+  ownerFilter: CriticalIssueOwnerFilter;
+  scopeFilter: CriticalIssueScopeFilter;
+  sort: CriticalIssueSort;
+  onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+}) {
+  const counts = criticalIssueOperationsSummaryCounts(issues, generatedAt);
+  const firstAction = criticalIssueOperationsFirstAction(issues, counts, generatedAt);
+  const aiLabel = aiFilter === "all" ? "all AI effort" : aiFilter;
+
+  return (
+    <section className="pr-ops-summary issue-ops-summary" aria-label="Active issue summary">
+      <div className="pr-ops-main">
+        <div className="pr-ops-focus">
+          <ShieldAlert size={18} aria-hidden="true" />
+          <div>
+            <Text strong>{filteredIssues.length} issues shown</Text>
+            <span>
+              {criticalScopeLabel(scopeFilter)} | {criticalIssueOwnerFilterLabel(ownerFilter)} | {aiLabel} | sorted by{" "}
+              {criticalIssueSortLabel(sort)}
+            </span>
+          </div>
+        </div>
+        <div className="pr-ops-tiles">
+          <PrOpsTile
+            label="Active issues"
+            value={counts.all}
+            detail={`oldest ${optionalHours(maxCriticalActiveAge(issues))}`}
+            tone={counts.sMinusOne > 0 ? "critical" : counts.all > 0 ? "attention" : "good"}
+            active={scopeFilter === "all"}
+            onClick={() => onScopeFilterChange("all")}
+          />
+          <PrOpsTile
+            label="s-1"
+            value={counts.sMinusOne}
+            detail={`oldest ${optionalHours(criticalIssueScopeOldestActiveAge(issues, "s-1", generatedAt))}`}
+            tone={counts.sMinusOne > 0 ? "critical" : "good"}
+            active={scopeFilter === "s-1"}
+            onClick={() => onScopeFilterChange("s-1")}
+          />
+          <PrOpsTile
+            label="No action 24h"
+            value={counts.noHumanAction}
+            detail={`oldest ${optionalHours(criticalIssueScopeOldestActiveAge(issues, "no_action_24h", generatedAt))}`}
+            tone={counts.noHumanAction > 0 ? "critical" : "good"}
+            active={scopeFilter === "no_action_24h"}
+            onClick={() => onScopeFilterChange("no_action_24h")}
+          />
+          <PrOpsTile
+            label="No linked PR"
+            value={counts.noLinkedPr}
+            detail="execution not visible"
+            tone={counts.noLinkedPr > 0 ? "attention" : "good"}
+            active={scopeFilter === "no_pr"}
+            onClick={() => onScopeFilterChange("no_pr")}
+          />
+          <PrOpsTile
+            label="Owner gaps"
+            value={counts.ownerGaps}
+            detail={`${counts.unowned} unowned`}
+            tone={counts.ownerGaps > 0 ? "attention" : "good"}
+            active={scopeFilter === "owner_gap" || scopeFilter === "unowned" || scopeFilter === "non_watched"}
+            onClick={() => onScopeFilterChange(counts.unowned > 0 ? "unowned" : "owner_gap")}
+          />
+          <PrOpsTile
+            label="Timeline missing"
+            value={counts.timelineMissing}
+            detail="active age incomplete"
+            tone={counts.timelineMissing > 0 ? "attention" : "good"}
+            active={scopeFilter === "timeline_missing"}
+            onClick={() => onScopeFilterChange("timeline_missing")}
+          />
+          <PrOpsTile
+            label="s0"
+            value={counts.sZero}
+            detail={`oldest ${optionalHours(criticalIssueScopeOldestActiveAge(issues, "s0", generatedAt))}`}
+            tone={counts.sZero > 0 ? "attention" : "good"}
+            active={scopeFilter === "s0"}
+            onClick={() => onScopeFilterChange("s0")}
+          />
+        </div>
+      </div>
+      <div className="pr-ops-side">
+        <div className={`pr-ops-next pr-ops-next-${firstAction.scope === "all" ? "good" : "attention"}`}>
+          <span>Next issue focus</span>
+          <button type="button" onClick={() => onScopeFilterChange(firstAction.scope)}>
+            <strong>{firstAction.title}</strong>
+            <small>{firstAction.detail}</small>
+            <em>Open {criticalScopeLabel(firstAction.scope)}</em>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CriticalIssueActionQueue({
   issues,
   generatedAt,
@@ -8486,6 +8693,7 @@ function CriticalIssueBoard({
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
   }
   const ownerFilteredIssues = issues.filter((issue) => criticalIssueMatchesOwner(issue, ownerFilter));
+  const ownerAndAiFilteredIssues = ownerFilteredIssues.filter((issue) => criticalIssueMatchesAi(issue, aiFilter));
   const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter, ownerFilter, generatedAt);
   const sMinusOneIssues = sortCriticalIssuesForDisplay(
     filteredIssues.filter((issue) => issue.severity === "severity/s-1"),
@@ -8503,15 +8711,17 @@ function CriticalIssueBoard({
     generatedAt
   );
   const actionQueueIssues = sortCriticalIssuesForDisplay(filteredIssues, sort, generatedAt);
-  const missingTimeline = ownerFilteredIssues.filter(
+  const missingTimeline = ownerAndAiFilteredIssues.filter(
     (issue) => issue.criticalAgeEvidence === "missing_timeline"
   ).length;
-  const noHumanAction = ownerFilteredIssues.filter((issue) => criticalIssueNoHumanAction(issue, generatedAt)).length;
-  const noLinkedPr = ownerFilteredIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
-  const ownerGaps = ownerFilteredIssues.filter((issue) => issue.ownerScope !== "watched").length;
-  const unownedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "unowned").length;
-  const nonWatchedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "non_watched").length;
-  const skipped = ownerFilteredIssues.filter((issue) => issue.workflowSkipped).length;
+  const noHumanAction = ownerAndAiFilteredIssues.filter((issue) =>
+    criticalIssueNoHumanAction(issue, generatedAt)
+  ).length;
+  const noLinkedPr = ownerAndAiFilteredIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const ownerGaps = ownerAndAiFilteredIssues.filter((issue) => issue.ownerScope !== "watched").length;
+  const unownedIssues = ownerAndAiFilteredIssues.filter((issue) => issue.ownerScope === "unowned").length;
+  const nonWatchedIssues = ownerAndAiFilteredIssues.filter((issue) => issue.ownerScope === "non_watched").length;
+  const skipped = ownerAndAiFilteredIssues.filter((issue) => issue.workflowSkipped).length;
 
   return (
     <div className="critical-board">
@@ -8526,82 +8736,104 @@ function CriticalIssueBoard({
         onOwnerFilterChange={onOwnerFilterChange}
         onSortChange={onSortChange}
       />
-      <div className="critical-board-summary" aria-label="Active critical issue summary">
-        <CriticalBoardStat
-          label="shown"
-          value={filteredIssues.length}
-          tone={filteredIssues.length > 0 ? "attention" : "good"}
-          active={scopeFilter === "all" && aiFilter === "all" && ownerFilter === "all"}
-          onClick={() => {
-            onScopeFilterChange("all");
-            onAiFilterChange("all");
-            onOwnerFilterChange("all");
-          }}
-        />
-        <CriticalBoardStat
-          label="s-1"
-          value={ownerFilteredIssues.filter((issue) => issue.severity === "severity/s-1").length}
-          tone="critical"
-          active={scopeFilter === "s-1"}
-          onClick={() => onScopeFilterChange("s-1")}
-        />
-        <CriticalBoardStat
-          label="s0"
-          value={ownerFilteredIssues.filter((issue) => issue.severity === "severity/s0").length}
-          tone="attention"
-          active={scopeFilter === "s0"}
-          onClick={() => onScopeFilterChange("s0")}
-        />
-        <CriticalBoardStat
-          label="no action 24h"
-          value={noHumanAction}
-          tone={noHumanAction > 0 ? "critical" : "good"}
-          active={scopeFilter === "no_action_24h"}
-          onClick={() => onScopeFilterChange("no_action_24h")}
-        />
-        <CriticalBoardStat
-          label="no linked PR"
-          value={noLinkedPr}
-          tone={noLinkedPr > 0 ? "attention" : "good"}
-          active={scopeFilter === "no_pr"}
-          onClick={() => onScopeFilterChange("no_pr")}
-        />
-        <CriticalBoardStat
-          label="timeline missing"
-          value={missingTimeline}
-          tone={missingTimeline > 0 ? "attention" : "good"}
-          active={scopeFilter === "timeline_missing"}
-          onClick={() => onScopeFilterChange("timeline_missing")}
-        />
-        <CriticalBoardStat
-          label="owner gaps"
-          value={ownerGaps}
-          tone={ownerGaps > 0 ? "attention" : "good"}
-          active={scopeFilter === "owner_gap"}
-          onClick={() => onScopeFilterChange("owner_gap")}
-        />
-        <CriticalBoardStat
-          label="unowned"
-          value={unownedIssues}
-          tone={unownedIssues > 0 ? "critical" : "good"}
-          active={scopeFilter === "unowned"}
-          onClick={() => onScopeFilterChange("unowned")}
-        />
-        <CriticalBoardStat
-          label="non-watched"
-          value={nonWatchedIssues}
-          tone={nonWatchedIssues > 0 ? "attention" : "good"}
-          active={scopeFilter === "non_watched"}
-          onClick={() => onScopeFilterChange("non_watched")}
-        />
-        <CriticalBoardStat
-          label="skip automation"
-          value={skipped}
-          tone={skipped > 0 ? "muted" : "good"}
-          active={scopeFilter === "skipped"}
-          onClick={() => onScopeFilterChange("skipped")}
-        />
-      </div>
+      <CriticalIssueOperationsSummary
+        issues={ownerAndAiFilteredIssues}
+        filteredIssues={filteredIssues}
+        generatedAt={generatedAt}
+        aiFilter={aiFilter}
+        ownerFilter={ownerFilter}
+        scopeFilter={scopeFilter}
+        sort={sort}
+        onScopeFilterChange={onScopeFilterChange}
+      />
+      <details className="secondary-disclosure critical-filter-counts-disclosure">
+        <summary>
+          <span>More issue filters</span>
+          <Space size={[4, 4]} wrap>
+            <Tag>{criticalIssueTableSummary(filteredIssues.length, scopeFilter, aiFilter, ownerFilter, sort)}</Tag>
+            <Tag color={noLinkedPr > 0 ? "orange" : "default"}>{noLinkedPr} no linked PR</Tag>
+            <Tag color={noHumanAction > 0 ? "red" : "default"}>{noHumanAction} no action 24h</Tag>
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
+          <div className="critical-board-summary" aria-label="Active critical issue filters">
+            <CriticalBoardStat
+              label="shown"
+              value={filteredIssues.length}
+              tone={filteredIssues.length > 0 ? "attention" : "good"}
+              active={scopeFilter === "all" && aiFilter === "all" && ownerFilter === "all"}
+              onClick={() => {
+                onScopeFilterChange("all");
+                onAiFilterChange("all");
+                onOwnerFilterChange("all");
+              }}
+            />
+            <CriticalBoardStat
+              label="s-1"
+              value={ownerAndAiFilteredIssues.filter((issue) => issue.severity === "severity/s-1").length}
+              tone="critical"
+              active={scopeFilter === "s-1"}
+              onClick={() => onScopeFilterChange("s-1")}
+            />
+            <CriticalBoardStat
+              label="s0"
+              value={ownerAndAiFilteredIssues.filter((issue) => issue.severity === "severity/s0").length}
+              tone="attention"
+              active={scopeFilter === "s0"}
+              onClick={() => onScopeFilterChange("s0")}
+            />
+            <CriticalBoardStat
+              label="no action 24h"
+              value={noHumanAction}
+              tone={noHumanAction > 0 ? "critical" : "good"}
+              active={scopeFilter === "no_action_24h"}
+              onClick={() => onScopeFilterChange("no_action_24h")}
+            />
+            <CriticalBoardStat
+              label="no linked PR"
+              value={noLinkedPr}
+              tone={noLinkedPr > 0 ? "attention" : "good"}
+              active={scopeFilter === "no_pr"}
+              onClick={() => onScopeFilterChange("no_pr")}
+            />
+            <CriticalBoardStat
+              label="timeline missing"
+              value={missingTimeline}
+              tone={missingTimeline > 0 ? "attention" : "good"}
+              active={scopeFilter === "timeline_missing"}
+              onClick={() => onScopeFilterChange("timeline_missing")}
+            />
+            <CriticalBoardStat
+              label="owner gaps"
+              value={ownerGaps}
+              tone={ownerGaps > 0 ? "attention" : "good"}
+              active={scopeFilter === "owner_gap"}
+              onClick={() => onScopeFilterChange("owner_gap")}
+            />
+            <CriticalBoardStat
+              label="unowned"
+              value={unownedIssues}
+              tone={unownedIssues > 0 ? "critical" : "good"}
+              active={scopeFilter === "unowned"}
+              onClick={() => onScopeFilterChange("unowned")}
+            />
+            <CriticalBoardStat
+              label="non-watched"
+              value={nonWatchedIssues}
+              tone={nonWatchedIssues > 0 ? "attention" : "good"}
+              active={scopeFilter === "non_watched"}
+              onClick={() => onScopeFilterChange("non_watched")}
+            />
+            <CriticalBoardStat
+              label="skip automation"
+              value={skipped}
+              tone={skipped > 0 ? "muted" : "good"}
+              active={scopeFilter === "skipped"}
+              onClick={() => onScopeFilterChange("skipped")}
+            />
+          </div>
+        </div>
+      </details>
       <CriticalIssueActionQueue
         issues={actionQueueIssues}
         generatedAt={generatedAt}

@@ -3745,6 +3745,10 @@ button.webhook-path-metric:focus-visible {
   margin-bottom: 0;
 }
 
+.critical-filter-counts-disclosure {
+  margin-bottom: 0;
+}
+
 .subsection-heading {
   align-items: center;
   display: flex;
