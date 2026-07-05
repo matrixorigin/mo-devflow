@@ -2839,7 +2839,7 @@ function criticalIssueSortLabel(sort: CriticalIssueSort): string {
   return "risk";
 }
 
-function prScopeLabel(filter: PrScopeFilter): string {
+export function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "active_issue") {
     return "linked to active s-1/s0";
   }
@@ -2865,10 +2865,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "confirmed no visible issue";
+    return "no visible issue after sync";
   }
   if (filter === "issue_link_pending") {
-    return "issue link evidence pending";
+    return "issue link sync pending";
   }
   if (filter === "evidence_pending") {
     return "PR evidence incomplete";
@@ -2879,12 +2879,12 @@ function prScopeLabel(filter: PrScopeFilter): string {
   return "all pending";
 }
 
-function prScopeHelp(filter: PrScopeFilter): string | null {
+export function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "no_issue") {
-    return "PR detail sync completed and no related issue is visible in cached relationship data or PR text. This is the confirmed missing issue link view.";
+    return "PR detail and relationship sync completed, but no related issue is visible in cached relationship data or PR text. This is not the same as an incomplete issue-link sync.";
   }
   if (filter === "issue_link_pending") {
-    return "These PRs are missing local issue link evidence because PR detail or relationship sync is still incomplete. Do not treat them as unlinked yet.";
+    return "These PRs are missing local issue-link evidence because PR detail or relationship sync is still incomplete. Do not treat them as unlinked yet.";
   }
   if (filter === "evidence_pending") {
     return "PR review, CI, merge, or issue link evidence is still incomplete for these rows.";
@@ -3127,14 +3127,14 @@ function prIssueLinkStatusDisplay(
   }
   if (prIssueLinkUnknown(pr, activeIssues)) {
     return {
-      label: "issue link evidence pending",
+      label: "issue link sync pending",
       shortLabel: "sync pending",
       detail: "PR detail or relationship sync is incomplete; do not treat this PR as unlinked yet.",
       color: "gold"
     };
   }
   return {
-    label: "confirmed no visible issue",
+    label: "no visible issue after sync",
     shortLabel: "none after sync",
     detail: "PR detail sync completed and no related issue is visible in cached relationship data or PR text.",
     color: "orange"
@@ -3564,8 +3564,8 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Requested changes", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "Confirmed no issue", value: "no_issue" },
-            { label: "Issue link pending", value: "issue_link_pending" },
+            { label: "No visible issue after sync", value: "no_issue" },
+            { label: "Issue link sync pending", value: "issue_link_pending" },
             { label: "PR evidence incomplete", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
@@ -8314,14 +8314,14 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("conflict")}
       />
       <CriticalBoardStat
-        label="confirmed no issue"
+        label="no visible issue after sync"
         value={noIssuePrs}
         tone={noIssuePrs > 0 ? "attention" : "good"}
         active={scopeFilter === "no_issue"}
         onClick={() => onScopeFilterChange("no_issue")}
       />
       <CriticalBoardStat
-        label="issue link pending"
+        label="issue link sync pending"
         value={issueLinkPendingPrs}
         tone={issueLinkPendingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "issue_link_pending"}
@@ -11472,8 +11472,8 @@ function PullRequestCardList({
     { label: "Review", value: "review" },
     { label: "Merge", value: "merge" },
     { label: "Linked issue test", value: "testing" },
-    { label: "Issue link pending", value: "issue_link_pending" },
-    { label: "Confirmed no issue", value: "confirmed_no_issue" }
+    { label: "Issue link sync pending", value: "issue_link_pending" },
+    { label: "No visible issue after sync", value: "confirmed_no_issue" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))

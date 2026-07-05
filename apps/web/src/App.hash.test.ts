@@ -11,7 +11,9 @@ import {
   peopleSortFromHash,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
+  prScopeHelp,
   prScopeFilterFromHash,
+  prScopeLabel,
   prSortFromHash,
   serviceReadTokenStatusText,
   syncHealthCursorText
@@ -145,5 +147,12 @@ describe("dashboard hash filters", () => {
   it("labels the deployment service read token separately from personal sign-in", () => {
     expect(serviceReadTokenStatusText(true)).toBe("service ready");
     expect(serviceReadTokenStatusText(false)).toBe("service missing");
+  });
+
+  it("describes PR issue-link scopes without implying incomplete evidence is a confirmed missing issue", () => {
+    expect(prScopeLabel("no_issue")).toBe("no visible issue after sync");
+    expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
+    expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
+    expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
   });
 });
