@@ -817,6 +817,45 @@ describe("work item attention reasons", () => {
     expect(prHasNoVisibleIssue(pr, activeIssues)).toBe(false);
     expect(prIssueLinkEvidencePending(pr, activeIssues)).toBe(false);
   });
+
+  it("does not treat a PR as unlinked when PR-side linked issue numbers are visible", () => {
+    const pr = pullRequest({
+      number: 188,
+      linkedIssueNumbers: [99],
+      detailSyncedAt: "2026-07-04T00:00:00Z",
+      detailError: null,
+      isComplete: true
+    });
+
+    expect(prHasNoVisibleIssue(pr)).toBe(false);
+    expect(prIssueLinkEvidencePending(pr)).toBe(false);
+  });
+
+  it("keeps missing issue links pending until PR relationship sync completes", () => {
+    const pr = pullRequest({
+      number: 188,
+      linkedIssueNumbers: [],
+      detailSyncedAt: null,
+      detailError: null,
+      isComplete: true
+    });
+
+    expect(prHasNoVisibleIssue(pr)).toBe(false);
+    expect(prIssueLinkEvidencePending(pr)).toBe(true);
+  });
+
+  it("treats no visible issue as confirmed only after completed relationship sync", () => {
+    const pr = pullRequest({
+      number: 188,
+      linkedIssueNumbers: [],
+      detailSyncedAt: "2026-07-04T00:00:00Z",
+      detailError: null,
+      isComplete: true
+    });
+
+    expect(prHasNoVisibleIssue(pr)).toBe(true);
+    expect(prIssueLinkEvidencePending(pr)).toBe(false);
+  });
 });
 
 describe("flow efficiency summary", () => {
