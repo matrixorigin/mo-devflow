@@ -3892,6 +3892,12 @@ export function writeAuditHealthSummary(actions: WriteActionExecutionView[]): Wr
   };
 }
 
+export function workflowExecutionNeedsTokenReconnect(
+  status: WorkflowFixExecutionResult["status"] | null | undefined
+): boolean {
+  return status === "token_unavailable";
+}
+
 function prHasFailedCi(pr: PendingPrView): boolean {
   return ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState ?? "");
 }
@@ -24213,6 +24219,19 @@ export default function App() {
                 type={workflowExecution.status === "success" ? "success" : "warning"}
                 title={labelText(workflowExecution.status)}
                 description={workflowExecution.errorMessage ?? workflowExecution.message}
+                action={
+                  workflowExecutionNeedsTokenReconnect(workflowExecution.status) ? (
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setPreviewModalOpen(false);
+                        openTokenReconnect();
+                      }}
+                    >
+                      Reconnect token
+                    </Button>
+                  ) : undefined
+                }
                 showIcon
               />
             ) : null}

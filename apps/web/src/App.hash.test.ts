@@ -70,6 +70,7 @@ import {
   writeAuditScopeFilterFromHash,
   writeAuditHealthSummary,
   writeAuditOperationSummary,
+  workflowExecutionNeedsTokenReconnect,
   workflowFixActionForViolation,
   workflowPostWriteRefreshSummary,
   workflowViolationMatchesSignalFilter
@@ -319,6 +320,13 @@ describe("dashboard hash filters", () => {
       operationSummary: "No operation details visible",
       tone: "muted"
     });
+  });
+
+  it("opens reconnect only for unavailable write tokens", () => {
+    expect(workflowExecutionNeedsTokenReconnect("token_unavailable")).toBe(true);
+    expect(workflowExecutionNeedsTokenReconnect("failed")).toBe(false);
+    expect(workflowExecutionNeedsTokenReconnect("stale_preview")).toBe(false);
+    expect(workflowExecutionNeedsTokenReconnect(null)).toBe(false);
   });
 
   it("round-trips issue testing queue filters through PR board links", () => {
