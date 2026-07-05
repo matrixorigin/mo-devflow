@@ -16,8 +16,6 @@ describe("schema contract", () => {
     expect(expected.get("issues")).toContain("source_user_id");
     expect(expected.get("pull_requests")).toContain("testing_state");
     expect(expected.get("pull_requests")).toContain("linked_issue_numbers_json");
-    expect(expected.get("pr_testing_events")).toContain("from_state");
-    expect(expected.get("pr_testing_events")).toContain("source_completeness");
     expect(expected.get("issue_comment_syncs")).toContain("is_complete");
     expect(expected.get("issue_comments")).toContain("body");
     expect(expected.get("issue_timeline_events")).toContain("label_name");

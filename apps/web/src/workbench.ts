@@ -816,14 +816,8 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
 }
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {
-  if (state === "test_requested") {
-    return "PR-side test signal";
-  }
   if (state === "testing") {
     return "issue in testing";
-  }
-  if (state === "dev_done") {
-    return "PR dev-ready signal";
   }
   if (state === "test_changes_requested") {
     return "test changes requested";
@@ -840,9 +834,6 @@ export function testingStateBusinessLabel(state: TestingFlowState): string {
 export function testingStateHelpText(state: TestingFlowState): string {
   if (state === "testing") {
     return "This PR is linked to an issue that is currently assigned to configured testers or has the configured issue testing label.";
-  }
-  if (state === "test_requested" || state === "dev_done") {
-    return "This is PR-side evidence only. It does not put an issue into testing unless the linked issue matches configured handoff rules.";
   }
   if (state === "test_changes_requested") {
     return "Testing feedback is visible; the owner should respond before the issue can leave testing.";
@@ -1603,10 +1594,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
   if (item.testingState === "test_changes_requested") {
     return "Respond to test feedback";
   }
-  if (
-    item.testingQueueAgeHours !== null ||
-    ["dev_done", "test_requested", "testing"].includes(item.testingState ?? "")
-  ) {
+  if (item.testingQueueAgeHours !== null || ["testing", "test_changes_requested"].includes(item.testingState ?? "")) {
     return "Check linked issue test status";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
@@ -1945,10 +1933,7 @@ function comparePrCriticalIssueContext(left: PrCriticalIssueContext, right: PrCr
 }
 
 function isTestingQueuePullRequest(pr: FlowEfficiencyPullRequest): boolean {
-  return (
-    pr.testingQueueAgeHours !== null ||
-    ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
-  );
+  return pr.testingQueueAgeHours !== null || ["testing", "test_changes_requested"].includes(pr.testingState);
 }
 
 function sumBy<T>(items: T[], value: (item: T) => number): number {

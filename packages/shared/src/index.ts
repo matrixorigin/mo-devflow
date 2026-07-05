@@ -487,25 +487,7 @@ export interface PersonalActionView {
   analyticsMonthly: AggregatedMetricPoint[];
 }
 
-export type TestingFlowState =
-  | "not_ready"
-  | "dev_done"
-  | "test_requested"
-  | "testing"
-  | "test_changes_requested"
-  | "test_passed"
-  | "closed_or_merged";
-
-export interface TestingTransitionView {
-  id: number;
-  prNumber: number;
-  fromState: TestingFlowState;
-  toState: TestingFlowState;
-  testingTesters: string[];
-  testingSignals: string[];
-  occurredAt: string;
-  sourceCompleteness: MetricSourceCompleteness;
-}
+export type TestingFlowState = "not_ready" | "testing" | "test_changes_requested" | "test_passed" | "closed_or_merged";
 
 export interface TestingIssueTransitionView {
   id: number;
@@ -555,8 +537,6 @@ export interface TestingSummary {
   averageQueueAgeHours: number | null;
   issueTransitionEvents: number;
   lastIssueTransitionAt: string | null;
-  transitionEvents: number;
-  lastTransitionAt: string | null;
   requestToPassSamples: number;
   passToCloseSamples: number;
   closedWithoutPassSignalSamples: number;
@@ -564,7 +544,6 @@ export interface TestingSummary {
   averagePassToCloseHours: number | null;
   issues: TestingIssueQueueView[];
   recentIssueTransitions: TestingIssueTransitionView[];
-  recentTransitions: TestingTransitionView[];
   testers: Array<{
     login: string;
     queueIssues: number;

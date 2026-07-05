@@ -362,15 +362,6 @@ export function normalizePullRequest(
   if (pr.state !== "closed" && mergeStateStatus === "dirty") {
     attentionFlags.push("merge_conflict");
   }
-  if (
-    pr.state !== "closed" &&
-    testingFlow.queueAgeHours !== null &&
-    ["test_requested", "testing", "test_changes_requested"].includes(testingFlow.state) &&
-    testingFlow.queueAgeHours >= profile.thresholds.prNoActionAttentionHours
-  ) {
-    attentionFlags.push("testing_stalled");
-  }
-
   return {
     githubId: pr.id,
     number: pr.number,

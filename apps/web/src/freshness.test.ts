@@ -200,8 +200,6 @@ function dashboard(input: Partial<DashboardSummary> = {}): DashboardSummary {
       averageQueueAgeHours: null,
       issueTransitionEvents: 0,
       lastIssueTransitionAt: null,
-      transitionEvents: 0,
-      lastTransitionAt: null,
       requestToPassSamples: 0,
       passToCloseSamples: 0,
       closedWithoutPassSignalSamples: 0,
@@ -209,7 +207,6 @@ function dashboard(input: Partial<DashboardSummary> = {}): DashboardSummary {
       averagePassToCloseHours: null,
       issues: [],
       recentIssueTransitions: [],
-      recentTransitions: [],
       testers: []
     },
     notifications: {

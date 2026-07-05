@@ -805,9 +805,6 @@ function testingStateColor(state: TestingFlowState): string {
   if (state === "testing") {
     return "blue";
   }
-  if (state === "test_requested") {
-    return "gold";
-  }
   return "default";
 }
 
@@ -5988,11 +5985,11 @@ function TestingCommandBoard({
   const stalePrs = queuePrs.filter(isTestingStalePr);
   const evidenceGapPrs = queuePrs.filter(isTestingEvidenceGapPr);
   const activePrs = queuePrs.filter((pr) => !isTestingStalePr(pr) && !isTestingEvidenceGapPr(pr));
-  const partialTransitions = testing.recentTransitions.filter(
+  const partialIssueTransitions = testing.recentIssueTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
   const hasTurnoverHistory =
-    testing.transitionEvents > 0 ||
+    testing.issueTransitionEvents > 0 ||
     testing.requestToPassSamples > 0 ||
     testing.passToCloseSamples > 0 ||
     testing.closedWithoutPassSignalSamples > 0;
@@ -6094,17 +6091,17 @@ function TestingCommandBoard({
         ) : null}
         {hasTurnoverHistory ? (
           <TestingBoardStat
-            label="history gaps"
-            value={partialTransitions}
-            tone={partialTransitions > 0 ? "attention" : "normal"}
+            label="issue evidence gaps"
+            value={partialIssueTransitions}
+            tone={partialIssueTransitions > 0 ? "attention" : "normal"}
             actionLabel="Filter"
-            onClick={partialTransitions > 0 ? () => onOpenPrsFilter("testing_evidence_gap") : undefined}
+            onClick={partialIssueTransitions > 0 ? () => openIssueQueueFilter("data_gap") : undefined}
           />
         ) : null}
       </div>
 
       {testing.queueIssues > 0 || hasTurnoverHistory ? (
-        <TestingTurnoverBreakdown testing={testing} partialTransitions={partialTransitions} />
+        <TestingTurnoverBreakdown testing={testing} partialIssueTransitions={partialIssueTransitions} />
       ) : null}
 
       <TestingIssueQueuePanel
@@ -6583,10 +6580,10 @@ function TestingBoardStat({
 
 function TestingTurnoverBreakdown({
   testing,
-  partialTransitions
+  partialIssueTransitions
 }: {
   testing: DashboardSummary["testing"];
-  partialTransitions: number;
+  partialIssueTransitions: number;
 }) {
   const requestToPassTone =
     testing.averageRequestToPassHours !== null && testing.averageRequestToPassHours >= 24 ? "attention" : "normal";
@@ -6616,9 +6613,9 @@ function TestingTurnoverBreakdown({
       />
       <TestingTurnoverCard
         label="Data gaps"
-        value={partialTransitions}
+        value={partialIssueTransitions}
         detail={hasSamples ? `${testing.closedWithoutPassSignalSamples} closed without pass` : "no pass samples yet"}
-        tone={partialTransitions > 0 || testing.closedWithoutPassSignalSamples > 0 ? "attention" : "normal"}
+        tone={partialIssueTransitions > 0 || testing.closedWithoutPassSignalSamples > 0 ? "attention" : "normal"}
       />
     </div>
   );
@@ -12056,85 +12053,6 @@ export default function App() {
     ],
     []
   );
-  const testingTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentTransitions"][number]> = useMemo(
-    () => [
-      {
-        title: "PR",
-        dataIndex: "prNumber",
-        width: 104,
-        render: (number) => (
-          <a
-            href={`https://github.com/${data?.repo.owner}/${data?.repo.name}/pull/${number}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            #{number}
-          </a>
-        )
-      },
-      {
-        title: "Transition",
-        width: 260,
-        render: (_, transition) => (
-          <Space size={4} wrap>
-            <TestingStateTag state={transition.fromState} />
-            <Text type="secondary">-&gt;</Text>
-            <TestingStateTag state={transition.toState} />
-          </Space>
-        )
-      },
-      {
-        title: "Ignored PR-side users",
-        dataIndex: "testingTesters",
-        width: 220,
-        render: (testers: string[]) =>
-          testers.length === 0 ? (
-            <Text type="secondary">-</Text>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {testers.map((tester) => (
-                <Tag key={tester}>{tester}</Tag>
-              ))}
-            </Space>
-          )
-      },
-      {
-        title: "Ignored PR-side signal",
-        dataIndex: "testingSignals",
-        ellipsis: true,
-        render: (signals: string[]) =>
-          signals.length === 0 ? (
-            <Text type="secondary">-</Text>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {signals.slice(0, 4).map((signal) => (
-                <Tooltip key={signal} title={signal}>
-                  <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
-                </Tooltip>
-              ))}
-              {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
-            </Space>
-          )
-      },
-      {
-        title: "Occurred",
-        dataIndex: "occurredAt",
-        width: 148,
-        render: (value) => formatDate(value)
-      },
-      {
-        title: "Evidence",
-        dataIndex: "sourceCompleteness",
-        width: 116,
-        render: (value) => (
-          <Tag color={value === "complete_cache" ? "green" : "orange"}>
-            {value === "complete_cache" ? "complete" : "incomplete"}
-          </Tag>
-        )
-      }
-    ],
-    [criticalIssuesByPr, data?.repo.name, data?.repo.owner]
-  );
   const testingIssueTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentIssueTransitions"][number]> =
     useMemo(
       () => [
@@ -12263,7 +12181,7 @@ export default function App() {
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const testingHasTurnoverHistory = data
-    ? data.testing.transitionEvents > 0 ||
+    ? data.testing.issueTransitionEvents > 0 ||
       data.testing.requestToPassSamples > 0 ||
       data.testing.passToCloseSamples > 0 ||
       data.testing.closedWithoutPassSignalSamples > 0
@@ -12984,9 +12902,6 @@ export default function App() {
                         <Space size={[4, 4]} wrap>
                           <Tag>{data.testing.testers.length} testers</Tag>
                           <Tag>{data.testing.recentIssueTransitions.length} issue events</Tag>
-                          {testingHasTurnoverHistory ? (
-                            <Tag>{data.testing.recentTransitions.length} ignored PR signals</Tag>
-                          ) : null}
                         </Space>
                       </summary>
                       <div className="secondary-disclosure-body">
@@ -13010,27 +12925,6 @@ export default function App() {
                             pagination={{ pageSize: 6 }}
                             locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
                           />
-                        ) : null}
-                        {testingHasTurnoverHistory ? (
-                          <>
-                            <Alert
-                              className="band"
-                              type="info"
-                              title="Ignored PR-side signal audit"
-                              description="This table is for audit/debugging only. Reviewer, assignee, label, and comment signals on PRs do not put an issue into testing."
-                              showIcon
-                            />
-                            <Table
-                              className="testing-transition-table"
-                              rowKey="id"
-                              size="middle"
-                              columns={testingTransitionColumns}
-                              dataSource={data.testing.recentTransitions}
-                              scroll={{ x: 1040 }}
-                              pagination={{ pageSize: 6 }}
-                              locale={{ emptyText: <Empty description="No testing transitions recorded yet" /> }}
-                            />
-                          </>
                         ) : null}
                       </div>
                     </details>

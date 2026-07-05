@@ -71,17 +71,18 @@ Developers need an action-oriented personal view:
 - Their PRs merged yesterday.
 - Their pending PRs and PR age.
 - PRs requiring attention due to no action, requested changes, CI failure, or conflict.
-- PRs transferred to testing.
+- Issues in testing, with linked PR evidence and blockers.
 
 ### 2.5 Tester
 
 Testers are a special configured role.
 
-The product should track PRs transferred to testers and measure:
+The product should track issues assigned to configured testers and measure:
 
-- Development complete to test handoff time.
-- Test handoff to test pass time.
-- Test pass to close or merge time.
+- Issue testing queue age.
+- Issue testing handoff to test pass time.
+- Test pass to issue closure or linked PR merge time.
+- Linked PR blockers while an issue is in testing.
 - Pending testing workload per tester.
 - Testing turnover efficiency.
 
@@ -369,7 +370,7 @@ The personal view should show:
 - PRs with requested changes.
 - PRs with failed CI.
 - PRs with merge conflict.
-- PRs transferred to testing.
+- Issues in testing and the user's linked PR evidence.
 - Personal issue and PR turnover trends by day, week, and month.
 
 The personal view should be an action list, not a performance ranking page.
@@ -387,7 +388,7 @@ Attention conditions:
 - Merge conflict exists.
 - PR is old relative to expected AI effort.
 - PR is linked to active `s0` or `s-1` issue and has stalled.
-- PR was transferred to testing but has not progressed.
+- PR is linked to an issue in testing that has not progressed.
 
 Meaningful action can include:
 
@@ -402,42 +403,36 @@ The default "no action for more than one day" attention rule should use `last_hu
 
 The product must support a configured testing handoff workflow.
 
-The repo profile must define how a PR is considered transferred to testing. Possible signals include:
+Testing handoff is issue-scoped. The repo profile must define how an issue enters the testing queue. Supported handoff signals are:
 
-- A testing label.
-- A tester assignment.
-- A tester review request.
-- A project field state.
-- A standardized comment or command.
+- The issue is assigned to a configured tester from `people.testers`.
+- The issue has a configured testing label from `testing.handoff_signals.labels`.
 
-Comment or command based handoff should use cached PR issue comments and must only be treated as confirmed when the relevant comment backfill is complete. A matching human comment can also update `last_human_action_at` for the PR.
+PR reviewer requests, PR assignees, PR labels, PR comments, and PR project fields must not create testing handoff state. Human PR comments may still update PR activity context, but they do not move an issue into testing.
 
-The testing flow should be modeled as a state machine:
+The testing flow should be modeled around the issue queue:
 
-- `not_ready`: PR is still under development.
-- `dev_done`: development owner believes the PR is ready for testing.
-- `test_requested`: PR has been transferred to one or more testers.
-- `testing`: tester has acknowledged or started validation.
-- `test_changes_requested`: testing found issues and returned the PR to development.
-- `test_passed`: tester confirmed the PR can close or merge.
-- `closed_or_merged`: PR is closed or merged after validation.
+- `not_ready`: no configured issue testing handoff is visible.
+- `testing`: an issue is assigned to a configured tester or has a configured issue testing label.
+- `test_changes_requested`: testing found issues and returned the work to development.
+- `test_passed`: tester confirmed the issue can close or linked PRs can merge.
+- `closed_or_merged`: the issue is closed or linked PRs are merged after validation.
 
-The repository profile must define which labels, comments, assignees, reviewers, or project fields move a PR between these states.
+Linked PRs inherit testing context from their linked issues. They should display CI, review, merge, and age blockers as execution evidence, not as handoff authority.
 
 The product should handle:
 
-- Repeated test handoffs.
+- Repeated issue test handoffs.
 - Test failure and return to development.
-- PR reopen after close.
+- Issue reopen after close.
 - Tester reassignment.
 - Multiple testers.
 - Missing or ambiguous handoff signal.
 
 Testing flow metrics:
 
-- Development complete to testing handoff time.
-- Testing handoff to test pass time.
-- Test pass to close or merge time.
+- Issue testing handoff to test pass time.
+- Test pass to issue close or linked PR merge time.
 - Current testing queue by tester.
 - Testing queue age.
 - Testing turnover trend by day, week, and month.
@@ -545,7 +540,7 @@ MatrixOne profile examples:
 - PR has failed CI.
 - PR has unresolved requested changes.
 - PR has merge conflict.
-- PR transferred to testing but not progressing.
+- Issue in testing but not progressing.
 - AI effort label appears stale or inaccurate.
 
 ## 13. Notifications
@@ -563,7 +558,7 @@ Notification examples:
 - A user's PR has unresolved requested changes.
 - A user's PR has failed CI.
 - A user's PR has merge conflict.
-- A tester has a PR waiting in the testing queue beyond the configured threshold.
+- A tester has an issue waiting in the testing queue beyond the configured threshold.
 - An `ai-easy` active `s-1/s0` issue has taken abnormally long to reach testing.
 - A daily or weekly summary should be delivered to a maintainer group.
 
@@ -702,7 +697,7 @@ A maintainer should be able to open the product and quickly answer:
 - Who created and merged PRs yesterday?
 - Which PRs are pending and how old are they?
 - Which PRs need attention because of no action, requested changes, failed CI, or conflict?
-- Which PRs are in testing and how long they have been there?
+- Which issues are in testing, how long they have waited, and which PRs are linked?
 - Which `ai-xxx` estimates look wrong based on actual workflow duration?
 - Which workflow violations should be fixed first?
 - Which attention items have already notified the responsible employee?

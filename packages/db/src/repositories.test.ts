@@ -4,8 +4,7 @@ import type {
   DailyMetricPoint,
   NormalizedPullRequest,
   RepoProfile,
-  TestingIssueQueueView,
-  TestingTransitionView
+  TestingIssueQueueView
 } from "@mo-devflow/shared";
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
@@ -30,14 +29,8 @@ import {
   profileSetupPlan,
   profileSetupPlanForViewer,
   pullRequestWithPreservedInsight,
-  pullRequestTestingTransitionForUpsert,
-  recentTestingTransitionsForProfile,
   testingIssueTransitionsFromQueueIssues,
   testingIssuesForLogin,
-  testingTurnoverMetricsByTesterFromTransitions,
-  testingTurnoverMetricsFromTransitions,
-  testingTransitionBelongsToProfile,
-  testingTransitionViewFromRow,
   visibleClassesForDashboard
 } from "./repositories";
 import { workflowFixOperationsFromJson, writeActionExecutionViewFromRow } from "./writeActions";
@@ -844,7 +837,7 @@ describe("critical issue cache blockers", () => {
       linkedPullRequests: [
         {
           ...linkedPr,
-          testingState: "test_requested",
+          testingState: "testing",
           testingTesters: ["tester-a"],
           testingQueueAgeHours: 48,
           attentionFlags: ["testing_stalled"]
@@ -950,7 +943,7 @@ describe("pull request testing transition events", () => {
     latestCommitAt: "2026-07-02T07:00:00.000Z",
     detailSyncedAt: "2026-07-03T00:00:00.000Z",
     detailError: null,
-    testingState: "test_requested",
+    testingState: "testing",
     testingTesters: ["tester-a"],
     testingSignals: ["issue_assignee:#42:tester-a"],
     testingQueueAgeHours: 16,
@@ -962,40 +955,6 @@ describe("pull request testing transition events", () => {
     isComplete: true,
     rawPayload: {}
   };
-
-  test("records first observed testing handoff transitions", () => {
-    expect(
-      pullRequestTestingTransitionForUpsert({
-        repoId: 7,
-        previousTestingState: null,
-        pr: pullRequest
-      })
-    ).toEqual({
-      repoId: 7,
-      prNumber: 101,
-      fromState: "not_ready",
-      toState: "test_requested",
-      testingTesters: ["tester-a"],
-      testingSignals: ["issue_assignee:#42:tester-a"],
-      occurredAt: "2026-07-02T08:00:00.000Z",
-      sourceCompleteness: "complete_cache",
-      sourceAuthType: "service_read_token",
-      sourceUserId: null,
-      visibilityClass: "anonymous_readable",
-      dedupeKey: "7:pr:101:testing:not_ready:test_requested:2026-07-02T08:00:00.000Z"
-    });
-  });
-
-  test("does not record repeated upserts with the same testing state", () => {
-    expect(
-      pullRequestTestingTransitionForUpsert({
-        repoId: 7,
-        previousTestingState: "test_requested",
-        hasExistingTestingEvents: true,
-        pr: pullRequest
-      })
-    ).toBeNull();
-  });
 
   test("preserves complete PR detail evidence when a later list sync omits detail enrichment", () => {
     const next = pullRequestWithPreservedInsight({
@@ -1033,155 +992,6 @@ describe("pull request testing transition events", () => {
     expect(next.reviewDecision).toBe("approved");
     expect(next.attentionFlags).toEqual(["no_human_action_24h"]);
     expect(next.linkedIssueNumbers).toEqual([42]);
-  });
-
-  test("records first-observed testing states when existing cache predates event history", () => {
-    expect(
-      pullRequestTestingTransitionForUpsert({
-        repoId: 7,
-        previousTestingState: "test_requested",
-        hasExistingTestingEvents: false,
-        pr: pullRequest
-      })
-    ).toMatchObject({
-      fromState: "not_ready",
-      toState: "test_requested",
-      dedupeKey: "7:pr:101:testing:not_ready:test_requested:2026-07-02T08:00:00.000Z"
-    });
-  });
-
-  test("does not record initial not-ready state", () => {
-    expect(
-      pullRequestTestingTransitionForUpsert({
-        repoId: 7,
-        previousTestingState: null,
-        pr: { ...pullRequest, testingState: "not_ready", testingTesters: [], testingSignals: [] }
-      })
-    ).toBeNull();
-  });
-
-  test("does not record first-observed ordinary closed PRs without testing evidence", () => {
-    expect(
-      pullRequestTestingTransitionForUpsert({
-        repoId: 7,
-        previousTestingState: null,
-        pr: {
-          ...pullRequest,
-          state: "closed",
-          testingState: "closed_or_merged",
-          testingTesters: [],
-          testingSignals: ["closed_or_merged"],
-          closedAt: "2026-07-03T04:00:00.000Z",
-          mergedAt: "2026-07-03T04:00:00.000Z",
-          testingQueueAgeHours: null
-        }
-      })
-    ).toBeNull();
-  });
-
-  test("uses review submission time for tester pass and change-request transitions", () => {
-    const event = pullRequestTestingTransitionForUpsert({
-      repoId: 7,
-      previousTestingState: "test_requested",
-      pr: {
-        ...pullRequest,
-        testingState: "test_passed",
-        latestReviewState: "APPROVED",
-        latestReviewSubmittedAt: "2026-07-03T02:00:00.000Z",
-        testingQueueAgeHours: null
-      }
-    });
-
-    expect(event).toMatchObject({
-      fromState: "test_requested",
-      toState: "test_passed",
-      occurredAt: "2026-07-03T02:00:00.000Z"
-    });
-  });
-
-  test("maps testing transition rows to dashboard-safe views", () => {
-    expect(
-      testingTransitionViewFromRow({
-        id: 12,
-        pr_number: 101,
-        from_state: "test_requested",
-        to_state: "test_passed",
-        testing_testers_json: JSON.stringify(["tester-a"]),
-        testing_signals_json: JSON.stringify(["issue_assignee:#42:tester-a"]),
-        occurred_at: "2026-07-03 02:00:00",
-        source_completeness: "complete_cache"
-      })
-    ).toEqual({
-      id: 12,
-      prNumber: 101,
-      fromState: "test_requested",
-      toState: "test_passed",
-      testingTesters: ["tester-a"],
-      testingSignals: ["issue_assignee:#42:tester-a"],
-      occurredAt: "2026-07-03T02:00:00Z",
-      sourceCompleteness: "complete_cache"
-    });
-  });
-
-  test("matches testing transitions to the configured handoff workflow", () => {
-    const reviewerTransition: TestingTransitionView = {
-      id: 1,
-      prNumber: 101,
-      fromState: "not_ready",
-      toState: "test_requested",
-      testingTesters: ["tester-a"],
-      testingSignals: ["reviewer:tester-a"],
-      occurredAt: "2026-07-01T00:00:00.000Z",
-      sourceCompleteness: "complete_cache"
-    };
-    const issueAssigneeTransition: TestingTransitionView = {
-      ...reviewerTransition,
-      testingSignals: ["issue_assignee:#42:tester-a"]
-    };
-    const issueLabelTransition: TestingTransitionView = {
-      ...reviewerTransition,
-      testingTesters: [],
-      testingSignals: ["issue_label:#42:testing"]
-    };
-    const issueScopedProfile: RepoProfile = {
-      ...baseProfile,
-      people: { ...baseProfile.people, testers: ["tester-a"] },
-      testing: { handoffSignals: { labels: ["testing"] } }
-    };
-    expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
-    expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
-    expect(testingTransitionBelongsToProfile(issueScopedProfile, issueLabelTransition)).toBe(true);
-  });
-
-  test("selects recent testing transitions after filtering by current workflow", () => {
-    const issueScopedProfile: RepoProfile = {
-      ...baseProfile,
-      people: { ...baseProfile.people, testers: ["tester-a"] }
-    };
-    const staleReviewerTransition: TestingTransitionView = {
-      id: 10,
-      prNumber: 25453,
-      fromState: "not_ready",
-      toState: "test_requested",
-      testingTesters: ["tester-a"],
-      testingSignals: ["reviewer:tester-a"],
-      occurredAt: "2026-07-04T08:00:00.000Z",
-      sourceCompleteness: "complete_cache"
-    };
-    const issueAssigneeTransition: TestingTransitionView = {
-      id: 9,
-      prNumber: 101,
-      fromState: "not_ready",
-      toState: "test_requested",
-      testingTesters: ["tester-a"],
-      testingSignals: ["issue_assignee:#42:tester-a"],
-      occurredAt: "2026-07-03T08:00:00.000Z",
-      sourceCompleteness: "complete_cache"
-    };
-
-    expect(
-      recentTestingTransitionsForProfile(issueScopedProfile, [staleReviewerTransition, issueAssigneeTransition], 1)
-    ).toEqual([issueAssigneeTransition]);
   });
 
   test("derives issue-level testing handoff transitions from the current issue queue", () => {
@@ -1329,112 +1139,6 @@ describe("pull request testing transition events", () => {
       testingIssuesForLogin("alice", [assignedIssue, labelIssue], ownerByIssueNumber).map((issue) => issue.number)
     ).toEqual([45]);
     expect(testingIssuesForLogin("someone-else", [assignedIssue, labelIssue], ownerByIssueNumber)).toEqual([]);
-  });
-
-  test("summarizes testing turnover only from completed transition pairs", () => {
-    const transitions: TestingTransitionView[] = [
-      {
-        id: 1,
-        prNumber: 101,
-        fromState: "not_ready",
-        toState: "test_requested",
-        testingTesters: ["tester-a"],
-        testingSignals: ["issue_assignee:#42:tester-a"],
-        occurredAt: "2026-07-01T00:00:00.000Z",
-        sourceCompleteness: "complete_cache"
-      },
-      {
-        id: 2,
-        prNumber: 101,
-        fromState: "test_requested",
-        toState: "test_passed",
-        testingTesters: ["tester-a"],
-        testingSignals: ["issue_assignee:#42:tester-a"],
-        occurredAt: "2026-07-02T12:00:00.000Z",
-        sourceCompleteness: "complete_cache"
-      },
-      {
-        id: 3,
-        prNumber: 101,
-        fromState: "test_passed",
-        toState: "closed_or_merged",
-        testingTesters: [],
-        testingSignals: ["closed_or_merged"],
-        occurredAt: "2026-07-03T00:00:00.000Z",
-        sourceCompleteness: "complete_cache"
-      },
-      {
-        id: 4,
-        prNumber: 102,
-        fromState: "not_ready",
-        toState: "test_requested",
-        testingTesters: ["tester-b"],
-        testingSignals: ["issue_assignee:#43:tester-b"],
-        occurredAt: "2026-07-01T00:00:00.000Z",
-        sourceCompleteness: "partial_cache"
-      },
-      {
-        id: 5,
-        prNumber: 103,
-        fromState: "not_ready",
-        toState: "test_requested",
-        testingTesters: ["tester-c"],
-        testingSignals: ["issue_assignee:#44:tester-c"],
-        occurredAt: "2026-07-01T08:00:00.000Z",
-        sourceCompleteness: "partial_cache"
-      },
-      {
-        id: 6,
-        prNumber: 103,
-        fromState: "test_requested",
-        toState: "closed_or_merged",
-        testingTesters: [],
-        testingSignals: ["closed_or_merged"],
-        occurredAt: "2026-07-02T08:00:00.000Z",
-        sourceCompleteness: "partial_cache"
-      }
-    ];
-
-    expect(testingTurnoverMetricsFromTransitions(transitions)).toEqual({
-      requestToPassSamples: 1,
-      passToCloseSamples: 1,
-      closedWithoutPassSignalSamples: 1,
-      averageRequestToPassHours: 36,
-      averagePassToCloseHours: 12
-    });
-
-    expect(Array.from(testingTurnoverMetricsByTesterFromTransitions(transitions).entries())).toEqual([
-      [
-        "tester-a",
-        {
-          requestToPassSamples: 1,
-          passToCloseSamples: 1,
-          closedWithoutPassSignalSamples: 0,
-          averageRequestToPassHours: 36,
-          averagePassToCloseHours: 12
-        }
-      ],
-      [
-        "tester-b",
-        {
-          requestToPassSamples: 0,
-          passToCloseSamples: 0,
-          closedWithoutPassSignalSamples: 0,
-          averageRequestToPassHours: null,
-          averagePassToCloseHours: null
-        }
-      ],
-      [
-        "tester-c",
-        {
-          requestToPassSamples: 0,
-          passToCloseSamples: 0,
-          closedWithoutPassSignalSamples: 1,
-          averageRequestToPassHours: null,
-          averagePassToCloseHours: null
-        }
-      ]
-    ]);
   });
 });
 

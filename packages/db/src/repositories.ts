@@ -35,7 +35,6 @@ import type {
   TestingIssueTransitionView,
   TestingIssueQueueView,
   TestingSummary,
-  TestingTransitionView,
   WorkerHealth,
   WorkflowViolation,
   WorkflowViolationView,
@@ -66,26 +65,6 @@ export { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardVi
 
 interface RowData extends RowDataPacket {
   [key: string]: unknown;
-}
-
-export interface PullRequestTestingTransitionEvent {
-  repoId: number;
-  prNumber: number;
-  fromState: NormalizedPullRequest["testingState"];
-  toState: NormalizedPullRequest["testingState"];
-  testingTesters: string[];
-  testingSignals: string[];
-  occurredAt: string;
-  sourceCompleteness: "complete_cache" | "partial_cache";
-  sourceAuthType: NormalizedPullRequest["sourceAuthType"];
-  sourceUserId: number | null;
-  visibilityClass: NormalizedPullRequest["visibilityClass"];
-  dedupeKey: string;
-}
-
-export interface PullRequestTestingTransitionEventView extends PullRequestTestingTransitionEvent {
-  id: number;
-  createdAt: string;
 }
 
 export interface IssueCommentBackfillCandidate {
@@ -200,99 +179,6 @@ export function pullRequestWithPreservedInsight(input: {
   };
 }
 
-function testingTransitionOccurredAt(pr: NormalizedPullRequest): string {
-  if (pr.testingState === "closed_or_merged") {
-    return pr.mergedAt ?? pr.closedAt ?? pr.updatedAt;
-  }
-  if (pr.testingState === "test_passed" || pr.testingState === "test_changes_requested") {
-    return pr.latestReviewSubmittedAt ?? pr.lastHumanActionAt;
-  }
-  return pr.lastHumanActionAt || pr.updatedAt;
-}
-
-function hasConfirmedTestingEvidence(pr: NormalizedPullRequest): boolean {
-  return pr.testingTesters.length > 0 || pr.testingSignals.some((signal) => signal !== "closed_or_merged");
-}
-
-export function pullRequestTestingTransitionForUpsert(input: {
-  repoId: number;
-  previousTestingState: NormalizedPullRequest["testingState"] | null;
-  hasExistingTestingEvents?: boolean;
-  pr: NormalizedPullRequest;
-}): PullRequestTestingTransitionEvent | null {
-  const firstObservedTestingState =
-    input.previousTestingState === input.pr.testingState &&
-    !input.hasExistingTestingEvents &&
-    input.pr.testingState !== "not_ready" &&
-    hasConfirmedTestingEvidence(input.pr);
-  const fromState = firstObservedTestingState ? "not_ready" : (input.previousTestingState ?? "not_ready");
-  const toState = input.pr.testingState;
-  if (fromState === toState) {
-    return null;
-  }
-  if (!input.previousTestingState && toState === "not_ready") {
-    return null;
-  }
-  if (!input.previousTestingState && !hasConfirmedTestingEvidence(input.pr)) {
-    return null;
-  }
-  const occurredAt = testingTransitionOccurredAt(input.pr);
-  return {
-    repoId: input.repoId,
-    prNumber: input.pr.number,
-    fromState,
-    toState,
-    testingTesters: input.pr.testingTesters,
-    testingSignals: input.pr.testingSignals,
-    occurredAt,
-    sourceCompleteness: input.pr.isComplete ? "complete_cache" : "partial_cache",
-    sourceAuthType: input.pr.sourceAuthType,
-    sourceUserId: input.pr.sourceUserId,
-    visibilityClass: input.pr.visibilityClass,
-    dedupeKey: `${input.repoId}:pr:${input.pr.number}:testing:${fromState}:${toState}:${occurredAt}`
-  };
-}
-
-export function testingTransitionViewFromRow(row: Record<string, unknown>): TestingTransitionView {
-  return {
-    id: asNumber(row.id),
-    prNumber: asNumber(row.pr_number),
-    fromState: asString(row.from_state) as TestingTransitionView["fromState"],
-    toState: asString(row.to_state) as TestingTransitionView["toState"],
-    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
-    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
-    occurredAt: fromSqlDate(row.occurred_at) ?? new Date().toISOString(),
-    sourceCompleteness: asString(row.source_completeness) === "complete_cache" ? "complete_cache" : "partial_cache"
-  };
-}
-
-export function testingTransitionBelongsToProfile(profile: RepoProfile, transition: TestingTransitionView): boolean {
-  return transition.testingSignals.some((signal) => testingSignalBelongsToProfile(profile, signal));
-}
-
-export function testingTransitionsForProfile(
-  profile: RepoProfile,
-  transitions: TestingTransitionView[]
-): TestingTransitionView[] {
-  return transitions.filter((transition) => testingTransitionBelongsToProfile(profile, transition));
-}
-
-export function recentTestingTransitionsForProfile(
-  profile: RepoProfile,
-  transitions: TestingTransitionView[],
-  limit = 12
-): TestingTransitionView[] {
-  return testingTransitionsForProfile(profile, transitions)
-    .sort((left, right) => {
-      const occurredDelta = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
-      if (occurredDelta !== 0) {
-        return occurredDelta;
-      }
-      return right.id - left.id;
-    })
-    .slice(0, limit);
-}
-
 export function testingIssueTransitionsFromQueueIssues(
   issues: TestingIssueQueueView[],
   limit = 12
@@ -372,143 +258,6 @@ function emptyTestingTurnoverMetrics(): TestingTurnoverMetrics {
     averageRequestToPassHours: null,
     averagePassToCloseHours: null
   };
-}
-
-function transitionHoursBetween(start: string | null, end: string | null): number | null {
-  if (!start || !end) {
-    return null;
-  }
-  const startTime = new Date(start).getTime();
-  const endTime = new Date(end).getTime();
-  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
-    return null;
-  }
-  return Math.round(((endTime - startTime) / 3_600_000) * 10) / 10;
-}
-
-function roundedAverage(values: number[]): number | null {
-  if (values.length === 0) {
-    return null;
-  }
-  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
-}
-
-function turnoverDurationsForPullRequest(transitions: TestingTransitionView[]): {
-  requestToPassHours: number[];
-  passToCloseHours: number[];
-  closedWithoutPassSignalSamples: number;
-} {
-  const ordered = [...transitions].sort((left, right) => {
-    const timeOrder = new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime();
-    return timeOrder === 0 ? left.id - right.id : timeOrder;
-  });
-  const requestToPassHours: number[] = [];
-  const passToCloseHours: number[] = [];
-  let closedWithoutPassSignalSamples = 0;
-  let requestedAt: string | null = null;
-  let passedAt: string | null = null;
-  for (const transition of ordered) {
-    if (!requestedAt && ["test_requested", "testing", "test_changes_requested"].includes(transition.toState)) {
-      requestedAt = transition.occurredAt;
-    }
-    if (!passedAt && transition.toState === "test_passed") {
-      passedAt = transition.occurredAt;
-    }
-    if (transition.toState === "closed_or_merged") {
-      const passToClose = transitionHoursBetween(passedAt, transition.occurredAt);
-      if (passToClose !== null) {
-        passToCloseHours.push(passToClose);
-      } else if (
-        !passedAt &&
-        (requestedAt !== null || ["test_requested", "testing", "test_changes_requested"].includes(transition.fromState))
-      ) {
-        closedWithoutPassSignalSamples += 1;
-      }
-    }
-  }
-  const requestToPass = transitionHoursBetween(requestedAt, passedAt);
-  if (requestToPass !== null) {
-    requestToPassHours.push(requestToPass);
-  }
-  return { requestToPassHours, passToCloseHours, closedWithoutPassSignalSamples };
-}
-
-function metricsFromDurations(
-  requestToPassHours: number[],
-  passToCloseHours: number[],
-  closedWithoutPassSignalSamples: number
-): TestingTurnoverMetrics {
-  return {
-    requestToPassSamples: requestToPassHours.length,
-    passToCloseSamples: passToCloseHours.length,
-    closedWithoutPassSignalSamples,
-    averageRequestToPassHours: roundedAverage(requestToPassHours),
-    averagePassToCloseHours: roundedAverage(passToCloseHours)
-  };
-}
-
-function transitionsByPullRequest(transitions: TestingTransitionView[]): Map<number, TestingTransitionView[]> {
-  const byPullRequest = new Map<number, TestingTransitionView[]>();
-  for (const transition of transitions) {
-    const entries = byPullRequest.get(transition.prNumber) ?? [];
-    entries.push(transition);
-    byPullRequest.set(transition.prNumber, entries);
-  }
-  return byPullRequest;
-}
-
-export function testingTurnoverMetricsFromTransitions(transitions: TestingTransitionView[]): TestingTurnoverMetrics {
-  const requestToPassHours: number[] = [];
-  const passToCloseHours: number[] = [];
-  let closedWithoutPassSignalSamples = 0;
-  for (const entries of transitionsByPullRequest(transitions).values()) {
-    const durations = turnoverDurationsForPullRequest(entries);
-    requestToPassHours.push(...durations.requestToPassHours);
-    passToCloseHours.push(...durations.passToCloseHours);
-    closedWithoutPassSignalSamples += durations.closedWithoutPassSignalSamples;
-  }
-  return metricsFromDurations(requestToPassHours, passToCloseHours, closedWithoutPassSignalSamples);
-}
-
-export function testingTurnoverMetricsByTesterFromTransitions(
-  transitions: TestingTransitionView[]
-): Map<string, TestingTurnoverMetrics> {
-  const requestToPassByTester = new Map<string, number[]>();
-  const passToCloseByTester = new Map<string, number[]>();
-  const closedWithoutPassByTester = new Map<string, number>();
-
-  for (const entries of transitionsByPullRequest(transitions).values()) {
-    const testers = Array.from(new Set(entries.flatMap((transition) => transition.testingTesters))).sort();
-    const durations = turnoverDurationsForPullRequest(entries);
-    for (const tester of testers) {
-      requestToPassByTester.set(tester, [
-        ...(requestToPassByTester.get(tester) ?? []),
-        ...durations.requestToPassHours
-      ]);
-      passToCloseByTester.set(tester, [...(passToCloseByTester.get(tester) ?? []), ...durations.passToCloseHours]);
-      closedWithoutPassByTester.set(
-        tester,
-        (closedWithoutPassByTester.get(tester) ?? 0) + durations.closedWithoutPassSignalSamples
-      );
-    }
-  }
-
-  const result = new Map<string, TestingTurnoverMetrics>();
-  for (const tester of new Set([
-    ...requestToPassByTester.keys(),
-    ...passToCloseByTester.keys(),
-    ...closedWithoutPassByTester.keys()
-  ])) {
-    result.set(
-      tester,
-      metricsFromDurations(
-        requestToPassByTester.get(tester) ?? [],
-        passToCloseByTester.get(tester) ?? [],
-        closedWithoutPassByTester.get(tester) ?? 0
-      )
-    );
-  }
-  return result;
 }
 
 function isDuplicateError(error: unknown): boolean {
@@ -1436,32 +1185,13 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
     `SELECT last_human_action_at, review_decision, merge_state_status, ci_state,
             latest_review_state, latest_review_submitted_at, latest_commit_at,
             detail_synced_at, detail_error, attention_flags_json, linked_issue_numbers_json,
-            testing_state, is_complete
+            is_complete
      FROM pull_requests
      WHERE repo_id = ? AND number = ?`,
     [repoId, pr.number]
   );
   const previous = rows[0];
-  let hasExistingTestingEvents = false;
-  if (previous) {
-    const [testingEventRows] = await getPool().execute<RowData[]>(
-      `SELECT id
-       FROM pr_testing_events
-       WHERE repo_id = ? AND pr_number = ?
-       LIMIT 1`,
-      [repoId, pr.number]
-    );
-    hasExistingTestingEvents = testingEventRows.length > 0;
-  }
   next = pullRequestWithPreservedInsight({ current: pr, previous });
-  const testingTransition = pullRequestTestingTransitionForUpsert({
-    repoId,
-    previousTestingState: previous?.testing_state
-      ? (asString(previous.testing_state) as NormalizedPullRequest["testingState"])
-      : null,
-    hasExistingTestingEvents,
-    pr: next
-  });
   await getPool().execute("DELETE FROM pull_requests WHERE repo_id = ? AND number = ?", [repoId, pr.number]);
   await getPool().execute(
     `INSERT INTO pull_requests(
@@ -1520,67 +1250,7 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
       now
     ]
   );
-  if (testingTransition) {
-    await recordPullRequestTestingTransitionEvent(testingTransition);
-  }
   return next;
-}
-
-async function recordPullRequestTestingTransitionEvent(event: PullRequestTestingTransitionEvent): Promise<void> {
-  try {
-    await getPool().execute(
-      `INSERT INTO pr_testing_events(
-        repo_id, pr_number, from_state, to_state, testing_testers_json,
-        testing_signals_json, occurred_at, source_completeness, source_auth_type,
-        source_user_id, visibility_class, dedupe_key, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        event.repoId,
-        event.prNumber,
-        event.fromState,
-        event.toState,
-        stringify(event.testingTesters),
-        stringify(event.testingSignals),
-        sqlDate(event.occurredAt),
-        event.sourceCompleteness,
-        event.sourceAuthType,
-        event.sourceUserId,
-        event.visibilityClass,
-        event.dedupeKey,
-        nowSql()
-      ]
-    );
-  } catch (error) {
-    if (!isDuplicateError(error)) {
-      throw error;
-    }
-  }
-}
-
-export async function listPullRequestTestingTransitionEvents(input: {
-  repoId: number;
-  prNumber?: number;
-  limit?: number;
-}): Promise<PullRequestTestingTransitionEventView[]> {
-  const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)));
-  const prFilter = input.prNumber ? "AND pr_number = ?" : "";
-  const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
-     FROM pr_testing_events
-     WHERE repo_id = ? ${prFilter}
-     ORDER BY occurred_at DESC, id DESC
-     LIMIT ?`,
-    input.prNumber ? [input.repoId, input.prNumber, limit] : [input.repoId, limit]
-  );
-  return rows.map((row) => ({
-    ...testingTransitionViewFromRow(row),
-    repoId: asNumber(row.repo_id),
-    sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
-    sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
-    visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
-    dedupeKey: asString(row.dedupe_key),
-    createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString()
-  }));
 }
 
 export async function listPullRequestNumbersForDetailBackfill(repoId: number, limit: number): Promise<number[]> {
@@ -3019,7 +2689,7 @@ function averageOrNull(values: number[]): number | null {
 }
 
 function isTestingQueueState(value: string): boolean {
-  return ["dev_done", "test_requested", "testing", "test_changes_requested"].includes(value);
+  return ["testing", "test_changes_requested"].includes(value);
 }
 
 const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
@@ -3406,10 +3076,6 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
               MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
        FROM pull_requests WHERE repo_id = ?
        UNION ALL
-       SELECT 'pr_testing_events' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(occurred_at) AS max_event_at, MAX(created_at) AS max_aux_at
-       FROM pr_testing_events WHERE repo_id = ?
-       UNION ALL
        SELECT 'issue_comment_syncs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_synced_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
        FROM issue_comment_syncs WHERE repo_id = ?
@@ -3467,7 +3133,7 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
        FROM attention_items WHERE repo_id = ?
      ) version_sources
      ORDER BY source_name`,
-    Array.from({ length: 17 }, () => repoId)
+    Array.from({ length: 16 }, () => repoId)
   );
 
   const normalized = rows.map((row) => ({
@@ -3505,7 +3171,6 @@ export async function getDashboardSummary(
   const personalPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const linkedPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const timelineEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
-  const testingEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
   const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
@@ -3547,22 +3212,6 @@ export async function getDashboardSummary(
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
     [repoId, ...allPrVisibility.params]
-  );
-  const [recentTestingEventRows] = await pool.execute<RowData[]>(
-    `SELECT *
-     FROM pr_testing_events e
-     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}
-     ORDER BY e.occurred_at DESC, e.id DESC
-     LIMIT 200`,
-    [repoId, ...testingEventVisibility.params]
-  );
-  const [testingTurnoverRows] = await pool.execute<RowData[]>(
-    `SELECT *
-     FROM pr_testing_events e
-     WHERE e.repo_id = ? AND ${testingEventVisibility.sql}
-     ORDER BY e.pr_number ASC, e.occurred_at ASC, e.id ASC
-     LIMIT 5000`,
-    [repoId, ...testingEventVisibility.params]
   );
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
@@ -4105,9 +3754,7 @@ export async function getDashboardSummary(
       pendingPrs: pendingOwnedPrs,
       attentionPrs: pendingOwnedPrs.filter((pr) => pr.attentionFlags.length > 0),
       testingIssues: testingIssuesForLogin(login, testingIssueViews, ownerByIssueNumber),
-      testingPrs: pendingOwnedPrs.filter((pr) =>
-        ["test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
-      ),
+      testingPrs: pendingOwnedPrs.filter((pr) => isTestingQueueState(pr.testingState)),
       prsCreatedYesterday: ownedPrs.filter((pr) => inRange(pr.createdAt, start, end)),
       prsMergedYesterday: ownedPrs.filter((pr) => inRange(pr.mergedAt, start, end)),
       analytics: analyticsLimitedByVisibility
@@ -4145,9 +3792,7 @@ export async function getDashboardSummary(
     peopleWeekly: analyticsLimitedByVisibility ? [] : weeklyMetrics.filter((point) => point.scopeType === "person"),
     peopleMonthly: analyticsLimitedByVisibility ? [] : monthlyMetrics.filter((point) => point.scopeType === "person")
   };
-  const testingQueuePrs = allPrViews.filter(
-    (pr) => pr.state === "open" && ["test_requested", "testing", "test_changes_requested"].includes(pr.testingState)
-  );
+  const testingQueuePrs = allPrViews.filter((pr) => pr.state === "open" && isTestingQueueState(pr.testingState));
   const queueAges = testingQueuePrs
     .map((pr) => pr.testingQueueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
@@ -4159,17 +3804,8 @@ export async function getDashboardSummary(
     ...testingIssueViews.flatMap((issue) => issue.testers),
     ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
   ]);
-  const testingTurnoverTransitions = testingTransitionsForProfile(
-    profile,
-    testingTurnoverRows.map(testingTransitionViewFromRow)
-  );
-  const recentTestingTransitions = recentTestingTransitionsForProfile(
-    profile,
-    recentTestingEventRows.map(testingTransitionViewFromRow)
-  );
   const recentIssueTestingTransitions = testingIssueTransitionsFromQueueIssues(testingIssueViews);
-  const testingTurnover = testingTurnoverMetricsFromTransitions(testingTurnoverTransitions);
-  const testingTurnoverByTester = testingTurnoverMetricsByTesterFromTransitions(testingTurnoverTransitions);
+  const emptyTurnover = emptyTestingTurnoverMetrics();
   const testing: TestingSummary = {
     queueIssues: testingIssueViews.length,
     queuePrs: testingQueuePrs.length,
@@ -4183,25 +3819,21 @@ export async function getDashboardSummary(
     averageQueueAgeHours: averageHours(queueAges),
     issueTransitionEvents: testingIssueViews.length,
     lastIssueTransitionAt: latestIsoOrNull(recentIssueTestingTransitions.map((transition) => transition.occurredAt)),
-    transitionEvents: testingTurnoverTransitions.length,
-    lastTransitionAt: latestIsoOrNull(testingTurnoverTransitions.map((transition) => transition.occurredAt)),
-    ...testingTurnover,
+    ...emptyTurnover,
     issues: testingIssueViews,
     recentIssueTransitions: recentIssueTestingTransitions,
-    recentTransitions: recentTestingTransitions,
     testers: Array.from(testerKeys).map((login) => {
       const issues = testingIssueViews.filter((issue) => issue.testers.includes(login));
       const prs = testingQueuePrs.filter((pr) => pr.testingTesters.includes(login));
       const issueAges = issues.map((issue) => issue.queueAgeHours);
       const ages = prs.map((pr) => pr.testingQueueAgeHours);
-      const turnover = testingTurnoverByTester.get(login) ?? emptyTestingTurnoverMetrics();
       return {
         login,
         queueIssues: issues.length,
         queuePrs: prs.length,
         averageIssueQueueAgeHours: averageHours(issueAges),
         averageQueueAgeHours: averageHours(ages),
-        ...turnover
+        ...emptyTestingTurnoverMetrics()
       };
     })
   };

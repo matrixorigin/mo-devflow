@@ -296,11 +296,9 @@ describe("work item attention reasons", () => {
     ]);
   });
 
-  it("keeps issue testing labels distinct from ignored PR-side test signals", () => {
+  it("labels issue-scoped testing states without PR-side handoff concepts", () => {
     expect(testingStateBusinessLabel("testing")).toBe("issue in testing");
-    expect(testingStateBusinessLabel("test_requested")).toBe("PR-side test signal");
     expect(testingStateBusinessLabel("not_ready")).toBe("not in issue testing");
-    expect(testingStateHelpText("test_requested")).toContain("PR-side evidence only");
     expect(testingStateHelpText("testing")).toContain("linked to an issue");
   });
 
@@ -473,7 +471,7 @@ describe("flow efficiency summary", () => {
         pullRequest({
           ageHours: 24,
           attentionFlags: ["ci_failed"],
-          testingState: "test_requested",
+          testingState: "testing",
           testingQueueAgeHours: 30
         }),
         pullRequest({ ageHours: 12, attentionFlags: [], testingState: "not_ready", testingQueueAgeHours: null })
