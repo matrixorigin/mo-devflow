@@ -461,6 +461,124 @@ describe("webhook review processing", () => {
     );
   });
 
+  test("refreshes PR insight from GitHub for pull_request webhooks so linked issues update immediately", async () => {
+    const { processWebhookPayload } = await import("./sync");
+    const now = "2026-07-04T00:00:00.000Z";
+    mocks.fetchPullRequestInsightForNumber.mockResolvedValue({
+      pullRequest: {
+        id: 4646,
+        number: 46,
+        title: "linked issue refresh",
+        body: "Fixes #100",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://github.com/matrixorigin/matrixone/pull/46",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        requested_reviewers: [],
+        head: { ref: "linked-issue", sha: "abc123" },
+        base: { ref: "main" }
+      },
+      insight: {
+        number: 46,
+        reviewDecision: "approved",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "APPROVED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        linkedIssueNumbers: [100, 101],
+        detailSyncedAt: now,
+        detailError: null
+      },
+      rateLimitRemaining: 37,
+      sourceAuthType: "service_read_token"
+    });
+    mocks.upsertPullRequest.mockImplementation(async (_repoId: number, pr: unknown) => pr);
+
+    const result = await processWebhookPayload({
+      repoId: 10,
+      profile,
+      eventName: "pull_request",
+      payload: {
+        action: "edited",
+        pull_request: {
+          id: 4646,
+          number: 46,
+          title: "linked issue refresh",
+          body: "Fixes #100",
+          state: "open",
+          user: { login: "alice" },
+          html_url: "https://github.com/matrixorigin/matrixone/pull/46",
+          created_at: "2026-07-01T00:00:00Z",
+          updated_at: now,
+          requested_reviewers: [],
+          head: { ref: "linked-issue", sha: "abc123" },
+          base: { ref: "main" }
+        }
+      }
+    });
+
+    expect(result).toEqual({ processed: true, skipped: false, message: "updated PR #46 insight" });
+    expect(mocks.fetchPullRequestInsightForNumber).toHaveBeenCalledWith({ profile, pullNumber: 46 });
+    expect(mocks.upsertPullRequest).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        number: 46,
+        isComplete: true,
+        reviewDecision: "approved",
+        linkedIssueNumbers: [100, 101]
+      })
+    );
+  });
+
+  test("falls back to pull_request webhook payload when PR insight refresh fails", async () => {
+    const { processWebhookPayload } = await import("./sync");
+    const now = "2026-07-04T00:00:00.000Z";
+    mocks.fetchPullRequestInsightForNumber.mockRejectedValue(new Error("rate limited"));
+    mocks.upsertPullRequest.mockImplementation(async (_repoId: number, pr: unknown) => pr);
+
+    const result = await processWebhookPayload({
+      repoId: 10,
+      profile,
+      eventName: "pull_request",
+      payload: {
+        action: "edited",
+        pull_request: {
+          id: 4747,
+          number: 47,
+          title: "fallback relation",
+          body: "Fixes #104",
+          state: "open",
+          user: { login: "alice" },
+          html_url: "https://github.com/matrixorigin/matrixone/pull/47",
+          created_at: "2026-07-01T00:00:00Z",
+          updated_at: now,
+          requested_reviewers: [],
+          head: { ref: "fallback", sha: "abc123" },
+          base: { ref: "main" }
+        }
+      }
+    });
+
+    expect(result).toEqual({
+      processed: true,
+      skipped: false,
+      message: "updated PR #47 from webhook payload; GitHub insight refresh failed"
+    });
+    expect(mocks.fetchPullRequestInsightForNumber).toHaveBeenCalledWith({ profile, pullNumber: 47 });
+    expect(mocks.upsertPullRequest).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        number: 47,
+        isComplete: false,
+        linkedIssueNumbers: [104],
+        detailError: "GitHub insight refresh failed after pull_request webhook: rate limited",
+        lastHumanActionAt: now
+      })
+    );
+  });
+
   test("refreshes PR insight from GitHub before updating CI attention", async () => {
     const { processWebhookPayload } = await import("./sync");
     const now = new Date().toISOString();

@@ -334,7 +334,7 @@ export function normalizePullRequest(
   ]);
   const testingFlow = deriveTestingFlow(pr);
   const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
-  const lastHumanActionAt = insight
+  const lastHumanActionAt = insight && !insight.detailError
     ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt)
     : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
   const attentionFlags: string[] = [];

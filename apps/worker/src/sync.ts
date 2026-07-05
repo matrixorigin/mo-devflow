@@ -628,6 +628,23 @@ async function upsertPullRequestFromWebhook(input: {
   return cachedPr.number;
 }
 
+function webhookPullRequestInsightFallback(pullNumber: number, error: unknown): PullRequestInsight {
+  return {
+    number: pullNumber,
+    reviewDecision: null,
+    mergeStateStatus: null,
+    ciState: null,
+    latestReviewState: null,
+    latestReviewSubmittedAt: null,
+    latestCommitAt: null,
+    linkedIssueNumbers: [],
+    detailSyncedAt: new Date().toISOString(),
+    detailError: `GitHub insight refresh failed after pull_request webhook: ${
+      error instanceof Error ? error.message : String(error)
+    }`
+  };
+}
+
 async function refreshIssueCommentsForWebhook(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
@@ -1179,12 +1196,27 @@ export async function processWebhookPayload(input: {
     if (!rawPullRequest) {
       throw new WebhookNormalizationError("pull_request payload missing pull_request object");
     }
-    const prNumber = await upsertPullRequestFromWebhook({
-      repoId: input.repoId,
-      profile: input.profile,
-      rawPullRequest
-    });
-    return { processed: true, skipped: false, message: `updated PR #${prNumber}` };
+    const pullRequest = ensureGitHubObjectWithNumber(rawPullRequest, "pull_request");
+    try {
+      const refreshed = await refreshPullRequestInsightFromGitHub({
+        repoId: input.repoId,
+        profile: input.profile,
+        pullNumber: pullRequest.number
+      });
+      return { processed: true, skipped: false, message: `updated PR #${refreshed.prNumber} insight` };
+    } catch (error) {
+      const prNumber = await upsertPullRequestFromWebhook({
+        repoId: input.repoId,
+        profile: input.profile,
+        rawPullRequest,
+        insight: webhookPullRequestInsightFallback(pullRequest.number, error)
+      });
+      return {
+        processed: true,
+        skipped: false,
+        message: `updated PR #${prNumber} from webhook payload; GitHub insight refresh failed`
+      };
+    }
   }
 
   if (input.eventName === "pull_request_review") {

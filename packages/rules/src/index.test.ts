@@ -414,6 +414,7 @@ describe("rules", () => {
 
     expect(completePr.isComplete).toBe(true);
     expect(partialPr.isComplete).toBe(false);
+    expect(partialPr.lastHumanActionAt).toBe(now);
   });
 
   test("skips workflow violations, AI drift, and critical attention for configured skip users", () => {
