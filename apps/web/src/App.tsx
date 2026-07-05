@@ -10,6 +10,7 @@ import {
   Input,
   Layout,
   Modal,
+  Pagination,
   Popover,
   Segmented,
   Skeleton,
@@ -306,6 +307,8 @@ type DashboardSourceTarget =
 const signalTargetPageSize = 8;
 const prRotationTableDefaultPageSize = 10;
 const prTestingTableDefaultPageSize = 8;
+const cardListDefaultPageSize = 8;
+const cardListPageSizeOptions = [4, 8, 12, 20, 50];
 
 function maxTablePage(total: number, pageSize: number): number {
   return Math.max(1, Math.ceil(total / pageSize));
@@ -428,6 +431,70 @@ function useLazyVisibleCount(total: number, initialLimit?: number, resetKey: str
     showMore: () => setVisibleCount(total),
     reset: () => setVisibleCount(baseline)
   };
+}
+
+function usePagedList<T>(items: T[], defaultPageSize: number, resetKey: string | number) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+
+  useEffect(() => {
+    setPage(1);
+    setPageSize(defaultPageSize);
+  }, [defaultPageSize, resetKey]);
+
+  useEffect(() => {
+    setPage((currentPage) => Math.min(currentPage, maxTablePage(items.length, pageSize)));
+  }, [items.length, pageSize]);
+
+  const startIndex = (page - 1) * pageSize;
+  const visibleItems = items.slice(startIndex, startIndex + pageSize);
+
+  return {
+    page,
+    pageSize,
+    startIndex,
+    visibleItems,
+    onPageChange: (nextPage: number, nextPageSize: number) => {
+      setPage(nextPage);
+      setPageSize(nextPageSize);
+    }
+  };
+}
+
+function CardListPagination({
+  total,
+  page,
+  pageSize,
+  defaultPageSize,
+  onChange
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  defaultPageSize: number;
+  onChange: (page: number, pageSize: number) => void;
+}) {
+  if (total <= defaultPageSize) {
+    return null;
+  }
+
+  return (
+    <div className="work-list-pagination">
+      <Pagination
+        align="end"
+        current={page}
+        pageSize={pageSize}
+        pageSizeOptions={cardListPageSizeOptions}
+        responsive
+        showLessItems
+        showSizeChanger={total > Math.min(...cardListPageSizeOptions)}
+        showTotal={(shownTotal, range) => `${range[0]}-${range[1]} of ${shownTotal}`}
+        size="small"
+        total={total}
+        onChange={onChange}
+      />
+    </div>
+  );
 }
 
 function LazyListToggle({
@@ -6599,7 +6666,6 @@ function CriticalIssueBoard({
           issues={sZeroIssues}
           tone="attention"
           emptyText="No active s0 issues"
-          overflowLabel="s0 issues"
           visibleLimit={10}
           onPreview={(issue) => onPreview({ objectType: "issue", issue })}
         />
@@ -6939,7 +7005,6 @@ function CriticalIssueLane({
   issues,
   tone,
   emptyText,
-  overflowLabel = "issues",
   visibleLimit,
   onPreview
 }: {
@@ -6948,12 +7013,11 @@ function CriticalIssueLane({
   issues: CriticalIssueView[];
   tone: "critical" | "attention" | "normal";
   emptyText: string;
-  overflowLabel?: string;
   visibleLimit?: number;
   onPreview?: (issue: CriticalIssueView) => void;
 }) {
-  const lazy = useLazyVisibleCount(issues.length, visibleLimit);
-  const visibleIssues = issues.slice(0, lazy.visibleCount);
+  const defaultPageSize = visibleLimit ?? cardListDefaultPageSize;
+  const pagedIssues = usePagedList(issues, defaultPageSize, `${title}:${issues.length}`);
 
   return (
     <section className={`critical-lane critical-lane-${tone}`}>
@@ -6962,25 +7026,30 @@ function CriticalIssueLane({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{issues.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{issues.length}</Tag>
+          {pagedIssues.visibleItems.length < issues.length ? (
+            <Tag>
+              {pagedIssues.startIndex + 1}-{pagedIssues.startIndex + pagedIssues.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
-      {visibleIssues.length === 0 ? (
+      {pagedIssues.visibleItems.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />
       ) : (
         <div className="critical-issue-list">
-          {visibleIssues.map((issue) => (
+          {pagedIssues.visibleItems.map((issue) => (
             <CriticalIssueBoardRow issue={issue} key={issue.number} onPreview={onPreview} />
           ))}
         </div>
       )}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel={overflowLabel}
-        className="critical-lane-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={issues.length}
+        page={pagedIssues.page}
+        pageSize={pagedIssues.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedIssues.onPageChange}
       />
     </section>
   );
@@ -7418,7 +7487,6 @@ function TestingIssueQueuePanel({
 }) {
   const [sort, setSort] = useState<TestingIssueQueueSort>("priority");
   const [previewIssue, setPreviewIssue] = useState<TestingIssueQueueView | null>(null);
-  const visibleLimit = 8;
   const filterCounts: Record<TestingIssueQueueFilter, number> = {
     all: issues.length,
     stale: issues.filter(isTestingIssueStale).length,
@@ -7430,8 +7498,7 @@ function TestingIssueQueuePanel({
     issues.filter((issue) => testingIssueMatchesFilter(issue, filter)),
     sort
   );
-  const lazy = useLazyVisibleCount(sortedIssues.length, visibleLimit, `${filter}:${sort}`);
-  const visibleIssues = sortedIssues.slice(0, lazy.visibleCount);
+  const pagedIssues = usePagedList(sortedIssues, cardListDefaultPageSize, `${filter}:${sort}:${issues.length}`);
   const changeFilter = (nextFilter: TestingIssueQueueFilter) => {
     onFilterChange(nextFilter);
   };
@@ -7504,9 +7571,9 @@ function TestingIssueQueuePanel({
           ]}
         />
       </div>
-      {visibleIssues.length > 0 ? (
+      {pagedIssues.visibleItems.length > 0 ? (
         <div className="testing-issue-list">
-          {visibleIssues.map((issue) => (
+          {pagedIssues.visibleItems.map((issue) => (
             <TestingIssueQueueRow issue={issue} key={issue.number} onPreview={setPreviewIssue} />
           ))}
         </div>
@@ -7515,15 +7582,12 @@ function TestingIssueQueuePanel({
           <Text type="secondary">No issues match this filter</Text>
         </div>
       )}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="issues in test"
-        className="testing-issue-more"
-        collapsedLabel="Show compact queue"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={sortedIssues.length}
+        page={pagedIssues.page}
+        pageSize={pagedIssues.pageSize}
+        defaultPageSize={cardListDefaultPageSize}
+        onChange={pagedIssues.onPageChange}
       />
       <TestingIssuePreviewModal issue={previewIssue} onClose={() => setPreviewIssue(null)} />
     </section>
@@ -7852,8 +7916,8 @@ function TestingQueueLane({
   emptyText: string;
   visibleLimit?: number;
 }) {
-  const lazy = useLazyVisibleCount(prs.length, visibleLimit);
-  const visiblePrs = prs.slice(0, lazy.visibleCount);
+  const defaultPageSize = visibleLimit ?? cardListDefaultPageSize;
+  const pagedPrs = usePagedList(prs, defaultPageSize, `${title}:${prs.length}`);
 
   return (
     <section className={`testing-queue-lane testing-queue-lane-${tone}`}>
@@ -7862,11 +7926,18 @@ function TestingQueueLane({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{prs.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{prs.length}</Tag>
+          {pagedPrs.visibleItems.length < prs.length ? (
+            <Tag>
+              {pagedPrs.startIndex + 1}-{pagedPrs.startIndex + pagedPrs.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
-      {visiblePrs.length > 0 ? (
+      {pagedPrs.visibleItems.length > 0 ? (
         <div className="testing-queue-list">
-          {visiblePrs.map((pr) => (
+          {pagedPrs.visibleItems.map((pr) => (
             <TestingQueueRow pr={pr} key={pr.number} />
           ))}
         </div>
@@ -7875,14 +7946,12 @@ function TestingQueueLane({
           <Text type="secondary">{emptyText}</Text>
         </div>
       )}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="PRs"
-        className="testing-queue-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={prs.length}
+        page={pagedPrs.page}
+        pageSize={pagedPrs.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedPrs.onPageChange}
       />
     </section>
   );
@@ -8882,11 +8951,11 @@ function IssueCardList({
 }) {
   const [aiFilter, setAiFilter] = useState("all");
   const [sort, setSort] = useState<IssueListSort>("priority");
+  const defaultPageSize = initialLimit ?? cardListDefaultPageSize;
   const aiOptions = Array.from(new Set(issues.map(issueAiFilterLabel))).sort();
   const filteredIssues = aiFilter === "all" ? issues : issues.filter((issue) => issueAiFilterLabel(issue) === aiFilter);
   const sortedIssues = sortIssueList(filteredIssues, sort);
-  const lazy = useLazyVisibleCount(sortedIssues.length, initialLimit, `${aiFilter}:${sort}`);
-  const visibleIssues = sortedIssues.slice(0, lazy.visibleCount);
+  const pagedIssues = usePagedList(sortedIssues, defaultPageSize, `${aiFilter}:${sort}:${issues.length}`);
 
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
@@ -8920,23 +8989,21 @@ function IssueCardList({
           />
         </div>
       ) : null}
-      {visibleIssues.length === 0 ? (
+      {pagedIssues.visibleItems.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues for this filter" />
       ) : (
         <div className="work-item-list">
-          {visibleIssues.map((issue) => (
+          {pagedIssues.visibleItems.map((issue) => (
             <IssueWorkCard issue={issue} key={issue.number} onPreview={onPreview} />
           ))}
         </div>
       )}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="issues"
-        className="critical-lane-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={sortedIssues.length}
+        page={pagedIssues.page}
+        pageSize={pagedIssues.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedIssues.onPageChange}
       />
     </>
   );
@@ -8957,6 +9024,7 @@ function PullRequestCardList({
 }) {
   const [filter, setFilter] = useState<PullRequestListFilter>("all");
   const [sort, setSort] = useState<PullRequestListSort>("age");
+  const defaultPageSize = initialLimit ?? cardListDefaultPageSize;
   const baseFilterOptions: Array<{ label: string; value: PullRequestListFilter }> = [
     { label: `All ${prs.length}`, value: "all" },
     { label: "Attention", value: "attention" },
@@ -8972,8 +9040,7 @@ function PullRequestCardList({
     prs.filter((pr) => pullRequestMatchesListFilter(pr, filter)),
     sort
   );
-  const lazy = useLazyVisibleCount(sortedPrs.length, initialLimit, `${filter}:${sort}`);
-  const visiblePrs = sortedPrs.slice(0, lazy.visibleCount);
+  const pagedPrs = usePagedList(sortedPrs, defaultPageSize, `${filter}:${sort}:${prs.length}`);
 
   if (prs.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
@@ -9001,23 +9068,21 @@ function PullRequestCardList({
           />
         </div>
       ) : null}
-      {visiblePrs.length === 0 ? (
+      {pagedPrs.visibleItems.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PRs for this filter" />
       ) : (
         <div className="work-item-list">
-          {visiblePrs.map((pr) => (
+          {pagedPrs.visibleItems.map((pr) => (
             <PullRequestWorkCard emphasized={emphasized} pr={pr} key={pr.number} onPreview={onPreview} />
           ))}
         </div>
       )}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="PRs"
-        className="critical-lane-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={sortedPrs.length}
+        page={pagedPrs.page}
+        pageSize={pagedPrs.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedPrs.onPageChange}
       />
     </>
   );
@@ -9366,8 +9431,8 @@ function ActionQueueSection({
   visibleLimit?: number;
   onPreview: (item: PersonalActivityItem) => void;
 }) {
-  const lazy = useLazyVisibleCount(items.length, visibleLimit, title);
-  const visibleItems = items.slice(0, lazy.visibleCount);
+  const defaultPageSize = visibleLimit ?? cardListDefaultPageSize;
+  const pagedItems = usePagedList(items, defaultPageSize, `${title}:${items.length}`);
 
   if (items.length === 0) {
     return null;
@@ -9380,24 +9445,26 @@ function ActionQueueSection({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <ActionQueueSectionStats items={items} tone={tone} visibleCount={visibleItems.length} />
+        <ActionQueueSectionStats items={items} tone={tone} visibleCount={pagedItems.visibleItems.length} />
       </div>
-      {visibleItems.length > 0 ? (
+      {pagedItems.visibleItems.length > 0 ? (
         <div className="action-queue-section-list" role="list">
-          {visibleItems.map((item, index) => (
-            <PersonalActionQueueItem index={offset + index + 1} item={item} key={item.id} onPreview={onPreview} />
+          {pagedItems.visibleItems.map((item, index) => (
+            <PersonalActionQueueItem
+              index={offset + pagedItems.startIndex + index + 1}
+              item={item}
+              key={item.id}
+              onPreview={onPreview}
+            />
           ))}
         </div>
       ) : null}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel={`${title.toLowerCase()} items`}
-        className="action-queue-more"
-        collapsedLabel="Show compact queue"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={items.length}
+        page={pagedItems.page}
+        pageSize={pagedItems.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedItems.onPageChange}
       />
     </section>
   );
@@ -9992,8 +10059,8 @@ function FlowThreadSection({
   visibleLimit?: number;
   onPreview: (row: PersonalGanttRow) => void;
 }) {
-  const lazy = useLazyVisibleCount(rows.length, visibleLimit, title);
-  const visibleRows = rows.slice(0, lazy.visibleCount);
+  const defaultPageSize = visibleLimit ?? cardListDefaultPageSize;
+  const pagedRows = usePagedList(rows, defaultPageSize, `${title}:${rows.length}`);
 
   if (rows.length === 0) {
     return null;
@@ -10006,23 +10073,28 @@ function FlowThreadSection({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{rows.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag color={tone === "critical" ? "red" : tone === "attention" ? "orange" : "blue"}>{rows.length}</Tag>
+          {pagedRows.visibleItems.length < rows.length ? (
+            <Tag>
+              {pagedRows.startIndex + 1}-{pagedRows.startIndex + pagedRows.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
-      {visibleRows.length > 0 ? (
+      {pagedRows.visibleItems.length > 0 ? (
         <div className="flow-thread-list" role="list">
-          {visibleRows.map((row) => (
+          {pagedRows.visibleItems.map((row) => (
             <PersonalFlowThread row={row} key={row.id} onPreview={onPreview} />
           ))}
         </div>
       ) : null}
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel={title.toLowerCase()}
-        className="flow-thread-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={rows.length}
+        page={pagedRows.page}
+        pageSize={pagedRows.pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={pagedRows.onPageChange}
       />
     </section>
   );

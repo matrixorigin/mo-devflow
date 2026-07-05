@@ -4396,6 +4396,20 @@ button.testing-board-stat:focus-visible {
   padding-right: 2px;
 }
 
+.work-list-pagination {
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.work-list-pagination .ant-pagination {
+  max-width: 100%;
+}
+
 .activity-panel {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -7184,6 +7198,12 @@ button.flow-diagnostic-card:focus-visible {
   .board-filter-group .ant-segmented {
     max-width: 100%;
     overflow-x: auto;
+  }
+
+  .work-list-pagination {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .critical-board-summary {
