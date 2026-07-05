@@ -7342,13 +7342,31 @@ button.testing-board-stat:focus-visible {
 }
 
 .personal-flow-efficiency-metric {
+  appearance: none;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 7px;
+  color: inherit;
   display: grid;
+  font: inherit;
   gap: 2px;
   min-width: 0;
   padding: 7px 8px;
+  text-align: left;
+}
+
+.personal-flow-efficiency-metric-clickable {
+  cursor: pointer;
+}
+
+.personal-flow-efficiency-metric-clickable:hover {
+  background: #eef6ff;
+  border-color: #93c5fd;
+}
+
+.personal-flow-efficiency-metric-clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .personal-flow-efficiency-metric span,

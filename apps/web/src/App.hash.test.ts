@@ -24,10 +24,12 @@ import {
   personalFlowThreadsSummary,
   personalPrListForScope,
   personalPrListTotalForScope,
+  personalPrPeriodActivitySummary,
   personalPrSortLabel,
   personalPrThroughputSummary,
   personalPrThroughputSelectionForPeriod,
   personalPrThroughputRows,
+  personalPrVisibleUniqueTotalForPeriod,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
   prRotationTableSummary,
@@ -517,9 +519,13 @@ describe("dashboard hash filters", () => {
     expect(personalPrListForScope(person, "period_all", "week").map((pr) => pr.number)).toEqual([12, 10, 11]);
     expect(personalPrListForScope(person, "created_period", "week").map((pr) => pr.number)).toEqual([10, 11]);
     expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12, 10]);
-    expect(personalPrListTotalForScope(person, "period_all", "week")).toBe(5);
+    expect(personalPrListTotalForScope(person, "period_all", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
+    expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
+    expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
+      "3 unique PRs | 3 created | 2 merged | 5 activity events"
+    );
   });
 
   it("filters workflow violations by management severity and notification state", () => {

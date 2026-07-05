@@ -16951,22 +16951,26 @@ function WatchedPersonOperationsSummary({
           <small>s-1/s0 -&gt; PR -&gt; issue testing</small>
         </div>
         <div className="person-ops-pr-periods">
-          {throughputRows.map((row) => (
-            <button
-              type="button"
-              className="person-ops-pr-period"
-              key={row.period}
-              onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, row.period))}
-            >
-              <span>{metricPeriodText(row.period)}</span>
-              <strong>
-                {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
-              </strong>
-              <small>
-                pending {row.pendingPrs ?? "-"} | avg age {optionalHours(row.averagePendingPrAgeHours)}
-              </small>
-            </button>
-          ))}
+          {throughputRows.map((row) => {
+            const periodList = personalPrPeriodListForPeriod(person, row.period);
+            return (
+              <button
+                type="button"
+                className="person-ops-pr-period"
+                key={row.period}
+                onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, row.period))}
+                aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
+              >
+                <span>{metricPeriodText(row.period)}</span>
+                <strong>
+                  {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
+                </strong>
+                <small>
+                  {periodPrVisibleUniqueTotal(periodList)} PRs | avg age {optionalHours(row.averagePendingPrAgeHours)}
+                </small>
+              </button>
+            );
+          })}
           <button
             type="button"
             className={`person-ops-pr-period person-ops-pr-period-flow ${
@@ -17425,7 +17429,8 @@ function PersonalPrThroughputPanel({
   const visibleTotal = personalPrListTotalForScope(person, listScope, listPeriod);
   const periodListActive =
     listScope === "period_all" || listScope === "created_period" || listScope === "merged_period";
-  const visibleTotalLabel = listScope === "period_all" ? "PR activity" : "PRs";
+  const visibleTotalLabel = listScope === "period_all" ? "unique PRs" : "PRs";
+  const periodActivitySummary = personalPrPeriodActivitySummary(selectedPeriodList);
 
   return (
     <section
@@ -17453,27 +17458,31 @@ function PersonalPrThroughputPanel({
       </div>
 
       <div className="personal-throughput-grid">
-        {rows.map((row) => (
-          <button
-            type="button"
-            className={`personal-throughput-period ${listPeriod === row.period && periodListActive ? "personal-throughput-period-active" : ""}`}
-            key={row.period}
-            onClick={() => {
-              onSelectionChange(personalPrThroughputSelectionForPeriod(person, row.period));
-            }}
-          >
-            <span>{metricPeriodText(row.period)}</span>
-            <strong>
-              {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
-            </strong>
-            <small>{row.label} created/merged</small>
-            <em>
-              pending {row.pendingPrs ?? "-"} | attention {row.attentionPrs ?? "-"} | avg age{" "}
-              {optionalHours(row.averagePendingPrAgeHours)}
-            </em>
-            {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
-          </button>
-        ))}
+        {rows.map((row) => {
+          const periodList = personalPrPeriodListForPeriod(person, row.period);
+          return (
+            <button
+              type="button"
+              className={`personal-throughput-period ${listPeriod === row.period && periodListActive ? "personal-throughput-period-active" : ""}`}
+              key={row.period}
+              onClick={() => {
+                onSelectionChange(personalPrThroughputSelectionForPeriod(person, row.period));
+              }}
+              aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
+            >
+              <span>{metricPeriodText(row.period)}</span>
+              <strong>
+                {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
+              </strong>
+              <small>{row.label} created / merged</small>
+              <em>
+                {periodPrVisibleUniqueTotal(periodList)} PRs in list | pending {row.pendingPrs ?? "-"} | avg age{" "}
+                {optionalHours(row.averagePendingPrAgeHours)}
+              </em>
+              {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
+            </button>
+          );
+        })}
       </div>
 
       <div className="personal-throughput-body">
@@ -17489,7 +17498,7 @@ function PersonalPrThroughputPanel({
                   { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
                   { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
                   {
-                    label: `Activity ${periodPrActivityTotal(selectedPeriodList)}`,
+                    label: `Activity ${periodPrVisibleUniqueTotal(selectedPeriodList)}`,
                     value: "period_all"
                   },
                   { label: `Created ${selectedPeriodList?.totalCreatedPrs ?? 0}`, value: "created_period" },
@@ -17520,6 +17529,7 @@ function PersonalPrThroughputPanel({
                   showing {sortedVisiblePrs.length}/{visibleTotal} {visibleTotalLabel} | sorted by{" "}
                   {personalPrSortLabel(sort)}
                 </Text>
+                <Text type="secondary">{periodActivitySummary}</Text>
                 {selectedPeriodList?.truncated ? <Tag color="gold">capped</Tag> : null}
               </span>
             </div>
@@ -17546,18 +17556,39 @@ function PersonalPrThroughputPanel({
             </Tag>
           </div>
           <div className="personal-flow-efficiency-stats">
-            <PersonalFlowEfficiencyMetric label="Active issues" value={flow.activeIssues} detail="s-1/s0 now" />
-            <PersonalFlowEfficiencyMetric label="Linked PR" value={flow.issuesWithPr} detail="issues with PR" />
-            <PersonalFlowEfficiencyMetric label="In testing" value={flow.issuesInTesting} detail="issue handoff" />
+            <PersonalFlowEfficiencyMetric
+              label="Active issues"
+              value={flow.activeIssues}
+              detail="s-1/s0 now"
+              onClick={() => onDrilldownChange("active_issues")}
+            />
+            <PersonalFlowEfficiencyMetric
+              label="Linked PR"
+              value={flow.issuesWithPr}
+              detail={`${flow.activeIssues - flow.issuesWithPr} no visible PR`}
+              onClick={() =>
+                onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
+              }
+            />
+            <PersonalFlowEfficiencyMetric
+              label="In testing"
+              value={flow.issuesInTesting}
+              detail="issue handoff"
+              onClick={() => onDrilldownChange("testing")}
+            />
             <PersonalFlowEfficiencyMetric
               label="To first PR"
               value={optionalHours(flow.averageActiveToFirstPrHours)}
               detail="avg from severity"
+              onClick={() =>
+                onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
+              }
             />
             <PersonalFlowEfficiencyMetric
               label="To testing"
               value={optionalHours(flow.averageActiveToTestingHours)}
               detail="avg from severity"
+              onClick={() => onDrilldownChange("testing")}
             />
           </div>
           {flow.rows.length === 0 ? (
@@ -17580,7 +17611,7 @@ function PersonalPrThroughputPanel({
                   <span>
                     <strong>#{row.issueNumber}</strong>
                     <small>
-                      {severityShortLabel(row.severity)} | {row.aiEffortLabel}
+                      {severityShortLabel(row.severity)} | {row.aiEffortLabel} | {personalCriticalFlowRowStatus(row)}
                     </small>
                   </span>
                   <span>
@@ -17687,9 +17718,13 @@ export function personalPrListTotalForScope(
   }
   const periodList = personalPrPeriodListForPeriod(person, period);
   if (scope === "period_all") {
-    return periodPrActivityTotal(periodList);
+    return periodPrVisibleUniqueTotal(periodList);
   }
   return scope === "created_period" ? (periodList?.totalCreatedPrs ?? 0) : (periodList?.totalMergedPrs ?? 0);
+}
+
+export function personalPrVisibleUniqueTotalForPeriod(person: PersonalActionView, period: MetricPeriod): number {
+  return periodPrVisibleUniqueTotal(personalPrPeriodListForPeriod(person, period));
 }
 
 export function personalPrSortLabel(sort: PersonalPrSort): string {
@@ -17740,8 +17775,21 @@ export function sortPersonalPrList(
   return [...prs].sort((left, right) => right.ageHours - left.ageHours || right.number - left.number);
 }
 
-function periodPrActivityTotal(periodList: PersonalPrPeriodListView | null): number {
+function periodPrActivityEventTotal(periodList: PersonalPrPeriodListView | null): number {
   return (periodList?.totalCreatedPrs ?? 0) + (periodList?.totalMergedPrs ?? 0);
+}
+
+function periodPrVisibleUniqueTotal(periodList: PersonalPrPeriodListView | null): number {
+  return personalPrPeriodActivityPrs(periodList).length;
+}
+
+export function personalPrPeriodActivitySummary(periodList: PersonalPrPeriodListView | null): string {
+  if (!periodList) {
+    return "0 PRs in visible period";
+  }
+  return `${periodPrVisibleUniqueTotal(periodList)} unique PRs | ${periodList.totalCreatedPrs} created | ${
+    periodList.totalMergedPrs
+  } merged | ${periodPrActivityEventTotal(periodList)} activity events`;
 }
 
 function personalPrPeriodActivityPrs(periodList: PersonalPrPeriodListView | null): PersonalPullRequestView[] {
@@ -17782,22 +17830,49 @@ function personalPrPeriodActivityTime(pr: PersonalPullRequestView, periodList: P
   return Date.parse(pr.mergedAt ?? pr.createdAt);
 }
 
+function personalCriticalFlowRowStatus(row: PersonalCriticalFlowEfficiencyRow): string {
+  if (row.linkedPrs === 0) {
+    return "no PR";
+  }
+  if (row.testingAfterActiveHours !== null) {
+    return "issue testing";
+  }
+  if (row.cachePending) {
+    return "testing evidence pending";
+  }
+  return "PR not in testing";
+}
+
 function PersonalFlowEfficiencyMetric({
   label,
   value,
-  detail
+  detail,
+  onClick
 }: {
   label: string;
   value: string | number;
   detail: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="personal-flow-efficiency-metric">
+  const content = (
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className="personal-flow-efficiency-metric personal-flow-efficiency-metric-clickable"
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className="personal-flow-efficiency-metric">{content}</div>;
 }
 
 function SelectedPersonWorkbench({
