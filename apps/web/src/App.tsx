@@ -7256,9 +7256,9 @@ function cacheEvidenceImpactItems(data: DashboardSummary): CacheEvidenceImpactIt
     {
       key: "testing",
       target: "testing",
-      label: "Testing flow",
+      label: "Issue testing",
       value: testingEvidenceGaps,
-      detail: `${testingEvidenceGaps} issue or PR testing records depend on incomplete cache evidence`,
+      detail: `${testingEvidenceGaps} issue testing or linked PR evidence records depend on incomplete cache evidence`,
       tone: testingEvidenceGaps > 0 ? "attention" : "normal"
     },
     {
@@ -18745,12 +18745,12 @@ export default function App() {
                     <div
                       className="testing-pr-table-panel"
                       id="testing-pr-table-panel"
-                      aria-label="Issue testing PR table"
+                      aria-label="Linked PR evidence table"
                     >
                       <div className="subsection-heading subsection-heading-compact">
                         <span className="testing-pr-table-heading-copy">
-                          <Text strong>Issue testing PR table</Text>
-                          <Text type="secondary">Paginated linked PR rows for issues currently in testing.</Text>
+                          <Text strong>Linked PR evidence</Text>
+                          <Text type="secondary">Paginated PR rows linked to issues currently in testing.</Text>
                         </span>
                         <button
                           type="button"
@@ -18781,7 +18781,7 @@ export default function App() {
                             setPrTestingTablePageSize(pageSize);
                           }
                         })}
-                        locale={{ emptyText: <Empty description="No issue testing PRs in cache" /> }}
+                        locale={{ emptyText: <Empty description="No linked PR evidence in cache" /> }}
                       />
                     </div>
                     <details
