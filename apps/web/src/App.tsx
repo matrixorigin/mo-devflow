@@ -12280,8 +12280,19 @@ function TestingCommandBoard({
 
 type TestingIssueQueueSort = "priority" | "wait" | "number";
 
-function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
+export function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
   return issue.queueAgeEvidence === "issue_cache_timestamp" || !issue.isComplete || issue.syncError !== null;
+}
+
+export function testingIssueHasConfirmedNoLinkedPr(issue: TestingIssueQueueView): boolean {
+  return issue.linkedPullRequests.length === 0 && !testingIssueHasDataGap(issue);
+}
+
+export function testingIssueLinkedPrEvidenceText(issue: TestingIssueQueueView): string {
+  if (issue.linkedPullRequests.length > 0) {
+    return `${issue.linkedPullRequests.length} linked PR${issue.linkedPullRequests.length === 1 ? "" : "s"}`;
+  }
+  return testingIssueHasDataGap(issue) ? "Linked PR evidence pending" : "No linked PR confirmed";
 }
 
 function testingIssueMatchesFilter(issue: TestingIssueQueueView, filter: TestingIssueQueueFilter): boolean {
@@ -12292,7 +12303,7 @@ function testingIssueMatchesFilter(issue: TestingIssueQueueView, filter: Testing
     return testingIssueNeedsAttention(issue);
   }
   if (filter === "unlinked") {
-    return issue.linkedPullRequests.length === 0;
+    return testingIssueHasConfirmedNoLinkedPr(issue);
   }
   if (filter === "data_gap") {
     return testingIssueHasDataGap(issue);
@@ -12343,7 +12354,7 @@ function TestingIssueQueuePanel({
     all: testerScopedIssues.length,
     stale: testerScopedIssues.filter(isTestingIssueStale).length,
     attention: testerScopedIssues.filter(testingIssueNeedsAttention).length,
-    unlinked: testerScopedIssues.filter((issue) => issue.linkedPullRequests.length === 0).length,
+    unlinked: testerScopedIssues.filter(testingIssueHasConfirmedNoLinkedPr).length,
     data_gap: testerScopedIssues.filter(testingIssueHasDataGap).length
   };
   const sortedIssues = sortTestingIssueQueue(
@@ -12418,7 +12429,7 @@ function TestingIssueQueuePanel({
             className={`inline-filter-chip ${filter === "unlinked" ? "inline-filter-chip-active" : ""}`}
             onClick={() => changeFilter("unlinked")}
           >
-            No linked PR {filterCounts.unlinked}
+            No linked PR confirmed {filterCounts.unlinked}
           </button>
           <button
             type="button"
@@ -12507,13 +12518,13 @@ function TestingIssueQueueRow({
             {issue.testers.length > 0 ? `testers ${issue.testers.slice(0, 4).join(", ")}` : "no tester assigned"}
           </span>
           <span>{testingIssueHandoffSummary(issue)}</span>
-          <span>{issue.linkedPullRequests.length} linked PRs</span>
+          <span>{testingIssueLinkedPrEvidenceText(issue)}</span>
           {linkedBlockers > 0 ? <span>{linkedBlockers} PR blockers</span> : null}
         </div>
       </div>
       <div className="testing-issue-prs">
         {issue.linkedPullRequests.length === 0 ? (
-          <Text type="secondary">No linked PR visible</Text>
+          <Text type="secondary">{testingIssueLinkedPrEvidenceText(issue)}</Text>
         ) : (
           visibleLinkedPrs.map((pr) => (
             <Tooltip title={pr.title} key={pr.number}>
@@ -12605,7 +12616,9 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
           <div className="testing-issue-preview-metric">
             <span>Linked PRs</span>
             <strong>{issue.linkedPullRequests.length}</strong>
-            <small>{linkedBlockers > 0 ? `${linkedBlockers} need attention` : "no linked PR blocker"}</small>
+            <small>
+              {linkedBlockers > 0 ? `${linkedBlockers} need attention` : testingIssueLinkedPrEvidenceText(issue)}
+            </small>
           </div>
         </div>
 
@@ -12666,7 +12679,7 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
               />
             </div>
           ) : (
-            <Text type="secondary">No linked PR is visible in cache.</Text>
+            <Text type="secondary">{testingIssueLinkedPrEvidenceText(issue)}</Text>
           )}
         </section>
       </div>

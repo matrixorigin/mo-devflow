@@ -67,6 +67,9 @@ import {
   sortPersonalPrList,
   syncRateLimitSummary,
   syncHealthCursorText,
+  testingIssueHasConfirmedNoLinkedPr,
+  testingIssueHasDataGap,
+  testingIssueLinkedPrEvidenceText,
   testingIssueQueueFilterFromHash,
   testingIssueTesterFilterFromHash,
   violationSignalFilterFromHash,
@@ -574,6 +577,34 @@ describe("dashboard hash filters", () => {
     expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
     expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
     expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
+  });
+
+  it("does not treat partial issue-testing evidence as confirmed no linked PR", () => {
+    const partialIssue = {
+      linkedPullRequests: [],
+      queueAgeEvidence: "issue_cache_timestamp",
+      isComplete: false,
+      syncError: null
+    } as any;
+    const completeIssue = {
+      linkedPullRequests: [],
+      queueAgeEvidence: "issue_assignment_event",
+      isComplete: true,
+      syncError: null
+    } as any;
+    const linkedIssue = {
+      linkedPullRequests: [{ number: 42 }],
+      queueAgeEvidence: "issue_assignment_event",
+      isComplete: true,
+      syncError: null
+    } as any;
+
+    expect(testingIssueHasDataGap(partialIssue)).toBe(true);
+    expect(testingIssueHasConfirmedNoLinkedPr(partialIssue)).toBe(false);
+    expect(testingIssueLinkedPrEvidenceText(partialIssue)).toBe("Linked PR evidence pending");
+    expect(testingIssueHasConfirmedNoLinkedPr(completeIssue)).toBe(true);
+    expect(testingIssueLinkedPrEvidenceText(completeIssue)).toBe("No linked PR confirmed");
+    expect(testingIssueLinkedPrEvidenceText(linkedIssue)).toBe("1 linked PR");
   });
 
   it("summarizes the collapsed PR table with count, scope, and sort", () => {
