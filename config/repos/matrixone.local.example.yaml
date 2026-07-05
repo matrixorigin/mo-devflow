@@ -21,10 +21,7 @@ people:
 
 testing:
   handoff_signals:
-    reviewer_users: []
-    assignee_users:
-      - tester-a
-      - tester-b
+    labels: []
 
 workflow:
   skip_users:

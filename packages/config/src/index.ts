@@ -78,16 +78,14 @@ const profileSchema = z.object({
       handoff_scope: z.literal("issue").default("issue"),
       handoff_signals: z
         .object({
-          labels: z.array(z.string()).default([]),
-          reviewer_users: z.array(z.string()).default([]),
-          assignee_users: z.array(z.string()).default([]),
-          comments: z.array(z.string()).default([])
+          labels: z.array(z.string()).default([])
         })
-        .default({ labels: [], reviewer_users: [], assignee_users: [], comments: [] })
+        .strict()
+        .default({ labels: [] })
     })
     .default({
       handoff_scope: "issue",
-      handoff_signals: { labels: [], reviewer_users: [], assignee_users: [], comments: [] }
+      handoff_signals: { labels: [] }
     }),
   workflow: z.object({
     skip_users: z.array(z.string())
@@ -171,10 +169,7 @@ export function loadRepoProfile(
     testing: {
       handoffScope: parsed.testing.handoff_scope,
       handoffSignals: {
-        labels: parsed.testing.handoff_signals.labels,
-        reviewerUsers: parsed.testing.handoff_signals.reviewer_users,
-        assigneeUsers: parsed.testing.handoff_signals.assignee_users,
-        comments: parsed.testing.handoff_signals.comments
+        labels: parsed.testing.handoff_signals.labels
       }
     },
     workflow: {

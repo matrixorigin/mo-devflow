@@ -51,13 +51,13 @@ access:
 labels: {}
 workflow:
   skip_users:
-    - heni02
-    - Ariznawlll
+    - workflow-skip-user-a
+    - workflow-skip-user-b
 `);
 
     const profile = loadRepoProfile(profilePath);
     expect(profile.access.writeBackEnabled).toBe(false);
-    expect(profile.workflow.skipUsers).toEqual(["heni02", "Ariznawlll"]);
+    expect(profile.workflow.skipUsers).toEqual(["workflow-skip-user-a", "workflow-skip-user-b"]);
   });
 
   test("maps critical notification escalation policy into the repo profile", () => {
@@ -86,5 +86,27 @@ notifications:
     expect(profile.notifications.routing.cooldownHours).toBe(6);
     expect(profile.notifications.routing.fallbackRecipient).toBe("maintainers");
     expect(profile.notifications.routing.escalateAfterHours).toBe(18);
+  });
+
+  test("rejects PR-side testing handoff configuration", () => {
+    const profilePath = writeProfile(`
+repo:
+  owner: matrixorigin
+  name: matrixone
+access:
+  anonymous_read: true
+  expose_user_token_synced_private_data: false
+  critical_scope: repo-wide
+  write_back_enabled: false
+labels: {}
+workflow:
+  skip_users: []
+testing:
+  handoff_signals:
+    assignee_users:
+      - tester-a
+`);
+
+    expect(() => loadRepoProfile(profilePath)).toThrow(/assignee_users/);
   });
 });

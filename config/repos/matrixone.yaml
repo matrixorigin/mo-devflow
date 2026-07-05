@@ -76,17 +76,6 @@ testing:
   handoff_scope: issue
   handoff_signals:
     labels: []
-    reviewer_users: []
-    assignee_users: []
-    comments: []
-  states:
-    not_ready: {}
-    dev_done: {}
-    test_requested: {}
-    testing: {}
-    test_changes_requested: {}
-    test_passed: {}
-    closed_or_merged: {}
 
 workflow:
   skip_users: []

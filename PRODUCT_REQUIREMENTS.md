@@ -325,7 +325,7 @@ Owner attribution should be visible in the UI so users understand why an item ap
 
 Repository profiles can define workflow skip users. Items authored by, owned by, or assigned to these users should remain visible in cached dashboards when otherwise allowed by access policy, but they should not produce automated workflow violations, AI drift signals, attention notifications, or configuration suggestions.
 
-For MatrixOne, the current bug-triage skill marks `heni02` and `Ariznawlll` as skipped users.
+Repository-specific skip users must be provided through local repo profile configuration, not hard-coded in product documentation.
 
 ## 6. Overall View
 

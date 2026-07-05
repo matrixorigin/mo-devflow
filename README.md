@@ -186,10 +186,11 @@ and `0/0/0` anonymously. Override them with
 `MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS`, `MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS`, and
 `MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS`.
 
-The same GitHub issue-comment cache supports configured PR testing handoff
-comments. When `testing.handoff_signals.comments` is configured, matching
-complete PR comment evidence can move a PR into the testing queue and refresh
-its human-action timestamp.
+Testing handoff is issue-scoped. Configure tester identities under
+`people.testers`, and optionally configure issue labels under
+`testing.handoff_signals.labels`. PR reviewer, PR assignee, PR label, and PR
+comment evidence can refresh PR activity context, but it does not move work into
+the testing queue.
 
 PR attention includes stale review requests. If a pending PR still has requested
 reviewers, has no cached review response, and has been stale longer than the

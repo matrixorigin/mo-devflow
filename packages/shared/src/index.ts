@@ -9,9 +9,6 @@ export type TestingHandoffScope = "issue";
 
 export interface TestingHandoffSignals {
   labels: string[];
-  reviewerUsers: string[];
-  assigneeUsers: string[];
-  comments: string[];
 }
 
 export const supportedGitHubWebhookEvents = [
@@ -200,7 +197,6 @@ export function repoProfileConfigurationStatus(
   });
   const issueHandoffSignals = [
     ...(profile.people.testers ?? []),
-    ...(profile.testing.handoffSignals?.assigneeUsers ?? []),
     ...(profile.testing.handoffSignals?.labels ?? [])
   ].filter((value) => value.trim().length > 0);
 

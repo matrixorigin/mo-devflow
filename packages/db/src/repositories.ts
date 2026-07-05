@@ -700,7 +700,7 @@ export function criticalIssueOwnerCoverage(
 }
 
 function testingAssigneeLogins(profile: RepoProfile): string[] {
-  return uniqueValues([...(profile.people.testers ?? []), ...(profile.testing.handoffSignals?.assigneeUsers ?? [])]);
+  return uniqueValues(profile.people.testers ?? []);
 }
 
 function testingAssigneeLoginSet(profile: RepoProfile): Set<string> {
@@ -952,8 +952,7 @@ export function profileConfigurationWarnings(input: {
       title: "Testing handoff rules are not configured",
       description:
         "Testing queue and tester turnover views cannot reflect the real workflow until tester assignee or issue label signals are configured.",
-      action:
-        "Configure people.testers, testing.handoff_signals.assignee_users, or testing.handoff_signals.labels for the repo workflow."
+      action: "Configure people.testers or testing.handoff_signals.labels for the repo workflow."
     });
   }
 

@@ -47,10 +47,7 @@ const profile: RepoProfile = {
   testing: {
     handoffScope: "issue",
     handoffSignals: {
-      labels: [],
-      reviewerUsers: [],
-      assigneeUsers: ["real-tester-login"],
-      comments: []
+      labels: []
     }
   },
   workflow: {

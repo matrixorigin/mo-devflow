@@ -763,13 +763,13 @@ describe("profile configuration guidance", () => {
     ).toEqual([]);
   });
 
-  test("treats configured testing assignee handoff signals as testing workflow input", () => {
+  test("treats configured issue labels as testing workflow input", () => {
     expect(
       profileConfigurationWarnings({
         profile: {
           ...baseProfile,
           people: { watchedUsers: ["alice"], testers: [] },
-          testing: { handoffSignals: { labels: [], reviewerUsers: [], assigneeUsers: ["qa-a"], comments: [] } }
+          testing: { handoffSignals: { labels: ["testing"] } }
         },
         env: { MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret" }
       })
@@ -1146,7 +1146,7 @@ describe("pull request testing transition events", () => {
     const issueScopedProfile: RepoProfile = {
       ...baseProfile,
       people: { ...baseProfile.people, testers: ["tester-a"] },
-      testing: { handoffSignals: { labels: ["testing"], reviewerUsers: [], assigneeUsers: [], comments: [] } }
+      testing: { handoffSignals: { labels: ["testing"] } }
     };
     expect(testingTransitionBelongsToProfile(issueScopedProfile, reviewerTransition)).toBe(false);
     expect(testingTransitionBelongsToProfile(issueScopedProfile, issueAssigneeTransition)).toBe(true);
