@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { FixedWindowRateLimiter, tokenBindRateLimitConfigFromEnv } from "./rateLimit";
+import {
+  FixedWindowRateLimiter,
+  manualRefreshRateLimitConfigFromEnv,
+  tokenBindRateLimitConfigFromEnv
+} from "./rateLimit";
 
 describe("rate limiting", () => {
   test("blocks requests after the fixed window limit is exhausted", () => {
@@ -61,5 +65,21 @@ describe("rate limiting", () => {
         MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS: "not-a-number"
       })
     ).toEqual({ maxAttempts: 5, windowMs: 300_000 });
+  });
+
+  test("loads manual refresh limits from environment with safe defaults", () => {
+    expect(
+      manualRefreshRateLimitConfigFromEnv({
+        MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_MAX: "4",
+        MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_WINDOW_SECONDS: "30"
+      })
+    ).toEqual({ maxAttempts: 4, windowMs: 30_000 });
+
+    expect(
+      manualRefreshRateLimitConfigFromEnv({
+        MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_MAX: "-1",
+        MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_WINDOW_SECONDS: "bad"
+      })
+    ).toEqual({ maxAttempts: 6, windowMs: 60_000 });
   });
 });

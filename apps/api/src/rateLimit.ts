@@ -75,6 +75,15 @@ export function tokenBindRateLimitConfigFromEnv(
   };
 }
 
+export function manualRefreshRateLimitConfigFromEnv(
+  env: Record<string, string | undefined> = process.env
+): RateLimitConfig {
+  return {
+    maxAttempts: positiveIntFromEnv(env.MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_MAX, 6),
+    windowMs: positiveIntFromEnv(env.MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_WINDOW_SECONDS, 60) * 1000
+  };
+}
+
 export function clientRateLimitKey(request: FastifyRequest, scope: string): string {
   return `${scope}:${request.ip || "unknown"}`;
 }

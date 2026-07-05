@@ -1247,7 +1247,9 @@ async function responseApiError(response: Response): Promise<ApiResponseError> {
 
 async function responseError(response: Response): Promise<string> {
   const error = await responseApiError(response);
-  return error.requestId ? `${error.message} Request id ${error.requestId}.` : error.message;
+  const retryText = error.retryAfterSeconds === null ? "" : ` Retry after about ${error.retryAfterSeconds}s.`;
+  const requestText = error.requestId ? ` Request id ${error.requestId}.` : "";
+  return `${error.message}${retryText}${requestText}`;
 }
 
 interface DashboardLoadError {

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
@@ -11,6 +11,7 @@ import {
 import type { ManualRefreshLayer } from "@mo-devflow/shared";
 import { getSessionRecordFromRequest } from "./authRoutes";
 import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
+import { FixedWindowRateLimiter, manualRefreshRateLimitConfigFromEnv } from "./rateLimit";
 import { jobKeyForLayer, manualRefreshLayers, type RefreshJobSeed, webhookRetryRefreshJobs } from "./refreshJobs";
 
 const manualRefreshSchema = z.object({
@@ -19,6 +20,7 @@ const manualRefreshSchema = z.object({
 
 interface RefreshRouteOptions {
   onDashboardMutated?: () => void;
+  manualRefreshRateLimiter?: FixedWindowRateLimiter;
 }
 
 function uniqueLayers(layers: ManualRefreshLayer[] | undefined): ManualRefreshLayer[] {
@@ -26,7 +28,14 @@ function uniqueLayers(layers: ManualRefreshLayer[] | undefined): ManualRefreshLa
   return selected.filter((layer, index) => selected.indexOf(layer) === index);
 }
 
+function manualRefreshRateLimitKey(request: FastifyRequest, userId: number): string {
+  return `manual-refresh:${userId}:${request.ip || "unknown"}`;
+}
+
 export async function registerRefreshRoutes(app: FastifyInstance, options: RefreshRouteOptions = {}): Promise<void> {
+  const manualRefreshRateLimiter =
+    options.manualRefreshRateLimiter ?? new FixedWindowRateLimiter(manualRefreshRateLimitConfigFromEnv());
+
   app.post("/api/refresh", async (request, reply) => {
     const session = await getSessionRecordFromRequest(request, reply);
     if (!session) {
@@ -44,6 +53,15 @@ export async function registerRefreshRoutes(app: FastifyInstance, options: Refre
       return reply.status(422).send({
         error: "invalid_manual_refresh_input",
         message: "Manual refresh input is invalid."
+      });
+    }
+    const rateLimit = manualRefreshRateLimiter.consume(manualRefreshRateLimitKey(request, session.userId));
+    if (!rateLimit.allowed) {
+      reply.header("retry-after", String(rateLimit.retryAfterSeconds));
+      return reply.status(429).send({
+        error: "manual_refresh_rate_limited",
+        message: "Too many manual refresh requests. Retry later.",
+        retryAfterSeconds: rateLimit.retryAfterSeconds
       });
     }
 
@@ -91,6 +109,15 @@ export async function registerRefreshRoutes(app: FastifyInstance, options: Refre
     }
     if (!hasValidCsrfToken(request)) {
       return sendCsrfRequired(reply);
+    }
+    const rateLimit = manualRefreshRateLimiter.consume(manualRefreshRateLimitKey(request, session.userId));
+    if (!rateLimit.allowed) {
+      reply.header("retry-after", String(rateLimit.retryAfterSeconds));
+      return reply.status(429).send({
+        error: "manual_refresh_rate_limited",
+        message: "Too many manual refresh requests. Retry later.",
+        retryAfterSeconds: rateLimit.retryAfterSeconds
+      });
     }
 
     const profile = loadRepoProfile();

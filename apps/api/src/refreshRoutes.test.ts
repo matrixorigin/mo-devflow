@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { csrfCookieName, csrfHeaderName } from "./csrf";
+import { FixedWindowRateLimiter } from "./rateLimit";
 
 const mocks = vi.hoisted(() => ({
   enqueueJobsNow: vi.fn(),
@@ -131,6 +132,49 @@ describe("refresh routes", () => {
     }
   });
 
+  test("rate limits repeated manual refresh requests before queueing jobs", async () => {
+    const app = Fastify();
+    const limiter = new FixedWindowRateLimiter({ maxAttempts: 1, windowMs: 60_000, now: () => 1_000 });
+    await registerRefreshRoutes(app, { manualRefreshRateLimiter: limiter });
+    mocks.enqueueJobsNow.mockResolvedValue([
+      { jobKey: "rules:matrixorigin/matrixone", jobType: "rules", status: "pending", nextRunAt: null }
+    ]);
+    mocks.recordManualRefreshRequest.mockResolvedValue({
+      requestId: 3,
+      requestedLayers: ["rules"],
+      queuedJobs: [],
+      requestedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/refresh",
+        headers: csrfHeaders,
+        payload: { layers: ["rules"] }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/refresh",
+        headers: csrfHeaders,
+        payload: { layers: ["rules"] }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json()).toEqual({
+        error: "manual_refresh_rate_limited",
+        message: "Too many manual refresh requests. Retry later.",
+        retryAfterSeconds: 60
+      });
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledTimes(1);
+      expect(mocks.recordManualRefreshRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   test("resets failed webhook deliveries and queues webhook repair jobs", async () => {
     const app = Fastify();
     const onDashboardMutated = vi.fn();
@@ -230,6 +274,39 @@ describe("refresh routes", () => {
         message: "Refresh the session and retry the request."
       });
       expect(mocks.retryFailedGitHubWebhookDeliveries).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rate limits webhook retry before resetting deliveries", async () => {
+    const app = Fastify();
+    const limiter = new FixedWindowRateLimiter({ maxAttempts: 1, windowMs: 60_000, now: () => 1_000 });
+    await registerRefreshRoutes(app, { manualRefreshRateLimiter: limiter });
+    mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 0 });
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed",
+        headers: csrfHeaders
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed",
+        headers: csrfHeaders
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json()).toEqual({
+        error: "manual_refresh_rate_limited",
+        message: "Too many manual refresh requests. Retry later.",
+        retryAfterSeconds: 60
+      });
+      expect(mocks.retryFailedGitHubWebhookDeliveries).toHaveBeenCalledTimes(1);
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
     } finally {
       await app.close();
