@@ -3935,7 +3935,8 @@ function TeamCriticalFlowRow({
 }) {
   const issue = row.issue;
   const prs = observedThreadPullRequests(row);
-  const visiblePrs = prs.slice(0, 4);
+  const prLazy = useLazyVisibleCount(prs.length, 4, row.id);
+  const visiblePrs = prs.slice(0, prLazy.visibleCount);
   const status = teamCriticalFlowStatus(row);
 
   if (!issue) {
@@ -3989,14 +3990,16 @@ function TeamCriticalFlowRow({
           ) : (
             <span className="team-critical-flow-no-pr">No visible execution PR</span>
           )}
-          {prs.length > visiblePrs.length ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview issue ${issue.number} with ${prs.length - visiblePrs.length} more linked PRs`}
-              count={prs.length - visiblePrs.length}
-              label="more PRs"
-              onClick={() => onPreviewIssue(issue)}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={prLazy.hiddenCount}
+            revealCount={prLazy.revealCount}
+            canCollapse={prLazy.canCollapse}
+            itemLabel="PRs"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer PRs"
+            onShowMore={prLazy.showMore}
+            onCollapse={prLazy.reset}
+          />
         </div>
       </div>
 
@@ -4269,9 +4272,10 @@ function TeamCriticalIssueRow({
   onPreview: (preview: TeamWorkPreview) => void;
 }) {
   const riskTags = criticalIssueRiskTags(issue, generatedAt);
-  const linkedPrs = issue.linkedPullRequests.slice(0, 4);
-  const visibleRiskTags = riskTags.slice(0, 4);
-  const hiddenRiskTagCount = Math.max(0, riskTags.length - visibleRiskTags.length);
+  const riskLazy = useLazyVisibleCount(riskTags.length, 4, issue.number);
+  const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 4, issue.number);
+  const linkedPrs = issue.linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
+  const visibleRiskTags = riskTags.slice(0, riskLazy.visibleCount);
   return (
     <article className="team-work-row">
       <div className="team-work-object">
@@ -4302,14 +4306,16 @@ function TeamCriticalIssueRow({
               <Tag color={tag.color}>{tag.label}</Tag>
             </Tooltip>
           ))}
-          {hiddenRiskTagCount > 0 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview issue ${issue.number} with ${hiddenRiskTagCount} more risk signals`}
-              count={hiddenRiskTagCount}
-              label="more risks"
-              onClick={() => onPreview({ objectType: "issue", issue })}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={riskLazy.hiddenCount}
+            revealCount={riskLazy.revealCount}
+            canCollapse={riskLazy.canCollapse}
+            itemLabel="risks"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer risks"
+            onShowMore={riskLazy.showMore}
+            onCollapse={riskLazy.reset}
+          />
         </div>
         {linkedPrs.length > 0 ? (
           <div className="team-linked-row">
@@ -4322,13 +4328,16 @@ function TeamCriticalIssueRow({
                 </a>
               </Tooltip>
             ))}
-            {issue.linkedPullRequests.length > linkedPrs.length ? (
-              <LinkedOverflowButton
-                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
-                count={issue.linkedPullRequests.length - linkedPrs.length}
-                onClick={() => onPreview({ objectType: "issue", issue })}
-              />
-            ) : null}
+            <LazyListToggle
+              hiddenCount={linkedPrLazy.hiddenCount}
+              revealCount={linkedPrLazy.revealCount}
+              canCollapse={linkedPrLazy.canCollapse}
+              itemLabel="PRs"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer PRs"
+              onShowMore={linkedPrLazy.showMore}
+              onCollapse={linkedPrLazy.reset}
+            />
           </div>
         ) : (
           <div className="team-linked-row team-linked-row-missing">No linked PR visible</div>
@@ -4353,8 +4362,8 @@ function TeamPrRiskRow({
   onPreview?: (preview: TeamWorkPreview) => void;
 }) {
   const reasons = prAttentionReasons(pr);
-  const visibleReasons = reasons.slice(0, 4);
-  const hiddenReasonCount = Math.max(0, reasons.length - visibleReasons.length);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 4, pr.number);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
   const activeIssueLazy = useLazyVisibleCount(activeIssues.length, 3, pr.number);
   const visibleActiveIssues = activeIssues.slice(0, activeIssueLazy.visibleCount);
@@ -4414,14 +4423,16 @@ function TeamPrRiskRow({
               {reason}
             </Tag>
           ))}
-          {hiddenReasonCount > 0 && onPreview ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview PR ${pr.number} with ${hiddenReasonCount} more attention signals`}
-              count={hiddenReasonCount}
-              label="more signals"
-              onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={reasonLazy.hiddenCount}
+            revealCount={reasonLazy.revealCount}
+            canCollapse={reasonLazy.canCollapse}
+            itemLabel="signals"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer signals"
+            onShowMore={reasonLazy.showMore}
+            onCollapse={reasonLazy.reset}
+          />
         </div>
         {activeIssues.length > 0 ? (
           <div className="team-linked-row team-critical-context-row">
@@ -4478,27 +4489,6 @@ function TeamPrRiskRow({
         <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
       </div>
     </article>
-  );
-}
-
-function LinkedOverflowButton({
-  ariaLabel,
-  count,
-  label = "more",
-  onClick
-}: {
-  ariaLabel: string;
-  count: number;
-  label?: string;
-  onClick: () => void;
-}) {
-  if (count <= 0) {
-    return null;
-  }
-  return (
-    <button type="button" className="linked-overflow-button" aria-label={ariaLabel} onClick={onClick}>
-      +{count} {label}
-    </button>
   );
 }
 
@@ -4795,23 +4785,21 @@ function TeamPullRequestPreviewModal({
   );
 }
 
-function PrIssueContextCell({
-  activeIssues = [],
-  pr,
-  onPreview
-}: {
-  activeIssues?: PrCriticalIssueContext[];
-  pr: PendingPrView;
-  onPreview: () => void;
-}) {
+function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCriticalIssueContext[]; pr: PendingPrView }) {
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
   const otherIssueNumbers = pr.linkedIssueNumbers.filter((number) => !activeIssueNumbers.has(number));
+  const activeIssueLazy = useLazyVisibleCount(activeIssues.length, 3, pr.number);
+  const otherIssueLazy = useLazyVisibleCount(
+    otherIssueNumbers.length,
+    3,
+    `${pr.number}:${otherIssueNumbers.join(",")}`
+  );
 
   return (
     <Space orientation="vertical" size={4}>
       {activeIssues.length > 0 ? (
         <Space size={[4, 4]} wrap>
-          {activeIssues.slice(0, 3).map((issue) => (
+          {activeIssues.slice(0, activeIssueLazy.visibleCount).map((issue) => (
             <Tooltip title={prCriticalIssueTooltip(issue)} key={issue.number}>
               <Tag color={severityColor(issue.severity)}>
                 <a className="critical-issue-tag-link" href={issue.htmlUrl} target="_blank" rel="noreferrer">
@@ -4820,32 +4808,36 @@ function PrIssueContextCell({
               </Tag>
             </Tooltip>
           ))}
-          {activeIssues.length > 3 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview PR ${pr.number} with ${activeIssues.length - 3} more active issues`}
-              count={activeIssues.length - 3}
-              label="more active"
-              onClick={onPreview}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={activeIssueLazy.hiddenCount}
+            revealCount={activeIssueLazy.revealCount}
+            canCollapse={activeIssueLazy.canCollapse}
+            itemLabel="active issues"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer active issues"
+            onShowMore={activeIssueLazy.showMore}
+            onCollapse={activeIssueLazy.reset}
+          />
         </Space>
       ) : null}
       {otherIssueNumbers.length > 0 ? (
         <Space size={[4, 4]} wrap>
           <Text type="secondary">{activeIssues.length > 0 ? "other" : "issues"}</Text>
-          {otherIssueNumbers.slice(0, 3).map((number) => (
+          {otherIssueNumbers.slice(0, otherIssueLazy.visibleCount).map((number) => (
             <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
               #{number}
             </a>
           ))}
-          {otherIssueNumbers.length > 3 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview PR ${pr.number} with ${otherIssueNumbers.length - 3} more linked issues`}
-              count={otherIssueNumbers.length - 3}
-              label="more issues"
-              onClick={onPreview}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={otherIssueLazy.hiddenCount}
+            revealCount={otherIssueLazy.revealCount}
+            canCollapse={otherIssueLazy.canCollapse}
+            itemLabel="issues"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer issues"
+            onShowMore={otherIssueLazy.showMore}
+            onCollapse={otherIssueLazy.reset}
+          />
         </Space>
       ) : activeIssues.length === 0 ? (
         <Space size={[4, 4]} wrap>
@@ -4870,6 +4862,99 @@ function PrIssueContextCell({
   );
 }
 
+function CriticalIssueLinkedPrCell({ issue }: { issue: CriticalIssueView }) {
+  const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 4, issue.number);
+  const visibleLinkedPrs = issue.linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
+
+  if (issue.linkedPullRequests.length === 0) {
+    return <Tag>none</Tag>;
+  }
+
+  return (
+    <Space size={[4, 4]} wrap>
+      {visibleLinkedPrs.map((pr) => (
+        <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
+          <Tag color={pr.attentionFlags.length > 0 ? "orange" : pr.state === "open" ? "blue" : "default"}>
+            <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
+              #{pr.number}
+            </a>{" "}
+            {pr.testingState !== "not_ready" ? testingStateBusinessLabel(pr.testingState) : ""}
+          </Tag>
+        </Tooltip>
+      ))}
+      <LazyListToggle
+        hiddenCount={linkedPrLazy.hiddenCount}
+        revealCount={linkedPrLazy.revealCount}
+        canCollapse={linkedPrLazy.canCollapse}
+        itemLabel="PRs"
+        className="linked-overflow-button"
+        collapsedLabel="Show fewer PRs"
+        onShowMore={linkedPrLazy.showMore}
+        onCollapse={linkedPrLazy.reset}
+      />
+    </Space>
+  );
+}
+
+function CriticalIssueBlockerCell({ issue }: { issue: CriticalIssueView }) {
+  const blockerLazy = useLazyVisibleCount(issue.blockers.length, 4, issue.number);
+  const visibleBlockers = issue.blockers.slice(0, blockerLazy.visibleCount);
+
+  if (issue.blockers.length === 0) {
+    return <Tag color="green">clear</Tag>;
+  }
+
+  return (
+    <Space size={[4, 4]} wrap>
+      {visibleBlockers.map((blocker) => (
+        <Tooltip title={blocker.message} key={blocker.key}>
+          <Tag color={blockerColor(blocker.severity)}>{labelText(blocker.key.split(":").at(-1) ?? blocker.key)}</Tag>
+        </Tooltip>
+      ))}
+      <LazyListToggle
+        hiddenCount={blockerLazy.hiddenCount}
+        revealCount={blockerLazy.revealCount}
+        canCollapse={blockerLazy.canCollapse}
+        itemLabel="blockers"
+        className="linked-overflow-button"
+        collapsedLabel="Show fewer blockers"
+        onShowMore={blockerLazy.showMore}
+        onCollapse={blockerLazy.reset}
+      />
+    </Space>
+  );
+}
+
+function PrAttentionCell({ pr }: { pr: PendingPrView }) {
+  const reasons = prAttentionReasons(pr);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 4, pr.number);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
+
+  if (reasons.length === 0) {
+    return <Tag color="green">clear</Tag>;
+  }
+
+  return (
+    <Space size={[4, 4]} wrap>
+      {visibleReasons.map((reason) => (
+        <Tag color={activityReasonColor(reason)} key={reason}>
+          {reason}
+        </Tag>
+      ))}
+      <LazyListToggle
+        hiddenCount={reasonLazy.hiddenCount}
+        revealCount={reasonLazy.revealCount}
+        canCollapse={reasonLazy.canCollapse}
+        itemLabel="signals"
+        className="linked-overflow-button"
+        collapsedLabel="Show fewer signals"
+        onShowMore={reasonLazy.showMore}
+        onCollapse={reasonLazy.reset}
+      />
+    </Space>
+  );
+}
+
 function TeamTestingIssueRow({
   issue,
   onPreview
@@ -4877,12 +4962,13 @@ function TeamTestingIssueRow({
   issue: TestingIssueQueueView;
   onPreview: (issue: TestingIssueQueueView) => void;
 }) {
-  const linkedPrs = issue.linkedPullRequests.slice(0, 4);
+  const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 4, issue.number);
+  const testerLazy = useLazyVisibleCount(issue.testers.length, 4, issue.number);
+  const testingSignalLazy = useLazyVisibleCount(issue.testingSignals.length, 3, issue.number);
+  const linkedPrs = issue.linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
   const blockerCount = testingIssueLinkedBlockerCount(issue);
-  const visibleTesters = issue.testers.slice(0, 4);
-  const hiddenTesterCount = Math.max(0, issue.testers.length - visibleTesters.length);
-  const visibleTestingSignals = issue.testingSignals.slice(0, 3);
-  const hiddenTestingSignalCount = Math.max(0, issue.testingSignals.length - visibleTestingSignals.length);
+  const visibleTesters = issue.testers.slice(0, testerLazy.visibleCount);
+  const visibleTestingSignals = issue.testingSignals.slice(0, testingSignalLazy.visibleCount);
 
   return (
     <article className="team-work-row">
@@ -4913,27 +4999,31 @@ function TeamTestingIssueRow({
           {visibleTesters.map((tester) => (
             <Tag key={tester}>{tester}</Tag>
           ))}
-          {hiddenTesterCount > 0 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview issue ${issue.number} with ${hiddenTesterCount} more testers`}
-              count={hiddenTesterCount}
-              label="more testers"
-              onClick={() => onPreview(issue)}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={testerLazy.hiddenCount}
+            revealCount={testerLazy.revealCount}
+            canCollapse={testerLazy.canCollapse}
+            itemLabel="testers"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer testers"
+            onShowMore={testerLazy.showMore}
+            onCollapse={testerLazy.reset}
+          />
           {visibleTestingSignals.map((signal) => (
             <Tooltip title={testingSignalBusinessLabel(signal)} key={signal}>
               <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
             </Tooltip>
           ))}
-          {hiddenTestingSignalCount > 0 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview issue ${issue.number} with ${hiddenTestingSignalCount} more handoff signals`}
-              count={hiddenTestingSignalCount}
-              label="more signals"
-              onClick={() => onPreview(issue)}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={testingSignalLazy.hiddenCount}
+            revealCount={testingSignalLazy.revealCount}
+            canCollapse={testingSignalLazy.canCollapse}
+            itemLabel="signals"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer signals"
+            onShowMore={testingSignalLazy.showMore}
+            onCollapse={testingSignalLazy.reset}
+          />
           {issue.testers.length === 0 && issue.testingSignals.length === 0 ? (
             <Tag color="gold">handoff evidence pending</Tag>
           ) : null}
@@ -4955,14 +5045,16 @@ function TeamTestingIssueRow({
                 </a>
               </Tooltip>
             ))}
-            {issue.linkedPullRequests.length > linkedPrs.length ? (
-              <LinkedOverflowButton
-                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
-                count={issue.linkedPullRequests.length - linkedPrs.length}
-                label="more PRs"
-                onClick={() => onPreview(issue)}
-              />
-            ) : null}
+            <LazyListToggle
+              hiddenCount={linkedPrLazy.hiddenCount}
+              revealCount={linkedPrLazy.revealCount}
+              canCollapse={linkedPrLazy.canCollapse}
+              itemLabel="PRs"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer PRs"
+              onShowMore={linkedPrLazy.showMore}
+              onCollapse={linkedPrLazy.reset}
+            />
           </div>
         ) : (
           <div className="team-linked-row team-linked-row-missing">No linked PR visible</div>
@@ -8121,6 +8213,8 @@ function TestingIssueQueueRow({
   onPreview: (issue: TestingIssueQueueView) => void;
 }) {
   const linkedBlockers = testingIssueLinkedBlockerCount(issue);
+  const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 5, issue.number);
+  const visibleLinkedPrs = issue.linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
 
   return (
     <article className={`testing-issue-row ${isTestingIssueStale(issue) ? "testing-issue-row-critical" : ""}`}>
@@ -8165,7 +8259,7 @@ function TestingIssueQueueRow({
         {issue.linkedPullRequests.length === 0 ? (
           <Text type="secondary">No linked PR visible</Text>
         ) : (
-          issue.linkedPullRequests.slice(0, 5).map((pr) => (
+          visibleLinkedPrs.map((pr) => (
             <Tooltip title={pr.title} key={pr.number}>
               <a
                 className={
@@ -8180,14 +8274,16 @@ function TestingIssueQueueRow({
             </Tooltip>
           ))
         )}
-        {issue.linkedPullRequests.length > 5 ? (
-          <LinkedOverflowButton
-            ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 5} more linked PRs`}
-            count={issue.linkedPullRequests.length - 5}
-            label="more PRs"
-            onClick={() => onPreview(issue)}
-          />
-        ) : null}
+        <LazyListToggle
+          hiddenCount={linkedPrLazy.hiddenCount}
+          revealCount={linkedPrLazy.revealCount}
+          canCollapse={linkedPrLazy.canCollapse}
+          itemLabel="PRs"
+          className="linked-overflow-button"
+          collapsedLabel="Show fewer PRs"
+          onShowMore={linkedPrLazy.showMore}
+          onCollapse={linkedPrLazy.reset}
+        />
       </div>
     </article>
   );
@@ -10235,8 +10331,8 @@ function PersonalActionQueueItem({
   const primarySignal = personalActivityPrimarySignal(item);
   const actionTone = item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue";
   const duration = personalDurationText(item);
-  const visibleReasons = item.reasons.slice(0, 4);
-  const hiddenReasonCount = Math.max(0, item.reasons.length - visibleReasons.length);
+  const reasonLazy = useLazyVisibleCount(item.reasons.length, 4, item.id);
+  const visibleReasons = item.reasons.slice(0, reasonLazy.visibleCount);
 
   return (
     <article className={`action-queue-item action-queue-item-${item.tone}`} role="listitem">
@@ -10315,14 +10411,16 @@ function PersonalActionQueueItem({
                 {reason}
               </Tag>
             ))}
-            {hiddenReasonCount > 0 ? (
-              <LinkedOverflowButton
-                ariaLabel={`Preview ${objectLabel} with ${hiddenReasonCount} more signals`}
-                count={hiddenReasonCount}
-                label="more signals"
-                onClick={() => onPreview(item)}
-              />
-            ) : null}
+            <LazyListToggle
+              hiddenCount={reasonLazy.hiddenCount}
+              revealCount={reasonLazy.revealCount}
+              canCollapse={reasonLazy.canCollapse}
+              itemLabel="signals"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer signals"
+              onShowMore={reasonLazy.showMore}
+              onCollapse={reasonLazy.reset}
+            />
             {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
             {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
             {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
@@ -10806,8 +10904,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
-  const visibleSignals = reasons.slice(0, 4);
-  const hiddenSignalCount = Math.max(0, reasons.length - visibleSignals.length);
+  const signalLazy = useLazyVisibleCount(reasons.length, 4, row.id);
+  const linkedIssueLazy = useLazyVisibleCount(linkedIssueUrls.length, 3, row.id);
+  const topologyPrLazy = useLazyVisibleCount(row.prs.length, 4, row.id);
+  const visibleSignals = reasons.slice(0, signalLazy.visibleCount);
+  const visibleTopologyIssues = linkedIssueUrls.slice(0, linkedIssueLazy.visibleCount);
+  const visibleTopologyPrs = row.prs.slice(0, topologyPrLazy.visibleCount);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const prPage = usePagedList(row.prs, 6, row.id);
   const issueNodeLabel =
@@ -10817,11 +10919,6 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
         ? `${row.linkedIssueNumbers.length} linked issues`
         : "No visible issue";
   const prNodeLabel = row.prs.length === 0 ? "No visible PR" : `${row.prs.length} visible PRs`;
-  const visibleTopologyPrs = row.prs.slice(0, 4);
-  const hiddenTopologyPrCount = Math.max(0, row.prs.length - visibleTopologyPrs.length);
-  const openPrDetails = (): void => {
-    setDetailsOpen(true);
-  };
 
   return (
     <article className={`flow-thread flow-thread-${row.tone}`} role="listitem">
@@ -10885,16 +10982,20 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
           {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
             <span>
               issues
-              {linkedIssueUrls.slice(0, 3).map((link) => (
+              {visibleTopologyIssues.map((link) => (
                 <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
                   #{link.number}
                 </a>
               ))}
-              <LinkedOverflowButton
-                ariaLabel={`Preview ${row.title} with ${linkedIssueUrls.length - 3} more linked issues`}
-                count={Math.max(0, linkedIssueUrls.length - 3)}
-                label="more issues"
-                onClick={() => onPreview(row)}
+              <LazyListToggle
+                hiddenCount={linkedIssueLazy.hiddenCount}
+                revealCount={linkedIssueLazy.revealCount}
+                canCollapse={linkedIssueLazy.canCollapse}
+                itemLabel="issues"
+                className="linked-overflow-button"
+                collapsedLabel="Show fewer issues"
+                onShowMore={linkedIssueLazy.showMore}
+                onCollapse={linkedIssueLazy.reset}
               />
             </span>
           ) : null}
@@ -10906,11 +11007,15 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                   #{pr.number}
                 </a>
               ))}
-              <LinkedOverflowButton
-                ariaLabel={`Show ${row.title} PR details with ${hiddenTopologyPrCount} more PRs`}
-                count={hiddenTopologyPrCount}
-                label="more PRs"
-                onClick={openPrDetails}
+              <LazyListToggle
+                hiddenCount={topologyPrLazy.hiddenCount}
+                revealCount={topologyPrLazy.revealCount}
+                canCollapse={topologyPrLazy.canCollapse}
+                itemLabel="PRs"
+                className="linked-overflow-button"
+                collapsedLabel="Show fewer PRs"
+                onShowMore={topologyPrLazy.showMore}
+                onCollapse={topologyPrLazy.reset}
               />
             </span>
           ) : null}
@@ -10956,14 +11061,16 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               {reason}
             </Tag>
           ))}
-          {hiddenSignalCount > 0 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview ${row.title} with ${hiddenSignalCount} more signals`}
-              count={hiddenSignalCount}
-              label="more signals"
-              onClick={() => onPreview(row)}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={signalLazy.hiddenCount}
+            revealCount={signalLazy.revealCount}
+            canCollapse={signalLazy.canCollapse}
+            itemLabel="signals"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer signals"
+            onShowMore={signalLazy.showMore}
+            onCollapse={signalLazy.reset}
+          />
         </div>
         {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
           <div className="flow-linked-row">
@@ -11907,8 +12014,10 @@ function PersonalRotationThreadRow({
   const nextAction = flowThreadNextAction(row);
   const warnings = flowThreadDurationWarnings(row);
   const reasons = flowThreadReasons(row);
-  const visibleReasons = reasons.slice(0, 4);
-  const hiddenReasonCount = Math.max(0, reasons.length - visibleReasons.length);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 4, row.id);
+  const prLazy = useLazyVisibleCount(row.prs.length, 5, row.id);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
+  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
 
   return (
     <article className={`personal-thread-row personal-thread-${row.tone}`}>
@@ -11945,14 +12054,16 @@ function PersonalRotationThreadRow({
               {reason}
             </Tag>
           ))}
-          {hiddenReasonCount > 0 ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview ${row.title} with ${hiddenReasonCount} more signals`}
-              count={hiddenReasonCount}
-              label="more signals"
-              onClick={() => onPreview(row)}
-            />
-          ) : null}
+          <LazyListToggle
+            hiddenCount={reasonLazy.hiddenCount}
+            revealCount={reasonLazy.revealCount}
+            canCollapse={reasonLazy.canCollapse}
+            itemLabel="signals"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer signals"
+            onShowMore={reasonLazy.showMore}
+            onCollapse={reasonLazy.reset}
+          />
           {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
           {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared PR</Tag> : null}
         </div>
@@ -11960,20 +12071,22 @@ function PersonalRotationThreadRow({
           {row.prs.length > 0 ? (
             <>
               <span>PRs</span>
-              {row.prs.slice(0, 5).map((pr) => (
+              {visiblePrs.map((pr) => (
                 <a href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
                   #{pr.number}
                   {pr.testingState !== "not_ready" ? ` ${testingStateBusinessLabel(pr.testingState)}` : ""}
                 </a>
               ))}
-              {row.prs.length > 5 ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview ${row.title} with ${row.prs.length - 5} more linked PRs`}
-                  count={row.prs.length - 5}
-                  label="more PRs"
-                  onClick={() => onPreview(row)}
-                />
-              ) : null}
+              <LazyListToggle
+                hiddenCount={prLazy.hiddenCount}
+                revealCount={prLazy.revealCount}
+                canCollapse={prLazy.canCollapse}
+                itemLabel="PRs"
+                className="linked-overflow-button"
+                collapsedLabel="Show fewer PRs"
+                onShowMore={prLazy.showMore}
+                onCollapse={prLazy.reset}
+              />
             </>
           ) : (
             <span className="team-linked-row-missing">No linked PR visible</span>
@@ -13971,57 +14084,12 @@ export default function App() {
       {
         title: "Linked PRs",
         width: 340,
-        render: (_, issue) =>
-          issue.linkedPullRequests.length === 0 ? (
-            <Tag>none</Tag>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {issue.linkedPullRequests.slice(0, 4).map((pr) => (
-                <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
-                  <Tag color={pr.attentionFlags.length > 0 ? "orange" : pr.state === "open" ? "blue" : "default"}>
-                    <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
-                      #{pr.number}
-                    </a>{" "}
-                    {pr.testingState !== "not_ready" ? testingStateBusinessLabel(pr.testingState) : ""}
-                  </Tag>
-                </Tooltip>
-              ))}
-              {issue.linkedPullRequests.length > 4 ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 4} more linked PRs`}
-                  count={issue.linkedPullRequests.length - 4}
-                  label="more PRs"
-                  onClick={() => setWorkObjectPreview({ objectType: "issue", issue })}
-                />
-              ) : null}
-            </Space>
-          )
+        render: (_, issue) => <CriticalIssueLinkedPrCell issue={issue} />
       },
       {
         title: "Blockers",
         width: 320,
-        render: (_, issue) =>
-          issue.blockers.length === 0 ? (
-            <Tag color="green">clear</Tag>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {issue.blockers.slice(0, 4).map((blocker) => (
-                <Tooltip title={blocker.message} key={blocker.key}>
-                  <Tag color={blockerColor(blocker.severity)}>
-                    {labelText(blocker.key.split(":").at(-1) ?? blocker.key)}
-                  </Tag>
-                </Tooltip>
-              ))}
-              {issue.blockers.length > 4 ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview issue ${issue.number} with ${issue.blockers.length - 4} more blockers`}
-                  count={issue.blockers.length - 4}
-                  label="more blockers"
-                  onClick={() => setWorkObjectPreview({ objectType: "issue", issue })}
-                />
-              ) : null}
-            </Space>
-          )
+        render: (_, issue) => <CriticalIssueBlockerCell issue={issue} />
       },
       {
         title: "Owner",
@@ -14145,34 +14213,7 @@ export default function App() {
         title: "Attention",
         width: 250,
         sorter: (left, right) => prAttentionReasons(left).length - prAttentionReasons(right).length,
-        render: (_, pr) => {
-          const reasons = prAttentionReasons(pr);
-          return reasons.length === 0 ? (
-            <Tag color="green">clear</Tag>
-          ) : (
-            <Space size={[4, 4]} wrap>
-              {reasons.slice(0, 4).map((reason) => (
-                <Tag color={activityReasonColor(reason)} key={reason}>
-                  {reason}
-                </Tag>
-              ))}
-              {reasons.length > 4 ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview PR ${pr.number} with ${reasons.length - 4} more attention signals`}
-                  count={reasons.length - 4}
-                  label="more signals"
-                  onClick={() =>
-                    setWorkObjectPreview({
-                      objectType: "pull_request",
-                      pr,
-                      activeIssues: criticalIssuesByPr.get(pr.number) ?? []
-                    })
-                  }
-                />
-              ) : null}
-            </Space>
-          );
-        }
+        render: (_, pr) => <PrAttentionCell pr={pr} />
       },
       {
         title: "PR blockers",
@@ -14207,19 +14248,7 @@ export default function App() {
       {
         title: "Issue context",
         width: 340,
-        render: (_, pr) => (
-          <PrIssueContextCell
-            activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
-            pr={pr}
-            onPreview={() =>
-              setWorkObjectPreview({
-                objectType: "pull_request",
-                pr,
-                activeIssues: criticalIssuesByPr.get(pr.number) ?? []
-              })
-            }
-          />
-        )
+        render: (_, pr) => <PrIssueContextCell activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} />
       },
       {
         title: "Evidence",
