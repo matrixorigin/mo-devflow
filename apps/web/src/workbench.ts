@@ -65,6 +65,7 @@ export interface PersonalOperatingSignal {
 
 export type PeopleScopeFilter =
   "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
+export type PeopleBoardSort = "workload" | "active" | "pr_age" | "pr_attention" | "triage" | "testing_wait" | "name";
 
 export const peopleScopeFilters: PeopleScopeFilter[] = [
   "all",
@@ -789,6 +790,95 @@ export function sortPeopleByWorkload(people: PersonSummary[]): PersonSummary[] {
     }
     const scoreDelta = personWorkloadScore(right) - personWorkloadScore(left);
     return scoreDelta === 0 ? left.login.localeCompare(right.login) : scoreDelta;
+  });
+}
+
+function maxPersonActiveAge(person: PersonalActionView | undefined): number {
+  return maxFinite(person?.activeCriticalIssues.map((issue) => issue.criticalAgeHours) ?? []) ?? -1;
+}
+
+function maxPersonPendingPrAge(person: PersonalActionView | undefined): number {
+  return maxFinite(person?.pendingPrs.map((pr) => pr.ageHours) ?? []) ?? -1;
+}
+
+function maxPersonAttentionPrAge(person: PersonalActionView | undefined): number {
+  return maxFinite(person?.attentionPrs.map((pr) => pr.ageHours) ?? []) ?? -1;
+}
+
+function maxPersonTriageAge(person: PersonalActionView | undefined): number {
+  return maxFinite(person?.needsTriageIssues.map((issue) => issue.ageHours) ?? []) ?? -1;
+}
+
+function maxPersonTestingWait(person: PersonalActionView | undefined): number {
+  return maxFinite(person?.testingIssues.map((issue) => issue.queueAgeHours) ?? []) ?? -1;
+}
+
+function personTestingCount(person: PersonalActionView | undefined): number {
+  return person ? personalTestingWorkCount(person) : 0;
+}
+
+function comparePersonNumbers(leftValues: number[], rightValues: number[]): number {
+  for (let index = 0; index < leftValues.length; index += 1) {
+    const delta = (rightValues[index] ?? 0) - (leftValues[index] ?? 0);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  return 0;
+}
+
+export function sortPeopleForBoard(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  sort: PeopleBoardSort
+): PersonSummary[] {
+  if (sort === "workload") {
+    return sortPeopleByWorkload(people);
+  }
+
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+
+  return [...people].sort((left, right) => {
+    const leftPersonal = personalByLogin.get(left.login);
+    const rightPersonal = personalByLogin.get(right.login);
+
+    if (sort === "name") {
+      return left.login.localeCompare(right.login);
+    }
+    if (sort === "active") {
+      const delta = comparePersonNumbers(
+        [left.activeCriticalIssues, maxPersonActiveAge(leftPersonal), left.attentionPrs],
+        [right.activeCriticalIssues, maxPersonActiveAge(rightPersonal), right.attentionPrs]
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+    if (sort === "pr_age") {
+      const delta = comparePersonNumbers(
+        [maxPersonPendingPrAge(leftPersonal), left.pendingPrs, left.attentionPrs],
+        [maxPersonPendingPrAge(rightPersonal), right.pendingPrs, right.attentionPrs]
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+    if (sort === "pr_attention") {
+      const delta = comparePersonNumbers(
+        [left.attentionPrs, maxPersonAttentionPrAge(leftPersonal), left.pendingPrs],
+        [right.attentionPrs, maxPersonAttentionPrAge(rightPersonal), right.pendingPrs]
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+    if (sort === "triage") {
+      const delta = comparePersonNumbers(
+        [left.needsTriageIssues, maxPersonTriageAge(leftPersonal), left.deferredIssues],
+        [right.needsTriageIssues, maxPersonTriageAge(rightPersonal), right.deferredIssues]
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+
+    const delta = comparePersonNumbers(
+      [personTestingCount(leftPersonal), maxPersonTestingWait(leftPersonal), left.attentionPrs],
+      [personTestingCount(rightPersonal), maxPersonTestingWait(rightPersonal), right.attentionPrs]
+    );
+    return delta || left.login.localeCompare(right.login);
   });
 }
 

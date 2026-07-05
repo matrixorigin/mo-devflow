@@ -142,6 +142,7 @@ import {
   prHasVisibleIssueContext,
   prIssueLinkEvidencePending,
   prVisibleIssueNumbers,
+  sortPeopleForBoard,
   sortTestingIssuesForAction,
   teamCommandSignals,
   teamOperatingSignals,
@@ -152,7 +153,6 @@ import {
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
   testingIssueNeedsAttention,
-  sortPeopleByWorkload,
   type FlowEfficiencyDiagnostic,
   type FlowEfficiencyDiagnosticTarget,
   type FlowEfficiencySummary,
@@ -165,6 +165,7 @@ import {
   type PersonalGanttPrBar,
   type PersonalGanttRow,
   type PersonalOperatingSignal,
+  type PeopleBoardSort,
   type PeopleScopeFilter,
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
@@ -2436,12 +2437,44 @@ function PrFilterBar({
   );
 }
 
+function PeopleSortControl({
+  sort,
+  onSortChange
+}: {
+  sort: PeopleBoardSort;
+  onSortChange: (value: PeopleBoardSort) => void;
+}) {
+  return (
+    <div className="board-filter-group">
+      <Text type="secondary">Sort</Text>
+      <Segmented
+        size="small"
+        value={sort}
+        onChange={(value) => onSortChange(value as PeopleBoardSort)}
+        options={[
+          { label: "Workload", value: "workload" },
+          { label: "Active", value: "active" },
+          { label: "PR age", value: "pr_age" },
+          { label: "PR attention", value: "pr_attention" },
+          { label: "Triage", value: "triage" },
+          { label: "Test wait", value: "testing_wait" },
+          { label: "Name", value: "name" }
+        ]}
+      />
+    </div>
+  );
+}
+
 function PeopleFilterBar({
   scopeFilter,
-  onScopeFilterChange
+  sort,
+  onScopeFilterChange,
+  onSortChange
 }: {
   scopeFilter: PeopleScopeFilter;
+  sort: PeopleBoardSort;
   onScopeFilterChange: (value: PeopleScopeFilter) => void;
+  onSortChange: (value: PeopleBoardSort) => void;
 }) {
   return (
     <div className="board-filter-bar" aria-label="People filters">
@@ -2463,6 +2496,7 @@ function PeopleFilterBar({
           ]}
         />
       </div>
+      <PeopleSortControl sort={sort} onSortChange={onSortChange} />
     </div>
   );
 }
@@ -7314,6 +7348,7 @@ function PersonWorkloadBoard({
   selectedLogin,
   onSelect,
   onMetricSelect,
+  sort = "workload",
   mode = "watched",
   compact = false
 }: {
@@ -7322,11 +7357,12 @@ function PersonWorkloadBoard({
   selectedLogin: string | null;
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  sort?: PeopleBoardSort;
   mode?: "watched" | "observed";
   compact?: boolean;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
-  const sortedPeopleByWorkload = sortPeopleByWorkload(people);
+  const sortedPeopleByWorkload = sortPeopleForBoard(people, personalViews, sort);
   const sortedPeople =
     compact && selectedLogin
       ? [
@@ -11387,6 +11423,7 @@ export default function App() {
   const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
+  const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>("workload");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
     useState<NotificationDeliveryScopeFilter>("attention");
@@ -14234,7 +14271,12 @@ export default function App() {
                     description="This board is temporarily grouped by owners observed in visible active s-1/s0 issues and pending PRs. Configure watched users to unlock needs-triage, deferred, yesterday PR, testing ownership, and personal analytics."
                   />
                 ) : null}
-                <PeopleFilterBar scopeFilter={peopleScopeFilter} onScopeFilterChange={setPeopleScopeFilter} />
+                <PeopleFilterBar
+                  scopeFilter={peopleScopeFilter}
+                  sort={peopleSort}
+                  onScopeFilterChange={setPeopleScopeFilter}
+                  onSortChange={setPeopleSort}
+                />
                 <PeopleBoardSummary
                   people={peopleBoardPeople}
                   personalViews={data.personalViews}
@@ -14246,6 +14288,7 @@ export default function App() {
                   people={filteredPeople}
                   personalViews={data.personalViews}
                   selectedLogin={selectedPersonalView?.login ?? null}
+                  sort={peopleSort}
                   onSelect={openPeopleBoardPerson}
                   onMetricSelect={openPeopleBoardMetric}
                   mode={peopleBoardUsesObserved ? "observed" : "watched"}

@@ -40,6 +40,7 @@ import {
   prAttentionReasons,
   prHasNoVisibleIssue,
   prIssueLinkEvidencePending,
+  sortPeopleForBoard,
   sortTestingIssuesForAction,
   sortPeopleByWorkload,
   teamPeopleFocusSummary,
@@ -92,6 +93,51 @@ describe("person workload summaries", () => {
     ]);
 
     expect(sorted.map((person) => person.login)).toEqual(["critical-owner", "triage-owner"]);
+  });
+
+  it("sorts people board by active work, PR age, triage, and testing wait", () => {
+    const people = [
+      personSummary({ login: "alice", activeCriticalIssues: 1, pendingPrs: 2 }),
+      personSummary({ login: "bob", attentionPrs: 2, pendingPrs: 2 }),
+      personSummary({ login: "carol", needsTriageIssues: 3 }),
+      personSummary({ login: "dave" })
+    ];
+    const personalViews = [
+      personalView({
+        login: "alice",
+        activeCriticalIssues: [criticalIssue({ number: 10, criticalAgeHours: 12 })],
+        pendingPrs: [pullRequest({ number: 20, ageHours: 8 })]
+      }),
+      personalView({
+        login: "bob",
+        pendingPrs: [pullRequest({ number: 30, ageHours: 72 }), pullRequest({ number: 31, ageHours: 24 })],
+        attentionPrs: [pullRequest({ number: 30, ageHours: 72 }), pullRequest({ number: 31, ageHours: 24 })]
+      }),
+      personalView({
+        login: "carol",
+        needsTriageIssues: [
+          personalIssue({ number: 40, ageHours: 96 }),
+          personalIssue({ number: 41, ageHours: 12 }),
+          personalIssue({ number: 42, ageHours: 6 })
+        ]
+      }),
+      personalView({
+        login: "dave",
+        testingIssues: [testingIssue({ number: 50, queueAgeHours: 36 })]
+      })
+    ];
+
+    expect(sortPeopleForBoard(people, personalViews, "active").map((person) => person.login)[0]).toBe("alice");
+    expect(sortPeopleForBoard(people, personalViews, "pr_age").map((person) => person.login)[0]).toBe("bob");
+    expect(sortPeopleForBoard(people, personalViews, "pr_attention").map((person) => person.login)[0]).toBe("bob");
+    expect(sortPeopleForBoard(people, personalViews, "triage").map((person) => person.login)[0]).toBe("carol");
+    expect(sortPeopleForBoard(people, personalViews, "testing_wait").map((person) => person.login)[0]).toBe("dave");
+    expect(sortPeopleForBoard(people, personalViews, "name").map((person) => person.login)).toEqual([
+      "alice",
+      "bob",
+      "carol",
+      "dave"
+    ]);
   });
 
   it("summarizes the first reasons a manager should inspect a person", () => {
