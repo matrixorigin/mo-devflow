@@ -40,6 +40,17 @@ export interface LeasedGitHubWebhookDelivery {
   processingOwner: string;
 }
 
+const leasedWebhookDeliveryColumns = [
+  "id",
+  "repo_id",
+  "delivery_id",
+  "event_name",
+  "action",
+  "attempts",
+  "payload_json",
+  "processing_owner"
+].join(", ");
+
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -174,7 +185,7 @@ export async function claimNextGitHubWebhookDelivery(input: {
   const now = nowSql();
   const leaseExpiresAt = sqlDate(new Date(Date.now() + input.leaseSeconds * 1000)) ?? now;
   const [candidates] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT id
      FROM github_webhook_deliveries
      WHERE repo_id = ?
        AND (
@@ -211,7 +222,10 @@ export async function claimNextGitHubWebhookDelivery(input: {
   }
 
   const [rows] = await getPool().execute<RowData[]>(
-    "SELECT * FROM github_webhook_deliveries WHERE id = ? AND processing_owner = ? LIMIT 1",
+    `SELECT ${leasedWebhookDeliveryColumns}
+     FROM github_webhook_deliveries
+     WHERE id = ? AND processing_owner = ?
+     LIMIT 1`,
     [asNumber(candidate.id), input.processingOwner]
   );
   return rows[0] ? toLeasedDelivery(rows[0]) : null;

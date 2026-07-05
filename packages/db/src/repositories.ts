@@ -114,6 +114,95 @@ function ruleScanBatchSizeFromEnv(env: NodeJS.ProcessEnv = process.env): number 
   return Math.min(5000, Math.floor(parsed));
 }
 
+const cacheSampleColumns = [
+  "object_type",
+  "number",
+  "title",
+  "html_url",
+  "owner_login",
+  "state",
+  "visibility_class",
+  "source_auth_type",
+  "last_synced_at",
+  "source_updated_at",
+  "is_complete",
+  "sync_error"
+].join(", ");
+
+const dashboardMetricColumns = [
+  "metric_date",
+  "scope_type",
+  "scope_key",
+  "prs_created",
+  "prs_merged",
+  "issues_opened",
+  "issues_closed",
+  "issues_deferred",
+  "workflow_violations_detected",
+  "active_critical_issues",
+  "avg_active_critical_issue_age_hours",
+  "needs_triage_issues",
+  "avg_needs_triage_issue_age_hours",
+  "deferred_issues",
+  "avg_deferred_issue_age_hours",
+  "pending_prs",
+  "avg_pending_pr_age_hours",
+  "attention_prs",
+  "ci_failed_prs",
+  "requested_change_prs",
+  "review_waiting_prs",
+  "merge_conflict_prs",
+  "testing_queue_prs",
+  "avg_testing_queue_age_hours",
+  "source_completeness",
+  "generated_at"
+].join(", ");
+
+const workflowViolationDashboardColumns = [
+  "v.id",
+  "v.object_type",
+  "v.object_number",
+  "v.title",
+  "v.html_url",
+  "v.rule_key",
+  "v.severity",
+  "v.related_login",
+  "v.evidence_summary",
+  "v.suggested_action",
+  "v.fixable",
+  "v.first_detected_at",
+  "v.last_detected_at"
+].join(", ");
+
+const aiDriftDashboardColumns = [
+  "d.id",
+  "d.object_type",
+  "d.object_number",
+  "d.title",
+  "d.html_url",
+  "d.rule_key",
+  "d.severity",
+  "d.owner_login",
+  "d.ai_effort_label",
+  "d.expected_hours",
+  "d.actual_hours",
+  "d.evidence_summary",
+  "d.suggested_action",
+  "d.source_completeness",
+  "d.first_detected_at",
+  "d.last_detected_at"
+].join(", ");
+
+const latestNotificationDeliveryColumns = [
+  "nd.id",
+  "nd.repo_id",
+  "nd.source_type",
+  "nd.source_id",
+  "nd.status",
+  "nd.recipient",
+  "nd.attempted_at"
+].join(", ");
+
 function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
@@ -1385,6 +1474,7 @@ export async function listIssueCommentBackfillCandidates(
   if (input.limit <= 0) {
     return [];
   }
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(input.limit)));
   const criticalLabels = input.criticalLabels.length > 0 ? input.criticalLabels : ["__mo_devflow_no_critical_label__"];
   const criticalPlaceholders = criticalLabels.map(() => "?").join(", ");
   const issueSelect = `
@@ -1425,10 +1515,10 @@ export async function listIssueCommentBackfillCandidates(
       )`;
   const selects = input.includePullRequests ? [issueSelect, pullRequestSelect] : [issueSelect];
   const params = input.includePullRequests
-    ? [repoId, ...criticalLabels, repoId, Math.floor(input.limit)]
-    : [repoId, ...criticalLabels, Math.floor(input.limit)];
+    ? [repoId, ...criticalLabels, repoId, safeLimit]
+    : [repoId, ...criticalLabels, safeLimit];
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT issue_number, object_type, visibility_class, source_updated_at, comment_synced_at
      FROM (${selects.join(" UNION ALL ")}) comment_candidates
      ORDER BY CASE WHEN comment_synced_at IS NULL THEN 0 ELSE 1 END ASC,
               source_updated_at DESC,
@@ -3598,6 +3688,8 @@ export async function getDashboardSummary(
   viewer: DashboardViewer = { authenticated: false, userId: null }
 ): Promise<DashboardSummary> {
   const pool = getPool();
+  const analyticsPeriodDays = 30;
+  const analyticsStartDate = recentDateKeys(analyticsPeriodDays, profile.reporting.timezone)[0] ?? "1970-01-01";
   const visibleClasses = visibleClassesForDashboard(profile, viewer);
   const issueListVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const allPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
@@ -3721,7 +3813,7 @@ export async function getDashboardSummary(
     [repoId, ...staleIssueVisibility.params, repoId, ...stalePrVisibility.params]
   );
   const [staleSampleRows] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT ${cacheSampleColumns}
      FROM (
        SELECT 'issue' AS object_type,
               i.number,
@@ -3765,7 +3857,7 @@ export async function getDashboardSummary(
     [repoId, staleCutoff, ...staleIssueVisibility.params, repoId, staleCutoff, ...stalePrVisibility.params]
   );
   const [partialSampleRows] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT ${cacheSampleColumns}
      FROM (
        SELECT 'issue' AS object_type,
               i.number,
@@ -3817,7 +3909,7 @@ export async function getDashboardSummary(
     [...hiddenPrVisibility.params, repoId]
   );
   const [violationRows] = await pool.execute<RowData[]>(
-    `SELECT v.*,
+    `SELECT ${workflowViolationDashboardColumns},
             vnd.status AS notification_status,
             vnd.recipient AS notification_recipient,
             vnd.attempted_at AS notification_attempted_at,
@@ -3825,7 +3917,7 @@ export async function getDashboardSummary(
             vna.github_login AS notification_acknowledged_by
      FROM workflow_violations v
      LEFT JOIN (
-       SELECT nd.*
+       SELECT ${latestNotificationDeliveryColumns}
        FROM notification_deliveries nd
        INNER JOIN (
          SELECT repo_id, source_type, source_id, MAX(id) AS latest_id
@@ -3879,14 +3971,14 @@ export async function getDashboardSummary(
     [repoId, ...attentionIssueVisibility.params, ...attentionPrVisibility.params]
   );
   const [metricRows] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT ${dashboardMetricColumns}
      FROM daily_metrics
-     WHERE repo_id = ?
+     WHERE repo_id = ? AND metric_date >= ?
      ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
-    [repoId]
+    [repoId, analyticsStartDate]
   );
   const [driftRows] = await pool.execute<RowData[]>(
-    `SELECT d.*,
+    `SELECT ${aiDriftDashboardColumns},
             dnd.status AS notification_status,
             dnd.recipient AS notification_recipient,
             dnd.attempted_at AS notification_attempted_at,
@@ -3894,7 +3986,7 @@ export async function getDashboardSummary(
             dna.github_login AS notification_acknowledged_by
      FROM ai_drift_signals d
      LEFT JOIN (
-       SELECT nd.*
+       SELECT ${latestNotificationDeliveryColumns}
        FROM notification_deliveries nd
        INNER JOIN (
          SELECT repo_id, source_type, source_id, MAX(id) AS latest_id
@@ -4237,7 +4329,7 @@ export async function getDashboardSummary(
         : null
   };
   const analytics: AnalyticsSummary = {
-    periodDays: 30,
+    periodDays: analyticsPeriodDays,
     sourceNote: analyticsLimitedByVisibility
       ? "Trend data is hidden because pre-aggregated metrics may include cached objects outside the current visibility scope."
       : "Trend data is derived from the local MatrixOne cache. It is partial until issue, PR, review, and timeline backfill are complete.",

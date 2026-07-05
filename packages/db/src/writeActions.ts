@@ -100,7 +100,9 @@ export async function getActiveWorkflowViolation(input: {
   const issueVisibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
   const pullRequestVisibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT id, object_type, object_number, title, html_url, rule_key, severity,
+            related_login, evidence_summary, suggested_action, fixable,
+            first_detected_at, last_detected_at
      FROM workflow_violations
      WHERE repo_id = ?
        AND object_type = ?

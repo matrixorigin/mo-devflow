@@ -219,6 +219,88 @@ export function notificationImmediateLimit(limit: number): number {
   return Math.max(1, limit - digestSlots);
 }
 
+const digestMetricColumns = [
+  "scope_type",
+  "scope_key",
+  "prs_created",
+  "prs_merged",
+  "issues_opened",
+  "issues_closed",
+  "issues_deferred",
+  "workflow_violations_detected",
+  "source_completeness",
+  "generated_at"
+].join(", ");
+
+const attentionCandidateColumns = [
+  "a.id",
+  "a.rule_key",
+  "a.object_type",
+  "a.object_number",
+  "a.severity",
+  "a.related_login",
+  "a.dashboard_url",
+  "a.evidence_summary",
+  "a.first_detected_at",
+  "a.last_detected_at"
+].join(", ");
+
+const workflowViolationCandidateColumns = [
+  "v.id",
+  "v.rule_key",
+  "v.object_type",
+  "v.object_number",
+  "v.title",
+  "v.html_url",
+  "v.severity",
+  "v.related_login",
+  "v.evidence_summary",
+  "v.first_detected_at",
+  "v.last_detected_at"
+].join(", ");
+
+const aiDriftCandidateColumns = [
+  "d.id",
+  "d.rule_key",
+  "d.object_type",
+  "d.object_number",
+  "d.title",
+  "d.html_url",
+  "d.severity",
+  "d.owner_login",
+  "d.evidence_summary",
+  "d.first_detected_at",
+  "d.last_detected_at"
+].join(", ");
+
+const notificationDeliveryRetryColumns = [
+  "d.id",
+  "d.attention_item_id",
+  "d.source_type",
+  "d.source_id",
+  "d.rule_key",
+  "d.object_type",
+  "d.object_number",
+  "d.dashboard_url",
+  "d.dedupe_key",
+  "d.channel",
+  "d.recipient"
+].join(", ");
+
+const notificationDeliveryHealthColumns = [
+  "d.id",
+  "d.source_type",
+  "d.rule_key",
+  "d.object_type",
+  "d.object_number",
+  "d.dashboard_url",
+  "d.recipient",
+  "d.channel",
+  "d.status",
+  "d.error_message",
+  "d.attempted_at"
+].join(", ");
+
 export const PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS = 24 * 365 * 10;
 const TRANSIENT_NOTIFICATION_FAILURE_BASE_COOLDOWN_HOURS = 0.25;
 export const notificationDeliveryCooldownStatuses: NotificationStatus[] = [
@@ -568,7 +650,7 @@ export function buildMonthlyDigestNotificationCandidate(input: {
 async function getDailyDigestCandidate(repoId: number, profile: RepoProfile): Promise<NotificationCandidate | null> {
   const metricDate = dailyDigestMetricDate(profile.reporting.timezone);
   const [metricRows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT ${digestMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date = ?
      ORDER BY scope_type ASC, scope_key ASC`,
@@ -611,7 +693,7 @@ async function getPeriodDigestMetrics(
   period: DigestPeriod
 ): Promise<{ team: DailyDigestTeamMetrics; people: DailyDigestPersonMetrics[]; generatedAt: string } | null> {
   const [metricRows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT ${digestMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date >= ? AND metric_date < ?
      ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
@@ -696,7 +778,7 @@ export async function listNotificationCandidates(
   const escalatedAttentionIds: number[] = [];
   if (escalationCutoff) {
     const [escalationRows] = await getPool().execute<RowData[]>(
-      `SELECT a.*, d.attempted_at AS last_sent_at
+      `SELECT ${attentionCandidateColumns}, d.attempted_at AS last_sent_at
        FROM attention_items a
        JOIN (
          SELECT source_id, MAX(attempted_at) AS last_sent_at
@@ -750,7 +832,7 @@ export async function listNotificationCandidates(
   const remainingAfterEscalations = Math.max(0, immediateLimit - candidates.length);
   const attentionExclusion = excludedAttentionSourceWhereSql("a", escalatedAttentionIds);
   const [attentionRows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT ${attentionCandidateColumns}
      FROM attention_items a
      WHERE a.repo_id = ?
        AND a.resolved_at IS NULL
@@ -789,7 +871,7 @@ export async function listNotificationCandidates(
   if (remainingAfterAttention > 0) {
     const violationVisibility = notificationSourceObjectVisibilityWhereSql("v", profile);
     const [violationRows] = await getPool().execute<RowData[]>(
-      `SELECT *
+      `SELECT ${workflowViolationCandidateColumns}
        FROM workflow_violations v
        WHERE v.repo_id = ? AND v.resolved_at IS NULL AND ${violationVisibility.sql}
        ORDER BY
@@ -831,7 +913,7 @@ export async function listNotificationCandidates(
   if (remainingAfterViolations > 0) {
     const driftVisibility = notificationSourceObjectVisibilityWhereSql("d", profile);
     const [driftRows] = await getPool().execute<RowData[]>(
-      `SELECT *
+      `SELECT ${aiDriftCandidateColumns}
        FROM ai_drift_signals d
        WHERE d.repo_id = ? AND d.resolved_at IS NULL AND ${driftVisibility.sql}
        ORDER BY
@@ -1003,7 +1085,7 @@ export async function requestNotificationDeliveryRetry(input: {
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
-       d.*,
+       ${notificationDeliveryRetryColumns},
        (
          SELECT nd.id
          FROM notification_deliveries nd
@@ -1100,7 +1182,7 @@ export async function acknowledgeNotificationDelivery(input: {
   const pool = getPool();
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [deliveryRows] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT id, status
      FROM notification_deliveries d
      WHERE d.id = ? AND d.repo_id = ? AND ${visibility.sql}
      LIMIT 1`,
@@ -1162,7 +1244,7 @@ export async function getNotificationHealth(input: {
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
-       d.*,
+       ${notificationDeliveryHealthColumns},
        a.acknowledged_at,
        a.github_login AS acknowledged_by
      FROM notification_deliveries d

@@ -38,6 +38,16 @@ export interface QueuedJobNow {
   nextRunAt: string | null;
 }
 
+const leasedJobColumns = [
+  "id",
+  "job_key",
+  "job_type",
+  "attempts",
+  "payload_json",
+  "lease_owner",
+  "lease_expires_at"
+].join(", ");
+
 function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
   return (syncHealthLayers as readonly string[]).includes(value);
 }
@@ -249,7 +259,7 @@ export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds:
   const now = nowSql();
   const leaseExpiresAt = sqlDate(new Date(Date.now() + input.leaseSeconds * 1000)) ?? now;
   const [candidates] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT id
      FROM jobs
      WHERE next_run_at <= ?
        AND (
@@ -284,10 +294,10 @@ export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds:
     return null;
   }
 
-  const [rows] = await pool.execute<RowData[]>("SELECT * FROM jobs WHERE id = ? AND lease_owner = ? LIMIT 1", [
-    asNumber(candidate.id),
-    input.leaseOwner
-  ]);
+  const [rows] = await pool.execute<RowData[]>(
+    `SELECT ${leasedJobColumns} FROM jobs WHERE id = ? AND lease_owner = ? LIMIT 1`,
+    [asNumber(candidate.id), input.leaseOwner]
+  );
   return rows[0] ? toLeasedJob(rows[0]) : null;
 }
 

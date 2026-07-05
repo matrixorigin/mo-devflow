@@ -129,7 +129,8 @@ export async function recordWorkerHeartbeat(input: WorkerHeartbeatInput): Promis
 
 export async function getWorkerHealth(staleAfterSeconds = workerHeartbeatStaleSecondsFromEnv()): Promise<WorkerHealth> {
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT worker_id, process_id, host, phase, heartbeat_at,
+            last_tick_started_at, last_tick_finished_at, last_error, details_json
      FROM worker_heartbeats
      ORDER BY heartbeat_at DESC, id DESC
      LIMIT 1`
