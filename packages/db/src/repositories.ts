@@ -883,7 +883,7 @@ export function profileConfigurationWarnings(input: {
       severity: "warning",
       title: "Testing handoff rules are not configured",
       description:
-        "Testing queue and tester turnover views cannot reflect the real workflow until tester assignee or issue label signals are configured.",
+        "Issue testing and tester turnover views cannot reflect the real workflow until tester assignee or issue label signals are configured.",
       action: "Configure people.testers or testing.handoff_signals.labels for the repo workflow."
     });
   }

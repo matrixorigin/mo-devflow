@@ -1766,7 +1766,7 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
       label: "Issue testing",
       value: configuration.testingHandoffConfigured ? `${configuration.testerCount} testers` : "not configured",
       detail: configuration.testingHandoffConfigured
-        ? "Testing queue is driven by issue assignee or issue label handoff signals."
+        ? "Issue testing is driven by issue assignee or issue label handoff signals."
         : "Testing turnover cannot be trusted until issue handoff signals are configured.",
       configured: configuration.testingHandoffConfigured
     },
@@ -7052,12 +7052,12 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
           ]}
         />
         <MetricFlowChart
-          title="Testing Flow"
+          title="Issue Testing Flow"
           points={points}
           series={[
-            { name: "Testing queue", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
+            { name: "Issues in test", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
             {
-              name: "Avg wait h",
+              name: "Issue wait h",
               type: "line",
               color: "#d97706",
               data: (point) => point.averageTestingQueueAgeHours ?? 0

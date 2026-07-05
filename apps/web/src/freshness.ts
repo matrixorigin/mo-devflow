@@ -901,7 +901,7 @@ export function summarizeCacheEvidence(input: {
       affectedConclusions: [
         "current s-1/s0 ownership and blockers",
         "PR attention age",
-        "testing queue state",
+        "issue testing state",
         "workflow violation freshness"
       ],
       recommendedAction: "Queue a targeted worker refresh for the stale sync layers."
