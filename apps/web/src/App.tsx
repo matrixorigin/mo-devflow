@@ -223,7 +223,7 @@ export function dashboardRefreshModeText(refreshing: boolean, refreshWatchActive
 }
 
 export function serviceReadTokenStatusText(configured: boolean): string {
-  return configured ? "service ready" : "service missing";
+  return configured ? "service read ready" : "service read missing";
 }
 
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
@@ -1775,7 +1775,7 @@ function SessionModelPanel({
           </small>
         </div>
         <div>
-          <span>Service source</span>
+          <span>Service read source</span>
           <strong>{serviceReadTokenConfigured ? "configured" : "not configured"}</strong>
           <small>Server polling and backfill use deployment config, not a user's login.</small>
         </div>
@@ -1993,7 +1993,7 @@ function AccountControl({
           <strong>{tokenStatus.label}</strong>
         </div>
         <div>
-          <span>Service source</span>
+          <span>Service read source</span>
           <strong>{serviceReadTokenConfigured ? "configured" : "missing"}</strong>
         </div>
       </div>

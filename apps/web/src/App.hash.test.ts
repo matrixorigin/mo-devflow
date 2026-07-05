@@ -631,8 +631,8 @@ describe("dashboard hash filters", () => {
   });
 
   it("labels the deployment service read token separately from personal sign-in", () => {
-    expect(serviceReadTokenStatusText(true)).toBe("service ready");
-    expect(serviceReadTokenStatusText(false)).toBe("service missing");
+    expect(serviceReadTokenStatusText(true)).toBe("service read ready");
+    expect(serviceReadTokenStatusText(false)).toBe("service read missing");
   });
 
   it("summarizes account mode without conflating login, personal token, and write readiness", () => {
