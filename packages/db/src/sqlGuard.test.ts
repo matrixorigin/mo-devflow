@@ -2,20 +2,20 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
-const runtimeRoots = ["packages/db/src", "apps/api/src", "apps/worker/src"];
+const databaseQueryRoots = ["packages/db/src", "apps/api/src", "apps/worker/src", "scripts"];
 const wildcardSelectPattern = /\bselect\s+(?:distinct\s+)?(?:[`"\w]+\.)?\*/gi;
 const sqlStringPattern = /`([\s\S]*?\bSELECT\b[\s\S]*?)`|"([^"\n]*\bSELECT\b[^"\n]*)"|'([^'\n]*\bSELECT\b[^'\n]*)'/gi;
 
-function collectRuntimeTypeScriptFiles(root: string): string[] {
+function collectDatabaseSourceFiles(root: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(root)) {
     const path = join(root, entry);
     const stats = statSync(path);
     if (stats.isDirectory()) {
-      files.push(...collectRuntimeTypeScriptFiles(path));
+      files.push(...collectDatabaseSourceFiles(path));
       continue;
     }
-    if (!path.endsWith(".ts") || path.endsWith(".test.ts")) {
+    if (!/\.(mjs|js|ts|tsx)$/.test(path) || /\.test\.(ts|tsx)$/.test(path)) {
       continue;
     }
     files.push(path);
@@ -24,8 +24,8 @@ function collectRuntimeTypeScriptFiles(root: string): string[] {
 }
 
 describe("SQL query guardrails", () => {
-  test("runtime database code does not use wildcard select projections", () => {
-    const violations = runtimeRoots.flatMap(collectRuntimeTypeScriptFiles).flatMap((path) => {
+  test("database source code does not use wildcard select projections", () => {
+    const violations = databaseQueryRoots.flatMap(collectDatabaseSourceFiles).flatMap((path) => {
       const source = readFileSync(path, "utf8");
       return Array.from(source.matchAll(wildcardSelectPattern), (match) => `${path}: ${match[0]}`);
     });
@@ -33,8 +33,8 @@ describe("SQL query guardrails", () => {
     expect(violations).toEqual([]);
   });
 
-  test("runtime database row-returning queries are explicitly bounded", () => {
-    const violations = runtimeRoots.flatMap(collectRuntimeTypeScriptFiles).flatMap((path) => {
+  test("database row-returning queries are explicitly bounded", () => {
+    const violations = databaseQueryRoots.flatMap(collectDatabaseSourceFiles).flatMap((path) => {
       const source = readFileSync(path, "utf8");
       return Array.from(source.matchAll(sqlStringPattern))
         .map((match) => ({
