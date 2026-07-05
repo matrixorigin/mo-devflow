@@ -452,6 +452,7 @@ export function buildSyncHealthSummary(input: {
         lastAttemptedAt: null,
         lastFailedAt: null,
         lastFailureMessage: null,
+        cursorValue: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null,
         skipped: false,
@@ -469,6 +470,7 @@ export function buildSyncHealthSummary(input: {
       lastAttemptedAt: fromSqlDate(row.started_at),
       lastFailedAt: fromSqlDate(row.last_failed_at),
       lastFailureMessage: row.last_failure_message ? asString(row.last_failure_message) : null,
+      cursorValue: row.cursor_value ? asString(row.cursor_value) : null,
       errorMessage: row.error_message ? asString(row.error_message) : null,
       rateLimitRemaining:
         row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
@@ -3909,6 +3911,7 @@ export async function getDashboardSummary(
             latest.status,
             latest.started_at,
             latest.error_message,
+            latest.cursor_value,
             latest.rate_limit_remaining,
             latest.raw_json,
             summary.last_successful_at,

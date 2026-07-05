@@ -956,6 +956,7 @@ export interface SyncHealth {
   lastAttemptedAt: string | null;
   lastFailedAt: string | null;
   lastFailureMessage: string | null;
+  cursorValue: string | null;
   errorMessage: string | null;
   rateLimitRemaining: number | null;
   skipped: boolean;

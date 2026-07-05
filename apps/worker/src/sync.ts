@@ -38,7 +38,8 @@ import {
   fetchGitHubSnapshot,
   fetchIssueCommentsForNumber,
   fetchIssueEventsForNumber,
-  fetchPullRequestInsightForNumber
+  fetchPullRequestInsightForNumber,
+  githubSnapshotCursorValue
 } from "@mo-devflow/github";
 import { buildWeComMarkdown, classifyWeComFailure, isInQuietHours, sendWeComMarkdown } from "@mo-devflow/notifications";
 import {
@@ -1481,6 +1482,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       sourceAuthType: snapshot.sourceAuthType,
       startedAt,
       finishedAt: new Date().toISOString(),
+      cursorValue: githubSnapshotCursorValue(snapshot.syncWindow),
       rateLimitRemaining: snapshot.rateLimitRemaining,
       raw: {
         issues: issueCount,
@@ -1492,7 +1494,8 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
         resolvedAttentionItems,
         attentionResolutionScope: snapshotComplete ? "repo" : "observed_objects",
         issuesComplete: snapshot.issuesComplete,
-        openPullRequestsComplete: snapshot.openPullRequestsComplete
+        openPullRequestsComplete: snapshot.openPullRequestsComplete,
+        syncWindow: snapshot.syncWindow
       }
     });
 

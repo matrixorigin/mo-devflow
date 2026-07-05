@@ -49,6 +49,22 @@ export interface GitHubSnapshot {
   rateLimitRemaining: number | null;
   issuesComplete: boolean;
   openPullRequestsComplete: boolean;
+  syncWindow: GitHubSnapshotSyncWindow;
+}
+
+export interface GitHubSnapshotSyncWindow {
+  mode: "updated_desc_window";
+  maxPages: number;
+  issues: GitHubSnapshotWindowScope;
+  openPullRequests: GitHubSnapshotWindowScope;
+  closedPullRequests: GitHubSnapshotWindowScope;
+}
+
+export interface GitHubSnapshotWindowScope {
+  returned: number;
+  complete: boolean;
+  newestUpdatedAt: string | null;
+  oldestUpdatedAt: string | null;
 }
 
 export interface GitHubIssueComments {
@@ -690,6 +706,43 @@ export function githubLinkHeaderHasNextPage(headers: Record<string, string | num
   return typeof link === "string" && link.split(",").some((part) => part.includes('rel="next"'));
 }
 
+function updatedAtRange(items: Array<{ updated_at?: string | null }>): {
+  newestUpdatedAt: string | null;
+  oldestUpdatedAt: string | null;
+} {
+  const timestamps = items
+    .map((item) => item.updated_at ?? null)
+    .filter((value): value is string => typeof value === "string" && Number.isFinite(Date.parse(value)))
+    .sort((left, right) => Date.parse(right) - Date.parse(left));
+  return {
+    newestUpdatedAt: timestamps[0] ?? null,
+    oldestUpdatedAt: timestamps[timestamps.length - 1] ?? null
+  };
+}
+
+export function githubSnapshotWindowScope(
+  items: Array<{ updated_at?: string | null }>,
+  complete: boolean
+): GitHubSnapshotWindowScope {
+  return {
+    returned: items.length,
+    complete,
+    ...updatedAtRange(items)
+  };
+}
+
+export function githubSnapshotCursorValue(window: GitHubSnapshotSyncWindow): string {
+  return JSON.stringify({
+    mode: window.mode,
+    maxPages: window.maxPages,
+    issuesOldestUpdatedAt: window.issues.oldestUpdatedAt,
+    openPrsOldestUpdatedAt: window.openPullRequests.oldestUpdatedAt,
+    closedPrsOldestUpdatedAt: window.closedPullRequests.oldestUpdatedAt,
+    issuesComplete: window.issues.complete,
+    openPullRequestsComplete: window.openPullRequests.complete
+  });
+}
+
 function normalizeCiState(
   combinedStatus: string | null,
   checkRuns: Array<{ status?: string | null; conclusion?: string | null }>
@@ -1252,6 +1305,13 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
       openPrsResult.rateLimitRemaining ??
       null,
     issuesComplete: issuesResult.complete,
-    openPullRequestsComplete: openPrsResult.complete
+    openPullRequestsComplete: openPrsResult.complete,
+    syncWindow: {
+      mode: "updated_desc_window",
+      maxPages,
+      issues: githubSnapshotWindowScope(issuesResult.data, issuesResult.complete),
+      openPullRequests: githubSnapshotWindowScope(openPrsResult.data, openPrsResult.complete),
+      closedPullRequests: githubSnapshotWindowScope(closedPrsResult.data, closedPrsResult.complete)
+    }
   };
 }

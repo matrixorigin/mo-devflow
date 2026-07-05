@@ -5,6 +5,8 @@ import {
   classifyGitHubError,
   fetchIssueWritePermission,
   configuredGitHubSourceAuthType,
+  githubSnapshotCursorValue,
+  githubSnapshotWindowScope,
   githubLinkHeaderHasNextPage,
   linkedIssueNumbersFromPullRequestGraphqlResponse
 } from "./index";
@@ -432,6 +434,43 @@ describe("GitHub pagination metadata", () => {
       })
     ).toBe(false);
     expect(githubLinkHeaderHasNextPage({})).toBe(false);
+  });
+
+  test("builds an explicit updated-at polling window for snapshot sync runs", () => {
+    const scope = githubSnapshotWindowScope(
+      [
+        { updated_at: "2026-07-04T09:00:00Z" },
+        { updated_at: "not-a-date" },
+        { updated_at: "2026-07-04T10:00:00Z" }
+      ],
+      false
+    );
+
+    expect(scope).toEqual({
+      returned: 3,
+      complete: false,
+      newestUpdatedAt: "2026-07-04T10:00:00Z",
+      oldestUpdatedAt: "2026-07-04T09:00:00Z"
+    });
+    expect(
+      JSON.parse(
+        githubSnapshotCursorValue({
+          mode: "updated_desc_window",
+          maxPages: 2,
+          issues: scope,
+          openPullRequests: githubSnapshotWindowScope([{ updated_at: "2026-07-04T08:00:00Z" }], true),
+          closedPullRequests: githubSnapshotWindowScope([], true)
+        })
+      )
+    ).toEqual({
+      mode: "updated_desc_window",
+      maxPages: 2,
+      issuesOldestUpdatedAt: "2026-07-04T09:00:00Z",
+      openPrsOldestUpdatedAt: "2026-07-04T08:00:00Z",
+      closedPrsOldestUpdatedAt: null,
+      issuesComplete: false,
+      openPullRequestsComplete: true
+    });
   });
 });
 

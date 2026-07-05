@@ -17,6 +17,7 @@ function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHeal
     lastAttemptedAt: input.lastAttemptedAt ?? "2026-07-04T01:00:00.000Z",
     lastFailedAt: input.lastFailedAt ?? null,
     lastFailureMessage: input.lastFailureMessage ?? null,
+    cursorValue: input.cursorValue ?? null,
     errorMessage: input.errorMessage ?? null,
     rateLimitRemaining: input.rateLimitRemaining ?? null,
     skipped: input.skipped ?? false,

@@ -918,11 +918,40 @@ function dashboardReadModelStatusLabel(status: DashboardReadModelCacheStatus): s
   return status;
 }
 
+export function syncHealthCursorText(cursorValue: string | null): string | null {
+  if (!cursorValue) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(cursorValue) as Record<string, unknown>;
+    if (parsed.mode !== "updated_desc_window") {
+      return cursorValue;
+    }
+    const maxPages = typeof parsed.maxPages === "number" ? parsed.maxPages : null;
+    const issuesComplete = parsed.issuesComplete === true;
+    const prsComplete = parsed.openPullRequestsComplete === true;
+    const completeness = issuesComplete && prsComplete ? "complete window" : "bounded window";
+    return [
+      `Updated-at polling window (${completeness})`,
+      maxPages !== null ? `max ${maxPages} pages` : null,
+      `issues oldest ${formatDate(typeof parsed.issuesOldestUpdatedAt === "string" ? parsed.issuesOldestUpdatedAt : null)}`,
+      `open PRs oldest ${formatDate(typeof parsed.openPrsOldestUpdatedAt === "string" ? parsed.openPrsOldestUpdatedAt : null)}`,
+      `closed PRs oldest ${formatDate(typeof parsed.closedPrsOldestUpdatedAt === "string" ? parsed.closedPrsOldestUpdatedAt : null)}`
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" | ");
+  } catch {
+    return cursorValue;
+  }
+}
+
 function syncHealthTooltip(item: DashboardSummary["sync"]["health"][number]) {
+  const cursorText = syncHealthCursorText(item.cursorValue);
   return (
     <div>
       <div>Last attempt: {formatDate(item.lastAttemptedAt)}</div>
       <div>Last success: {formatDate(item.lastSuccessfulAt)}</div>
+      {cursorText ? <div>Cursor/window: {cursorText}</div> : null}
       {item.skipped ? <div>Latest run skipped: {item.skipReason ?? "no reason recorded"}</div> : null}
       {item.lastFailedAt ? <div>Last failure: {formatDate(item.lastFailedAt)}</div> : null}
       {item.lastFailureMessage ? <div>Failure reason: {item.lastFailureMessage}</div> : null}

@@ -11,7 +11,8 @@ import {
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
   prScopeFilterFromHash,
-  prSortFromHash
+  prSortFromHash,
+  syncHealthCursorText
 } from "./App";
 
 describe("dashboard hash filters", () => {
@@ -98,5 +99,30 @@ describe("dashboard hash filters", () => {
       view: "Health",
       label: "Open health"
     });
+  });
+
+  it("formats github sync cursor windows for health tooltips", () => {
+    const text = syncHealthCursorText(
+      JSON.stringify({
+        mode: "updated_desc_window",
+        maxPages: 2,
+        issuesOldestUpdatedAt: "2026-07-04T09:00:00Z",
+        openPrsOldestUpdatedAt: "2026-07-04T08:00:00Z",
+        closedPrsOldestUpdatedAt: null,
+        issuesComplete: false,
+        openPullRequestsComplete: true
+      })
+    );
+
+    expect(text).toContain("Updated-at polling window (bounded window)");
+    expect(text).toContain("max 2 pages");
+    expect(text).toContain("issues oldest");
+    expect(text).toContain("open PRs oldest");
+    expect(text).toContain("closed PRs oldest -");
+  });
+
+  it("preserves unknown sync cursor formats", () => {
+    expect(syncHealthCursorText("opaque-cursor")).toBe("opaque-cursor");
+    expect(syncHealthCursorText(null)).toBeNull();
   });
 });
