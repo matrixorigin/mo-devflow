@@ -6589,10 +6589,24 @@ button.testing-board-stat:focus-visible {
   border: 1px solid #e5e7eb;
   border-left: 3px solid #2563eb;
   border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
   display: grid;
   gap: 4px;
   min-width: 0;
   padding: 9px 10px;
+  text-align: left;
+}
+
+.personal-throughput-period:hover,
+.personal-throughput-period-active {
+  background: #eef6ff;
+  border-color: #93c5fd;
+}
+
+.personal-throughput-period:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .personal-throughput-period span,
@@ -6649,6 +6663,26 @@ button.testing-board-stat:focus-visible {
 .personal-throughput-note {
   font-size: 12px;
   line-height: 1.35;
+}
+
+.personal-throughput-period-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.personal-throughput-list-meta {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.personal-throughput-list-meta .ant-tag {
+  margin-inline-end: 0;
 }
 
 .personal-flow-efficiency-stats {

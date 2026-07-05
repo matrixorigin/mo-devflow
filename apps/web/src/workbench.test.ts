@@ -1837,6 +1837,7 @@ function personalView(input: Partial<PersonalActionView>): PersonalActionView {
     testingPrs: input.testingPrs ?? [],
     prsCreatedYesterday: input.prsCreatedYesterday ?? [],
     prsMergedYesterday: input.prsMergedYesterday ?? [],
+    prPeriodLists: input.prPeriodLists ?? [],
     analytics: [],
     analyticsWeekly: [],
     analyticsMonthly: []

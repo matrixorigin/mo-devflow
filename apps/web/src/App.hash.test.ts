@@ -15,6 +15,8 @@ import {
   personalActionQueueDisclosureSummary,
   personalCriticalFlowEfficiency,
   personalFlowThreadsSummary,
+  personalPrListForScope,
+  personalPrListTotalForScope,
   personalPrThroughputRows,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
@@ -284,6 +286,31 @@ describe("dashboard hash filters", () => {
       "month:24/20"
     ]);
     expect(rows[0]?.averagePendingPrAgeHours).toBe(18);
+  });
+
+  it("maps personal day/week/month PR totals to the visible PR list", () => {
+    const person = {
+      attentionPrs: [{ number: 99 }],
+      pendingPrs: [{ number: 98 }],
+      prPeriodLists: [
+        {
+          period: "week",
+          label: "06-29-07-05",
+          periodStart: "2026-06-29",
+          periodEnd: "2026-07-06",
+          totalCreatedPrs: 3,
+          totalMergedPrs: 2,
+          createdPrs: [{ number: 10 }, { number: 11 }],
+          mergedPrs: [{ number: 12 }],
+          truncated: true
+        }
+      ]
+    } as any;
+
+    expect(personalPrListForScope(person, "created_period", "week").map((pr) => pr.number)).toEqual([10, 11]);
+    expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12]);
+    expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
+    expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
   });
 
   it("derives active severity to PR and issue testing efficiency from cache timestamps", () => {

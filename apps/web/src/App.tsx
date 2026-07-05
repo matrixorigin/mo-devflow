@@ -47,6 +47,7 @@ import type {
   PendingPrView,
   PersonalActionView,
   PersonalIssueView,
+  PersonalPrPeriodListView,
   PersonalPullRequestView,
   PersonSummary,
   ProfileConfigurationWarning,
@@ -16071,7 +16072,7 @@ function PersonalOperatingSignalStrip({
   );
 }
 
-type PersonalPrListScope = "attention" | "pending" | "created_yesterday" | "merged_yesterday";
+export type PersonalPrListScope = "attention" | "pending" | "created_period" | "merged_period";
 
 interface PersonalPrThroughputRow {
   period: MetricPeriod;
@@ -16202,10 +16203,21 @@ function PersonalPrThroughputPanel({
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
+  const defaultPeriodList = personalPrPeriodListForPeriod(person, "day");
   const [listScope, setListScope] = useState<PersonalPrListScope>(() =>
-    person.attentionPrs.length > 0 ? "attention" : person.pendingPrs.length > 0 ? "pending" : "created_yesterday"
+    person.attentionPrs.length > 0
+      ? "attention"
+      : person.pendingPrs.length > 0
+        ? "pending"
+        : (defaultPeriodList?.totalMergedPrs ?? 0) > (defaultPeriodList?.totalCreatedPrs ?? 0)
+          ? "merged_period"
+          : "created_period"
   );
-  const visiblePrs = personalPrListForScope(person, listScope);
+  const [listPeriod, setListPeriod] = useState<MetricPeriod>("day");
+  const selectedPeriodList = personalPrPeriodListForPeriod(person, listPeriod);
+  const visiblePrs = personalPrListForScope(person, listScope, listPeriod);
+  const visibleTotal = personalPrListTotalForScope(person, listScope, listPeriod);
+  const periodListActive = listScope === "created_period" || listScope === "merged_period";
 
   return (
     <section className="personal-throughput-panel" aria-label={`${person.login} PR throughput and active flow`}>
@@ -16230,7 +16242,20 @@ function PersonalPrThroughputPanel({
 
       <div className="personal-throughput-grid">
         {rows.map((row) => (
-          <div className="personal-throughput-period" key={row.period}>
+          <button
+            type="button"
+            className={`personal-throughput-period ${listPeriod === row.period && periodListActive ? "personal-throughput-period-active" : ""}`}
+            key={row.period}
+            onClick={() => {
+              const periodList = personalPrPeriodListForPeriod(person, row.period);
+              setListPeriod(row.period);
+              setListScope(
+                (periodList?.totalMergedPrs ?? 0) > (periodList?.totalCreatedPrs ?? 0)
+                  ? "merged_period"
+                  : "created_period"
+              );
+            }}
+          >
             <span>{metricPeriodText(row.period)}</span>
             <strong>
               {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
@@ -16241,7 +16266,7 @@ function PersonalPrThroughputPanel({
               {optionalHours(row.averagePendingPrAgeHours)}
             </em>
             {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -16256,14 +16281,39 @@ function PersonalPrThroughputPanel({
               options={[
                 { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
                 { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
-                { label: `Created yday ${person.prsCreatedYesterday.length}`, value: "created_yesterday" },
-                { label: `Merged yday ${person.prsMergedYesterday.length}`, value: "merged_yesterday" }
+                { label: `Created ${selectedPeriodList?.totalCreatedPrs ?? 0}`, value: "created_period" },
+                { label: `Merged ${selectedPeriodList?.totalMergedPrs ?? 0}`, value: "merged_period" }
               ]}
             />
           </div>
-          <Text type="secondary" className="personal-throughput-note">
-            Week/month PR counts are aggregate metrics today; historical PR detail lists need the next backend list API.
-          </Text>
+          {periodListActive ? (
+            <div className="personal-throughput-period-controls">
+              <Segmented
+                size="small"
+                value={listPeriod}
+                onChange={(value) => setListPeriod(value as MetricPeriod)}
+                options={metricPeriodOptions.map((option) => {
+                  const period = option.value as MetricPeriod;
+                  const periodList = personalPrPeriodListForPeriod(person, period);
+                  return {
+                    label: `${option.label} ${periodList?.totalCreatedPrs ?? 0}/${periodList?.totalMergedPrs ?? 0}`,
+                    value: period
+                  };
+                })}
+              />
+              <span className="personal-throughput-list-meta">
+                <Tag>{selectedPeriodList?.label ?? metricPeriodText(listPeriod)}</Tag>
+                <Text type="secondary">
+                  showing {visiblePrs.length}/{visibleTotal} PRs
+                </Text>
+                {selectedPeriodList?.truncated ? <Tag color="gold">capped</Tag> : null}
+              </span>
+            </div>
+          ) : (
+            <Text type="secondary" className="personal-throughput-note">
+              showing {visiblePrs.length}/{visibleTotal} PRs by current cache state
+            </Text>
+          )}
           <PullRequestCardList
             prs={visiblePrs}
             emptyText="No PRs in this visible list"
@@ -16333,17 +16383,44 @@ function PersonalPrThroughputPanel({
   );
 }
 
-function personalPrListForScope(person: PersonalActionView, scope: PersonalPrListScope): PersonalPullRequestView[] {
+export function personalPrPeriodListForPeriod(
+  person: PersonalActionView,
+  period: MetricPeriod
+): PersonalPrPeriodListView | null {
+  return person.prPeriodLists.find((list) => list.period === period) ?? null;
+}
+
+export function personalPrListForScope(
+  person: PersonalActionView,
+  scope: PersonalPrListScope,
+  period: MetricPeriod
+): PersonalPullRequestView[] {
   if (scope === "attention") {
     return person.attentionPrs;
   }
-  if (scope === "created_yesterday") {
-    return person.prsCreatedYesterday;
+  const periodList = personalPrPeriodListForPeriod(person, period);
+  if (scope === "created_period") {
+    return periodList?.createdPrs ?? [];
   }
-  if (scope === "merged_yesterday") {
-    return person.prsMergedYesterday;
+  if (scope === "merged_period") {
+    return periodList?.mergedPrs ?? [];
   }
   return person.pendingPrs;
+}
+
+export function personalPrListTotalForScope(
+  person: PersonalActionView,
+  scope: PersonalPrListScope,
+  period: MetricPeriod
+): number {
+  if (scope === "attention") {
+    return person.attentionPrs.length;
+  }
+  if (scope === "pending") {
+    return person.pendingPrs.length;
+  }
+  const periodList = personalPrPeriodListForPeriod(person, period);
+  return scope === "created_period" ? (periodList?.totalCreatedPrs ?? 0) : (periodList?.totalMergedPrs ?? 0);
 }
 
 function PersonalFlowEfficiencyMetric({

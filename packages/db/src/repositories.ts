@@ -15,6 +15,7 @@ import type {
   DashboardViewLimit,
   DashboardSummary,
   IssueCommentEvidenceSummary,
+  MetricPeriod,
   MetricSourceCompleteness,
   NormalizedIssue,
   NormalizedIssueComment,
@@ -24,6 +25,7 @@ import type {
   PendingPrView,
   PersonalActionView,
   PersonalIssueView,
+  PersonalPrPeriodListView,
   PersonalPullRequestView,
   PersonSummary,
   ProfileActionSuggestion,
@@ -212,6 +214,7 @@ const dashboardCriticalIssueViewLimit = 100;
 const dashboardPendingPrViewLimit = 300;
 const dashboardPersonalIssueViewLimit = 500;
 const dashboardPersonalPrViewLimit = 500;
+const dashboardPersonalPrPeriodListLimit = 50;
 const dashboardLinkedPrCandidateLimit = 500;
 const dashboardSignalViewLimit = 100;
 const dashboardAttentionSummaryLimit = 200;
@@ -3558,6 +3561,251 @@ export function aggregateMetricPoints(
   });
 }
 
+interface PersonalPrPeriodDescriptor {
+  period: MetricPeriod;
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  start: Date;
+  end: Date;
+}
+
+interface PersonalPrPeriodListResult {
+  listsByLogin: Map<string, PersonalPrPeriodListView[]>;
+  maxDetailRowsReturned: number;
+  detailLimit: number;
+}
+
+function latestDailyMetricPoint(points: DailyMetricPoint[]): DailyMetricPoint | null {
+  if (points.length === 0) {
+    return null;
+  }
+  return [...points].sort((left, right) => left.date.localeCompare(right.date))[points.length - 1] ?? null;
+}
+
+function latestAggregatedMetricPoint(
+  points: AggregatedMetricPoint[],
+  period: AggregatedMetricPoint["period"]
+): AggregatedMetricPoint | null {
+  const periodPoints = points.filter((point) => point.period === period);
+  if (periodPoints.length === 0) {
+    return null;
+  }
+  return [...periodPoints].sort((left, right) => left.periodStart.localeCompare(right.periodStart))[
+    periodPoints.length - 1
+  ];
+}
+
+function personalPrPeriodDescriptors(
+  profile: RepoProfile,
+  dailyMetrics: DailyMetricPoint[],
+  weeklyMetrics: AggregatedMetricPoint[],
+  monthlyMetrics: AggregatedMetricPoint[]
+): PersonalPrPeriodDescriptor[] {
+  const fallbackDate = dateKeyInTimezone(new Date(), profile.reporting.timezone) ?? "1970-01-01";
+  const latestTeamDay = latestDailyMetricPoint(dailyMetrics.filter((point) => point.scopeType === "team"));
+  const dayStart = latestTeamDay?.date ?? fallbackDate;
+  const dayEnd = addDaysToDateKey(dayStart, 1);
+  const dayRange = calendarDayRangeInTimezone(dayStart, profile.reporting.timezone);
+
+  const aggregateDescriptor = (period: AggregatedMetricPoint["period"]): PersonalPrPeriodDescriptor => {
+    const source =
+      period === "week"
+        ? latestAggregatedMetricPoint(
+            weeklyMetrics.filter((point) => point.scopeType === "team"),
+            period
+          )
+        : latestAggregatedMetricPoint(
+            monthlyMetrics.filter((point) => point.scopeType === "team"),
+            period
+          );
+    const fallbackBounds = metricPeriodBounds(fallbackDate, period, profile.reporting.weekStart);
+    const bounds = source
+      ? {
+          label: source.label,
+          periodStart: source.periodStart,
+          periodEnd: source.periodEnd
+        }
+      : {
+          label: fallbackBounds.label,
+          periodStart: fallbackBounds.start,
+          periodEnd: fallbackBounds.end
+        };
+    const rangeStart = calendarDayRangeInTimezone(bounds.periodStart, profile.reporting.timezone).start;
+    const rangeEnd = calendarDayRangeInTimezone(bounds.periodEnd, profile.reporting.timezone).start;
+    return {
+      period,
+      label: bounds.label,
+      periodStart: bounds.periodStart,
+      periodEnd: bounds.periodEnd,
+      start: rangeStart,
+      end: rangeEnd
+    };
+  };
+
+  return [
+    {
+      period: "day",
+      label: dayStart.slice(5),
+      periodStart: dayStart,
+      periodEnd: dayEnd,
+      start: dayRange.start,
+      end: dayRange.end
+    },
+    aggregateDescriptor("week"),
+    aggregateDescriptor("month")
+  ];
+}
+
+function personalPrPeriodDetailLimit(peopleCount: number): number {
+  return Math.max(dashboardPersonalPrPeriodListLimit * 4, peopleCount * dashboardPersonalPrPeriodListLimit * 4);
+}
+
+function sortPrsByTime(
+  prs: PersonalPullRequestView[],
+  timestamp: (pr: PersonalPullRequestView) => string | null
+): PersonalPullRequestView[] {
+  return [...prs].sort((left, right) => {
+    const leftTime = Date.parse(timestamp(left) ?? "1970-01-01T00:00:00.000Z");
+    const rightTime = Date.parse(timestamp(right) ?? "1970-01-01T00:00:00.000Z");
+    return rightTime - leftTime || right.number - left.number;
+  });
+}
+
+async function personalPrPeriodListsByLogin(input: {
+  profile: RepoProfile;
+  repoId: number;
+  viewer: DashboardViewer;
+  dailyMetrics: DailyMetricPoint[];
+  weeklyMetrics: AggregatedMetricPoint[];
+  monthlyMetrics: AggregatedMetricPoint[];
+  skippedLogins: Set<string>;
+  testingIssueContexts: Map<number, TestingIssueContext>;
+}): Promise<PersonalPrPeriodListResult> {
+  const emptyLists = new Map<string, PersonalPrPeriodListView[]>(
+    input.profile.people.watchedUsers.map((login) => [login, []])
+  );
+  if (input.profile.people.watchedUsers.length === 0) {
+    return { listsByLogin: emptyLists, maxDetailRowsReturned: 0, detailLimit: 1 };
+  }
+
+  const pool = getPool();
+  const descriptors = personalPrPeriodDescriptors(
+    input.profile,
+    input.dailyMetrics,
+    input.weeklyMetrics,
+    input.monthlyMetrics
+  );
+  const ownerPlaceholders = input.profile.people.watchedUsers.map(() => "?").join(", ");
+  const visibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
+  const detailLimit = personalPrPeriodDetailLimit(input.profile.people.watchedUsers.length);
+  const listsByLogin = new Map<string, PersonalPrPeriodListView[]>();
+  let maxDetailRowsReturned = 0;
+
+  for (const login of input.profile.people.watchedUsers) {
+    listsByLogin.set(login, []);
+  }
+
+  for (const descriptor of descriptors) {
+    const startSql = sqlDate(descriptor.start) ?? "1970-01-01 00:00:00";
+    const endSql = sqlDate(descriptor.end) ?? "1970-01-01 00:00:00";
+    const ownerVisibilityWhere = `p.repo_id = ?
+       AND p.owner_login IN (${ownerPlaceholders})
+       AND ${visibility.sql}`;
+    const ownerVisibilityParams = [input.repoId, ...input.profile.people.watchedUsers, ...visibility.params];
+    const periodWhere = `${ownerVisibilityWhere}
+       AND (
+         (p.created_at >= ? AND p.created_at < ?)
+         OR (p.merged_at >= ? AND p.merged_at < ?)
+       )`;
+    const periodParams = [...ownerVisibilityParams, startSql, endSql, startSql, endSql];
+    const [createdCountRows] = await pool.execute<RowData[]>(
+      `SELECT p.owner_login, COUNT(1) AS pr_count
+       FROM pull_requests p
+       WHERE ${ownerVisibilityWhere}
+         AND p.created_at >= ?
+         AND p.created_at < ?
+       GROUP BY p.owner_login
+       ORDER BY p.owner_login ASC
+       LIMIT ?`,
+      [...ownerVisibilityParams, startSql, endSql, input.profile.people.watchedUsers.length]
+    );
+    const [mergedCountRows] = await pool.execute<RowData[]>(
+      `SELECT p.owner_login, COUNT(1) AS pr_count
+       FROM pull_requests p
+       WHERE ${ownerVisibilityWhere}
+         AND p.merged_at >= ?
+         AND p.merged_at < ?
+       GROUP BY p.owner_login
+       ORDER BY p.owner_login ASC
+       LIMIT ?`,
+      [...ownerVisibilityParams, startSql, endSql, input.profile.people.watchedUsers.length]
+    );
+    const countsByLogin = new Map(input.profile.people.watchedUsers.map((login) => [login, { created: 0, merged: 0 }]));
+    for (const row of createdCountRows) {
+      const login = asString(row.owner_login);
+      const counts = countsByLogin.get(login);
+      if (counts) {
+        counts.created = asNumber(row.pr_count);
+      }
+    }
+    for (const row of mergedCountRows) {
+      const login = asString(row.owner_login);
+      const counts = countsByLogin.get(login);
+      if (counts) {
+        counts.merged = asNumber(row.pr_count);
+      }
+    }
+    const [periodRows] = await pool.execute<RowData[]>(
+      `SELECT p.number, p.title, p.state, p.owner_login, p.html_url, p.created_at, p.updated_at, p.merged_at,
+              p.author_login, p.draft, p.age_hours, p.last_human_action_at, p.review_decision, p.merge_state_status,
+              p.ci_state, p.latest_review_state, p.latest_review_submitted_at, p.latest_commit_at, p.assignees_json,
+              p.detail_synced_at, p.detail_error, p.testing_state, p.testing_testers_json,
+              p.testing_signals_json, p.testing_queue_age_hours, p.attention_flags_json,
+              p.linked_issue_numbers_json, p.is_complete
+       FROM pull_requests p
+       WHERE ${periodWhere}
+       ORDER BY COALESCE(p.merged_at, p.created_at) DESC, p.created_at DESC, p.number DESC
+       LIMIT ?`,
+      [...periodParams, detailLimit]
+    );
+    maxDetailRowsReturned = Math.max(maxDetailRowsReturned, periodRows.length);
+    const periodPrs = periodRows.map((row) =>
+      applyIssueTestingContextToPendingPrView(
+        input.profile,
+        toPersonalPullRequestView(row, input.skippedLogins),
+        input.testingIssueContexts
+      )
+    );
+
+    for (const login of input.profile.people.watchedUsers) {
+      const ownedPrs = periodPrs.filter((pr) => pr.ownerLogin === login);
+      const createdPrs = sortPrsByTime(
+        ownedPrs.filter((pr) => inRange(pr.createdAt, descriptor.start, descriptor.end)),
+        (pr) => pr.createdAt
+      ).slice(0, dashboardPersonalPrPeriodListLimit);
+      const mergedPrs = sortPrsByTime(
+        ownedPrs.filter((pr) => inRange(pr.mergedAt, descriptor.start, descriptor.end)),
+        (pr) => pr.mergedAt
+      ).slice(0, dashboardPersonalPrPeriodListLimit);
+      const counts = countsByLogin.get(login) ?? { created: 0, merged: 0 };
+      listsByLogin.get(login)?.push({
+        period: descriptor.period,
+        label: descriptor.label,
+        periodStart: descriptor.periodStart,
+        periodEnd: descriptor.periodEnd,
+        totalCreatedPrs: counts.created,
+        totalMergedPrs: counts.merged,
+        createdPrs,
+        mergedPrs,
+        truncated: createdPrs.length < counts.created || mergedPrs.length < counts.merged
+      });
+    }
+  }
+
+  return { listsByLogin, maxDetailRowsReturned, detailLimit };
+}
+
 export async function recomputeDailyMetricsFromCache(repoId: number, profile: RepoProfile, days = 30): Promise<number> {
   const pool = getPool();
   const keys = recentDateKeys(days, profile.reporting.timezone);
@@ -3910,8 +4158,7 @@ export async function getDashboardSummary(
   const analyticsPeriodDays = 30;
   const analyticsStartDate = recentDateKeys(analyticsPeriodDays, profile.reporting.timezone)[0] ?? "1970-01-01";
   const analyticsStartSql =
-    sqlDate(calendarDayRangeInTimezone(analyticsStartDate, profile.reporting.timezone).start) ??
-    "1970-01-01 00:00:00";
+    sqlDate(calendarDayRangeInTimezone(analyticsStartDate, profile.reporting.timezone).start) ?? "1970-01-01 00:00:00";
   const visibleClasses = visibleClassesForDashboard(profile, viewer);
   const issueListVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const allPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
@@ -4371,7 +4618,11 @@ export async function getDashboardSummary(
     applyIssueTestingContextToPendingPrView(profile, toPendingPrView(row, skippedLogins), testingIssueContexts)
   );
   const allPrViews = allPrRows.map((row) =>
-    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row, skippedLogins), testingIssueContexts)
+    applyIssueTestingContextToPendingPrView(
+      profile,
+      toPersonalPullRequestView(row, skippedLogins),
+      testingIssueContexts
+    )
   );
   const testingIssueViews = testingIssueQueueViews(issueRows, testingIssueContexts, allPrViews);
   const ownerByIssueNumber = new Map(
@@ -4493,8 +4744,22 @@ export async function getDashboardSummary(
   const analyticsLimitedByVisibility = hiddenObjects > 0;
   const peopleByLogin = new Map(people.map((person) => [person.login, person]));
   const personalPrs = personalPrRows.map((row) =>
-    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row, skippedLogins), testingIssueContexts)
+    applyIssueTestingContextToPendingPrView(
+      profile,
+      toPersonalPullRequestView(row, skippedLogins),
+      testingIssueContexts
+    )
   );
+  const personalPrPeriodListResult = await personalPrPeriodListsByLogin({
+    profile,
+    repoId,
+    viewer,
+    dailyMetrics,
+    weeklyMetrics,
+    monthlyMetrics,
+    skippedLogins,
+    testingIssueContexts
+  });
   const personalViews: PersonalActionView[] = profile.people.watchedUsers.map((login) => {
     const ownedIssues = personalIssueRows.filter((row) => asString(row.owner_login) === login);
     const ownedPrs = personalPrs.filter((pr) => pr.ownerLogin === login);
@@ -4543,6 +4808,7 @@ export async function getDashboardSummary(
       testingPrs: pendingOwnedPrs.filter((pr) => isTestingQueueState(pr.testingState)),
       prsCreatedYesterday: ownedPrs.filter((pr) => inRange(pr.createdAt, start, end)),
       prsMergedYesterday: ownedPrs.filter((pr) => inRange(pr.mergedAt, start, end)),
+      prPeriodLists: personalPrPeriodListResult.listsByLogin.get(login) ?? [],
       analytics: analyticsLimitedByVisibility
         ? []
         : dailyMetrics.filter((point) => point.scopeType === "person" && point.scopeKey === login),
@@ -4694,7 +4960,8 @@ export async function getDashboardSummary(
       label: "Active s-1/s0 board",
       returned: criticalRows.length,
       limit: dashboardCriticalIssueViewLimit,
-      message: "The active s-1/s0 board reached its display limit. Use filters or inspect cache queries for full coverage."
+      message:
+        "The active s-1/s0 board reached its display limit. Use filters or inspect cache queries for full coverage."
     }),
     dashboardViewLimit({
       key: "pending_prs",
@@ -4716,6 +4983,13 @@ export async function getDashboardSummary(
       returned: personalPrRows.length,
       limit: dashboardPersonalPrViewLimit,
       message: "Personal PR rows reached their display limit. Some watched-user PR queues may be capped."
+    }),
+    dashboardViewLimit({
+      key: "personal_pr_period_rows",
+      label: "Personal day/week/month PR detail rows",
+      returned: personalPrPeriodListResult.maxDetailRowsReturned,
+      limit: personalPrPeriodListResult.detailLimit,
+      message: "Personal day/week/month PR detail rows reached their protection limit. Some period lists may be capped."
     }),
     dashboardViewLimit({
       key: "linked_pr_candidates",
@@ -4743,7 +5017,8 @@ export async function getDashboardSummary(
       label: "Attention summary",
       returned: attentionItemRows.length,
       limit: dashboardAttentionSummaryLimit,
-      message: "Attention summary rows reached their display limit. Employee mapping hints may be based on a capped sample."
+      message:
+        "Attention summary rows reached their display limit. Employee mapping hints may be based on a capped sample."
     }),
     dashboardViewLimit({
       key: "analytics_rows",

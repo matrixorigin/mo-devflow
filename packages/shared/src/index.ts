@@ -473,6 +473,18 @@ export interface PersonalPullRequestView extends PendingPrView {
   mergedAt: string | null;
 }
 
+export interface PersonalPrPeriodListView {
+  period: MetricPeriod;
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  totalCreatedPrs: number;
+  totalMergedPrs: number;
+  createdPrs: PersonalPullRequestView[];
+  mergedPrs: PersonalPullRequestView[];
+  truncated: boolean;
+}
+
 export interface PersonalActionView {
   login: string;
   summary: PersonSummary;
@@ -485,6 +497,7 @@ export interface PersonalActionView {
   testingPrs: PersonalPullRequestView[];
   prsCreatedYesterday: PersonalPullRequestView[];
   prsMergedYesterday: PersonalPullRequestView[];
+  prPeriodLists: PersonalPrPeriodListView[];
   analytics: DailyMetricPoint[];
   analyticsWeekly: AggregatedMetricPoint[];
   analyticsMonthly: AggregatedMetricPoint[];
