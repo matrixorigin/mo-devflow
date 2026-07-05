@@ -6,6 +6,7 @@ import {
   criticalIssueScopeFilterFromHash,
   criticalIssueSortFromHash,
   criticalIssueTableSummary,
+  analyticsPeriodFromHash,
   dashboardHashForView,
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
@@ -99,6 +100,21 @@ describe("dashboard hash filters", () => {
     ).toBe("personal?person=alice");
   });
 
+  it("round-trips day, week, and month analytics periods for trend views", () => {
+    expect(dashboardHashForView("Overview", { analyticsPeriod: "month" })).toBe("overview?period=month");
+    expect(dashboardHashForView("Analytics", { analyticsPeriod: "week" })).toBe("analytics?period=week");
+    expect(
+      dashboardHashForView("Personal", {
+        personLogin: "alice",
+        personalDrilldownFilter: "testing",
+        analyticsPeriod: "week"
+      })
+    ).toBe("personal?person=alice&drilldown=testing&period=week");
+    expect(dashboardHashForView("Analytics", { analyticsPeriod: "day" })).toBe("analytics");
+    expect(analyticsPeriodFromHash("#overview?period=month")).toBe("month");
+    expect(analyticsPeriodFromHash("#analytics?period=week")).toBe("week");
+  });
+
   it("round-trips workflow signal filters without hiding source deep links", () => {
     const violationHash = dashboardHashForView("Violations", {
       violationSignalFilter: "fixable"
@@ -178,6 +194,7 @@ describe("dashboard hash filters", () => {
     expect(notificationDeliveryScopeFilterFromHash("#notifications?scope=bad")).toBe("attention");
     expect(webhookScopeFilterFromHash("#webhooks?scope=bad")).toBe("pending");
     expect(writeAuditScopeFilterFromHash("#audit?scope=bad")).toBe("attention");
+    expect(analyticsPeriodFromHash("#analytics?period=bad")).toBe("day");
   });
 
   it("routes capped read models to the most relevant board drilldown", () => {

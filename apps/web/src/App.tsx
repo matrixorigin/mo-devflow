@@ -376,6 +376,7 @@ const personalDrilldownFilters = [
   "yesterday_pr",
   "threads"
 ] satisfies PersonalDrilldownFilter[];
+const metricPeriods = ["day", "week", "month"] satisfies MetricPeriod[];
 const webhookDeliveryScopeFilters = [
   "all",
   "pending",
@@ -419,6 +420,7 @@ interface DashboardHashOptions {
   peopleScopeFilter?: PeopleScopeFilter;
   peopleSort?: PeopleBoardSort;
   personalDrilldownFilter?: PersonalDrilldownFilter;
+  analyticsPeriod?: MetricPeriod;
   webhookScopeFilter?: WebhookDeliveryScopeFilter;
   notificationDeliveryScopeFilter?: NotificationDeliveryScopeFilter;
   writeAuditScopeFilter?: WriteAuditScopeFilter;
@@ -585,6 +587,10 @@ export function personalDrilldownFilterFromHash(hash: string): PersonalDrilldown
   return hashEnumParam(hash, "drilldown", personalDrilldownFilters, "active_issues");
 }
 
+export function analyticsPeriodFromHash(hash: string): MetricPeriod {
+  return hashEnumParam(hash, "period", metricPeriods, "day");
+}
+
 export function violationSignalFilterFromHash(hash: string): WorkflowSignalFilter {
   if (positiveHashNumberParam(dashboardHashParams(hash), "source_id")) {
     return "all";
@@ -705,6 +711,9 @@ export function dashboardHashForView(view: DashboardView, options: DashboardHash
       params.set("person", options.personLogin);
     }
     setHashParamIfChanged(params, "drilldown", options.personalDrilldownFilter, "active_issues");
+  }
+  if (view === "Overview" || view === "Personal" || view === "Analytics") {
+    setHashParamIfChanged(params, "period", options.analyticsPeriod, "day");
   }
   if (view === "Violations") {
     setHashParamIfChanged(params, "signal", options.violationSignalFilter, "all");
@@ -18499,7 +18508,7 @@ export default function App() {
   const [tokenRetryUntil, setTokenRetryUntil] = useState<number | null>(null);
   const [tokenRetryRemainingSeconds, setTokenRetryRemainingSeconds] = useState<number | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(initialSelectedPerson);
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>(() => analyticsPeriodFromHash(initialHash()));
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>(() =>
     criticalIssueAiFilterFromHash(initialHash())
   );
@@ -18927,6 +18936,7 @@ export default function App() {
       peopleScopeFilter,
       peopleSort,
       personalDrilldownFilter,
+      analyticsPeriod,
       webhookScopeFilter,
       notificationDeliveryScopeFilter,
       writeAuditScopeFilter,
@@ -19264,6 +19274,13 @@ export default function App() {
     setPersonalDrilldownFilter(value);
     if (view === "Personal") {
       replaceDashboardHash("Personal", selectedPerson, { personalDrilldownFilter: value });
+    }
+  }
+
+  function changeAnalyticsPeriod(value: MetricPeriod) {
+    setAnalyticsPeriod(value);
+    if (view === "Overview" || view === "Personal" || view === "Analytics") {
+      replaceDashboardHash(view, selectedPerson, { analyticsPeriod: value });
     }
   }
 
@@ -19606,6 +19623,7 @@ export default function App() {
       setPeopleScopeFilter(peopleScopeFilterFromHash(nextHash));
       setPeopleSort(peopleSortFromHash(nextHash));
       setPersonalDrilldownFilter(personalDrilldownFilterFromHash(nextHash));
+      setAnalyticsPeriod(analyticsPeriodFromHash(nextHash));
       setNotificationDeliveryScopeFilter(notificationDeliveryScopeFilterFromHash(nextHash));
       setWebhookScopeFilter(webhookScopeFilterFromHash(nextHash));
       setWriteAuditScopeFilter(writeAuditScopeFilterFromHash(nextHash));
@@ -20900,7 +20918,7 @@ export default function App() {
                 flowSummary={teamFlowSummary}
                 trendPoints={teamTrendPoints}
                 analyticsPeriod={analyticsPeriod}
-                onAnalyticsPeriodChange={setAnalyticsPeriod}
+                onAnalyticsPeriodChange={changeAnalyticsPeriod}
                 onNavigate={selectView}
                 onConnectToken={openTokenReconnect}
                 onPersonSelect={openPersonWorkbench}
@@ -21606,7 +21624,7 @@ export default function App() {
                         generatedAt={data.sync.generatedAt}
                         analyticsPeriod={analyticsPeriod}
                         trendPoints={personalTrendPoints}
-                        onAnalyticsPeriodChange={setAnalyticsPeriod}
+                        onAnalyticsPeriodChange={changeAnalyticsPeriod}
                         drilldownFilter={personalDrilldownFilter}
                         onDrilldownChange={changePersonalDrilldownFilter}
                       />
@@ -21630,7 +21648,7 @@ export default function App() {
                   </div>
                   <Segmented
                     value={analyticsPeriod}
-                    onChange={(value) => setAnalyticsPeriod(value as MetricPeriod)}
+                    onChange={(value) => changeAnalyticsPeriod(value as MetricPeriod)}
                     options={metricPeriodOptions}
                   />
                 </div>
