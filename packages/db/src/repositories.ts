@@ -3593,7 +3593,7 @@ export function aggregateMetricPoints(
   });
 }
 
-interface PersonalPrPeriodDescriptor {
+export interface PersonalPrPeriodDescriptor {
   period: MetricPeriod;
   label: string;
   periodStart: string;
@@ -3608,68 +3608,24 @@ interface PersonalPrPeriodListResult {
   detailLimit: number;
 }
 
-function latestDailyMetricPoint(points: DailyMetricPoint[]): DailyMetricPoint | null {
-  if (points.length === 0) {
-    return null;
-  }
-  return [...points].sort((left, right) => left.date.localeCompare(right.date))[points.length - 1] ?? null;
-}
-
-function latestAggregatedMetricPoint(
-  points: AggregatedMetricPoint[],
-  period: AggregatedMetricPoint["period"]
-): AggregatedMetricPoint | null {
-  const periodPoints = points.filter((point) => point.period === period);
-  if (periodPoints.length === 0) {
-    return null;
-  }
-  return [...periodPoints].sort((left, right) => left.periodStart.localeCompare(right.periodStart))[
-    periodPoints.length - 1
-  ];
-}
-
-function personalPrPeriodDescriptors(
+export function personalPrPeriodDescriptors(
   profile: RepoProfile,
-  dailyMetrics: DailyMetricPoint[],
-  weeklyMetrics: AggregatedMetricPoint[],
-  monthlyMetrics: AggregatedMetricPoint[]
+  now = new Date()
 ): PersonalPrPeriodDescriptor[] {
-  const fallbackDate = dateKeyInTimezone(new Date(), profile.reporting.timezone) ?? "1970-01-01";
-  const latestTeamDay = latestDailyMetricPoint(dailyMetrics.filter((point) => point.scopeType === "team"));
-  const dayStart = latestTeamDay?.date ?? fallbackDate;
+  const currentDate = dateKeyInTimezone(now, profile.reporting.timezone) ?? "1970-01-01";
+  const dayStart = currentDate;
   const dayEnd = addDaysToDateKey(dayStart, 1);
   const dayRange = calendarDayRangeInTimezone(dayStart, profile.reporting.timezone);
 
   const aggregateDescriptor = (period: AggregatedMetricPoint["period"]): PersonalPrPeriodDescriptor => {
-    const source =
-      period === "week"
-        ? latestAggregatedMetricPoint(
-            weeklyMetrics.filter((point) => point.scopeType === "team"),
-            period
-          )
-        : latestAggregatedMetricPoint(
-            monthlyMetrics.filter((point) => point.scopeType === "team"),
-            period
-          );
-    const fallbackBounds = metricPeriodBounds(fallbackDate, period, profile.reporting.weekStart);
-    const bounds = source
-      ? {
-          label: source.label,
-          periodStart: source.periodStart,
-          periodEnd: source.periodEnd
-        }
-      : {
-          label: fallbackBounds.label,
-          periodStart: fallbackBounds.start,
-          periodEnd: fallbackBounds.end
-        };
-    const rangeStart = calendarDayRangeInTimezone(bounds.periodStart, profile.reporting.timezone).start;
-    const rangeEnd = calendarDayRangeInTimezone(bounds.periodEnd, profile.reporting.timezone).start;
+    const bounds = metricPeriodBounds(currentDate, period, profile.reporting.weekStart);
+    const rangeStart = calendarDayRangeInTimezone(bounds.start, profile.reporting.timezone).start;
+    const rangeEnd = calendarDayRangeInTimezone(bounds.end, profile.reporting.timezone).start;
     return {
       period,
       label: bounds.label,
-      periodStart: bounds.periodStart,
-      periodEnd: bounds.periodEnd,
+      periodStart: bounds.start,
+      periodEnd: bounds.end,
       start: rangeStart,
       end: rangeEnd
     };
@@ -3708,9 +3664,6 @@ async function personalPrPeriodListsByLogin(input: {
   profile: RepoProfile;
   repoId: number;
   viewer: DashboardViewer;
-  dailyMetrics: DailyMetricPoint[];
-  weeklyMetrics: AggregatedMetricPoint[];
-  monthlyMetrics: AggregatedMetricPoint[];
   skippedLogins: Set<string>;
   testingIssueContexts: Map<number, TestingIssueContext>;
 }): Promise<PersonalPrPeriodListResult> {
@@ -3722,12 +3675,7 @@ async function personalPrPeriodListsByLogin(input: {
   }
 
   const pool = getPool();
-  const descriptors = personalPrPeriodDescriptors(
-    input.profile,
-    input.dailyMetrics,
-    input.weeklyMetrics,
-    input.monthlyMetrics
-  );
+  const descriptors = personalPrPeriodDescriptors(input.profile);
   const ownerPlaceholders = input.profile.people.watchedUsers.map(() => "?").join(", ");
   const visibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
   const detailLimit = personalPrPeriodDetailLimit(input.profile.people.watchedUsers.length);
@@ -4984,9 +4932,6 @@ export async function getDashboardSummary(
     profile,
     repoId,
     viewer,
-    dailyMetrics,
-    weeklyMetrics,
-    monthlyMetrics,
     skippedLogins,
     testingIssueContexts
   });

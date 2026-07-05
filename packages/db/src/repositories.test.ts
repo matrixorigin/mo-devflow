@@ -30,6 +30,7 @@ import {
   issueTimelineBackfillCandidatesFromRows,
   metricSourceCompletenessForObject,
   notificationEmployeeMappingCandidates,
+  personalPrPeriodDescriptors,
   previousCalendarDayRange,
   profileActionSuggestions,
   profileActionSuggestionsForViewer,
@@ -1885,6 +1886,39 @@ describe("metric aggregation", () => {
 });
 
 describe("repo timezone calendar ranges", () => {
+  test("builds current personal PR day week and month descriptors from repo timezone", () => {
+    const descriptors = personalPrPeriodDescriptors(baseProfile, new Date("2026-07-05T16:30:00.000Z"));
+
+    expect(
+      descriptors.map((descriptor) => ({
+        period: descriptor.period,
+        label: descriptor.label,
+        start: descriptor.periodStart,
+        end: descriptor.periodEnd
+      }))
+    ).toEqual([
+      { period: "day", label: "07-06", start: "2026-07-06", end: "2026-07-07" },
+      { period: "week", label: "07-06-07-12", start: "2026-07-06", end: "2026-07-13" },
+      { period: "month", label: "2026-07", start: "2026-07-01", end: "2026-08-01" }
+    ]);
+  });
+
+  test("uses configured Sunday start for current personal PR week descriptor", () => {
+    const descriptors = personalPrPeriodDescriptors(
+      {
+        ...baseProfile,
+        reporting: { ...baseProfile.reporting, weekStart: "Sunday" }
+      },
+      new Date("2026-07-05T16:30:00.000Z")
+    );
+
+    expect(descriptors.find((descriptor) => descriptor.period === "week")).toMatchObject({
+      label: "07-05-07-11",
+      periodStart: "2026-07-05",
+      periodEnd: "2026-07-12"
+    });
+  });
+
   test("builds Asia/Shanghai calendar-day UTC bounds", () => {
     const range = calendarDayRangeInTimezone("2026-07-03", "Asia/Shanghai");
 

@@ -2889,10 +2889,16 @@ function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): st
   return `Last heartbeat ${formatDate(worker.heartbeatAt)} on ${worker.host ?? "unknown host"}.${action}`;
 }
 
-const metricPeriodOptions = [
-  { label: "Day", value: "day" },
-  { label: "Week", value: "week" },
-  { label: "Month", value: "month" }
+const analyticsMetricPeriodOptions = [
+  { label: "Daily", value: "day" },
+  { label: "Weekly", value: "week" },
+  { label: "Monthly", value: "month" }
+];
+
+const currentMetricPeriodOptions = [
+  { label: "Today", value: "day" },
+  { label: "This week", value: "week" },
+  { label: "This month", value: "month" }
 ];
 
 function metricPeriodText(period: MetricPeriod): string {
@@ -2905,14 +2911,24 @@ function metricPeriodText(period: MetricPeriod): string {
   return "daily";
 }
 
-function metricPeriodLabel(period: MetricPeriod): string {
+function metricPeriodMovementLabel(period: MetricPeriod): string {
   if (period === "week") {
-    return "Week";
+    return "Weekly";
   }
   if (period === "month") {
-    return "Month";
+    return "Monthly";
   }
-  return "Day";
+  return "Daily";
+}
+
+function currentMetricPeriodLabel(period: MetricPeriod): string {
+  if (period === "week") {
+    return "This Week";
+  }
+  if (period === "month") {
+    return "This Month";
+  }
+  return "Today";
 }
 
 function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {
@@ -4877,7 +4893,7 @@ function TeamRotationOverview({
             <Segmented
               value={analyticsPeriod}
               onChange={(value) => onAnalyticsPeriodChange(value as MetricPeriod)}
-              options={metricPeriodOptions}
+              options={analyticsMetricPeriodOptions}
             />
             <Button size="small" onClick={() => onNavigate("Analytics")}>
               Open Analytics
@@ -4912,7 +4928,7 @@ function TeamMomentumStrip({
   return (
     <section className="team-momentum-strip" aria-label="Team latest movement">
       <div className="team-momentum-heading">
-        <span>{metricPeriodLabel(period)} movement</span>
+        <span>{metricPeriodMovementLabel(period)} movement</span>
         <strong>{summary.latestLabel}</strong>
         <small>{summary.previousLabel ? `vs ${summary.previousLabel}` : "no previous point"}</small>
       </div>
@@ -11487,7 +11503,7 @@ function PeoplePrFlowMatrix({
       )
     },
     ...metricPeriods.map((period): ColumnsType<PeoplePrFlowMatrixRow>[number] => ({
-      title: `${metricPeriodLabel(period)} PRs`,
+      title: `${currentMetricPeriodLabel(period)} PRs`,
       width: 190,
       render: (_, row) => {
         const throughput = row.periods[period];
@@ -11495,7 +11511,7 @@ function PeoplePrFlowMatrix({
           <button
             type="button"
             className="people-matrix-period"
-            aria-label={`Open ${row.login} ${metricPeriodText(period)} PR list with duration`}
+            aria-label={`Open ${row.login} ${currentMetricPeriodLabel(period)} PR list with duration`}
             onClick={() => openPeriod(row, period)}
           >
             <strong>{personalPrThroughputPair(throughput)}</strong>
@@ -13277,7 +13293,7 @@ function PersonQueueRhythmStrip({
             key={row.period}
             onClick={() => openThroughput(row.period)}
           >
-            <span>{metricPeriodLabel(row.period)} PRs</span>
+            <span>{currentMetricPeriodLabel(row.period)} PRs</span>
             <strong>{personalPrThroughputPair(row)} created / merged</strong>
             <small>{personalPrPeriodThroughputDetail(person, row.period)}</small>
           </button>
@@ -17739,9 +17755,9 @@ function WatchedPersonOperationsSummary({
                 className="person-ops-pr-period"
                 key={row.period}
                 onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, row.period))}
-                aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
+                aria-label={`Open ${person.login} ${currentMetricPeriodLabel(row.period)} PR list`}
               >
-                <span>{metricPeriodLabel(row.period)}</span>
+                <span>{currentMetricPeriodLabel(row.period)}</span>
                 <strong>
                   {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
                 </strong>
@@ -18116,7 +18132,7 @@ function personalPrThroughputRow(
   const periodList = periodLists?.find((list) => list.period === period);
   return {
     period,
-    label: periodList?.label ?? (point ? trendPointLabel(point) : metricPeriodText(period)),
+    label: periodList?.label ?? (point ? trendPointLabel(point) : currentMetricPeriodLabel(period)),
     prsCreated: periodList?.totalCreatedPrs ?? point?.prsCreated ?? null,
     prsMerged: periodList?.totalMergedPrs ?? point?.prsMerged ?? null,
     pendingPrs: point?.pendingPrs ?? null,
@@ -18413,9 +18429,9 @@ function PersonalPrThroughputPanel({
               onClick={() => {
                 onSelectionChange(personalPrThroughputSelectionForPeriod(person, row.period));
               }}
-              aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
+              aria-label={`Open ${person.login} ${currentMetricPeriodLabel(row.period)} PR list`}
             >
-              <span>{metricPeriodLabel(row.period)}</span>
+              <span>{currentMetricPeriodLabel(row.period)}</span>
               <strong>
                 {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
               </strong>
@@ -18457,7 +18473,7 @@ function PersonalPrThroughputPanel({
                 size="small"
                 value={listPeriod}
                 onChange={(value) => onSelectionChange({ period: value as MetricPeriod, scope: listScope })}
-                options={metricPeriodOptions.map((option) => {
+                options={currentMetricPeriodOptions.map((option) => {
                   const period = option.value as MetricPeriod;
                   const periodList = personalPrPeriodListForPeriod(person, period);
                   return {
@@ -18467,7 +18483,7 @@ function PersonalPrThroughputPanel({
                 })}
               />
               <span className="personal-throughput-list-meta">
-                <Tag>{selectedPeriodList?.label ?? metricPeriodText(listPeriod)}</Tag>
+                <Tag>{selectedPeriodList?.label ?? currentMetricPeriodLabel(listPeriod)}</Tag>
                 <Text type="secondary">
                   showing {sortedVisiblePrs.length}/{visibleTotal} {visibleTotalLabel} | sorted by{" "}
                   {personalPrSortLabel(sort)}
@@ -19300,7 +19316,7 @@ function SelectedPersonWorkbench({
             size="small"
             value={analyticsPeriod}
             onChange={(value) => onAnalyticsPeriodChange(value as MetricPeriod)}
-            options={metricPeriodOptions}
+            options={analyticsMetricPeriodOptions}
           />
         </div>
         <FlowEfficiencyStrip summary={flowSummary} actions={personalTrendActions} />
@@ -23462,7 +23478,7 @@ export default function App() {
                   <Segmented
                     value={analyticsPeriod}
                     onChange={(value) => changeAnalyticsPeriod(value as MetricPeriod)}
-                    options={metricPeriodOptions}
+                    options={analyticsMetricPeriodOptions}
                   />
                 </div>
                 <Alert className="band" type="info" title={data.analytics.sourceNote} showIcon />
