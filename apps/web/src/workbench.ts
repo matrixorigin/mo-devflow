@@ -86,6 +86,7 @@ export type TeamOperatingSignalTarget =
   | "all_prs"
   | "testing_stale"
   | "testing"
+  | "webhooks"
   | "health"
   | "triage";
 export interface TeamOperatingSignal {
@@ -994,6 +995,31 @@ function teamPrBlockerDetail(snapshot: TeamPrBlockerSnapshot): string {
   return parts.length === 0 ? "no blockers" : parts.slice(0, 3).join(" | ");
 }
 
+function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
+  return profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
+}
+
+function webhookTrustDetail(data: DashboardSummary): string {
+  const webhooks = data.webhooks;
+  const failures = webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
+  if (failures > 0) {
+    return `${failures} webhook failed`;
+  }
+  if (webhooks.pendingDeliveries > 0) {
+    return `${webhooks.pendingDeliveries} webhook pending`;
+  }
+  if (hasWebhookSecretWarning(data.profileWarnings)) {
+    return "polling only";
+  }
+  if (webhooks.processedDeliveries > 0) {
+    return "webhook receiving";
+  }
+  if (webhooks.lastConnectivityProbeAt) {
+    return "webhook connected";
+  }
+  return "webhook waiting";
+}
+
 export function teamOperatingSignals(input: {
   data: DashboardSummary;
   flowSummary: Pick<FlowEfficiencySummary, "averageActiveIssueAgeHours" | "averagePendingPrAgeHours"> | null;
@@ -1007,10 +1033,25 @@ export function teamOperatingSignals(input: {
   const triageHeavy = triage.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
   const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
   const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
+  const webhookFailures = data.webhooks.failedDeliveries + data.webhooks.normalizationFailedDeliveries;
+  const webhookDeliveryRiskCount = webhookFailures + data.webhooks.pendingDeliveries;
+  const webhookSetupRiskCount =
+    webhookDeliveryRiskCount === 0 &&
+    (hasWebhookSecretWarning(data.profileWarnings) ||
+      (!data.webhooks.lastReceivedAt &&
+        !data.webhooks.lastConnectivityProbeAt &&
+        data.webhooks.processedDeliveries === 0))
+      ? 1
+      : 0;
+  const trustRiskCount = dataRiskCount + webhookDeliveryRiskCount + webhookSetupRiskCount;
+  const webhookNeedsAttention = webhookDeliveryRiskCount > 0 || webhookSetupRiskCount > 0;
   const dataRiskTone =
-    data.sync.worker.status === "failed" || data.sync.worker.status === "offline"
+    data.sync.worker.status === "failed" || data.sync.worker.status === "offline" || webhookFailures > 0
       ? "critical"
-      : dataRiskCount > 0 || data.sync.worker.status === "stale"
+      : dataRiskCount > 0 ||
+          data.sync.worker.status === "stale" ||
+          data.webhooks.pendingDeliveries > 0 ||
+          webhookSetupRiskCount > 0
         ? "attention"
         : "good";
   const testingCloseText =
@@ -1064,10 +1105,12 @@ export function teamOperatingSignals(input: {
     {
       key: "data_trust",
       label: "Data trust",
-      value: dataRiskCount,
-      detail: `${data.sync.staleObjects} stale | ${data.sync.partialObjects} incomplete | ${data.sync.worker.status}`,
+      value: trustRiskCount,
+      detail: `${data.sync.staleObjects} stale | ${data.sync.partialObjects} incomplete | ${webhookTrustDetail(
+        data
+      )} | ${data.sync.worker.status}`,
       tone: dataRiskTone,
-      target: "health"
+      target: webhookNeedsAttention ? "webhooks" : "health"
     }
   ];
 }

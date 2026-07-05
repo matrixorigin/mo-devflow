@@ -275,6 +275,11 @@ describe("team operating signals", () => {
         handoffToCloseSamples: 2,
         averageHandoffToCloseHours: 48
       },
+      profileWarnings: [],
+      webhooks: webhooks({
+        processedDeliveries: 3,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z"
+      }),
       sync: {
         staleObjects: 3,
         partialObjects: 2,
@@ -313,9 +318,92 @@ describe("team operating signals", () => {
     });
     expect(signals.find((signal) => signal.key === "data_trust")).toMatchObject({
       value: 5,
-      detail: "3 stale | 2 incomplete | stale",
+      detail: "3 stale | 2 incomplete | webhook receiving | stale",
       tone: "attention",
       target: "health"
+    });
+  });
+
+  it("routes data trust to webhook setup when near-real-time delivery is not enabled", () => {
+    const data = {
+      counts: {
+        criticalIssues: 0,
+        pendingPrs: 0,
+        attentionPrs: 0
+      },
+      criticalIssues: [],
+      pendingPrs: [],
+      people: [],
+      personalViews: [],
+      testing: {
+        queueIssues: 0,
+        staleQueueIssues: 0,
+        averageIssueQueueAgeHours: null,
+        handoffToCloseSamples: 0,
+        averageHandoffToCloseHours: null
+      },
+      profileWarnings: webhookWarning(),
+      webhooks: webhooks(),
+      sync: {
+        staleObjects: 0,
+        partialObjects: 0,
+        worker: {
+          status: "active"
+        }
+      }
+    } as unknown as DashboardSummary;
+
+    const signal = teamOperatingSignals({ data, flowSummary: null }).find((item) => item.key === "data_trust");
+
+    expect(signal).toMatchObject({
+      value: 1,
+      detail: "0 stale | 0 incomplete | polling only | active",
+      tone: "attention",
+      target: "webhooks"
+    });
+  });
+
+  it("treats failed webhook deliveries as critical data trust risk", () => {
+    const data = {
+      counts: {
+        criticalIssues: 0,
+        pendingPrs: 0,
+        attentionPrs: 0
+      },
+      criticalIssues: [],
+      pendingPrs: [],
+      people: [],
+      personalViews: [],
+      testing: {
+        queueIssues: 0,
+        staleQueueIssues: 0,
+        averageIssueQueueAgeHours: null,
+        handoffToCloseSamples: 0,
+        averageHandoffToCloseHours: null
+      },
+      profileWarnings: [],
+      webhooks: webhooks({
+        failedDeliveries: 2,
+        normalizationFailedDeliveries: 1,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z",
+        latestFailure: "bad payload"
+      }),
+      sync: {
+        staleObjects: 0,
+        partialObjects: 0,
+        worker: {
+          status: "active"
+        }
+      }
+    } as unknown as DashboardSummary;
+
+    const signal = teamOperatingSignals({ data, flowSummary: null }).find((item) => item.key === "data_trust");
+
+    expect(signal).toMatchObject({
+      value: 3,
+      detail: "0 stale | 0 incomplete | 3 webhook failed | active",
+      tone: "critical",
+      target: "webhooks"
     });
   });
 });
@@ -1267,6 +1355,36 @@ function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: n
     acknowledgedAt: input.acknowledgedAt ?? null,
     acknowledgedBy: input.acknowledgedBy ?? null
   };
+}
+
+function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardSummary["webhooks"] {
+  return {
+    pendingDeliveries: 0,
+    processedDeliveries: 0,
+    failedDeliveries: 0,
+    normalizationFailedDeliveries: 0,
+    ignoredDeliveries: 0,
+    duplicateDeliveries: 0,
+    connectivityProbeDeliveries: 0,
+    lastReceivedAt: null,
+    lastConnectivityProbeAt: null,
+    latestFailure: null,
+    eventSummaries: [],
+    recentDeliveries: [],
+    ...input
+  };
+}
+
+function webhookWarning(): DashboardSummary["profileWarnings"] {
+  return [
+    {
+      key: "webhook:secret_unconfigured",
+      severity: "warning",
+      title: "GitHub webhook secret is not configured",
+      description: "GitHub webhook delivery ingest is disabled.",
+      action: "Set MO_DEVFLOW_GITHUB_WEBHOOK_SECRET."
+    }
+  ];
 }
 
 function personalView(input: Partial<PersonalActionView>): PersonalActionView {

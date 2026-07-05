@@ -2828,6 +2828,10 @@ function openTeamOperatingSignal(
     onOpenPrsFilter("testing");
     return;
   }
+  if (signal.target === "webhooks") {
+    onNavigate("Webhooks");
+    return;
+  }
   onNavigate("Health");
 }
 
