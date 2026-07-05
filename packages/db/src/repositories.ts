@@ -203,6 +203,11 @@ const latestNotificationDeliveryColumns = [
   "nd.attempted_at"
 ].join(", ");
 
+const dashboardIssueScanLimit = 5000;
+const issueCommentEvidenceLimitPerIssue = 200;
+const issueTimelineEventLimitPerIssue = 200;
+const metricsRecomputeRowScanLimit = 20000;
+
 function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
@@ -221,6 +226,10 @@ function uniqueIssueNumbers(values: number[]): number[] {
   return Array.from(new Set(values.filter((value) => Number.isInteger(value) && value > 0))).sort(
     (left, right) => left - right
   );
+}
+
+function metricRowLimit(days: number, people: readonly string[]): number {
+  return Math.max(1, Math.ceil(days) * (people.length + 1) + 10);
 }
 
 function linkedIssueNumbersForPrNumber(prNumber: number, values: number[]): number[] {
@@ -1271,8 +1280,9 @@ async function issueCommentEvidenceByIssueNumber(
     `SELECT issue_number, author_login, body, created_at, updated_at
      FROM issue_comments
      WHERE repo_id = ? AND issue_number IN (${placeholders})
-     ORDER BY issue_number ASC, created_at ASC, id ASC`,
-    [repoId, ...uniqueIssueNumbers]
+     ORDER BY issue_number ASC, updated_at DESC, created_at DESC, id DESC
+     LIMIT ?`,
+    [repoId, ...uniqueIssueNumbers, uniqueIssueNumbers.length * issueCommentEvidenceLimitPerIssue]
   );
 
   const commentsByIssueNumber = new Map<number, NonNullable<NormalizedIssue["commentEvidence"]>["comments"]>();
@@ -1402,7 +1412,8 @@ export async function upsertPullRequest(repoId: number, pr: NormalizedPullReques
             detail_synced_at, detail_error, attention_flags_json, linked_issue_numbers_json,
             is_complete
      FROM pull_requests
-     WHERE repo_id = ? AND number = ?`,
+     WHERE repo_id = ? AND number = ?
+     LIMIT 1`,
     [repoId, pr.number]
   );
   const previous = rows[0];
@@ -2102,15 +2113,18 @@ async function criticalStartedAtByIssueNumber(
   if (currentSeverityByIssueNumber.size === 0) {
     return new Map();
   }
+  const issueNumbers = Array.from(currentSeverityByIssueNumber.keys());
+  const issuePlaceholders = issueNumbers.map(() => "?").join(", ");
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT issue_number, event_type, label_name, occurred_at
      FROM issue_timeline_events e
      WHERE repo_id = ?
+       AND issue_number IN (${issuePlaceholders})
        AND event_type IN ('labeled', 'unlabeled')
        AND ${visibilitySql}
      ORDER BY occurred_at ASC, id ASC
-     LIMIT 5000`,
-    [repoId, ...visibilityParams]
+     LIMIT ?`,
+    [repoId, ...issueNumbers, ...visibilityParams, issueNumbers.length * issueTimelineEventLimitPerIssue]
   );
   const startedAtByIssueNumber = new Map<number, string>();
   for (const row of rows) {
@@ -2212,15 +2226,18 @@ async function testingHandoffStartedAtByIssueNumber(
   if (contexts.size === 0) {
     return new Map();
   }
+  const issueNumbers = Array.from(contexts.keys());
+  const issuePlaceholders = issueNumbers.map(() => "?").join(", ");
   const [rows] = await getPool().execute<RowData[]>(
     `SELECT issue_number, event_type, assignee_login, label_name, occurred_at
      FROM issue_timeline_events e
      WHERE repo_id = ?
+       AND issue_number IN (${issuePlaceholders})
        AND event_type IN ('assigned', 'unassigned', 'labeled', 'unlabeled')
        AND ${visibilitySql}
      ORDER BY occurred_at ASC, id ASC
-     LIMIT 10000`,
-    [repoId, ...visibilityParams]
+     LIMIT ?`,
+    [repoId, ...issueNumbers, ...visibilityParams, issueNumbers.length * issueTimelineEventLimitPerIssue]
   );
   const activeAssignments = new Map<number, Map<string, string>>();
   const activeLabels = new Map<number, Map<string, string>>();
@@ -2433,18 +2450,23 @@ async function testingIssueHandoffToCloseSamples(
   visibilitySql: string,
   visibilityParams: number[]
 ): Promise<TestingIssueHandoffToCloseSample[]> {
-  if (!issueRows.some((row) => fromSqlDate(row.closed_at) !== null)) {
+  const closedIssueNumbers = uniqueIssueNumbers(
+    issueRows.filter((row) => fromSqlDate(row.closed_at) !== null).map((row) => asNumber(row.number))
+  );
+  if (closedIssueNumbers.length === 0) {
     return [];
   }
+  const issuePlaceholders = closedIssueNumbers.map(() => "?").join(", ");
   const [timelineRows] = await getPool().execute<RowData[]>(
     `SELECT issue_number, event_type, assignee_login, label_name, occurred_at
      FROM issue_timeline_events e
      WHERE repo_id = ?
+       AND issue_number IN (${issuePlaceholders})
        AND event_type IN ('assigned', 'unassigned', 'labeled', 'unlabeled')
        AND ${visibilitySql}
      ORDER BY issue_number ASC, occurred_at ASC, id ASC
-     LIMIT 50000`,
-    [repoId, ...visibilityParams]
+     LIMIT ?`,
+    [repoId, ...closedIssueNumbers, ...visibilityParams, closedIssueNumbers.length * issueTimelineEventLimitPerIssue]
   );
   return testingIssueHandoffToCloseSamplesFromRows(profile, issueRows, timelineRows);
 }
@@ -3477,6 +3499,10 @@ export function aggregateMetricPoints(
 export async function recomputeDailyMetricsFromCache(repoId: number, profile: RepoProfile, days = 30): Promise<number> {
   const pool = getPool();
   const keys = recentDateKeys(days, profile.reporting.timezone);
+  const firstDate = keys[0] ?? dateKeyInTimezone(new Date(), profile.reporting.timezone) ?? "1970-01-01";
+  const lastDate = keys[keys.length - 1] ?? firstDate;
+  const windowStartSql = sqlDate(calendarDayRangeInTimezone(firstDate, profile.reporting.timezone).start);
+  const windowEndSql = sqlDate(calendarDayRangeInTimezone(lastDate, profile.reporting.timezone).end);
   const keySet = new Set(keys);
   const metrics = new Map<string, DailyMetricPoint>();
   const people = profile.people.watchedUsers;
@@ -3497,8 +3523,24 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
             attention_flags_json, testing_state, testing_queue_age_hours,
             detail_synced_at, detail_error, is_complete, sync_error
      FROM pull_requests
-     WHERE repo_id = ?`,
-    [repoId]
+     WHERE repo_id = ?
+       AND (
+         (created_at >= ? AND created_at < ?)
+         OR (merged_at >= ? AND merged_at < ?)
+         OR (created_at < ? AND (COALESCE(merged_at, closed_at) IS NULL OR COALESCE(merged_at, closed_at) >= ?))
+       )
+     ORDER BY updated_at DESC, number DESC
+     LIMIT ?`,
+    [
+      repoId,
+      windowStartSql,
+      windowEndSql,
+      windowStartSql,
+      windowEndSql,
+      windowEndSql,
+      windowStartSql,
+      metricsRecomputeRowScanLimit
+    ]
   );
   const skippedLogins = normalizedLoginSet(profile.workflow.skipUsers);
   for (const row of prRows) {
@@ -3525,8 +3567,24 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   const [issueRows] = await pool.execute<RowData[]>(
     `SELECT number, owner_login, created_at, closed_at, lifecycle_state, severity, is_complete, sync_error
      FROM issues
-     WHERE repo_id = ? AND is_pull_request = 0`,
-    [repoId]
+     WHERE repo_id = ? AND is_pull_request = 0
+       AND (
+         (created_at >= ? AND created_at < ?)
+         OR (closed_at >= ? AND closed_at < ?)
+         OR (created_at < ? AND (closed_at IS NULL OR closed_at >= ?))
+       )
+     ORDER BY updated_at DESC, number DESC
+     LIMIT ?`,
+    [
+      repoId,
+      windowStartSql,
+      windowEndSql,
+      windowStartSql,
+      windowEndSql,
+      windowEndSql,
+      windowStartSql,
+      metricsRecomputeRowScanLimit
+    ]
   );
   const criticalSeverityByIssueNumber = new Map(
     issueRows
@@ -3561,8 +3619,12 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
      FROM issue_timeline_events
      WHERE repo_id = ?
        AND event_type = 'labeled'
-       AND label_name = ?`,
-    [repoId, profile.labels.deferred]
+       AND label_name = ?
+       AND occurred_at >= ?
+       AND occurred_at < ?
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT ?`,
+    [repoId, profile.labels.deferred, windowStartSql, windowEndSql, metricsRecomputeRowScanLimit]
   );
   for (const event of deferredIssueTransitionMetricEventsFromRows(profile, issueRows, deferredTimelineRows)) {
     bumpMetric(metrics, keySet, event.date, "team", "all", "issuesDeferred");
@@ -3574,8 +3636,12 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   const [violationRows] = await pool.execute<RowData[]>(
     `SELECT related_login, first_detected_at
      FROM workflow_violations
-     WHERE repo_id = ? AND resolved_at IS NULL`,
-    [repoId]
+     WHERE repo_id = ? AND resolved_at IS NULL
+       AND first_detected_at >= ?
+       AND first_detected_at < ?
+     ORDER BY first_detected_at DESC, id DESC
+     LIMIT ?`,
+    [repoId, windowStartSql, windowEndSql, metricsRecomputeRowScanLimit]
   );
   for (const row of violationRows) {
     const login = row.related_login ? asString(row.related_login) : "";
@@ -3735,6 +3801,9 @@ export async function getDashboardSummary(
   const pool = getPool();
   const analyticsPeriodDays = 30;
   const analyticsStartDate = recentDateKeys(analyticsPeriodDays, profile.reporting.timezone)[0] ?? "1970-01-01";
+  const analyticsStartSql =
+    sqlDate(calendarDayRangeInTimezone(analyticsStartDate, profile.reporting.timezone).start) ??
+    "1970-01-01 00:00:00";
   const visibleClasses = visibleClassesForDashboard(profile, viewer);
   const issueListVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const allPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
@@ -3768,8 +3837,15 @@ export async function getDashboardSummary(
             i.owner_reason, i.ai_effort_label, i.labels_json, i.assignees_json, i.created_at, i.updated_at, i.closed_at,
             i.is_complete, i.sync_error, i.last_synced_at
      FROM issues i
-     WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
-    [repoId, ...issueListVisibility.params]
+     WHERE i.repo_id = ?
+       AND i.is_pull_request = 0
+       AND ${issueListVisibility.sql}
+       AND (i.state = 'open' OR i.closed_at >= ?)
+     ORDER BY CASE WHEN i.state = 'open' THEN 0 ELSE 1 END,
+              i.updated_at DESC,
+              i.number DESC
+     LIMIT ?`,
+    [repoId, ...issueListVisibility.params, analyticsStartSql, dashboardIssueScanLimit]
   );
   const [allPrRows] = await pool.execute<RowData[]>(
     `SELECT p.number, p.title, p.state, p.owner_login, p.html_url, p.created_at, p.updated_at, p.merged_at,
@@ -4019,8 +4095,9 @@ export async function getDashboardSummary(
     `SELECT ${dashboardMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date >= ?
-     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
-    [repoId, analyticsStartDate]
+     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC
+     LIMIT ?`,
+    [repoId, analyticsStartDate, metricRowLimit(analyticsPeriodDays, profile.people.watchedUsers)]
   );
   const [driftRows] = await pool.execute<RowData[]>(
     `SELECT ${aiDriftDashboardColumns},

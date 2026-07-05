@@ -50,6 +50,7 @@ const leasedWebhookDeliveryColumns = [
   "payload_json",
   "processing_owner"
 ].join(", ");
+const webhookEventFailureSampleLimit = 100;
 
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
@@ -339,8 +340,9 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     `SELECT event_name, error_message
      FROM github_webhook_deliveries
      WHERE repo_id = ? AND status IN ('failed', 'failed_normalization')
-     ORDER BY event_name ASC, received_at DESC, id DESC`,
-    [repoId]
+     ORDER BY event_name ASC, received_at DESC, id DESC
+     LIMIT ?`,
+    [repoId, webhookEventFailureSampleLimit]
   );
   const [recentRows] = await getPool().execute<RowData[]>(
     `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,

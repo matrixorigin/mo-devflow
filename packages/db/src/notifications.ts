@@ -232,6 +232,19 @@ const digestMetricColumns = [
   "generated_at"
 ].join(", ");
 
+function dateKeySpanDays(start: string, end: string): number {
+  const startMs = new Date(`${start}T00:00:00.000Z`).getTime();
+  const endMs = new Date(`${end}T00:00:00.000Z`).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil((endMs - startMs) / 86_400_000));
+}
+
+function digestMetricRowLimit(days: number, people: readonly string[]): number {
+  return Math.max(1, Math.ceil(days) * (people.length + 1) + 10);
+}
+
 const attentionCandidateColumns = [
   "a.id",
   "a.rule_key",
@@ -653,8 +666,9 @@ async function getDailyDigestCandidate(repoId: number, profile: RepoProfile): Pr
     `SELECT ${digestMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date = ?
-     ORDER BY scope_type ASC, scope_key ASC`,
-    [repoId, metricDate]
+     ORDER BY scope_type ASC, scope_key ASC
+     LIMIT ?`,
+    [repoId, metricDate, digestMetricRowLimit(1, profile.people.watchedUsers)]
   );
   const teamRow = metricRows.find((row) => asString(row.scope_type) === "team" && asString(row.scope_key) === "all");
   if (!teamRow) {
@@ -696,8 +710,14 @@ async function getPeriodDigestMetrics(
     `SELECT ${digestMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date >= ? AND metric_date < ?
-     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC`,
-    [repoId, period.start, period.end]
+     ORDER BY metric_date ASC, scope_type ASC, scope_key ASC
+     LIMIT ?`,
+    [
+      repoId,
+      period.start,
+      period.end,
+      digestMetricRowLimit(dateKeySpanDays(period.start, period.end), profile.people.watchedUsers)
+    ]
   );
   const teamRows = metricRows.filter((row) => asString(row.scope_type) === "team" && asString(row.scope_key) === "all");
   if (teamRows.length === 0) {

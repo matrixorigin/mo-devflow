@@ -47,6 +47,7 @@ const leasedJobColumns = [
   "lease_owner",
   "lease_expires_at"
 ].join(", ");
+const jobFailureBreakdownSampleLimit = 100;
 
 function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
   return (syncHealthLayers as readonly string[]).includes(value);
@@ -464,7 +465,9 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
     `SELECT job_type, job_key, last_error
      FROM jobs
      WHERE last_error IS NOT NULL
-     ORDER BY updated_at DESC`
+     ORDER BY updated_at DESC
+     LIMIT ?`,
+    [jobFailureBreakdownSampleLimit]
   );
   const queueRow = queueRows[0] ?? {};
   const oldestPendingAt = fromSqlDate(queueRow.oldest_pending_at);
