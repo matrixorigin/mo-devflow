@@ -8183,6 +8183,18 @@ button.flow-diagnostic-card:focus-visible {
   min-width: 0;
 }
 
+.flow-chart-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.flow-chart-heading .ant-typography {
+  min-width: 0;
+}
+
 .chart-tooltip-title {
   font-weight: 700;
   margin-bottom: 4px;

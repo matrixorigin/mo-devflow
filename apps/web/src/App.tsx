@@ -3885,6 +3885,16 @@ function TeamRotationOverview({
     onOpenTestingIssueQueue,
     onOpenPeopleFilter
   });
+  const trendActions: FlowEfficiencyActions = {
+    prFlow: () => onOpenPrsFilter("all"),
+    issueDrain: () => onOpenIssuesFilter({}),
+    triageFlow: () => onOpenPeopleFilter("triage"),
+    pendingPrAge: () => onOpenPrsFilter("all"),
+    prAttention: () => onOpenPrsFilter("attention"),
+    activeCriticalAge: () => onOpenIssuesFilter({}),
+    testingQueue: () => onOpenTestingIssueQueue("all"),
+    workflowViolations: () => onNavigate("Violations")
+  };
   const criticalLanePage = usePagedList(
     criticalIssues,
     6,
@@ -4139,22 +4149,8 @@ function TeamRotationOverview({
             </Button>
           </Space>
         </div>
-        {flowSummary ? (
-          <FlowEfficiencyStrip
-            summary={flowSummary}
-            actions={{
-              prFlow: () => onOpenPrsFilter("all"),
-              issueDrain: () => onOpenIssuesFilter({}),
-              triageFlow: () => onOpenPeopleFilter("triage"),
-              pendingPrAge: () => onOpenPrsFilter("all"),
-              prAttention: () => onOpenPrsFilter("attention"),
-              activeCriticalAge: () => onOpenIssuesFilter({}),
-              testingQueue: () => onOpenTestingIssueQueue("all"),
-              workflowViolations: () => onNavigate("Violations")
-            }}
-          />
-        ) : null}
-        <TrendChart points={trendPoints} />
+        {flowSummary ? <FlowEfficiencyStrip summary={flowSummary} actions={trendActions} /> : null}
+        <TrendChart points={trendPoints} actions={trendActions} />
       </section>
     </div>
   );
@@ -7015,7 +7011,7 @@ function testingCountForPerson(login: string, personalViews: PersonalActionView[
   return person ? personalTestingWorkCount(person) : 0;
 }
 
-function TrendChart({ points }: { points: TrendMetricPoint[] }) {
+function TrendChart({ points, actions = {} }: { points: TrendMetricPoint[]; actions?: FlowEfficiencyActions }) {
   if (points.length === 0) {
     return <Empty description="No cached analytics metrics yet" />;
   }
@@ -7047,6 +7043,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
               data: (point) => point.prsCreated - point.prsMerged
             }
           ]}
+          actionLabel="Open PR board"
+          onAction={actions.prFlow}
         />
         <MetricFlowChart
           title="Issue Flow"
@@ -7056,6 +7054,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
             { name: "Closed", type: "bar", color: "#16a34a", data: (point) => point.issuesClosed },
             { name: "Deferred", type: "bar", color: "#64748b", data: (point) => point.issuesDeferred }
           ]}
+          actionLabel="Open issue board"
+          onAction={actions.issueDrain}
         />
         <MetricFlowChart
           title="Risk Flow"
@@ -7074,6 +7074,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
               data: (point) => point.issuesClosed + point.issuesDeferred - point.issuesOpened
             }
           ]}
+          actionLabel="Open violations"
+          onAction={actions.workflowViolations}
         />
         <MetricFlowChart
           title="Backlog Snapshot"
@@ -7089,6 +7091,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
             { name: "Needs triage", type: "line", color: "#ca8a04", data: (point) => point.needsTriageIssues },
             { name: "PR attention", type: "bar", color: "#d97706", data: (point) => point.attentionPrs }
           ]}
+          actionLabel="Open active issues"
+          onAction={actions.activeCriticalAge}
         />
         <MetricFlowChart
           title="PR Quality"
@@ -7104,6 +7108,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
             { name: "Review waiting", type: "line", color: "#2563eb", data: (point) => point.reviewWaitingPrs },
             { name: "Merge conflict", type: "bar", color: "#7f1d1d", data: (point) => point.mergeConflictPrs }
           ]}
+          actionLabel="Open PR attention"
+          onAction={actions.prAttention}
         />
         <MetricFlowChart
           title="Issue Testing Flow"
@@ -7118,6 +7124,8 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
             },
             { name: "PR attention", type: "line", color: "#dc2626", data: (point) => point.attentionPrs }
           ]}
+          actionLabel="Open issue testing"
+          onAction={actions.testingQueue}
         />
       </div>
     </div>
@@ -7179,11 +7187,15 @@ function metricTooltipFormatter(points: TrendMetricPoint[]) {
 function MetricFlowChart({
   title,
   points,
-  series
+  series,
+  actionLabel,
+  onAction
 }: {
   title: string;
   points: TrendMetricPoint[];
   series: MetricSeriesConfig[];
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
 
@@ -7224,7 +7236,14 @@ function MetricFlowChart({
 
   return (
     <div className="flow-chart-block">
-      <Text strong>{title}</Text>
+      <div className="flow-chart-heading">
+        <Text strong>{title}</Text>
+        {onAction ? (
+          <Button size="small" icon={<ListFilter size={14} />} onClick={onAction}>
+            {actionLabel ?? "Open board"}
+          </Button>
+        ) : null}
+      </div>
       <div className="chart-canvas chart-canvas-compact" ref={chartRef} />
     </div>
   );
@@ -15094,6 +15113,14 @@ function SelectedPersonWorkbench({
     testingPrs: person.testingPrs,
     testingIssues: person.testingIssues
   });
+  const personalTrendActions: FlowEfficiencyActions = {
+    pendingPrAge: () => onDrilldownChange("pending_pr"),
+    prFlow: () => onDrilldownChange("pending_pr"),
+    issueDrain: () => onDrilldownChange("active_issues"),
+    prAttention: () => onDrilldownChange("pr_attention"),
+    activeCriticalAge: () => onDrilldownChange("active_issues"),
+    testingQueue: () => onDrilldownChange("testing")
+  };
   const previewIssue = (issue: CriticalIssueView | PersonalIssueView): void => {
     const item = activityItemById.get(`issue:${issue.number}`);
     if (item) {
@@ -15402,18 +15429,8 @@ function SelectedPersonWorkbench({
             options={metricPeriodOptions}
           />
         </div>
-        <FlowEfficiencyStrip
-          summary={flowSummary}
-          actions={{
-            pendingPrAge: () => onDrilldownChange("pending_pr"),
-            prFlow: () => onDrilldownChange("pending_pr"),
-            issueDrain: () => onDrilldownChange("active_issues"),
-            prAttention: () => onDrilldownChange("pr_attention"),
-            activeCriticalAge: () => onDrilldownChange("active_issues"),
-            testingQueue: () => onDrilldownChange("testing")
-          }}
-        />
-        <TrendChart points={trendPoints} />
+        <FlowEfficiencyStrip summary={flowSummary} actions={personalTrendActions} />
+        <TrendChart points={trendPoints} actions={personalTrendActions} />
       </section>
     </div>
   );
@@ -19336,7 +19353,7 @@ export default function App() {
                     <FlowEfficiencyStrip summary={teamFlowSummary} actions={analyticsFlowActions} />
                   </>
                 ) : null}
-                <TrendChart points={teamTrendPoints} />
+                <TrendChart points={teamTrendPoints} actions={analyticsFlowActions} />
               </section>
             ) : null}
 
