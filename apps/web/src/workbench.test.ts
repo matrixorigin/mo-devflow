@@ -1736,6 +1736,7 @@ function linkedPullRequest(): CriticalIssueView["linkedPullRequests"][number] {
     testingState: "not_ready",
     testingTesters: [],
     testingQueueAgeHours: null,
+    workflowSkipped: false,
     attentionFlags: [],
     linkedIssueNumbers: [10],
     isComplete: true
@@ -1780,6 +1781,7 @@ function pullRequest(input: Partial<PersonalPullRequestView>): PersonalPullReque
     testingTesters: input.testingTesters ?? [],
     testingSignals: input.testingSignals ?? [],
     testingQueueAgeHours: input.testingQueueAgeHours ?? null,
+    workflowSkipped: input.workflowSkipped ?? false,
     attentionFlags: input.attentionFlags ?? [],
     linkedIssueNumbers: input.linkedIssueNumbers ?? [],
     isComplete: input.isComplete ?? true,

@@ -441,6 +441,40 @@ describe("rules", () => {
     expect(workflowViolationsForIssue(skippedProfile, issue)).toEqual([]);
     expect(aiDriftSignalsForIssue(skippedProfile, issue)).toEqual([]);
     expect(criticalAttentionForIssue(skippedProfile, issue)).toEqual([]);
+
+    const skippedPr = normalizePullRequest(
+      skippedProfile,
+      {
+        id: 51,
+        number: 51,
+        title: "skipped pr with blockers",
+        state: "open",
+        user: { login: "skip-me" },
+        html_url: "https://example.test/51",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+        labels: [{ name: "ai-easy" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 51,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "dirty",
+        ciState: "failure",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: "2026-07-01T01:00:00Z",
+        latestCommitAt: "2026-07-01T00:30:00Z",
+        linkedIssueNumbers: [],
+        detailSyncedAt: "2026-07-01T01:00:00Z",
+        detailError: null
+      }
+    );
+
+    expect(skippedPr.workflowSkipped).toBe(true);
+    expect(skippedPr.attentionFlags).toEqual([]);
+    expect(aiDriftSignalsForPullRequest(skippedProfile, skippedPr)).toEqual([]);
   });
 
   test("critical issue attention uses complete human comment evidence when available", () => {

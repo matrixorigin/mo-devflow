@@ -188,22 +188,20 @@ function skippedLogins(profile: RepoProfile): Set<string> {
   return new Set(profile.workflow.skipUsers.map(normalizedLogin).filter(Boolean));
 }
 
-function issueMatchesSkipList(profile: RepoProfile, issue: NormalizedIssue): boolean {
+function loginsMatchSkipList(profile: RepoProfile, logins: Array<string | null | undefined>): boolean {
   const skipped = skippedLogins(profile);
   if (skipped.size === 0) {
     return false;
   }
-  return [issue.authorLogin, issue.ownerLogin, ...issue.assignees].some(
-    (login) => login && skipped.has(normalizedLogin(login))
-  );
+  return logins.some((login) => login && skipped.has(normalizedLogin(login)));
+}
+
+function issueMatchesSkipList(profile: RepoProfile, issue: NormalizedIssue): boolean {
+  return loginsMatchSkipList(profile, [issue.authorLogin, issue.ownerLogin, ...issue.assignees]);
 }
 
 function prMatchesSkipList(profile: RepoProfile, pr: NormalizedPullRequest): boolean {
-  const skipped = skippedLogins(profile);
-  if (skipped.size === 0) {
-    return false;
-  }
-  return [pr.authorLogin, pr.ownerLogin, ...pr.assignees].some((login) => login && skipped.has(normalizedLogin(login)));
+  return pr.workflowSkipped || loginsMatchSkipList(profile, [pr.authorLogin, pr.ownerLogin, ...pr.assignees]);
 }
 
 function deriveTestingFlow(pr: GitHubPullRequestLike): TestingFlowDerivation {
@@ -317,8 +315,11 @@ export function normalizePullRequest(
   const labels = labelNames(pr.labels);
   const assignees = userLogins(pr.assignees);
   const requestedReviewers = userLogins(pr.requested_reviewers);
+  const authorLogin = pr.user?.login ?? "unknown";
   const owner =
-    profile.ownership.prOwner === "assignee" ? (userLogins(pr.assignees)[0] ?? pr.user?.login) : pr.user?.login;
+    profile.ownership.prOwner === "assignee" ? (assignees[0] ?? pr.user?.login) : pr.user?.login;
+  const ownerLogin = owner ?? "unknown";
+  const workflowSkipped = loginsMatchSkipList(profile, [authorLogin, ownerLogin, ...assignees]);
   const createdAt = pr.created_at ?? new Date().toISOString();
   const updatedAt = pr.updated_at ?? createdAt;
   const ageHours =
@@ -337,10 +338,15 @@ export function normalizePullRequest(
     ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt)
     : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
   const attentionFlags: string[] = [];
-  if (pr.state !== "closed" && hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours) {
+  if (
+    !workflowSkipped &&
+    pr.state !== "closed" &&
+    hoursBetween(lastHumanActionAt) >= profile.thresholds.prNoActionAttentionHours
+  ) {
     attentionFlags.push("no_human_action_24h");
   }
   if (
+    !workflowSkipped &&
     pr.state !== "closed" &&
     requestedReviewers.length > 0 &&
     !reviewDecision &&
@@ -350,16 +356,21 @@ export function normalizePullRequest(
   ) {
     attentionFlags.push("review_requested_no_response");
   }
-  if (pr.state !== "closed" && (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")) {
+  if (
+    !workflowSkipped &&
+    pr.state !== "closed" &&
+    (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")
+  ) {
     attentionFlags.push("requested_changes");
   }
   if (
+    !workflowSkipped &&
     pr.state !== "closed" &&
     ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(ciState ?? "")
   ) {
     attentionFlags.push("ci_failed");
   }
-  if (pr.state !== "closed" && mergeStateStatus === "dirty") {
+  if (!workflowSkipped && pr.state !== "closed" && mergeStateStatus === "dirty") {
     attentionFlags.push("merge_conflict");
   }
   return {
@@ -367,8 +378,8 @@ export function normalizePullRequest(
     number: pr.number,
     title: pr.title ?? "(untitled)",
     state: pr.state === "closed" ? "closed" : "open",
-    authorLogin: pr.user?.login ?? "unknown",
-    ownerLogin: owner ?? "unknown",
+    authorLogin,
+    ownerLogin,
     htmlUrl: pr.html_url ?? "",
     createdAt,
     updatedAt,
@@ -395,6 +406,7 @@ export function normalizePullRequest(
     testingTesters: testingFlow.testers,
     testingSignals: testingFlow.signals,
     testingQueueAgeHours: testingFlow.queueAgeHours,
+    workflowSkipped,
     attentionFlags,
     linkedIssueNumbers,
     sourceAuthType: source.authType,

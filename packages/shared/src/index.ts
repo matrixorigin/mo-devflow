@@ -330,6 +330,7 @@ export interface NormalizedPullRequest {
   testingTesters: string[];
   testingSignals: string[];
   testingQueueAgeHours: number | null;
+  workflowSkipped: boolean;
   attentionFlags: string[];
   linkedIssueNumbers: number[];
   sourceAuthType: SourceAuthType;
@@ -366,6 +367,7 @@ export interface CriticalIssueLinkedPullRequestView {
   testingState: TestingFlowState;
   testingTesters: string[];
   testingQueueAgeHours: number | null;
+  workflowSkipped: boolean;
   attentionFlags: string[];
   linkedIssueNumbers: number[];
   isComplete: boolean;
@@ -459,6 +461,7 @@ export interface PendingPrView {
   testingTesters: string[];
   testingSignals: string[];
   testingQueueAgeHours: number | null;
+  workflowSkipped: boolean;
   attentionFlags: string[];
   linkedIssueNumbers: number[];
   isComplete: boolean;

@@ -265,10 +265,9 @@ export function pullRequestWithPreservedInsight(input: {
     latestCommitAt: fromSqlDate(input.previous?.latest_commit_at),
     detailSyncedAt: previousDetailSyncedAt,
     detailError: previousDetailError,
-    attentionFlags: mergeUnique(
-      input.current.attentionFlags,
-      parseJsonArray(asString(input.previous?.attention_flags_json))
-    ),
+    attentionFlags: input.current.workflowSkipped
+      ? []
+      : mergeUnique(input.current.attentionFlags, parseJsonArray(asString(input.previous?.attention_flags_json))),
     linkedIssueNumbers: linkedIssueNumbersForPrNumber(input.current.number, [
       ...input.current.linkedIssueNumbers,
       ...parseJsonNumberArray(input.previous?.linked_issue_numbers_json)
@@ -466,6 +465,22 @@ function normalizedLoginSet(logins: string[]): Set<string> {
 
 function workflowSkippedFromSet(login: string | null, skippedLogins: Set<string>): boolean {
   return Boolean(login && skippedLogins.has(normalizedLogin(login)));
+}
+
+function rowLogin(row: RowData, column: string): string | null {
+  return row[column] ? asString(row[column]) : null;
+}
+
+function pullRequestRowWorkflowSkipped(row: RowData, skippedLogins: Set<string>): boolean {
+  if (skippedLogins.size === 0) {
+    return false;
+  }
+  const logins = [
+    rowLogin(row, "author_login"),
+    rowLogin(row, "owner_login"),
+    ...parseJsonArray(asString(row.assignees_json))
+  ];
+  return logins.some((login) => workflowSkippedFromSet(login, skippedLogins));
 }
 
 function criticalIssueOwnerScopeFromSet(
@@ -1367,6 +1382,7 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
       row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
         ? null
         : asNumber(row.testing_queue_age_hours),
+    workflowSkipped: false,
     attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
@@ -2569,6 +2585,10 @@ function applyIssueTestingContextToPendingPrView<T extends PendingPrView | Perso
   pr: T,
   contexts: Map<number, TestingIssueContext>
 ): T {
+  const attentionFlags = (context: TestingIssueContext | null): string[] =>
+    pr.workflowSkipped
+      ? []
+      : testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours);
   if ("state" in pr && pr.state === "closed") {
     return {
       ...pr,
@@ -2576,7 +2596,7 @@ function applyIssueTestingContextToPendingPrView<T extends PendingPrView | Perso
       testingTesters: [],
       testingSignals: [],
       testingQueueAgeHours: null,
-      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+      attentionFlags: attentionFlags(null)
     };
   }
   const context = testingIssueContextForLinkedIssues(pr.linkedIssueNumbers, contexts);
@@ -2587,7 +2607,7 @@ function applyIssueTestingContextToPendingPrView<T extends PendingPrView | Perso
       testingTesters: [],
       testingSignals: [],
       testingQueueAgeHours: null,
-      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+      attentionFlags: attentionFlags(null)
     };
   }
   return {
@@ -2596,7 +2616,7 @@ function applyIssueTestingContextToPendingPrView<T extends PendingPrView | Perso
     testingTesters: context.testers,
     testingSignals: context.signals,
     testingQueueAgeHours: context.queueAgeHours,
-    attentionFlags: testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours)
+    attentionFlags: attentionFlags(context)
   };
 }
 
@@ -2605,13 +2625,17 @@ function applyIssueTestingContextToLinkedPrView(
   pr: CriticalIssueLinkedPullRequestView,
   contexts: Map<number, TestingIssueContext>
 ): CriticalIssueLinkedPullRequestView {
+  const attentionFlags = (context: TestingIssueContext | null): string[] =>
+    pr.workflowSkipped
+      ? []
+      : testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours);
   if (pr.state === "closed") {
     return {
       ...pr,
       testingState: "closed_or_merged",
       testingTesters: [],
       testingQueueAgeHours: null,
-      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+      attentionFlags: attentionFlags(null)
     };
   }
   const context = testingIssueContextForLinkedIssues(pr.linkedIssueNumbers, contexts);
@@ -2621,7 +2645,7 @@ function applyIssueTestingContextToLinkedPrView(
       testingState: "not_ready",
       testingTesters: [],
       testingQueueAgeHours: null,
-      attentionFlags: testingAttentionFlags(pr.attentionFlags, null, profile.thresholds.prNoActionAttentionHours)
+      attentionFlags: attentionFlags(null)
     };
   }
   return {
@@ -2629,11 +2653,15 @@ function applyIssueTestingContextToLinkedPrView(
     testingState: "testing",
     testingTesters: context.testers,
     testingQueueAgeHours: context.queueAgeHours,
-    attentionFlags: testingAttentionFlags(pr.attentionFlags, context, profile.thresholds.prNoActionAttentionHours)
+    attentionFlags: attentionFlags(context)
   };
 }
 
-function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinkedPullRequestView {
+function toCriticalIssueLinkedPullRequestView(
+  row: RowData,
+  skippedLogins: Set<string>
+): CriticalIssueLinkedPullRequestView {
+  const workflowSkipped = pullRequestRowWorkflowSkipped(row, skippedLogins);
   return {
     number: asNumber(row.number),
     title: asString(row.title),
@@ -2653,7 +2681,8 @@ function toCriticalIssueLinkedPullRequestView(row: RowData): CriticalIssueLinked
       row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
         ? null
         : asNumber(row.testing_queue_age_hours),
-    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    workflowSkipped,
+    attentionFlags: workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json)),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
@@ -2666,6 +2695,7 @@ function linkedPullRequestsByIssueNumber(
   testingIssueContexts: Map<number, TestingIssueContext>
 ): Map<number, CriticalIssueLinkedPullRequestView[]> {
   const linked = new Map<number, CriticalIssueLinkedPullRequestView[]>();
+  const skippedLogins = normalizedLoginSet(profile.workflow.skipUsers);
   for (const row of rows) {
     const matchedNumbers = linkedIssueNumbersForPullRequestRow(row).filter((number) => issueNumbers.has(number));
     if (matchedNumbers.length === 0) {
@@ -2673,7 +2703,7 @@ function linkedPullRequestsByIssueNumber(
     }
     const view = applyIssueTestingContextToLinkedPrView(
       profile,
-      toCriticalIssueLinkedPullRequestView(row),
+      toCriticalIssueLinkedPullRequestView(row, skippedLogins),
       testingIssueContexts
     );
     for (const issueNumber of matchedNumbers) {
@@ -2900,7 +2930,8 @@ function toPersonalIssueView(
   };
 }
 
-function toPendingPrView(row: RowData): PendingPrView {
+function toPendingPrView(row: RowData, skippedLogins: Set<string>): PendingPrView {
+  const workflowSkipped = pullRequestRowWorkflowSkipped(row, skippedLogins);
   return {
     number: asNumber(row.number),
     title: asString(row.title),
@@ -2924,15 +2955,16 @@ function toPendingPrView(row: RowData): PendingPrView {
       row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
         ? null
         : asNumber(row.testing_queue_age_hours),
-    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    workflowSkipped,
+    attentionFlags: workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json)),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
 }
 
-function toPersonalPullRequestView(row: RowData): PersonalPullRequestView {
+function toPersonalPullRequestView(row: RowData, skippedLogins: Set<string>): PersonalPullRequestView {
   return {
-    ...toPendingPrView(row),
+    ...toPendingPrView(row, skippedLogins),
     state: asString(row.state) === "closed" ? "closed" : "open",
     createdAt: fromSqlDate(row.created_at) ?? new Date().toISOString(),
     mergedAt: fromSqlDate(row.merged_at)
@@ -3220,6 +3252,7 @@ function applyBacklogSnapshotMetrics(input: {
   const people = input.profile.people.watchedUsers;
   const criticalLabels = input.profile.labels.critical;
   const currentDate = dateKeyInTimezone(new Date(), input.profile.reporting.timezone);
+  const skippedLogins = normalizedLoginSet(input.profile.workflow.skipUsers);
 
   for (const date of input.dateKeys) {
     const asOf = metricSnapshotAt(date, input.profile.reporting.timezone);
@@ -3298,24 +3331,31 @@ function applyBacklogSnapshotMetrics(input: {
         }
         point.pendingPrs += 1;
         pendingPrAges.push(ageHours);
-        const attentionFlags = parseJsonArray(asString(row.attention_flags_json));
-        if (attentionFlags.length > 0) {
+        const workflowSkipped = pullRequestRowWorkflowSkipped(row, skippedLogins);
+        const attentionFlags = workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json));
+        if (!workflowSkipped && attentionFlags.length > 0) {
           point.attentionPrs += 1;
         }
-        if (attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedRowState(row, "ci_state"))) {
+        if (
+          !workflowSkipped &&
+          (attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedRowState(row, "ci_state")))
+        ) {
           point.ciFailedPrs += 1;
         }
-        if (
+        const hasRequestedChanges =
           attentionFlags.includes("requested_changes") ||
           normalizedRowState(row, "review_decision") === "changes_requested" ||
-          normalizedRowState(row, "latest_review_state") === "changes_requested"
-        ) {
+          normalizedRowState(row, "latest_review_state") === "changes_requested";
+        if (!workflowSkipped && hasRequestedChanges) {
           point.requestedChangePrs += 1;
         }
-        if (prHasReviewWaitingSignal(row, attentionFlags)) {
+        if (!workflowSkipped && prHasReviewWaitingSignal(row, attentionFlags)) {
           point.reviewWaitingPrs += 1;
         }
-        if (attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty") {
+        if (
+          !workflowSkipped &&
+          (attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty")
+        ) {
           point.mergeConflictPrs += 1;
         }
         if (isTestingQueueState(asString(row.testing_state))) {
@@ -3451,7 +3491,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [prRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, closed_at, merged_at,
+    `SELECT owner_login, author_login, assignees_json, created_at, closed_at, merged_at,
             requested_reviewers_json, review_decision, merge_state_status, ci_state,
             latest_review_state, latest_review_submitted_at,
             attention_flags_json, testing_state, testing_queue_age_hours,
@@ -3460,6 +3500,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
      WHERE repo_id = ?`,
     [repoId]
   );
+  const skippedLogins = normalizedLoginSet(profile.workflow.skipUsers);
   for (const row of prRows) {
     const owner = asString(row.owner_login);
     const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
@@ -3732,8 +3773,8 @@ export async function getDashboardSummary(
   );
   const [allPrRows] = await pool.execute<RowData[]>(
     `SELECT p.number, p.title, p.state, p.owner_login, p.html_url, p.created_at, p.updated_at, p.merged_at,
-            p.draft, p.age_hours, p.last_human_action_at, p.review_decision, p.merge_state_status,
-            p.ci_state, p.latest_review_state, p.latest_review_submitted_at, p.latest_commit_at,
+            p.author_login, p.draft, p.age_hours, p.last_human_action_at, p.review_decision, p.merge_state_status,
+            p.ci_state, p.latest_review_state, p.latest_review_submitted_at, p.latest_commit_at, p.assignees_json,
             p.detail_synced_at, p.detail_error, p.testing_state, p.testing_testers_json,
             p.testing_signals_json, p.testing_queue_age_hours, p.attention_flags_json,
             p.linked_issue_numbers_json, p.is_complete
@@ -4133,11 +4174,12 @@ export async function getDashboardSummary(
       criticalStartedAtMap.get(asNumber(row.number)) ?? null
     )
   );
+  const skippedLogins = normalizedLoginSet(profile.workflow.skipUsers);
   const pendingPrs: PendingPrView[] = prRows.map((row) =>
-    applyIssueTestingContextToPendingPrView(profile, toPendingPrView(row), testingIssueContexts)
+    applyIssueTestingContextToPendingPrView(profile, toPendingPrView(row, skippedLogins), testingIssueContexts)
   );
   const allPrViews = allPrRows.map((row) =>
-    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
+    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row, skippedLogins), testingIssueContexts)
   );
   const testingIssueViews = testingIssueQueueViews(issueRows, testingIssueContexts, allPrViews);
   const ownerByIssueNumber = new Map(
@@ -4259,7 +4301,7 @@ export async function getDashboardSummary(
   const analyticsLimitedByVisibility = hiddenObjects > 0;
   const peopleByLogin = new Map(people.map((person) => [person.login, person]));
   const personalPrs = personalPrRows.map((row) =>
-    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row), testingIssueContexts)
+    applyIssueTestingContextToPendingPrView(profile, toPersonalPullRequestView(row, skippedLogins), testingIssueContexts)
   );
   const personalViews: PersonalActionView[] = profile.people.watchedUsers.map((login) => {
     const ownedIssues = personalIssueRows.filter((row) => asString(row.owner_login) === login);
