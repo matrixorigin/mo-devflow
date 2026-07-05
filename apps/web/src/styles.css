@@ -5656,6 +5656,205 @@ button.testing-board-stat:focus-visible {
   margin-bottom: 0;
 }
 
+.personal-execution-map {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.personal-execution-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.personal-execution-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.personal-execution-heading .ant-typography-secondary {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.personal-execution-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.personal-execution-facts > span {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.personal-execution-facts strong {
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.personal-execution-facts small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.personal-execution-list {
+  border-top: 1px solid #eef2f7;
+  display: grid;
+  min-width: 0;
+}
+
+.personal-execution-row {
+  border-left: 3px solid #94a3b8;
+  border-top: 1px solid #eef2f7;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1.15fr) minmax(180px, 0.8fr) minmax(220px, 1fr) minmax(180px, 0.8fr);
+  min-width: 0;
+  padding: 10px 8px;
+}
+
+.personal-execution-row:first-child {
+  border-top: 0;
+}
+
+.personal-execution-row-critical {
+  border-left-color: #dc2626;
+}
+
+.personal-execution-row-attention {
+  border-left-color: #d97706;
+}
+
+.personal-execution-row-normal {
+  border-left-color: #2563eb;
+}
+
+.personal-execution-issue,
+.personal-execution-next {
+  align-content: start;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.personal-execution-title-row,
+.personal-execution-prs,
+.personal-execution-signals {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.personal-execution-title {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.personal-execution-title:hover {
+  text-decoration: underline;
+}
+
+.personal-execution-object {
+  align-items: center;
+  color: #374151;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+  line-height: 1.2;
+}
+
+.personal-execution-next span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.personal-execution-next strong {
+  align-items: center;
+  color: #111827;
+  display: inline-flex;
+  font-size: 13px;
+  gap: 5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.personal-execution-pr-count {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.personal-execution-pr-gap {
+  color: #dc2626;
+}
+
+.personal-execution-pr {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  color: #1f2937;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+  line-height: 1.15;
+  max-width: 100%;
+  padding: 4px 7px;
+  text-decoration: none;
+}
+
+.personal-execution-pr:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  text-decoration: underline;
+}
+
+.personal-execution-pr-critical {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+
+.personal-execution-pr-attention {
+  background: #fffaf3;
+  border-color: #fed7aa;
+}
+
+.personal-execution-pr small {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
 .person-signal-disclosure .person-signal-panel {
   border-top: 0;
   margin-top: 0;
@@ -8462,6 +8661,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .personal-execution-row {
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.75fr);
+  }
+
   .person-queue-row {
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
   }
@@ -8866,6 +9069,15 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .personal-execution-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .personal-execution-row {
+    grid-template-columns: 1fr;
+  }
+
   .flow-thread-header {
     flex-direction: column;
   }
@@ -8902,6 +9114,14 @@ button.flow-diagnostic-card:focus-visible {
 
   .person-ops-tile {
     min-height: 66px;
+  }
+
+  .personal-execution-map {
+    padding: 10px;
+  }
+
+  .personal-execution-facts {
+    grid-template-columns: 1fr;
   }
 
   .pr-ops-tiles {

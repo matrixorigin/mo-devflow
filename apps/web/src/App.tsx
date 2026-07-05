@@ -14058,6 +14058,221 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
   return "Issue-PR Threads";
 }
 
+function PersonalExecutionMap({
+  chart,
+  onOpenActiveIssues,
+  onOpenPrAttention,
+  onOpenThreads
+}: {
+  chart: PersonalGanttChart;
+  onOpenActiveIssues: () => void;
+  onOpenPrAttention: () => void;
+  onOpenThreads: () => void;
+}) {
+  const activeRows = chart.rows
+    .filter((row) => row.kind === "issue" && row.issue.durationKind === "critical_active")
+    .sort(
+      (left, right) =>
+        ganttToneRankValue(right.tone) - ganttToneRankValue(left.tone) ||
+        (right.issue.durationHours ?? 0) - (left.issue.durationHours ?? 0)
+    );
+  const rows = usePagedList(activeRows, 5, activeRows.map((row) => row.id).join(","));
+  const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
+  const rowsWithoutPr = activeRows.filter((row) => row.prs.length === 0).length;
+  const blockedPrCount = activeRows.reduce((total, row) => total + flowThreadStatusCounts(row).blockedPrs, 0);
+  const missingStartCount = activeRows.filter((row) => row.issue.durationHours === null).length;
+  const oldestActiveHours = maxDuration(activeRows.map((row) => ({ durationHours: row.issue.durationHours })));
+
+  return (
+    <section className="personal-execution-map" aria-label="Active issue execution map">
+      <div className="personal-execution-heading">
+        <div>
+          <Text strong>Active Issue Execution Map</Text>
+          <Text type="secondary">s-1/s0 issue first, then linked PR blockers and next action</Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <button type="button" className="inline-filter-chip" onClick={onOpenActiveIssues}>
+            {activeRows.length} active
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${rowsWithoutPr > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"}`}
+            onClick={onOpenThreads}
+          >
+            {rowsWithoutPr} no PR
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${blockedPrCount > 0 ? "" : "inline-filter-chip-muted"}`}
+            onClick={onOpenPrAttention}
+          >
+            {blockedPrCount} blocked PR
+          </button>
+          <button type="button" className="inline-filter-chip" onClick={onOpenThreads}>
+            {chart.rows.length} threads
+          </button>
+        </Space>
+      </div>
+
+      <div className="personal-execution-facts" aria-label="Active issue execution facts">
+        <span>
+          <strong>{oldestActiveHours === null ? "-" : hours(oldestActiveHours)}</strong>
+          <small>oldest active</small>
+        </span>
+        <span>
+          <strong>{missingStartCount}</strong>
+          <small>timeline missing</small>
+        </span>
+        <span>
+          <strong>{chart.sharedPrCount}</strong>
+          <small>shared PR</small>
+        </span>
+      </div>
+
+      {activeRows.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue for this person" />
+      ) : (
+        <div className="personal-execution-list" role="list">
+          {rows.visibleItems.map((row) => (
+            <PersonalExecutionRow row={row} key={row.id} onPreview={setPreviewThread} />
+          ))}
+        </div>
+      )}
+      <CardListPagination
+        total={activeRows.length}
+        page={rows.page}
+        pageSize={rows.pageSize}
+        defaultPageSize={5}
+        onChange={rows.onPageChange}
+      />
+      <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
+    </section>
+  );
+}
+
+function ganttToneRankValue(tone: PersonalGanttRow["tone"]): number {
+  if (tone === "critical") {
+    return 3;
+  }
+  if (tone === "attention") {
+    return 2;
+  }
+  if (tone === "normal") {
+    return 1;
+  }
+  return 0;
+}
+
+function PersonalExecutionRow({ row, onPreview }: { row: PersonalGanttRow; onPreview: (row: PersonalGanttRow) => void }) {
+  const statusCounts = flowThreadStatusCounts(row);
+  const reasons = flowThreadReasons(row);
+  const nextAction = flowThreadNextAction(row);
+  const prLazy = useLazyVisibleCount(row.prs.length, 4, row.id);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 3, `execution:${row.id}:${reasons.join("|")}`);
+  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
+
+  return (
+    <article className={`personal-execution-row personal-execution-row-${row.tone}`} role="listitem">
+      <div className="personal-execution-issue">
+        <div className="personal-execution-title-row">
+          {row.issue.htmlUrl ? (
+            <WorkObjectLink href={row.issue.htmlUrl} icon={<CircleAlert size={15} aria-hidden="true" />}>
+              Issue #{row.issue.number}
+            </WorkObjectLink>
+          ) : (
+            <span className="personal-execution-object">
+              <CircleAlert size={15} aria-hidden="true" />
+              Issue #{row.issue.number}
+            </span>
+          )}
+          <Tag color={ganttToneColor(row.tone)}>{personalDurationText(row.issue)}</Tag>
+          {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
+          {row.issue.aiEffortLabel ? <Tag color="blue">{row.issue.aiEffortLabel}</Tag> : null}
+          <Tooltip title="Preview issue and linked PR thread">
+            <Button
+              aria-label={`Preview ${row.title}`}
+              icon={<Eye size={14} />}
+              size="small"
+              type="text"
+              onClick={() => onPreview(row)}
+            />
+          </Tooltip>
+        </div>
+        {row.issue.htmlUrl ? (
+          <a className="personal-execution-title" href={row.issue.htmlUrl} target="_blank" rel="noreferrer">
+            {row.issue.title}
+          </a>
+        ) : (
+          <span className="personal-execution-title">{row.issue.title}</span>
+        )}
+      </div>
+
+      <div className="personal-execution-next">
+        <span>Next action</span>
+        <strong>
+          <TimerReset size={14} aria-hidden="true" />
+          {nextAction}
+        </strong>
+      </div>
+
+      <div className="personal-execution-prs">
+        <span className={`personal-execution-pr-count ${row.prs.length === 0 ? "personal-execution-pr-gap" : ""}`}>
+          {row.prs.length === 0 ? "No linked PR visible" : `${row.prs.length} linked PR`}
+        </span>
+        {visiblePrs.map((pr) => (
+          <a
+            className={`personal-execution-pr personal-execution-pr-${pr.tone}`}
+            href={pr.htmlUrl}
+            target="_blank"
+            rel="noreferrer"
+            key={pr.number}
+            title={`${pr.title} | age ${hours(pr.startAgeHours)}`}
+          >
+            #{pr.number}
+            {pr.ciState ? <small>ci {labelText(pr.ciState)}</small> : null}
+            {pr.reviewDecision === "changes_requested" ? <small>changes</small> : null}
+            {pr.mergeStateStatus === "dirty" ? <small>conflict</small> : null}
+          </a>
+        ))}
+        <LazyListToggle
+          hiddenCount={prLazy.hiddenCount}
+          revealCount={prLazy.revealCount}
+          canCollapse={prLazy.canCollapse}
+          itemLabel="PRs"
+          className="linked-overflow-button"
+          collapsedLabel="Show fewer PRs"
+          onShowMore={prLazy.showMore}
+          onCollapse={prLazy.reset}
+        />
+      </div>
+
+      <div className="personal-execution-signals">
+        {statusCounts.blockedPrs > 0 ? <Tag color="orange">{statusCounts.blockedPrs} blocked PR</Tag> : null}
+        {statusCounts.testingIssues + statusCounts.testingPrs > 0 ? (
+          <Tag color="blue">{statusCounts.testingIssues + statusCounts.testingPrs} issue testing</Tag>
+        ) : null}
+        {visibleReasons.length === 0 ? <Tag color="green">no visible blocker</Tag> : null}
+        {visibleReasons.map((reason) => (
+          <Tag color={activityReasonColor(reason)} key={reason}>
+            {reason}
+          </Tag>
+        ))}
+        <LazyListToggle
+          hiddenCount={reasonLazy.hiddenCount}
+          revealCount={reasonLazy.revealCount}
+          canCollapse={reasonLazy.canCollapse}
+          itemLabel="signals"
+          className="linked-overflow-button"
+          collapsedLabel="Show fewer signals"
+          onShowMore={reasonLazy.showMore}
+          onCollapse={reasonLazy.reset}
+        />
+      </div>
+    </article>
+  );
+}
+
 function PersonalDrilldownBoard({
   person,
   chart,
@@ -14639,6 +14854,13 @@ function SelectedPersonWorkbench({
           showFocus={false}
         />
       </details>
+
+      <PersonalExecutionMap
+        chart={gantt}
+        onOpenActiveIssues={() => onDrilldownChange("active_issues")}
+        onOpenPrAttention={() => onDrilldownChange("pr_attention")}
+        onOpenThreads={() => onDrilldownChange("threads")}
+      />
 
       <PersonalDrilldownBoard
         person={person}
