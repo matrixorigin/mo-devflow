@@ -72,6 +72,7 @@ interface RowData extends RowDataPacket {
 }
 
 type CacheRow = Record<string, unknown>;
+type SqlFilter = { sql: string; params: number[] };
 
 export interface IssueCommentBackfillCandidate {
   issueNumber: number;
@@ -1315,9 +1316,10 @@ export async function listCachedIssuesForRules(repoId: number, profile: RepoProf
   }));
 }
 
-async function issueCommentEvidenceByIssueNumber(
+export async function issueCommentEvidenceByIssueNumber(
   repoId: number,
-  issueNumbers: number[]
+  issueNumbers: number[],
+  visibility?: { syncs: SqlFilter; comments: SqlFilter }
 ): Promise<Map<number, NonNullable<NormalizedIssue["commentEvidence"]>>> {
   const uniqueIssueNumbers = Array.from(new Set(issueNumbers));
   const result = new Map<number, NonNullable<NormalizedIssue["commentEvidence"]>>();
@@ -1326,19 +1328,30 @@ async function issueCommentEvidenceByIssueNumber(
   }
 
   const placeholders = uniqueIssueNumbers.map(() => "?").join(", ");
+  const syncVisibility = visibility?.syncs ?? { sql: "1 = 1", params: [] };
+  const commentVisibility = visibility?.comments ?? { sql: "1 = 1", params: [] };
   const [syncRows] = await getPool().execute<RowData[]>(
     `SELECT issue_number, is_complete, sync_error, last_synced_at
-     FROM issue_comment_syncs
-     WHERE repo_id = ? AND issue_number IN (${placeholders})`,
-    [repoId, ...uniqueIssueNumbers]
+     FROM issue_comment_syncs s
+     WHERE repo_id = ?
+       AND issue_number IN (${placeholders})
+       AND ${syncVisibility.sql}`,
+    [repoId, ...uniqueIssueNumbers, ...syncVisibility.params]
   );
   const [commentRows] = await getPool().execute<RowData[]>(
     `SELECT issue_number, author_login, body, created_at, updated_at
-     FROM issue_comments
-     WHERE repo_id = ? AND issue_number IN (${placeholders})
+     FROM issue_comments c
+     WHERE repo_id = ?
+       AND issue_number IN (${placeholders})
+       AND ${commentVisibility.sql}
      ORDER BY issue_number ASC, updated_at DESC, created_at DESC, id DESC
      LIMIT ?`,
-    [repoId, ...uniqueIssueNumbers, uniqueIssueNumbers.length * issueCommentEvidenceLimitPerIssue]
+    [
+      repoId,
+      ...uniqueIssueNumbers,
+      ...commentVisibility.params,
+      uniqueIssueNumbers.length * issueCommentEvidenceLimitPerIssue
+    ]
   );
 
   const commentsByIssueNumber = new Map<number, NonNullable<NormalizedIssue["commentEvidence"]>["comments"]>();
@@ -4177,6 +4190,8 @@ export async function getDashboardSummary(
   const driftIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const driftPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const timelineEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
+  const commentSyncVisibility = dashboardVisibilityFilter("s", profile, viewer);
+  const commentVisibility = dashboardVisibilityFilter("c", profile, viewer);
   const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
@@ -4607,7 +4622,10 @@ export async function getDashboardSummary(
     ...Array.from(criticalIssueNumbers),
     ...personalIssueRows.map((row) => asNumber(row.number))
   ]);
-  const issueCommentEvidence = await issueCommentEvidenceByIssueNumber(repoId, Array.from(issueCommentEvidenceNumbers));
+  const issueCommentEvidence = await issueCommentEvidenceByIssueNumber(repoId, Array.from(issueCommentEvidenceNumbers), {
+    syncs: commentSyncVisibility,
+    comments: commentVisibility
+  });
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
     toCriticalIssueView(
       row,
