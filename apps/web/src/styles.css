@@ -4022,6 +4022,20 @@ button.testing-board-stat:focus-visible {
   text-decoration: none;
 }
 
+.observed-thread-pr-group {
+  align-items: stretch;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  max-width: 260px;
+  min-width: 178px;
+}
+
+.observed-thread-pr-group .observed-thread-pr {
+  max-width: none;
+  min-width: 0;
+}
+
 .observed-thread-pr:hover {
   background: #eff6ff;
   border-color: #bfdbfe;
@@ -4038,6 +4052,11 @@ button.testing-board-stat:focus-visible {
   font-size: 11px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+.observed-thread-pr-preview {
+  align-self: center;
+  color: #2563eb;
 }
 
 .observed-thread-issues {
@@ -7023,6 +7042,11 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .observed-thread-pr {
+    max-width: none;
+    width: 100%;
+  }
+
+  .observed-thread-pr-group {
     max-width: none;
     width: 100%;
   }

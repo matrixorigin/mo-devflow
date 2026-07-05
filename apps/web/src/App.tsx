@@ -8445,42 +8445,72 @@ type ObservedThreadPullRequest = CriticalIssueLinkedPullRequestView | PendingPrV
 
 function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[] }) {
   const pagedThreads = usePagedList(threads, cardListDefaultPageSize, threads.map((thread) => thread.id).join(","));
+  const [preview, setPreview] = useState<TeamWorkPreview | null>(null);
+  const threadIssues = useMemo(() => threads.flatMap((thread) => (thread.issue ? [thread.issue] : [])), [threads]);
+  const threadPendingPrs = useMemo(
+    () => threads.flatMap(observedThreadPullRequests).filter(isObservedThreadPendingPr),
+    [threads]
+  );
+  const activeIssuesByPr = useMemo(
+    () => criticalIssueContextsByPullRequest(threadIssues, threadPendingPrs),
+    [threadIssues, threadPendingPrs]
+  );
 
   return (
-    <section className="observed-thread-panel" aria-label="Observed issue and PR flow">
-      <div className="observed-thread-panel-title">
-        <span>
-          <Text strong>Issue and PR Flow</Text>
-          <Text type="secondary">Active issue first, then linked PR evidence</Text>
-        </span>
-        <Space size={[4, 4]} wrap>
-          <Tag>{threads.length}</Tag>
-          {pagedThreads.visibleItems.length < threads.length ? (
-            <Tag>
-              {pagedThreads.startIndex + 1}-{pagedThreads.startIndex + pagedThreads.visibleItems.length}
-            </Tag>
-          ) : null}
-        </Space>
-      </div>
-      <div className="observed-thread-list">
-        {threads.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible issue or PR work for this owner" />
-        ) : (
-          pagedThreads.visibleItems.map((thread) => <ObservedPersonThreadRow thread={thread} key={thread.id} />)
-        )}
-      </div>
-      <CardListPagination
-        total={threads.length}
-        page={pagedThreads.page}
-        pageSize={pagedThreads.pageSize}
-        defaultPageSize={cardListDefaultPageSize}
-        onChange={pagedThreads.onPageChange}
-      />
-    </section>
+    <>
+      <section className="observed-thread-panel" aria-label="Observed issue and PR flow">
+        <div className="observed-thread-panel-title">
+          <span>
+            <Text strong>Issue and PR Flow</Text>
+            <Text type="secondary">Active issue first, then linked PR evidence</Text>
+          </span>
+          <Space size={[4, 4]} wrap>
+            <Tag>{threads.length}</Tag>
+            {pagedThreads.visibleItems.length < threads.length ? (
+              <Tag>
+                {pagedThreads.startIndex + 1}-{pagedThreads.startIndex + pagedThreads.visibleItems.length}
+              </Tag>
+            ) : null}
+          </Space>
+        </div>
+        <div className="observed-thread-list">
+          {threads.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible issue or PR work for this owner" />
+          ) : (
+            pagedThreads.visibleItems.map((thread) => (
+              <ObservedPersonThreadRow
+                thread={thread}
+                key={thread.id}
+                onPreviewIssue={(issue) => setPreview({ objectType: "issue", issue })}
+                onPreviewPr={(pr) =>
+                  setPreview({ objectType: "pull_request", pr, activeIssues: activeIssuesByPr.get(pr.number) ?? [] })
+                }
+              />
+            ))
+          )}
+        </div>
+        <CardListPagination
+          total={threads.length}
+          page={pagedThreads.page}
+          pageSize={pagedThreads.pageSize}
+          defaultPageSize={cardListDefaultPageSize}
+          onChange={pagedThreads.onPageChange}
+        />
+      </section>
+      <TeamWorkPreviewModal preview={preview} onClose={() => setPreview(null)} />
+    </>
   );
 }
 
-function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
+function ObservedPersonThreadRow({
+  thread,
+  onPreviewIssue,
+  onPreviewPr
+}: {
+  thread: ObservedOwnerThread;
+  onPreviewIssue: (issue: CriticalIssueView) => void;
+  onPreviewPr: (pr: PendingPrView) => void;
+}) {
   const action = observedThreadAction(thread);
   const prs = observedThreadPullRequests(thread);
   const sourceUrl = thread.issue?.htmlUrl ?? prs[0]?.htmlUrl ?? null;
@@ -8505,23 +8535,49 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
           {thread.issue?.severity ? (
             <Tag color={severityColor(thread.issue.severity)}>{thread.issue.severity}</Tag>
           ) : null}
+          {thread.issue ? (
+            <Tooltip title={`Preview issue ${thread.issue.number}`}>
+              <Button
+                aria-label={`Preview issue ${thread.issue.number}`}
+                icon={<Eye size={14} />}
+                size="small"
+                type="text"
+                onClick={() => onPreviewIssue(thread.issue!)}
+              />
+            </Tooltip>
+          ) : null}
         </span>
       </div>
       <div className="observed-thread-links">
         {prs.length > 0 ? (
           prs.slice(0, prLazy.visibleCount).map((pr) => {
             const reasons = prAttentionReasons(pr as PendingPrView);
+            const canPreviewPr = isObservedThreadPendingPr(pr);
             return (
-              <a className="observed-thread-pr" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
-                <span>
-                  PR #{pr.number}
-                  {"state" in pr && pr.state === "closed" ? " closed" : ""}
-                </span>
-                <small>
-                  {hours(pr.ageHours)} open
-                  {reasons.length > 0 ? ` | ${reasons[0]}` : ""}
-                </small>
-              </a>
+              <span className="observed-thread-pr-group" key={pr.number}>
+                <a className="observed-thread-pr" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+                  <span>
+                    PR #{pr.number}
+                    {"state" in pr && pr.state === "closed" ? " closed" : ""}
+                  </span>
+                  <small>
+                    {hours(pr.ageHours)} open
+                    {reasons.length > 0 ? ` | ${reasons[0]}` : ""}
+                  </small>
+                </a>
+                {canPreviewPr ? (
+                  <Tooltip title={`Preview PR ${pr.number}`}>
+                    <Button
+                      aria-label={`Preview PR ${pr.number}`}
+                      className="observed-thread-pr-preview"
+                      icon={<Eye size={14} />}
+                      size="small"
+                      type="text"
+                      onClick={() => onPreviewPr(pr)}
+                    />
+                  </Tooltip>
+                ) : null}
+              </span>
             );
           })
         ) : (
@@ -8549,6 +8605,10 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
       </div>
     </article>
   );
+}
+
+function isObservedThreadPendingPr(pr: ObservedThreadPullRequest): pr is PendingPrView {
+  return "draft" in pr && "testingSignals" in pr;
 }
 
 function observedThreadPullRequests(thread: ObservedOwnerThread): ObservedThreadPullRequest[] {
