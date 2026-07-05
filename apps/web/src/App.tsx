@@ -5717,7 +5717,16 @@ function CriticalIssueBoardRow({
               <Tag color={tag.color}>{tag.label}</Tag>
             </Tooltip>
           ))}
-          {riskTags.length > 5 ? <Tag>+{riskTags.length - 5}</Tag> : null}
+          {riskTags.length > 5 && onPreview ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview issue ${issue.number} with ${riskTags.length - 5} more risk signals`}
+              count={riskTags.length - 5}
+              label="more risks"
+              onClick={() => onPreview(issue)}
+            />
+          ) : riskTags.length > 5 ? (
+            <Tag>+{riskTags.length - 5}</Tag>
+          ) : null}
         </div>
       </div>
       <div className="critical-issue-action">
@@ -5730,9 +5739,7 @@ function CriticalIssueBoardRow({
                 icon={<Eye size={14} />}
                 size="small"
                 onClick={() => onPreview(issue)}
-              >
-                Preview
-              </Button>
+              />
             </Tooltip>
           ) : null}
         </div>
@@ -8620,7 +8627,11 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                   #{link.number}
                 </a>
               ))}
-              {linkedIssueUrls.length > 3 ? <span>+{linkedIssueUrls.length - 3}</span> : null}
+              {linkedIssueUrls.length > 3 ? (
+                <button type="button" onClick={() => onPreview(row)}>
+                  +{linkedIssueUrls.length - 3}
+                </button>
+              ) : null}
             </span>
           ) : null}
           {visibleTopologyPrs.length > 0 ? (
@@ -8680,7 +8691,11 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               {reason}
             </Tag>
           ))}
-          {hiddenSignalCount > 0 ? <Tag>+{hiddenSignalCount}</Tag> : null}
+          {hiddenSignalCount > 0 ? (
+            <button type="button" className="linked-overflow-button" onClick={() => onPreview(row)}>
+              +{hiddenSignalCount} more signals
+            </button>
+          ) : null}
         </div>
         {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
           <div className="flow-linked-row">
