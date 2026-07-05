@@ -211,11 +211,11 @@ export function excludedAttentionSourceWhereSql(
   };
 }
 
-export function notificationImmediateLimit(limit: number): number {
+export function notificationImmediateLimit(limit: number, digestCandidateSlots = 3): number {
   if (limit <= 1) {
     return 1;
   }
-  const digestSlots = Math.min(3, Math.max(0, limit - 1));
+  const digestSlots = Math.min(Math.max(0, Math.floor(digestCandidateSlots)), Math.max(0, limit - 1));
   return Math.max(1, limit - digestSlots);
 }
 
@@ -228,6 +228,21 @@ const digestMetricColumns = [
   "issues_closed",
   "issues_deferred",
   "workflow_violations_detected",
+  "active_critical_issues",
+  "avg_active_critical_issue_age_hours",
+  "needs_triage_issues",
+  "avg_needs_triage_issue_age_hours",
+  "deferred_issues",
+  "avg_deferred_issue_age_hours",
+  "pending_prs",
+  "avg_pending_pr_age_hours",
+  "attention_prs",
+  "ci_failed_prs",
+  "requested_change_prs",
+  "review_waiting_prs",
+  "merge_conflict_prs",
+  "testing_queue_issues",
+  "avg_testing_queue_age_hours",
   "source_completeness",
   "generated_at"
 ].join(", ");
@@ -519,6 +534,22 @@ export interface DailyDigestPersonMetrics {
   prsCreated: number;
   prsMerged: number;
   workflowViolationsDetected: number;
+  activeCriticalIssues: number;
+  averageActiveCriticalIssueAgeHours: number | null;
+  needsTriageIssues: number;
+  averageNeedsTriageIssueAgeHours: number | null;
+  deferredIssues: number;
+  averageDeferredIssueAgeHours: number | null;
+  pendingPrs: number;
+  averagePendingPrAgeHours: number | null;
+  attentionPrs: number;
+  ciFailedPrs: number;
+  requestedChangePrs: number;
+  reviewWaitingPrs: number;
+  mergeConflictPrs: number;
+  testingQueueIssues: number;
+  averageTestingQueueAgeHours: number | null;
+  sourceCompleteness: MetricSourceCompleteness;
 }
 
 interface DigestPeriod {
@@ -527,12 +558,117 @@ interface DigestPeriod {
   label: string;
 }
 
-function digestEvidenceSummary(team: DailyDigestTeamMetrics, people: DailyDigestPersonMetrics[]): string {
+function asNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = asNumber(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hoursText(hours: number | null): string {
+  return hours === null ? "n/a" : `${Math.round(hours)}h`;
+}
+
+function emptyDigestPersonMetrics(login: string): DailyDigestPersonMetrics {
+  return {
+    login,
+    prsCreated: 0,
+    prsMerged: 0,
+    workflowViolationsDetected: 0,
+    activeCriticalIssues: 0,
+    averageActiveCriticalIssueAgeHours: null,
+    needsTriageIssues: 0,
+    averageNeedsTriageIssueAgeHours: null,
+    deferredIssues: 0,
+    averageDeferredIssueAgeHours: null,
+    pendingPrs: 0,
+    averagePendingPrAgeHours: null,
+    attentionPrs: 0,
+    ciFailedPrs: 0,
+    requestedChangePrs: 0,
+    reviewWaitingPrs: 0,
+    mergeConflictPrs: 0,
+    testingQueueIssues: 0,
+    averageTestingQueueAgeHours: null,
+    sourceCompleteness: "complete_cache"
+  };
+}
+
+function digestPersonFromMetricRow(row: RowData): DailyDigestPersonMetrics {
+  return {
+    login: asString(row.scope_key),
+    prsCreated: asNumber(row.prs_created),
+    prsMerged: asNumber(row.prs_merged),
+    workflowViolationsDetected: asNumber(row.workflow_violations_detected),
+    activeCriticalIssues: asNumber(row.active_critical_issues),
+    averageActiveCriticalIssueAgeHours: asNullableNumber(row.avg_active_critical_issue_age_hours),
+    needsTriageIssues: asNumber(row.needs_triage_issues),
+    averageNeedsTriageIssueAgeHours: asNullableNumber(row.avg_needs_triage_issue_age_hours),
+    deferredIssues: asNumber(row.deferred_issues),
+    averageDeferredIssueAgeHours: asNullableNumber(row.avg_deferred_issue_age_hours),
+    pendingPrs: asNumber(row.pending_prs),
+    averagePendingPrAgeHours: asNullableNumber(row.avg_pending_pr_age_hours),
+    attentionPrs: asNumber(row.attention_prs),
+    ciFailedPrs: asNumber(row.ci_failed_prs),
+    requestedChangePrs: asNumber(row.requested_change_prs),
+    reviewWaitingPrs: asNumber(row.review_waiting_prs),
+    mergeConflictPrs: asNumber(row.merge_conflict_prs),
+    testingQueueIssues: asNumber(row.testing_queue_issues),
+    averageTestingQueueAgeHours: asNullableNumber(row.avg_testing_queue_age_hours),
+    sourceCompleteness: metricSourceCompleteness(row.source_completeness)
+  };
+}
+
+export function dailyWatchedUserDigestHasSignal(person: DailyDigestPersonMetrics): boolean {
+  return (
+    person.prsCreated > 0 ||
+    person.prsMerged > 0 ||
+    person.workflowViolationsDetected > 0 ||
+    person.activeCriticalIssues > 0 ||
+    person.needsTriageIssues > 0 ||
+    person.deferredIssues > 0 ||
+    person.pendingPrs > 0 ||
+    person.attentionPrs > 0 ||
+    person.ciFailedPrs > 0 ||
+    person.requestedChangePrs > 0 ||
+    person.reviewWaitingPrs > 0 ||
+    person.mergeConflictPrs > 0 ||
+    person.testingQueueIssues > 0
+  );
+}
+
+function digestPersonSummary(person: DailyDigestPersonMetrics): string {
+  return (
+    `${person.login}: ${person.activeCriticalIssues} active s-1/s0 ` +
+    `(avg ${hoursText(person.averageActiveCriticalIssueAgeHours)}), ` +
+    `${person.pendingPrs} pending PRs (${person.attentionPrs} attention, avg ${hoursText(
+      person.averagePendingPrAgeHours
+    )}), ` +
+    `${person.needsTriageIssues} needs-triage, ${person.deferredIssues} deferred, ` +
+    `${person.testingQueueIssues} in testing, ` +
+    `blockers ci:${person.ciFailedPrs} changes:${person.requestedChangePrs} review:${person.reviewWaitingPrs} ` +
+    `conflict:${person.mergeConflictPrs}, PRs ${person.prsCreated} created/${person.prsMerged} merged, ` +
+    `${person.workflowViolationsDetected} violations`
+  );
+}
+
+function digestPersonThroughputSummary(person: DailyDigestPersonMetrics): string {
+  return (
+    `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ` +
+    `${person.workflowViolationsDetected} violations`
+  );
+}
+
+function digestEvidenceSummary(
+  team: DailyDigestTeamMetrics,
+  people: DailyDigestPersonMetrics[],
+  options: { includeFlowSnapshot: boolean }
+): string {
   const peopleSummary = people.length
     ? `\nWatched users: ${people
-        .map(
-          (person) =>
-            `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ${person.workflowViolationsDetected} violations`
+        .map((person) =>
+          options.includeFlowSnapshot ? digestPersonSummary(person) : digestPersonThroughputSummary(person)
         )
         .join("; ")}.`
     : "";
@@ -602,10 +738,82 @@ export function buildDailyDigestNotificationCandidate(input: {
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:daily_digest:${input.profile.key}:${input.metricDate}`,
-    evidenceSummary: digestEvidenceSummary(input.team, input.people),
+    evidenceSummary: digestEvidenceSummary(input.team, input.people, { includeFlowSnapshot: true }),
     firstDetectedAt: input.generatedAt,
     lastDetectedAt: input.generatedAt
   };
+}
+
+export function buildDailyWatchedUserDigestNotificationCandidate(input: {
+  profile: RepoProfile;
+  metricDate: string;
+  person: DailyDigestPersonMetrics;
+  generatedAt: string;
+}): NotificationCandidate {
+  const dashboardBaseUrl = notificationDashboardBaseUrlFromEnv();
+  const query = new URLSearchParams({ person: input.person.login });
+  return {
+    sourceType: "daily_digest",
+    sourceId: 0,
+    ruleKey: "daily_watched_user_digest",
+    severity: input.person.attentionPrs > 0 || input.person.activeCriticalIssues > 0 ? "warning" : "info",
+    objectType: "digest",
+    objectNumber: null,
+    title: `Daily digest for ${input.person.login} on ${input.metricDate}`,
+    htmlUrl: `https://github.com/${input.profile.repo.owner}/${input.profile.repo.name}`,
+    dashboardUrl: `${dashboardBaseUrl}/#personal?${query.toString()}`,
+    relatedLogin: input.person.login,
+    recipient: notificationRecipient(input.profile, input.person.login),
+    dedupeKey: `notification:daily_digest:${input.profile.key}:${input.metricDate}:person:${normalizedLogin(
+      input.person.login
+    )}`,
+    evidenceSummary: `${digestPersonSummary(input.person)}.\nCache completeness: ${input.person.sourceCompleteness}.`,
+    firstDetectedAt: input.generatedAt,
+    lastDetectedAt: input.generatedAt
+  };
+}
+
+export function buildDailyDigestNotificationCandidates(input: {
+  profile: RepoProfile;
+  metricDate: string;
+  team: DailyDigestTeamMetrics | null;
+  people: DailyDigestPersonMetrics[];
+  generatedAt: string;
+  limit: number;
+}): NotificationCandidate[] {
+  if (input.limit <= 0) {
+    return [];
+  }
+  const candidates: NotificationCandidate[] = [];
+  const people = [...input.people].sort((left, right) => left.login.localeCompare(right.login));
+  if (input.team) {
+    candidates.push(
+      buildDailyDigestNotificationCandidate({
+        profile: input.profile,
+        metricDate: input.metricDate,
+        team: input.team,
+        people,
+        generatedAt: input.generatedAt
+      })
+    );
+  }
+  for (const person of people) {
+    if (candidates.length >= input.limit) {
+      break;
+    }
+    if (!dailyWatchedUserDigestHasSignal(person)) {
+      continue;
+    }
+    candidates.push(
+      buildDailyWatchedUserDigestNotificationCandidate({
+        profile: input.profile,
+        metricDate: input.metricDate,
+        person,
+        generatedAt: input.generatedAt
+      })
+    );
+  }
+  return candidates;
 }
 
 export function buildWeeklyDigestNotificationCandidate(input: {
@@ -628,7 +836,7 @@ export function buildWeeklyDigestNotificationCandidate(input: {
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:weekly_digest:${input.profile.key}:${input.period.start}`,
-    evidenceSummary: digestEvidenceSummary(input.team, input.people),
+    evidenceSummary: digestEvidenceSummary(input.team, input.people, { includeFlowSnapshot: false }),
     firstDetectedAt: input.generatedAt,
     lastDetectedAt: input.generatedAt
   };
@@ -654,13 +862,20 @@ export function buildMonthlyDigestNotificationCandidate(input: {
     relatedLogin: null,
     recipient: input.profile.notifications.routing.fallbackRecipient,
     dedupeKey: `notification:monthly_digest:${input.profile.key}:${input.period.start}`,
-    evidenceSummary: digestEvidenceSummary(input.team, input.people),
+    evidenceSummary: digestEvidenceSummary(input.team, input.people, { includeFlowSnapshot: false }),
     firstDetectedAt: input.generatedAt,
     lastDetectedAt: input.generatedAt
   };
 }
 
-async function getDailyDigestCandidate(repoId: number, profile: RepoProfile): Promise<NotificationCandidate | null> {
+async function getDailyDigestCandidates(
+  repoId: number,
+  profile: RepoProfile,
+  limit: number
+): Promise<NotificationCandidate[]> {
+  if (limit <= 0) {
+    return [];
+  }
   const metricDate = dailyDigestMetricDate(profile.reporting.timezone);
   const [metricRows] = await getPool().execute<RowData[]>(
     `SELECT ${digestMetricColumns}
@@ -671,33 +886,31 @@ async function getDailyDigestCandidate(repoId: number, profile: RepoProfile): Pr
     [repoId, metricDate, digestMetricRowLimit(1, profile.people.watchedUsers)]
   );
   const teamRow = metricRows.find((row) => asString(row.scope_type) === "team" && asString(row.scope_key) === "all");
-  if (!teamRow) {
-    return null;
-  }
   const watchedUsers = new Set(profile.people.watchedUsers);
   const people = metricRows
     .filter((row) => asString(row.scope_type) === "person" && watchedUsers.has(asString(row.scope_key)))
-    .map((row) => ({
-      login: asString(row.scope_key),
-      prsCreated: asNumber(row.prs_created),
-      prsMerged: asNumber(row.prs_merged),
-      workflowViolationsDetected: asNumber(row.workflow_violations_detected)
-    }));
+    .map(digestPersonFromMetricRow);
+  const generatedAt = teamRow
+    ? (fromSqlDate(teamRow.generated_at) ?? latestGeneratedAt(metricRows))
+    : latestGeneratedAt(metricRows);
 
-  return buildDailyDigestNotificationCandidate({
+  return buildDailyDigestNotificationCandidates({
     profile,
     metricDate,
-    team: {
-      prsCreated: asNumber(teamRow.prs_created),
-      prsMerged: asNumber(teamRow.prs_merged),
-      issuesOpened: asNumber(teamRow.issues_opened),
-      issuesClosed: asNumber(teamRow.issues_closed),
-      issuesDeferred: asNumber(teamRow.issues_deferred),
-      workflowViolationsDetected: asNumber(teamRow.workflow_violations_detected),
-      sourceCompleteness: metricSourceCompleteness(teamRow.source_completeness)
-    },
+    team: teamRow
+      ? {
+          prsCreated: asNumber(teamRow.prs_created),
+          prsMerged: asNumber(teamRow.prs_merged),
+          issuesOpened: asNumber(teamRow.issues_opened),
+          issuesClosed: asNumber(teamRow.issues_closed),
+          issuesDeferred: asNumber(teamRow.issues_deferred),
+          workflowViolationsDetected: asNumber(teamRow.workflow_violations_detected),
+          sourceCompleteness: metricSourceCompleteness(teamRow.source_completeness)
+        }
+      : null,
     people,
-    generatedAt: fromSqlDate(teamRow.generated_at) ?? new Date().toISOString()
+    generatedAt,
+    limit
   });
 }
 
@@ -736,15 +949,23 @@ async function getPeriodDigestMetrics(
     if (asString(row.scope_type) !== "person" || !watchedUsers.has(login)) {
       continue;
     }
-    const person = peopleByLogin.get(login) ?? {
-      login,
-      prsCreated: 0,
-      prsMerged: 0,
-      workflowViolationsDetected: 0
-    };
+    const person = peopleByLogin.get(login) ?? emptyDigestPersonMetrics(login);
     person.prsCreated += asNumber(row.prs_created);
     person.prsMerged += asNumber(row.prs_merged);
     person.workflowViolationsDetected += asNumber(row.workflow_violations_detected);
+    person.activeCriticalIssues += asNumber(row.active_critical_issues);
+    person.needsTriageIssues += asNumber(row.needs_triage_issues);
+    person.deferredIssues += asNumber(row.deferred_issues);
+    person.pendingPrs += asNumber(row.pending_prs);
+    person.attentionPrs += asNumber(row.attention_prs);
+    person.ciFailedPrs += asNumber(row.ci_failed_prs);
+    person.requestedChangePrs += asNumber(row.requested_change_prs);
+    person.reviewWaitingPrs += asNumber(row.review_waiting_prs);
+    person.mergeConflictPrs += asNumber(row.merge_conflict_prs);
+    person.testingQueueIssues += asNumber(row.testing_queue_issues);
+    if (metricSourceCompleteness(row.source_completeness) === "partial_cache") {
+      person.sourceCompleteness = "partial_cache";
+    }
     peopleByLogin.set(login, person);
   }
 
@@ -790,7 +1011,7 @@ export async function listNotificationCandidates(
     return [];
   }
   const candidates: NotificationCandidate[] = [];
-  const immediateLimit = notificationImmediateLimit(limit);
+  const immediateLimit = notificationImmediateLimit(limit, 3 + profile.people.watchedUsers.length);
   const dashboardBaseUrl = notificationDashboardBaseUrlFromEnv();
   const escalationHours = profile.notifications.routing.escalateAfterHours;
   const escalationCutoff = sqlDate(new Date(Date.now() - escalationHours * 3_600_000));
@@ -973,10 +1194,7 @@ export async function listNotificationCandidates(
   }
 
   if (candidates.length < limit) {
-    const digest = await getDailyDigestCandidate(repoId, profile);
-    if (digest) {
-      candidates.push(digest);
-    }
+    candidates.push(...(await getDailyDigestCandidates(repoId, profile, limit - candidates.length)));
   }
 
   if (candidates.length < limit) {

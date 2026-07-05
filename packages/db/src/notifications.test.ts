@@ -4,10 +4,13 @@ import { notificationStatusRequiresAcknowledgement } from "@mo-devflow/shared";
 import {
   activeNotificationDeliverySourceWhereSql,
   buildCriticalNotificationEscalationCandidate,
+  buildDailyDigestNotificationCandidates,
   buildDailyDigestNotificationCandidate,
+  buildDailyWatchedUserDigestNotificationCandidate,
   buildMonthlyDigestNotificationCandidate,
   buildWeeklyDigestNotificationCandidate,
   dailyDigestMetricDate,
+  dailyWatchedUserDigestHasSignal,
   excludedAttentionSourceWhereSql,
   monthlyDigestPeriod,
   notificationImmediateLimit,
@@ -22,6 +25,7 @@ import {
   notificationRecipient,
   notificationRecipientScope
 } from "./notifications";
+import type { DailyDigestPersonMetrics } from "./notifications";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -67,6 +71,31 @@ const profile: RepoProfile = {
   raw: {}
 };
 
+function personDigestMetrics(input: Partial<DailyDigestPersonMetrics> & { login: string }): DailyDigestPersonMetrics {
+  return {
+    login: input.login,
+    prsCreated: input.prsCreated ?? 0,
+    prsMerged: input.prsMerged ?? 0,
+    workflowViolationsDetected: input.workflowViolationsDetected ?? 0,
+    activeCriticalIssues: input.activeCriticalIssues ?? 0,
+    averageActiveCriticalIssueAgeHours: input.averageActiveCriticalIssueAgeHours ?? null,
+    needsTriageIssues: input.needsTriageIssues ?? 0,
+    averageNeedsTriageIssueAgeHours: input.averageNeedsTriageIssueAgeHours ?? null,
+    deferredIssues: input.deferredIssues ?? 0,
+    averageDeferredIssueAgeHours: input.averageDeferredIssueAgeHours ?? null,
+    pendingPrs: input.pendingPrs ?? 0,
+    averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
+    attentionPrs: input.attentionPrs ?? 0,
+    ciFailedPrs: input.ciFailedPrs ?? 0,
+    requestedChangePrs: input.requestedChangePrs ?? 0,
+    reviewWaitingPrs: input.reviewWaitingPrs ?? 0,
+    mergeConflictPrs: input.mergeConflictPrs ?? 0,
+    testingQueueIssues: input.testingQueueIssues ?? 0,
+    averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
+    sourceCompleteness: input.sourceCompleteness ?? "complete_cache"
+  };
+}
+
 describe("daily digest notification candidates", () => {
   test("derives dashboard base URLs from deployment environment", () => {
     expect(notificationDashboardBaseUrlFromEnv({ MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com/app/" })).toBe(
@@ -104,6 +133,8 @@ describe("daily digest notification candidates", () => {
     expect(notificationImmediateLimit(2)).toBe(1);
     expect(notificationImmediateLimit(4)).toBe(1);
     expect(notificationImmediateLimit(20)).toBe(17);
+    expect(notificationImmediateLimit(20, 5)).toBe(15);
+    expect(notificationImmediateLimit(4, 10)).toBe(1);
   });
 
   test("uses the previous repo-local calendar day as the digest metric date", () => {
@@ -140,8 +171,19 @@ describe("daily digest notification candidates", () => {
         sourceCompleteness: "partial_cache"
       },
       people: [
-        { login: "alice", prsCreated: 2, prsMerged: 1, workflowViolationsDetected: 3 },
-        { login: "bob", prsCreated: 0, prsMerged: 2, workflowViolationsDetected: 0 }
+        personDigestMetrics({
+          login: "alice",
+          prsCreated: 2,
+          prsMerged: 1,
+          workflowViolationsDetected: 3,
+          activeCriticalIssues: 1,
+          averageActiveCriticalIssueAgeHours: 30,
+          pendingPrs: 2,
+          averagePendingPrAgeHours: 12,
+          attentionPrs: 1,
+          ciFailedPrs: 1
+        }),
+        personDigestMetrics({ login: "bob", prsMerged: 2 })
       ],
       generatedAt: "2026-07-04T01:00:00.000Z"
     });
@@ -162,8 +204,93 @@ describe("daily digest notification candidates", () => {
       "Team: 5 PRs created, 3 merged, 2 issues opened, 1 closed, 1 deferred."
     );
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 4.");
-    expect(candidate.evidenceSummary).toContain("alice: 2 created, 1 merged, 3 violations");
+    expect(candidate.evidenceSummary).toContain("alice: 1 active s-1/s0 (avg 30h), 2 pending PRs");
+    expect(candidate.evidenceSummary).toContain("blockers ci:1");
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
+  });
+
+  test("builds a watched-user daily digest routed to the mapped employee", () => {
+    const candidate = buildDailyWatchedUserDigestNotificationCandidate({
+      profile: {
+        ...profile,
+        notifications: {
+          ...profile.notifications,
+          employees: { Alice: { wecomUserId: "alice-wecom" } }
+        }
+      },
+      metricDate: "2026-07-03",
+      person: personDigestMetrics({
+        login: "alice",
+        prsCreated: 2,
+        prsMerged: 1,
+        workflowViolationsDetected: 3,
+        activeCriticalIssues: 1,
+        averageActiveCriticalIssueAgeHours: 30,
+        needsTriageIssues: 4,
+        deferredIssues: 1,
+        pendingPrs: 2,
+        averagePendingPrAgeHours: 36,
+        attentionPrs: 1,
+        ciFailedPrs: 1,
+        requestedChangePrs: 1,
+        mergeConflictPrs: 1,
+        testingQueueIssues: 1,
+        sourceCompleteness: "partial_cache"
+      }),
+      generatedAt: "2026-07-04T01:00:00.000Z"
+    });
+
+    expect(candidate).toMatchObject({
+      sourceType: "daily_digest",
+      sourceId: 0,
+      ruleKey: "daily_watched_user_digest",
+      severity: "warning",
+      objectType: "digest",
+      objectNumber: null,
+      title: "Daily digest for alice on 2026-07-03",
+      dashboardUrl: "http://localhost:5173/#personal?person=alice",
+      relatedLogin: "alice",
+      recipient: "alice-wecom",
+      dedupeKey: "notification:daily_digest:matrixorigin/matrixone:2026-07-03:person:alice"
+    });
+    expect(candidate.evidenceSummary).toContain("alice: 1 active s-1/s0 (avg 30h)");
+    expect(candidate.evidenceSummary).toContain("2 pending PRs (1 attention, avg 36h)");
+    expect(candidate.evidenceSummary).toContain("blockers ci:1 changes:1 review:0 conflict:1");
+    expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
+  });
+
+  test("does not create watched-user daily digest noise for fully idle rows", () => {
+    expect(dailyWatchedUserDigestHasSignal(personDigestMetrics({ login: "alice" }))).toBe(false);
+    expect(dailyWatchedUserDigestHasSignal(personDigestMetrics({ login: "alice", pendingPrs: 1 }))).toBe(true);
+  });
+
+  test("orders daily digest candidate sets by maintainer summary then active watched users within the limit", () => {
+    const candidates = buildDailyDigestNotificationCandidates({
+      profile,
+      metricDate: "2026-07-03",
+      team: {
+        prsCreated: 5,
+        prsMerged: 3,
+        issuesOpened: 2,
+        issuesClosed: 1,
+        issuesDeferred: 1,
+        workflowViolationsDetected: 4,
+        sourceCompleteness: "partial_cache"
+      },
+      people: [
+        personDigestMetrics({ login: "bob" }),
+        personDigestMetrics({ login: "alice", pendingPrs: 2 }),
+        personDigestMetrics({ login: "charlie", activeCriticalIssues: 1 })
+      ],
+      generatedAt: "2026-07-04T01:00:00.000Z",
+      limit: 2
+    });
+
+    expect(candidates.map((candidate) => candidate.ruleKey)).toEqual([
+      "daily_maintainer_digest",
+      "daily_watched_user_digest"
+    ]);
+    expect(candidates.map((candidate) => candidate.relatedLogin)).toEqual([null, "alice"]);
   });
 
   test("builds a weekly maintainer digest from cached weekly metrics", () => {
@@ -180,8 +307,8 @@ describe("daily digest notification candidates", () => {
         sourceCompleteness: "partial_cache"
       },
       people: [
-        { login: "alice", prsCreated: 8, prsMerged: 5, workflowViolationsDetected: 4 },
-        { login: "bob", prsCreated: 2, prsMerged: 7, workflowViolationsDetected: 1 }
+        personDigestMetrics({ login: "alice", prsCreated: 8, prsMerged: 5, workflowViolationsDetected: 4 }),
+        personDigestMetrics({ login: "bob", prsCreated: 2, prsMerged: 7, workflowViolationsDetected: 1 })
       ],
       generatedAt: "2026-07-04T01:00:00.000Z"
     });
@@ -220,8 +347,8 @@ describe("daily digest notification candidates", () => {
         sourceCompleteness: "partial_cache"
       },
       people: [
-        { login: "alice", prsCreated: 22, prsMerged: 18, workflowViolationsDetected: 10 },
-        { login: "bob", prsCreated: 17, prsMerged: 20, workflowViolationsDetected: 3 }
+        personDigestMetrics({ login: "alice", prsCreated: 22, prsMerged: 18, workflowViolationsDetected: 10 }),
+        personDigestMetrics({ login: "bob", prsCreated: 17, prsMerged: 20, workflowViolationsDetected: 3 })
       ],
       generatedAt: "2026-07-04T01:00:00.000Z"
     });
