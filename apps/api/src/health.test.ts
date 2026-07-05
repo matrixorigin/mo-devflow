@@ -270,12 +270,14 @@ describe("API health status", () => {
       githubOAuthConfigured: false,
       tokenEncryptionConfigured: false,
       serviceReadTokenConfigured: false,
+      webhookSecretConfigured: false,
       writeBackEnabled: false
     });
     expect(findings.map((finding) => finding.key)).toEqual([
       "github_oauth",
       "token_encryption",
-      "service_read_token"
+      "service_read_token",
+      "webhook_secret"
     ]);
     expect(findings.find((finding) => finding.key === "github_oauth")).toMatchObject({ severity: "warning" });
     expect(findings.find((finding) => finding.key === "service_read_token")).toMatchObject({
@@ -295,6 +297,7 @@ describe("API health status", () => {
       { ...profile, access: { ...profile.access, writeBackEnabled: true } },
       {
         MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+        MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "webhook-secret",
         MO_DEVFLOW_TOKEN_ENCRYPTION_KEY: "too-short"
       }
     );

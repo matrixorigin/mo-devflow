@@ -6465,6 +6465,7 @@ interface ApiHealthView {
     tokenEncryptionConfigured: boolean;
     tokenEncryptionError: string | null;
     serviceReadTokenConfigured: boolean;
+    webhookSecretConfigured: boolean;
   };
   generatedAt: string;
   migration?: {
@@ -6525,6 +6526,9 @@ function apiHealthFindingLabel(key: string): string {
   if (key === "service_read_token") {
     return "Service Read Token";
   }
+  if (key === "webhook_secret") {
+    return "GitHub Webhook";
+  }
   return labelText(key);
 }
 
@@ -6549,6 +6553,15 @@ function apiAccessHealthItems(access: NonNullable<ApiHealthView["access"]>): Arr
       value: access.tokenEncryptionConfigured ? "configured" : "setup required",
       detail: access.tokenEncryptionError ?? "Needed before users can connect personal write tokens.",
       tone: access.tokenEncryptionConfigured ? "good" : "attention"
+    },
+    {
+      key: "webhook",
+      label: "Webhook ingest",
+      value: access.webhookSecretConfigured ? "configured" : "polling only",
+      detail: access.webhookSecretConfigured
+        ? "Signed GitHub webhook deliveries can update cache quickly."
+        : "Set webhook secret for near real-time updates.",
+      tone: access.webhookSecretConfigured ? "good" : "attention"
     },
     {
       key: "service-token",

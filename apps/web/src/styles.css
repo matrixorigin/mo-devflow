@@ -8887,7 +8887,7 @@ button.flow-diagnostic-card:focus-visible {
 .api-health-access-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   min-width: 0;
 }
 

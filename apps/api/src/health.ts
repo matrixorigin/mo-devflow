@@ -26,6 +26,7 @@ export interface ApiAccessHealth {
   tokenEncryptionConfigured: boolean;
   tokenEncryptionError: string | null;
   serviceReadTokenConfigured: boolean;
+  webhookSecretConfigured: boolean;
 }
 
 const staleCacheRepairLayers: ManualRefreshLayer[] = ["github_sync", "rules", "metrics", "ai_drift"];
@@ -71,7 +72,8 @@ export function apiAccessHealthFromConfig(
     githubOAuthConfigured: githubOAuthConfiguredFromEnv(env),
     tokenEncryptionConfigured: tokenEncryption.configured,
     tokenEncryptionError: tokenEncryption.error,
-    serviceReadTokenConfigured: profileConfiguration.githubServiceTokenConfigured
+    serviceReadTokenConfigured: profileConfiguration.githubServiceTokenConfigured,
+    webhookSecretConfigured: profileConfiguration.webhookSecretConfigured
   };
 }
 
@@ -217,6 +219,15 @@ export function apiHealthFindings(input: {
       message:
         "No service read token is configured. Repository-wide polling can still use anonymous GitHub quota, but PR review, CI, mergeability, issue links, and comment-backed rules may remain partial.",
       recommendedLayers: partialCacheRepairLayers
+    });
+  }
+
+  if (input.access && !input.access.webhookSecretConfigured) {
+    findings.push({
+      key: "webhook_secret",
+      severity: "warning",
+      message:
+        "GitHub webhook secret is not configured. Dashboards still update through worker polling and manual refresh, but near-real-time issue and PR updates are disabled."
     });
   }
 
