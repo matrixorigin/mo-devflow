@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   detectSchemaDrift,
   expectedSchemaColumnSpecsFromStatements,
-  expectedSchemaColumnsFromStatements
+  expectedSchemaColumnsFromStatements,
+  expectedSchemaIndexStatements
 } from "./schema";
 
 function column(columnType: string, nullable: boolean) {
@@ -67,6 +68,29 @@ describe("schema contract", () => {
       columnType: "VARCHAR(255)",
       nullable: true
     });
+  });
+
+  test("declares dashboard hot-path indexes for bounded read models", () => {
+    const indexes = expectedSchemaIndexStatements();
+
+    expect(indexes).toContain(
+      "CREATE INDEX idx_issues_dashboard_scan ON issues(repo_id, visibility_class, source_user_id, is_pull_request, state, updated_at, number)"
+    );
+    expect(indexes).toContain(
+      "CREATE INDEX idx_pull_requests_dashboard_scan ON pull_requests(repo_id, visibility_class, source_user_id, state, updated_at, number)"
+    );
+    expect(indexes).toContain(
+      "CREATE INDEX idx_issue_timeline_events_repo_issue_type_time ON issue_timeline_events(repo_id, issue_number, event_type, occurred_at)"
+    );
+    expect(indexes).toContain(
+      "CREATE INDEX idx_workflow_violations_dashboard ON workflow_violations(repo_id, resolved_at, severity, last_detected_at)"
+    );
+    expect(indexes).toContain(
+      "CREATE INDEX idx_notification_deliveries_source_latest ON notification_deliveries(repo_id, source_type, source_id, id)"
+    );
+    expect(indexes).toContain(
+      "CREATE INDEX idx_github_webhook_repo_status_received ON github_webhook_deliveries(repo_id, status, received_at, id)"
+    );
   });
 
   test("reports missing and unexpected columns instead of repairing them", () => {

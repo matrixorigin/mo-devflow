@@ -426,6 +426,25 @@ const schemaStatements = [
   )`
 ];
 
+const dashboardHotPathIndexStatements = [
+  "CREATE INDEX idx_issues_dashboard_scan ON issues(repo_id, visibility_class, source_user_id, is_pull_request, state, updated_at, number)",
+  "CREATE INDEX idx_issues_dashboard_closed ON issues(repo_id, visibility_class, source_user_id, is_pull_request, closed_at, updated_at)",
+  "CREATE INDEX idx_issues_active_critical ON issues(repo_id, state, severity, owner_login, updated_at)",
+  "CREATE INDEX idx_pull_requests_dashboard_scan ON pull_requests(repo_id, visibility_class, source_user_id, state, updated_at, number)",
+  "CREATE INDEX idx_pull_requests_dashboard_owner ON pull_requests(repo_id, owner_login, state, updated_at, number)",
+  "CREATE INDEX idx_pull_requests_metric_window ON pull_requests(repo_id, created_at, merged_at, closed_at, updated_at)",
+  "CREATE INDEX idx_issue_comments_repo_issue_updated ON issue_comments(repo_id, issue_number, updated_at, created_at)",
+  "CREATE INDEX idx_issue_timeline_events_repo_issue_type_time ON issue_timeline_events(repo_id, issue_number, event_type, occurred_at)",
+  "CREATE INDEX idx_workflow_violations_dashboard ON workflow_violations(repo_id, resolved_at, severity, last_detected_at)",
+  "CREATE INDEX idx_ai_drift_dashboard ON ai_drift_signals(repo_id, resolved_at, severity, actual_hours, last_detected_at)",
+  "CREATE INDEX idx_attention_items_dashboard ON attention_items(repo_id, resolved_at, severity, last_detected_at)",
+  "CREATE INDEX idx_notification_deliveries_source_latest ON notification_deliveries(repo_id, source_type, source_id, id)",
+  "CREATE INDEX idx_notification_deliveries_source_attempted ON notification_deliveries(repo_id, source_type, source_id, attempted_at)",
+  "CREATE INDEX idx_github_webhook_repo_status_received ON github_webhook_deliveries(repo_id, status, received_at, id)",
+  "CREATE INDEX idx_sync_runs_repo_layer_status_id ON sync_runs(repo_id, sync_layer, status, id)",
+  "CREATE INDEX idx_jobs_updated ON jobs(updated_at)"
+];
+
 const indexStatements = [
   "CREATE INDEX idx_issues_repo_state ON issues(repo_id, state)",
   "CREATE INDEX idx_issues_repo_owner ON issues(repo_id, owner_login)",
@@ -466,7 +485,8 @@ const indexStatements = [
   "CREATE INDEX idx_notification_deliveries_dedupe ON notification_deliveries(dedupe_key)",
   "CREATE INDEX idx_notification_deliveries_attempted ON notification_deliveries(attempted_at)",
   "CREATE INDEX idx_notification_ack_repo ON notification_acknowledgements(repo_id)",
-  "CREATE INDEX idx_notification_ack_user ON notification_acknowledgements(user_id)"
+  "CREATE INDEX idx_notification_ack_user ON notification_acknowledgements(user_id)",
+  ...dashboardHotPathIndexStatements
 ];
 
 interface SchemaMigrationContext {
@@ -568,6 +588,15 @@ const migrations: SchemaMigration[] = [
         await connection.query("ALTER TABLE notification_deliveries MODIFY COLUMN dashboard_url TEXT NOT NULL");
       }
     }
+  },
+  {
+    version: "0009",
+    name: "dashboard_hot_path_indexes",
+    async run(connection) {
+      for (const statement of dashboardHotPathIndexStatements) {
+        await executeIgnoringDuplicateIndex(connection, statement);
+      }
+    }
   }
 ];
 
@@ -663,6 +692,10 @@ export function expectedSchemaColumnsFromStatements(
 ): Map<string, Set<string>> {
   const specs = expectedSchemaColumnSpecsFromStatements(statements);
   return new Map(Array.from(specs.entries()).map(([tableName, columns]) => [tableName, new Set(columns.keys())]));
+}
+
+export function expectedSchemaIndexStatements(statements: readonly string[] = indexStatements): Set<string> {
+  return new Set(statements);
 }
 
 export function detectSchemaDrift(
