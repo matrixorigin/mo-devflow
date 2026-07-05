@@ -7,6 +7,7 @@ import {
   summarizeProductionReadiness,
   summarizeUpdatePipeline,
   summarizeWebhookReadiness,
+  updatePipelinePrimaryStatus,
   webhookDeliveryBacklogNeedsRefreshWatch
 } from "./freshness";
 
@@ -368,6 +369,7 @@ describe("update pipeline summary", () => {
       value: "no deliveries",
       tone: "normal"
     });
+    expect(updatePipelinePrimaryStatus(summary)).toBe("polling repair");
   });
 
   test("reports polling-only update path when the webhook secret is missing", () => {
@@ -387,6 +389,7 @@ describe("update pipeline summary", () => {
       detail: expect.stringContaining("webhook secret is missing"),
       tone: "normal"
     });
+    expect(updatePipelinePrimaryStatus(summary)).toBe("polling only");
   });
 
   test("prioritizes operator attention for worker, queue, or webhook failures", () => {
@@ -408,6 +411,7 @@ describe("update pipeline summary", () => {
       value: "3 failed",
       tone: "critical"
     });
+    expect(updatePipelinePrimaryStatus(summary)).toBe("worker stale");
   });
 
   test("reports flowing updates with evidence gaps for stale or partial cache", () => {
@@ -428,6 +432,23 @@ describe("update pipeline summary", () => {
       value: "receiving",
       tone: "good"
     });
+    expect(updatePipelinePrimaryStatus(summary)).toBe("cache 4 stale");
+  });
+
+  test("uses webhook and queue status when they explain delayed updates", () => {
+    const webhookPending = summarizeUpdatePipeline({
+      sync: sync({}),
+      webhooks: webhooks({ pendingDeliveries: 4, oldestPendingReceivedAt: "2026-07-04T01:00:00.000Z" })
+    });
+    expect(updatePipelinePrimaryStatus(webhookPending)).toBe("webhook 4 pending");
+
+    const queueRunning = summarizeUpdatePipeline({
+      sync: sync({
+        jobQueue: { ...sync({}).jobQueue, queueDepth: 2, runningJobs: 1 }
+      }),
+      webhooks: webhooks({ processedDeliveries: 3, lastReceivedAt: "2026-07-04T01:00:00.000Z" })
+    });
+    expect(updatePipelinePrimaryStatus(queueRunning)).toBe("queue 2 queued");
   });
 });
 

@@ -104,6 +104,7 @@ import {
   summarizeProductionReadiness,
   summarizeUpdatePipeline,
   summarizeWebhookReadiness,
+  updatePipelinePrimaryStatus,
   webhookDeliveryBacklogNeedsRefreshWatch,
   type CacheEvidenceSummary,
   type FreshnessSummary,
@@ -4715,8 +4716,8 @@ function TeamDataStatusStrip({
       />
       <TeamDataStatusTile
         label="Update path"
-        value={updatePipelineToneLabel(updatePipeline.tone)}
-        detail={updatePipeline.title}
+        value={updatePipelinePrimaryStatus(updatePipeline)}
+        detail={updatePipeline.detail}
         tone={updatePipeline.tone}
         onClick={() => onNavigate("Health")}
       />

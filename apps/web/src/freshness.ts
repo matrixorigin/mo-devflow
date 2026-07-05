@@ -559,6 +559,46 @@ export function summarizeUpdatePipeline(
   };
 }
 
+function updatePipelineTile(summary: UpdatePipelineSummary, key: UpdatePipelineTile["key"]): UpdatePipelineTile | null {
+  return summary.tiles.find((tile) => tile.key === key) ?? null;
+}
+
+function tileStatus(prefix: string, tile: UpdatePipelineTile | null): string | null {
+  return tile ? `${prefix} ${tile.value}` : null;
+}
+
+export function updatePipelinePrimaryStatus(summary: UpdatePipelineSummary): string {
+  const worker = updatePipelineTile(summary, "worker");
+  const queue = updatePipelineTile(summary, "queue");
+  const webhooks = updatePipelineTile(summary, "webhooks");
+  const cache = updatePipelineTile(summary, "cache");
+
+  for (const candidate of [
+    worker?.tone === "critical" ? tileStatus("worker", worker) : null,
+    queue?.tone === "critical" ? tileStatus("queue", queue) : null,
+    webhooks?.tone === "critical" ? tileStatus("webhook", webhooks) : null,
+    cache?.tone === "critical" ? tileStatus("cache", cache) : null,
+    webhooks?.tone === "attention" ? tileStatus("webhook", webhooks) : null,
+    queue?.tone === "attention" ? tileStatus("queue", queue) : null,
+    cache?.tone === "attention" ? tileStatus("cache", cache) : null
+  ]) {
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  if (webhooks?.value === "polling only") {
+    return "polling only";
+  }
+  if (webhooks?.value === "receiving") {
+    return "webhook receiving";
+  }
+  if (webhooks?.value === "connected") {
+    return "webhook connected";
+  }
+  return "polling repair";
+}
+
 export function summarizeProductionReadiness(input: {
   data: DashboardSummary;
   session: SessionView | null;
