@@ -43,6 +43,7 @@ import {
   personalPrListForScope,
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
+  personalPrPeriodCapDetail,
   personalPrSortLabel,
   personalPrThroughputPair,
   personalPrThroughputSummary,
@@ -450,6 +451,11 @@ describe("dashboard hash filters", () => {
       label: "Open PR owners",
       options: { peopleScopeFilter: "pending_pr", peopleSort: "pr_age" }
     });
+    expect(dashboardViewLimitTargetForKey("personal_pr_period_rows")).toEqual({
+      view: "Personal",
+      label: "Open personal PR periods",
+      options: { personalDrilldownFilter: "pending_pr", analyticsPeriod: "week" }
+    });
     expect(dashboardViewLimitTargetForKey("workflow_violations")).toEqual({
       view: "Violations",
       label: "Open violations"
@@ -712,9 +718,7 @@ describe("dashboard hash filters", () => {
 
   it("uses visible period list totals for personal PR throughput cards", () => {
     const rows = personalPrThroughputRows({
-      analytics: [
-        metricPoint({ date: "2026-07-04", prsCreated: 1, prsMerged: 1, averagePendingPrAgeHours: 18 })
-      ],
+      analytics: [metricPoint({ date: "2026-07-04", prsCreated: 1, prsMerged: 1, averagePendingPrAgeHours: 18 })],
       analyticsWeekly: [
         {
           ...metricPoint({ date: "2026-07-05", prsCreated: 2, prsMerged: 2 }),
@@ -793,14 +797,18 @@ describe("dashboard hash filters", () => {
     expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
     expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
     expect(personalPrPeriodThroughputDetail(person, "week")).toBe("3 PRs in list | avg 6.7d");
-    expect(personalPrPeriodRiskDetail(person, "week")).toBe(
-      "pending - | attention - | open age - | test wait -"
-    );
+    expect(personalPrPeriodRiskDetail(person, "week")).toBe("pending - | attention - | open age - | test wait -");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
     expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
       "3 unique PRs | 3 created | 2 merged | 5 activity events | avg PR time 6.7d"
     );
+    expect(personalPrPeriodCapDetail(person.prPeriodLists[0], { returned: 200, limit: 200 })).toBe(
+      "This current-period PR list is capped by 200/200 dashboard rows. Created and merged counts still use aggregate counts, but the visible PR cards can be incomplete."
+    );
+    expect(
+      personalPrPeriodCapDetail({ ...person.prPeriodLists[0], truncated: false }, { returned: 200, limit: 200 })
+    ).toBeNull();
   });
 
   it("filters workflow violations by management severity and notification state", () => {
@@ -1018,9 +1026,7 @@ describe("dashboard hash filters", () => {
     expect(personalCriticalFlowManagementDetail(flow)).toBe(
       "from active to PR 18h | to issue testing 1.8d | 1 no PR | 1 not in issue testing"
     );
-    expect(personalCriticalFlowHealthText(flow)).toBe(
-      "Needs attention: 1 no linked PR | 1 not in issue testing"
-    );
+    expect(personalCriticalFlowHealthText(flow)).toBe("Needs attention: 1 no linked PR | 1 not in issue testing");
     expect(
       personalCriticalFlowHealthText({
         ...flow,

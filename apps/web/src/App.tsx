@@ -814,6 +814,13 @@ export function dashboardViewLimitTargetForKey(key: string): DashboardViewLimitT
       options: { peopleScopeFilter: "pending_pr", peopleSort: "pr_age" }
     };
   }
+  if (key === "personal_pr_period_rows") {
+    return {
+      view: "Personal",
+      label: "Open personal PR periods",
+      options: { personalDrilldownFilter: "pending_pr", analyticsPeriod: "week" }
+    };
+  }
   if (key === "attention_summary") {
     return {
       view: "People",
@@ -18165,6 +18172,17 @@ export function personalPrThroughputSummary(rows: PersonalPrThroughputRow[]): st
   return rows.map((row) => `${metricPeriodShortText(row.period)} ${personalPrThroughputPair(row)}`).join(" | ");
 }
 
+export function personalPrPeriodCapDetail(
+  periodList: PersonalPrPeriodListView | null,
+  limit: Pick<DashboardViewLimit, "returned" | "limit"> | null
+): string | null {
+  if (!periodList?.truncated) {
+    return null;
+  }
+  const limitText = limit ? `${limit.returned}/${limit.limit} dashboard rows` : "the dashboard protection limit";
+  return `This current-period PR list is capped by ${limitText}. Created and merged counts still use aggregate counts, but the visible PR cards can be incomplete.`;
+}
+
 export function personalPrPeriodThroughputDetail(person: PersonalActionView, period: MetricPeriod): string {
   const periodList = personalPrPeriodListForPeriod(person, period);
   return `${prCountLabel(personalPrVisibleUniqueTotalForPeriod(person, period))} in list | avg ${personalPrPeriodAverageDurationText(
@@ -18358,20 +18376,24 @@ function PersonalPrThroughputPanel({
   person,
   selection,
   sort,
+  prPeriodLimit,
   onSelectionChange,
   onSortChange,
   onDrilldownChange,
   onIssuePreview,
-  onPullRequestPreview
+  onPullRequestPreview,
+  onOpenPrPeriodLimit
 }: {
   person: PersonalActionView;
   selection: PersonalPrThroughputSelection;
   sort: PersonalPrSort;
+  prPeriodLimit: DashboardViewLimit | null;
   onSelectionChange: (selection: PersonalPrThroughputSelection) => void;
   onSortChange: (sort: PersonalPrSort) => void;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
   onIssuePreview: (issue: CriticalIssueView) => void;
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
+  onOpenPrPeriodLimit: () => void;
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
@@ -18389,6 +18411,7 @@ function PersonalPrThroughputPanel({
     listScope === "period_all" || listScope === "created_period" || listScope === "merged_period";
   const visibleTotalLabel = listScope === "period_all" ? "unique PRs" : "PRs";
   const periodActivitySummary = personalPrPeriodActivitySummary(selectedPeriodList);
+  const selectedPeriodCapDetail = personalPrPeriodCapDetail(selectedPeriodList, prPeriodLimit);
 
   return (
     <section
@@ -18400,8 +18423,8 @@ function PersonalPrThroughputPanel({
         <div>
           <Title level={5}>Personal PRs: Today / This Week / This Month</Title>
           <Text type="secondary">
-            Current calendar periods in the repo timezone. Click a period for this person's PR list, duration, age,
-            and blockers.
+            Current calendar periods in the repo timezone. Click a period for this person's PR list, duration, age, and
+            blockers.
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
@@ -18439,6 +18462,7 @@ function PersonalPrThroughputPanel({
               <em>{personalPrPeriodThroughputDetail(person, row.period)}</em>
               <em>{personalPrPeriodRiskDetail(person, row.period)}</em>
               {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
+              {periodList?.truncated ? <Tag color="gold">list capped</Tag> : null}
             </button>
           );
         })}
@@ -18489,7 +18513,13 @@ function PersonalPrThroughputPanel({
                   {personalPrSortLabel(sort)}
                 </Text>
                 <Text type="secondary">{periodActivitySummary}</Text>
-                {selectedPeriodList?.truncated ? <Tag color="gold">capped</Tag> : null}
+                {selectedPeriodCapDetail ? (
+                  <Tooltip title={selectedPeriodCapDetail}>
+                    <button type="button" className="inline-filter-chip" onClick={onOpenPrPeriodLimit}>
+                      List capped | open cap details
+                    </button>
+                  </Tooltip>
+                ) : null}
               </span>
             </div>
           ) : (
@@ -18886,18 +18916,22 @@ function SelectedPersonWorkbench({
   analyticsPeriod,
   trendPoints,
   throughputRequest,
+  prPeriodLimit,
   onAnalyticsPeriodChange,
   drilldownFilter,
-  onDrilldownChange
+  onDrilldownChange,
+  onOpenPrPeriodLimit
 }: {
   person: PersonalActionView;
   generatedAt: string;
   analyticsPeriod: MetricPeriod;
   trendPoints: TrendMetricPoint[];
   throughputRequest: PersonalThroughputRequest | null;
+  prPeriodLimit: DashboardViewLimit | null;
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
   drilldownFilter: PersonalDrilldownFilter;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
+  onOpenPrPeriodLimit: () => void;
 }) {
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
@@ -18976,11 +19010,13 @@ function SelectedPersonWorkbench({
         person={person}
         selection={throughputSelection}
         sort={personalPrSort}
+        prPeriodLimit={prPeriodLimit}
         onSelectionChange={setThroughputSelection}
         onSortChange={setPersonalPrSort}
         onDrilldownChange={onDrilldownChange}
         onIssuePreview={previewIssue}
         onPullRequestPreview={previewPullRequest}
+        onOpenPrPeriodLimit={onOpenPrPeriodLimit}
       />
       <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />
       <details className="secondary-disclosure person-signal-disclosure">
@@ -20882,6 +20918,21 @@ export default function App() {
       selectView("People", selectedPerson, { peopleScopeFilter: nextScope, peopleSort: nextSort });
       return;
     }
+    if (target.view === "Personal") {
+      const nextPerson = selectedPerson ?? data?.personalViews[0]?.login ?? null;
+      const nextDrilldown = options.personalDrilldownFilter ?? personalDrilldownFilter;
+      const nextPeriod = options.analyticsPeriod ?? analyticsPeriod;
+      if (nextPerson) {
+        setSelectedPerson(nextPerson);
+      }
+      setPersonalDrilldownFilter(nextDrilldown);
+      setAnalyticsPeriod(nextPeriod);
+      selectView("Personal", nextPerson, {
+        personalDrilldownFilter: nextDrilldown,
+        analyticsPeriod: nextPeriod
+      });
+      return;
+    }
     selectView(target.view);
   }
 
@@ -22482,6 +22533,7 @@ export default function App() {
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
   const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
   const serviceReadTokenConfigured = data?.profileConfiguration.githubServiceTokenConfigured ?? false;
+  const personalPrPeriodLimit = data?.sync.viewLimits.find((limit) => limit.key === "personal_pr_period_rows") ?? null;
   const systemViewMenuItems: MenuProps["items"] = systemViewOptions.map((option) => ({
     key: option,
     label: option
@@ -23448,6 +23500,7 @@ export default function App() {
                         generatedAt={data.sync.generatedAt}
                         analyticsPeriod={analyticsPeriod}
                         trendPoints={personalTrendPoints}
+                        prPeriodLimit={personalPrPeriodLimit}
                         throughputRequest={
                           personalThroughputRequest?.login === selectedPersonalView.login
                             ? personalThroughputRequest
@@ -23456,6 +23509,10 @@ export default function App() {
                         onAnalyticsPeriodChange={changeAnalyticsPeriod}
                         drilldownFilter={personalDrilldownFilter}
                         onDrilldownChange={changePersonalDrilldownFilter}
+                        onOpenPrPeriodLimit={() => {
+                          setFreshnessExpanded(true);
+                          selectView("Health");
+                        }}
                       />
                     ) : (
                       <Empty description="No watched users configured for personal action lists" />
