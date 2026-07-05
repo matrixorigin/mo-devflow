@@ -17085,7 +17085,7 @@ function PersonalOperatingSignalStrip({
   );
 }
 
-export type PersonalPrListScope = "attention" | "pending" | "created_period" | "merged_period";
+export type PersonalPrListScope = "attention" | "pending" | "period_all" | "created_period" | "merged_period";
 
 export interface PersonalPrThroughputSelection {
   scope: PersonalPrListScope;
@@ -17246,28 +17246,20 @@ export function personalPrThroughputSelectionForPeriod(
   person: PersonalActionView,
   period: MetricPeriod
 ): PersonalPrThroughputSelection {
-  const periodList = personalPrPeriodListForPeriod(person, period);
   return {
     period,
-    scope: (periodList?.totalMergedPrs ?? 0) > (periodList?.totalCreatedPrs ?? 0) ? "merged_period" : "created_period"
+    scope: "period_all"
   };
 }
 
 function initialPersonalPrThroughputSelection(person: PersonalActionView): PersonalPrThroughputSelection {
-  const defaultPeriodList = personalPrPeriodListForPeriod(person, "day");
   if (person.attentionPrs.length > 0) {
     return { period: "day", scope: "attention" };
   }
   if (person.pendingPrs.length > 0) {
     return { period: "day", scope: "pending" };
   }
-  return {
-    period: "day",
-    scope:
-      (defaultPeriodList?.totalMergedPrs ?? 0) > (defaultPeriodList?.totalCreatedPrs ?? 0)
-        ? "merged_period"
-        : "created_period"
-  };
+  return { period: "day", scope: "period_all" };
 }
 
 function PersonalPrThroughputPanel({
@@ -17295,7 +17287,9 @@ function PersonalPrThroughputPanel({
   const selectedPeriodList = personalPrPeriodListForPeriod(person, listPeriod);
   const visiblePrs = personalPrListForScope(person, listScope, listPeriod);
   const visibleTotal = personalPrListTotalForScope(person, listScope, listPeriod);
-  const periodListActive = listScope === "created_period" || listScope === "merged_period";
+  const periodListActive =
+    listScope === "period_all" || listScope === "created_period" || listScope === "merged_period";
+  const visibleTotalLabel = listScope === "period_all" ? "PR activity" : "PRs";
 
   return (
     <section
@@ -17357,6 +17351,10 @@ function PersonalPrThroughputPanel({
               options={[
                 { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
                 { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
+                {
+                  label: `Activity ${periodPrActivityTotal(selectedPeriodList)}`,
+                  value: "period_all"
+                },
                 { label: `Created ${selectedPeriodList?.totalCreatedPrs ?? 0}`, value: "created_period" },
                 { label: `Merged ${selectedPeriodList?.totalMergedPrs ?? 0}`, value: "merged_period" }
               ]}
@@ -17380,14 +17378,14 @@ function PersonalPrThroughputPanel({
               <span className="personal-throughput-list-meta">
                 <Tag>{selectedPeriodList?.label ?? metricPeriodText(listPeriod)}</Tag>
                 <Text type="secondary">
-                  showing {visiblePrs.length}/{visibleTotal} PRs
+                  showing {visiblePrs.length}/{visibleTotal} {visibleTotalLabel}
                 </Text>
                 {selectedPeriodList?.truncated ? <Tag color="gold">capped</Tag> : null}
               </span>
             </div>
           ) : (
             <Text type="secondary" className="personal-throughput-note">
-              showing {visiblePrs.length}/{visibleTotal} PRs by current cache state
+              showing {visiblePrs.length}/{visibleTotal} {visibleTotalLabel} by current cache state
             </Text>
           )}
           <PullRequestCardList
@@ -17496,6 +17494,9 @@ export function personalPrListForScope(
     return person.attentionPrs;
   }
   const periodList = personalPrPeriodListForPeriod(person, period);
+  if (scope === "period_all") {
+    return personalPrPeriodActivityPrs(periodList);
+  }
   if (scope === "created_period") {
     return periodList?.createdPrs ?? [];
   }
@@ -17517,7 +17518,40 @@ export function personalPrListTotalForScope(
     return person.pendingPrs.length;
   }
   const periodList = personalPrPeriodListForPeriod(person, period);
+  if (scope === "period_all") {
+    return periodPrActivityTotal(periodList);
+  }
   return scope === "created_period" ? (periodList?.totalCreatedPrs ?? 0) : (periodList?.totalMergedPrs ?? 0);
+}
+
+function periodPrActivityTotal(periodList: PersonalPrPeriodListView | null): number {
+  return (periodList?.totalCreatedPrs ?? 0) + (periodList?.totalMergedPrs ?? 0);
+}
+
+function personalPrPeriodActivityPrs(periodList: PersonalPrPeriodListView | null): PersonalPullRequestView[] {
+  if (!periodList) {
+    return [];
+  }
+  const byNumber = new Map<number, PersonalPullRequestView>();
+  for (const pr of [...periodList.createdPrs, ...periodList.mergedPrs]) {
+    byNumber.set(pr.number, pr);
+  }
+  return [...byNumber.values()].sort(
+    (left, right) => personalPrPeriodActivityTime(right, periodList) - personalPrPeriodActivityTime(left, periodList)
+  );
+}
+
+function personalPrPeriodActivityTime(pr: PersonalPullRequestView, periodList: PersonalPrPeriodListView): number {
+  const start = Date.parse(periodList.periodStart);
+  const end = Date.parse(periodList.periodEnd);
+  const candidates = [pr.createdAt, pr.mergedAt]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value) && value >= start && value < end);
+  if (candidates.length > 0) {
+    return Math.max(...candidates);
+  }
+  return Date.parse(pr.mergedAt ?? pr.createdAt);
 }
 
 function PersonalFlowEfficiencyMetric({

@@ -419,7 +419,7 @@ describe("dashboard hash filters", () => {
     expect(personalPrThroughputSummary(rows)).toBe("D 3/2 | W 9/7 | M 24/20");
   });
 
-  it("maps personal day/week/month PR totals to the visible PR list", () => {
+  it("maps personal day/week/month PR totals to period, created, and merged lists", () => {
     const person = {
       attentionPrs: [{ number: 99 }],
       pendingPrs: [{ number: 98 }],
@@ -431,15 +431,23 @@ describe("dashboard hash filters", () => {
           periodEnd: "2026-07-06",
           totalCreatedPrs: 3,
           totalMergedPrs: 2,
-          createdPrs: [{ number: 10 }, { number: 11 }],
-          mergedPrs: [{ number: 12 }],
+          createdPrs: [
+            { number: 10, createdAt: "2026-06-30T09:00:00.000Z", mergedAt: "2026-07-03T10:00:00.000Z" },
+            { number: 11, createdAt: "2026-07-01T09:00:00.000Z", mergedAt: null }
+          ],
+          mergedPrs: [
+            { number: 12, createdAt: "2026-06-20T09:00:00.000Z", mergedAt: "2026-07-05T10:00:00.000Z" },
+            { number: 10, createdAt: "2026-06-30T09:00:00.000Z", mergedAt: "2026-07-03T10:00:00.000Z" }
+          ],
           truncated: true
         }
       ]
     } as any;
 
+    expect(personalPrListForScope(person, "period_all", "week").map((pr) => pr.number)).toEqual([12, 10, 11]);
     expect(personalPrListForScope(person, "created_period", "week").map((pr) => pr.number)).toEqual([10, 11]);
-    expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12]);
+    expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12, 10]);
+    expect(personalPrListTotalForScope(person, "period_all", "week")).toBe(5);
     expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
   });
@@ -513,7 +521,7 @@ describe("dashboard hash filters", () => {
     expect(aiDriftSignalMatchesSignalFilter(failedSignal, "notification_failed")).toBe(true);
   });
 
-  it("selects the period PR list that matches the stronger day, week, or month count", () => {
+  it("opens period PR activity when a day, week, or month throughput count is selected", () => {
     const person = {
       attentionPrs: [],
       pendingPrs: [],
@@ -545,11 +553,11 @@ describe("dashboard hash filters", () => {
 
     expect(personalPrThroughputSelectionForPeriod(person, "day")).toEqual({
       period: "day",
-      scope: "created_period"
+      scope: "period_all"
     });
     expect(personalPrThroughputSelectionForPeriod(person, "month")).toEqual({
       period: "month",
-      scope: "merged_period"
+      scope: "period_all"
     });
   });
 
