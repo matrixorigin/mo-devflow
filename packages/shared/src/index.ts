@@ -961,6 +961,20 @@ export interface SyncHealth {
 
 export type JobQueueHealthStatus = "healthy" | "attention";
 
+export interface JobQueueTypeHealth {
+  jobType: string;
+  status: JobQueueHealthStatus;
+  queueDepth: number;
+  runningJobs: number;
+  failedJobs: number;
+  blockedJobs: number;
+  staleLeases: number;
+  oldestPendingAgeHours: number | null;
+  nextRunAt: string | null;
+  latestFailure: string | null;
+  recommendedAction: string | null;
+}
+
 export interface JobQueueHealth {
   status: JobQueueHealthStatus;
   queueDepth: number;
@@ -972,6 +986,7 @@ export interface JobQueueHealth {
   nextRunAt: string | null;
   latestFailure: string | null;
   recommendedAction: string | null;
+  byType: JobQueueTypeHealth[];
 }
 
 export type WorkerHealthStatus = "offline" | "active" | "stale" | "failed";

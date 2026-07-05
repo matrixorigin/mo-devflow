@@ -4808,6 +4808,55 @@ function HealthLayerRow({
   );
 }
 
+function JobQueueTypeRow({
+  item,
+  authenticated,
+  saving,
+  onQueueLayer
+}: {
+  item: DashboardSummary["sync"]["jobQueue"]["byType"][number];
+  authenticated: boolean;
+  saving: boolean;
+  onQueueLayer: (layer: ManualRefreshLayer) => void;
+}) {
+  const layer = isManualRefreshLayer(item.jobType) ? item.jobType : null;
+  const statusColor = item.status === "attention" ? "orange" : "green";
+
+  return (
+    <article className={`job-queue-type-row job-queue-type-${item.status}`}>
+      <div className="job-queue-type-main">
+        <Space size={[4, 4]} wrap>
+          <Tag color={statusColor}>{labelText(item.status)}</Tag>
+          <Text strong>{labelText(item.jobType)}</Text>
+        </Space>
+        <Text type="secondary">
+          {item.recommendedAction ??
+            `${item.queueDepth} due, ${item.runningJobs} running, next ${formatDate(item.nextRunAt)}`}
+        </Text>
+      </div>
+      <div className="job-queue-type-facts" aria-label={`${item.jobType} queue facts`}>
+        <span>{item.queueDepth} due</span>
+        <span>{item.runningJobs} running</span>
+        {item.failedJobs > 0 ? <span className="job-queue-type-attention">{item.failedJobs} failed</span> : null}
+        {item.blockedJobs > 0 ? <span className="job-queue-type-attention">{item.blockedJobs} blocked</span> : null}
+        {item.staleLeases > 0 ? (
+          <span className="job-queue-type-attention">{item.staleLeases} stale leases</span>
+        ) : null}
+        {item.oldestPendingAgeHours !== null ? <span>oldest {hours(item.oldestPendingAgeHours)}</span> : null}
+      </div>
+      {layer ? (
+        <Tooltip title={authenticated ? "Queue this worker layer now" : "Sign in to queue worker refresh jobs"}>
+          <span>
+            <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(layer)}>
+              Queue layer
+            </Button>
+          </span>
+        </Tooltip>
+      ) : null}
+    </article>
+  );
+}
+
 function HealthBoard({
   data,
   session,
@@ -4997,6 +5046,19 @@ function HealthBoard({
               }
             />
           </div>
+          {data.sync.jobQueue.byType.length > 0 ? (
+            <div className="job-queue-type-list" aria-label="Job queue by worker layer">
+              {data.sync.jobQueue.byType.map((item) => (
+                <JobQueueTypeRow
+                  item={item}
+                  authenticated={authenticated}
+                  saving={manualRefreshSaving}
+                  onQueueLayer={(layer) => onQueueLayers([layer])}
+                  key={item.jobType}
+                />
+              ))}
+            </div>
+          ) : null}
         </section>
       </div>
     </section>

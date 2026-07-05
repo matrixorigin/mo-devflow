@@ -6241,6 +6241,58 @@ button.flow-diagnostic-card:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.job-queue-type-list {
+  border-top: 1px solid #f1f5f9;
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.job-queue-type-row {
+  align-items: center;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.8fr) auto;
+  min-width: 0;
+  padding: 8px;
+}
+
+.job-queue-type-attention {
+  color: #b45309;
+  font-weight: 650;
+}
+
+.job-queue-type-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.job-queue-type-main .ant-tag {
+  margin-inline-end: 0;
+}
+
+.job-queue-type-main .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.job-queue-type-facts {
+  color: #4b5563;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.job-queue-type-facts span {
+  overflow-wrap: anywhere;
+}
+
 .sync-health-tags,
 .sync-health-layer {
   max-width: 100%;
@@ -6498,7 +6550,8 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .health-detail-grid,
-  .health-layer-row {
+  .health-layer-row,
+  .job-queue-type-row {
     grid-template-columns: 1fr;
   }
 
@@ -6670,7 +6723,8 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .health-metric-card .ant-btn,
-  .health-layer-row .ant-btn {
+  .health-layer-row .ant-btn,
+  .job-queue-type-row .ant-btn {
     justify-self: start;
   }
 

@@ -28,7 +28,8 @@ const jobQueue: JobQueueHealth = {
   oldestPendingAgeHours: null,
   nextRunAt: null,
   latestFailure: null,
-  recommendedAction: null
+  recommendedAction: null,
+  byType: []
 };
 
 const operational: OperationalHealthSummary = {

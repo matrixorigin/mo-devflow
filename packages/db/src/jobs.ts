@@ -1,6 +1,7 @@
 import {
   parseJsonRecord,
   type JobQueueHealth,
+  type JobQueueTypeHealth,
   type ManualRefreshLayer,
   type ManualRefreshResult
 } from "@mo-devflow/shared";
@@ -41,6 +42,10 @@ function stringify(value: unknown): string {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function asNumber(value: unknown): number {
@@ -328,14 +333,15 @@ export function jobQueueHealthStatus(
 
 export async function getJobQueueHealth(): Promise<JobQueueHealth> {
   const pool = getPool();
-  const [queueRows] = await pool.execute<RowData[]>(
-    `SELECT COUNT(*) AS queue_depth, MIN(next_run_at) AS oldest_pending_at
-     FROM jobs
-     WHERE next_run_at <= UTC_TIMESTAMP()
+  const dueCondition = `next_run_at <= UTC_TIMESTAMP()
        AND (
          status IN ('pending', 'failed', 'complete')
          OR (status = 'running' AND lease_expires_at < UTC_TIMESTAMP())
-       )`
+       )`;
+  const [queueRows] = await pool.execute<RowData[]>(
+    `SELECT COUNT(*) AS queue_depth, MIN(next_run_at) AS oldest_pending_at
+     FROM jobs
+     WHERE ${dueCondition}`
   );
   const [runningRows] = await pool.execute<RowData[]>(
     `SELECT COUNT(*) AS running_jobs
@@ -363,12 +369,40 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
      ORDER BY updated_at DESC
      LIMIT 1`
   );
+  const [breakdownRows] = await pool.execute<RowData[]>(
+    `SELECT job_type,
+            SUM(CASE WHEN ${dueCondition} THEN 1 ELSE 0 END) AS queue_depth,
+            SUM(CASE WHEN status = 'running' AND lease_expires_at >= UTC_TIMESTAMP() THEN 1 ELSE 0 END) AS running_jobs,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_jobs,
+            SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked_jobs,
+            SUM(CASE WHEN status = 'running' AND lease_expires_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END) AS stale_leases,
+            MIN(CASE WHEN ${dueCondition} THEN next_run_at ELSE NULL END) AS oldest_pending_at,
+            MIN(CASE WHEN next_run_at > UTC_TIMESTAMP() THEN next_run_at ELSE NULL END) AS next_run_at
+     FROM jobs
+     GROUP BY job_type
+     ORDER BY queue_depth DESC, failed_jobs DESC, blocked_jobs DESC, stale_leases DESC, job_type ASC`
+  );
+  const [failureBreakdownRows] = await pool.execute<RowData[]>(
+    `SELECT job_type, job_key, last_error
+     FROM jobs
+     WHERE last_error IS NOT NULL
+     ORDER BY updated_at DESC`
+  );
   const queueRow = queueRows[0] ?? {};
   const oldestPendingAt = fromSqlDate(queueRow.oldest_pending_at);
   const oldestPendingAgeHours = oldestPendingAt
     ? Math.max(0, Math.round(((Date.now() - new Date(oldestPendingAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
   const failure = failureRows[0];
+  const failureByType = new Map<string, string>();
+  for (const row of failureBreakdownRows) {
+    const jobType = asString(row.job_type);
+    if (!failureByType.has(jobType)) {
+      failureByType.set(jobType, `${asString(row.job_key)}: ${asString(row.last_error)}`);
+    }
+  }
+  const oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv();
+  const byType = jobQueueTypeHealthFromRows(breakdownRows, failureByType, oldestPendingWarnHours);
   const baseHealth = {
     queueDepth: asNumber(queueRow.queue_depth),
     runningJobs: asNumber(runningRows[0]?.running_jobs),
@@ -379,11 +413,41 @@ export async function getJobQueueHealth(): Promise<JobQueueHealth> {
     nextRunAt: fromSqlDate(nextRows[0]?.next_run_at),
     latestFailure: failure ? `${asString(failure.job_key)}: ${asString(failure.last_error)}` : null
   };
-  const oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv();
 
   return {
     status: jobQueueHealthStatus(baseHealth, oldestPendingWarnHours),
     ...baseHealth,
-    recommendedAction: jobQueueRecommendedAction(baseHealth, oldestPendingWarnHours)
+    recommendedAction: jobQueueRecommendedAction(baseHealth, oldestPendingWarnHours),
+    byType
   };
+}
+
+export function jobQueueTypeHealthFromRows(
+  rows: RowData[],
+  failureByType: Map<string, string>,
+  oldestPendingWarnHours = jobQueueOldestPendingWarnHoursFromEnv()
+): JobQueueTypeHealth[] {
+  return rows.map((row) => {
+    const oldestPendingAt = fromSqlDate(row.oldest_pending_at);
+    const latestFailure = failureByType.get(asString(row.job_type)) ?? null;
+    const baseHealth = {
+      queueDepth: asNumber(row.queue_depth),
+      runningJobs: asNumber(row.running_jobs),
+      failedJobs: asNumber(row.failed_jobs),
+      blockedJobs: asNumber(row.blocked_jobs),
+      staleLeases: asNumber(row.stale_leases),
+      oldestPendingAgeHours: oldestPendingAt
+        ? Math.max(0, Math.round(((Date.now() - new Date(oldestPendingAt).getTime()) / 3_600_000) * 10) / 10)
+        : null,
+      nextRunAt: asNullableString(fromSqlDate(row.next_run_at)),
+      latestFailure
+    };
+
+    return {
+      jobType: asString(row.job_type),
+      status: jobQueueHealthStatus(baseHealth, oldestPendingWarnHours),
+      ...baseHealth,
+      recommendedAction: jobQueueRecommendedAction(baseHealth, oldestPendingWarnHours)
+    };
+  });
 }

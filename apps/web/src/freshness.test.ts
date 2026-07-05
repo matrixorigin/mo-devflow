@@ -47,7 +47,8 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
       oldestPendingAgeHours: null,
       nextRunAt: null,
       latestFailure: null,
-      recommendedAction: null
+      recommendedAction: null,
+      byType: []
     },
     worker: {
       status: "active",
