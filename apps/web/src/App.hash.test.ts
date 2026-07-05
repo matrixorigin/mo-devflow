@@ -22,7 +22,8 @@ import {
   prScopeLabel,
   prSortFromHash,
   serviceReadTokenStatusText,
-  syncHealthCursorText
+  syncHealthCursorText,
+  testingIssueQueueFilterFromHash
 } from "./App";
 
 describe("dashboard hash filters", () => {
@@ -66,12 +67,30 @@ describe("dashboard hash filters", () => {
     expect(personalDrilldownFilterFromHash(`#${personalHash}`)).toBe("pr_attention");
   });
 
+  it("round-trips issue testing queue filters through PR board links", () => {
+    const hash = dashboardHashForView("PRs", {
+      prScopeFilter: "testing",
+      prBoardTab: "testing",
+      testingIssueQueueFilter: "stale"
+    });
+
+    expect(hash).toBe("prs?scope=testing&tab=testing&test=stale");
+    expect(prScopeFilterFromHash(`#${hash}`)).toBe("testing");
+    expect(prBoardTabFromHash(`#${hash}`)).toBe("testing");
+    expect(testingIssueQueueFilterFromHash(`#${hash}`)).toBe("stale");
+    expect(prBoardTabFromHash("#prs?test=data_gap")).toBe("testing");
+    expect(testingIssueQueueFilterFromHash("#prs?scope=stale_testing")).toBe("stale");
+    expect(testingIssueQueueFilterFromHash("#prs?scope=testing_evidence_gap")).toBe("data_gap");
+    expect(dashboardHashForView("PRs", { prBoardTab: "rotation", testingIssueQueueFilter: "stale" })).toBe("prs");
+  });
+
   it("falls back from invalid filter params instead of preserving broken links", () => {
-    const hash = "#prs?scope=triage&sort=unknown&tab=unknown";
+    const hash = "#prs?scope=triage&sort=unknown&tab=unknown&test=unknown";
 
     expect(prScopeFilterFromHash(hash)).toBe("all");
     expect(prSortFromHash(hash)).toBe("risk");
     expect(prBoardTabFromHash(hash)).toBe("rotation");
+    expect(testingIssueQueueFilterFromHash(hash)).toBe("all");
     expect(criticalIssueOwnerFilterFromHash("#issues?owner=owner%3A")).toBe("all");
   });
 

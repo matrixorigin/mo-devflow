@@ -252,6 +252,7 @@ type PrScopeFilter =
   | "no_action_24h";
 type PrSort = "risk" | "age" | "last_action" | "testing_wait" | "number";
 type PrBoardTab = "rotation" | "testing";
+type TestingIssueQueueFilter = "all" | "stale" | "attention" | "unlinked" | "data_gap";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
 type WebhookDeliveryScopeFilter =
@@ -289,6 +290,7 @@ const prScopeFilters = [
 ] satisfies PrScopeFilter[];
 const prSorts = ["risk", "age", "last_action", "testing_wait", "number"] satisfies PrSort[];
 const prBoardTabs = ["rotation", "testing"] satisfies PrBoardTab[];
+const testingIssueQueueFilters = ["all", "stale", "attention", "unlinked", "data_gap"] satisfies TestingIssueQueueFilter[];
 const peopleScopeFilterValues = [
   "all",
   "critical",
@@ -328,6 +330,7 @@ interface DashboardHashOptions {
   prScopeFilter?: PrScopeFilter;
   prSort?: PrSort;
   prBoardTab?: PrBoardTab;
+  testingIssueQueueFilter?: TestingIssueQueueFilter;
   peopleScopeFilter?: PeopleScopeFilter;
   peopleSort?: PeopleBoardSort;
   personalDrilldownFilter?: PersonalDrilldownFilter;
@@ -466,10 +469,19 @@ export function prSortFromHash(hash: string): PrSort {
 
 export function prBoardTabFromHash(hash: string): PrBoardTab {
   const scope = prScopeFilterFromHash(hash);
-  if (isTestingPrScope(scope)) {
+  const issueQueueFilter = testingIssueQueueFilterFromHash(hash);
+  if (isTestingPrScope(scope) || issueQueueFilter !== "all") {
     return "testing";
   }
   return hashEnumParam(hash, "tab", prBoardTabs, "rotation");
+}
+
+export function testingIssueQueueFilterFromHash(hash: string): TestingIssueQueueFilter {
+  const explicitFilter = hashEnumParam(hash, "test", testingIssueQueueFilters, "all");
+  if (explicitFilter !== "all") {
+    return explicitFilter;
+  }
+  return testingIssueFilterForPrScope(prScopeFilterFromHash(hash)) ?? "all";
 }
 
 export function peopleScopeFilterFromHash(hash: string): PeopleScopeFilter {
@@ -558,9 +570,13 @@ export function dashboardHashForView(view: DashboardView, options: DashboardHash
     setHashParamIfChanged(params, "sort", options.criticalIssueSort, "risk");
   }
   if (view === "PRs") {
+    const nextPrBoardTab = options.prBoardTab ?? prBoardTabForScope(options.prScopeFilter ?? "all");
     setHashParamIfChanged(params, "scope", options.prScopeFilter, "all");
     setHashParamIfChanged(params, "sort", options.prSort, "risk");
-    setHashParamIfChanged(params, "tab", options.prBoardTab, "rotation");
+    setHashParamIfChanged(params, "tab", nextPrBoardTab, "rotation");
+    if (nextPrBoardTab === "testing") {
+      setHashParamIfChanged(params, "test", options.testingIssueQueueFilter, "all");
+    }
   }
   if (view === "People") {
     setHashParamIfChanged(params, "scope", options.peopleScopeFilter, "all");
@@ -2982,6 +2998,19 @@ function prBoardTabForScope(scope: PrScopeFilter): PrBoardTab {
     return "testing";
   }
   return "rotation";
+}
+
+function testingIssueFilterForPrScope(scope: PrScopeFilter): TestingIssueQueueFilter | null {
+  if (scope === "stale_testing") {
+    return "stale";
+  }
+  if (scope === "testing_evidence_gap") {
+    return "data_gap";
+  }
+  if (scope === "testing") {
+    return "all";
+  }
+  return null;
 }
 
 function isTestingPrScope(scope: PrScopeFilter): boolean {
@@ -9650,7 +9679,6 @@ function TestingCommandBoard({
   );
 }
 
-type TestingIssueQueueFilter = "all" | "stale" | "attention" | "unlinked" | "data_gap";
 type TestingIssueQueueSort = "priority" | "wait" | "number";
 
 function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
@@ -16045,7 +16073,9 @@ export default function App() {
   const [prRotationTablePageSize, setPrRotationTablePageSize] = useState(prRotationTableDefaultPageSize);
   const [prTestingTablePage, setPrTestingTablePage] = useState(1);
   const [prTestingTablePageSize, setPrTestingTablePageSize] = useState(prTestingTableDefaultPageSize);
-  const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
+  const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>(() =>
+    testingIssueQueueFilterFromHash(initialHash())
+  );
   const [testingEvidenceOpen, setTestingEvidenceOpen] = useState(false);
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>(() =>
     peopleScopeFilterFromHash(initialHash())
@@ -16390,6 +16420,7 @@ export default function App() {
       prScopeFilter,
       prSort,
       prBoardTab,
+      testingIssueQueueFilter,
       peopleScopeFilter,
       peopleSort,
       personalDrilldownFilter,
@@ -16522,16 +16553,17 @@ export default function App() {
 
   function openPrsWithFilter(scope: PrScopeFilter) {
     const nextTab = prBoardTabForScope(scope);
+    const nextTestingIssueFilter = testingIssueFilterForPrScope(scope) ?? testingIssueQueueFilter;
     setPrScopeFilter(scope);
     setPrBoardTab(nextTab);
-    if (scope === "stale_testing") {
-      setTestingIssueQueueFilter("stale");
-    } else if (scope === "testing_evidence_gap") {
-      setTestingIssueQueueFilter("data_gap");
-    } else if (scope === "testing") {
-      setTestingIssueQueueFilter("all");
+    if (nextTab === "testing") {
+      setTestingIssueQueueFilter(nextTestingIssueFilter);
     }
-    selectView("PRs", selectedPerson, { prScopeFilter: scope, prBoardTab: nextTab });
+    selectView("PRs", selectedPerson, {
+      prScopeFilter: scope,
+      prBoardTab: nextTab,
+      testingIssueQueueFilter: nextTestingIssueFilter
+    });
   }
 
   function openIssueTestingQueue(filter: TestingIssueQueueFilter = "all") {
@@ -16539,7 +16571,11 @@ export default function App() {
     setTestingIssueQueueFilter(filter);
     setPrScopeFilter(nextScope);
     setPrBoardTab("testing");
-    selectView("PRs", selectedPerson, { prScopeFilter: nextScope, prBoardTab: "testing" });
+    selectView("PRs", selectedPerson, {
+      prScopeFilter: nextScope,
+      prBoardTab: "testing",
+      testingIssueQueueFilter: filter
+    });
     window.setTimeout(scrollTestingIssueQueueIntoView, 0);
   }
 
@@ -16550,7 +16586,11 @@ export default function App() {
       setPrScopeFilter(nextScope);
     }
     if (view === "PRs") {
-      replaceDashboardHash("PRs", selectedPerson, { prBoardTab: nextTab, prScopeFilter: nextScope });
+      replaceDashboardHash("PRs", selectedPerson, {
+        prBoardTab: nextTab,
+        prScopeFilter: nextScope,
+        testingIssueQueueFilter
+      });
     }
   }
 
@@ -16599,10 +16639,20 @@ export default function App() {
       const nextScope = options.prScopeFilter ?? prScopeFilter;
       const nextSort = options.prSort ?? prSort;
       const nextTab = options.prBoardTab ?? prBoardTabForScope(nextScope);
+      const nextTestingIssueFilter =
+        options.testingIssueQueueFilter ?? testingIssueFilterForPrScope(nextScope) ?? testingIssueQueueFilter;
       setPrScopeFilter(nextScope);
       setPrSort(nextSort);
       setPrBoardTab(nextTab);
-      selectView("PRs", selectedPerson, { prScopeFilter: nextScope, prSort: nextSort, prBoardTab: nextTab });
+      if (nextTab === "testing") {
+        setTestingIssueQueueFilter(nextTestingIssueFilter);
+      }
+      selectView("PRs", selectedPerson, {
+        prScopeFilter: nextScope,
+        prSort: nextSort,
+        prBoardTab: nextTab,
+        testingIssueQueueFilter: nextTestingIssueFilter
+      });
       return;
     }
     if (target.view === "People") {
@@ -16646,10 +16696,18 @@ export default function App() {
 
   function changePrScopeFilter(value: PrScopeFilter) {
     const nextTab = prBoardTabForScope(value);
+    const nextTestingIssueFilter = testingIssueFilterForPrScope(value) ?? testingIssueQueueFilter;
     setPrScopeFilter(value);
     setPrBoardTab(nextTab);
+    if (nextTab === "testing") {
+      setTestingIssueQueueFilter(nextTestingIssueFilter);
+    }
     if (view === "PRs") {
-      replaceDashboardHash("PRs", selectedPerson, { prScopeFilter: value, prBoardTab: nextTab });
+      replaceDashboardHash("PRs", selectedPerson, {
+        prScopeFilter: value,
+        prBoardTab: nextTab,
+        testingIssueQueueFilter: nextTestingIssueFilter
+      });
     }
   }
 
@@ -16992,6 +17050,7 @@ export default function App() {
       setPrScopeFilter(prScopeFilterFromHash(nextHash));
       setPrSort(prSortFromHash(nextHash));
       setPrBoardTab(prBoardTabFromHash(nextHash));
+      setTestingIssueQueueFilter(testingIssueQueueFilterFromHash(nextHash));
       setPeopleScopeFilter(peopleScopeFilterFromHash(nextHash));
       setPeopleSort(peopleSortFromHash(nextHash));
       setPersonalDrilldownFilter(personalDrilldownFilterFromHash(nextHash));
@@ -18048,10 +18107,16 @@ export default function App() {
     document.getElementById("testing-evidence-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const openTestingIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
+    const nextScope: PrScopeFilter = "testing";
     setTestingIssueQueueFilter(nextFilter);
+    setPrScopeFilter(nextScope);
     setPrBoardTab("testing");
     if (view === "PRs") {
-      replaceDashboardHash("PRs", selectedPerson, { prBoardTab: "testing" });
+      replaceDashboardHash("PRs", selectedPerson, {
+        prScopeFilter: nextScope,
+        prBoardTab: "testing",
+        testingIssueQueueFilter: nextFilter
+      });
     }
     window.setTimeout(scrollTestingIssueQueueIntoView, 0);
   };
@@ -18816,7 +18881,7 @@ export default function App() {
                       pendingPrs={data.pendingPrs}
                       testing={data.testing}
                       testingIssueFilter={testingIssueQueueFilter}
-                      onTestingIssueFilterChange={setTestingIssueQueueFilter}
+                      onTestingIssueFilterChange={openTestingIssueQueueFilter}
                       onOpenPrsFilter={openPrsWithFilter}
                     />
                     <div
