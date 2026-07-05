@@ -218,7 +218,7 @@ async function executeJob(job: LeasedJob): Promise<string> {
     }
     case "webhooks": {
       const result = await processGitHubWebhookDeliveriesOnce();
-      return `webhook deliveries claimed=${result.claimed} processed=${result.processed} failed=${result.failed} skipped=${result.skipped}`;
+      return `webhook deliveries claimed=${result.claimed} processed=${result.processed} failed=${result.failed} skipped=${result.skipped} leaseLost=${result.leaseLost}`;
     }
     case "rules": {
       const result = await recomputeWorkflowViolationsFromCache();

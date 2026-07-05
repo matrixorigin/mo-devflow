@@ -140,6 +140,7 @@ export interface WebhookDeliverySyncResult {
   processed: number;
   failed: number;
   skipped: number;
+  leaseLost: number;
 }
 
 export function syncIntervalSecondsFromEnv(): number {
@@ -299,6 +300,10 @@ function webhookLeaseSecondsFromEnv(): number {
 
 function webhookWorkerId(): string {
   return `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isWebhookDeliveryLeaseLost(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("lease is no longer valid for this worker");
 }
 
 export class WebhookNormalizationError extends Error {
@@ -1279,7 +1284,8 @@ export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliv
     claimed: 0,
     processed: 0,
     failed: 0,
-    skipped: 0
+    skipped: 0,
+    leaseLost: 0
   };
   const limit = webhookLimitFromEnv();
 
@@ -1303,26 +1309,42 @@ export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliv
         eventName: delivery.eventName,
         payload: delivery.payload
       });
-      await completeGitHubWebhookDelivery({
-        deliveryId: delivery.id,
-        processingOwner,
-        result: {
-          deliveryId: delivery.deliveryId,
-          eventName: delivery.eventName,
-          action: delivery.action,
-          message: result.message,
-          skipped: result.skipped
+      try {
+        await completeGitHubWebhookDelivery({
+          deliveryId: delivery.id,
+          processingOwner,
+          result: {
+            deliveryId: delivery.deliveryId,
+            eventName: delivery.eventName,
+            action: delivery.action,
+            message: result.message,
+            skipped: result.skipped
+          }
+        });
+      } catch (error) {
+        if (isWebhookDeliveryLeaseLost(error)) {
+          summary.leaseLost += 1;
+          continue;
         }
-      });
+        throw error;
+      }
       summary.processed += result.processed ? 1 : 0;
       summary.skipped += result.skipped ? 1 : 0;
     } catch (error) {
-      await failGitHubWebhookDelivery({
-        deliveryId: delivery.id,
-        processingOwner,
-        errorMessage: error instanceof Error ? error.message : String(error),
-        status: error instanceof WebhookNormalizationError ? "failed_normalization" : "failed"
-      });
+      try {
+        await failGitHubWebhookDelivery({
+          deliveryId: delivery.id,
+          processingOwner,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          status: error instanceof WebhookNormalizationError ? "failed_normalization" : "failed"
+        });
+      } catch (failError) {
+        if (isWebhookDeliveryLeaseLost(failError)) {
+          summary.leaseLost += 1;
+          continue;
+        }
+        throw failError;
+      }
       summary.failed += 1;
     }
   }

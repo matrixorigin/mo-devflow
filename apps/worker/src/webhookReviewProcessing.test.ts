@@ -916,4 +916,108 @@ describe("webhook review processing", () => {
       })
     );
   });
+
+  test("treats lost webhook complete leases as recoverable worker competition", async () => {
+    const { processGitHubWebhookDeliveriesOnce } = await import("./sync");
+    const now = "2026-07-04T08:00:00.000Z";
+    mocks.claimNextGitHubWebhookDelivery
+      .mockResolvedValueOnce({
+        id: 101,
+        repoId: 10,
+        deliveryId: "delivery-label-lease-lost",
+        eventName: "issues",
+        action: "labeled",
+        attempts: 1,
+        payload: {
+          action: "labeled",
+          issue: {
+            id: 4242,
+            number: 42,
+            title: "urgent active issue",
+            state: "open",
+            user: { login: "alice" },
+            html_url: "https://github.com/matrixorigin/matrixone/issues/42",
+            created_at: "2026-07-01T00:00:00Z",
+            updated_at: now,
+            labels: [{ name: "kind/bug" }, { name: "severity/s-1" }, { name: "ai-easy" }],
+            assignees: [{ login: "alice" }]
+          },
+          label: { name: "severity/s-1" },
+          sender: { login: "lead" }
+        },
+        processingOwner: "worker-1"
+      })
+      .mockResolvedValueOnce(null);
+    mocks.upsertIssue.mockImplementation(async (_repoId: number, issue: unknown) => issue);
+    mocks.completeGitHubWebhookDelivery.mockRejectedValueOnce(
+      new Error("Cannot complete webhook delivery 101; lease is no longer valid for this worker.")
+    );
+
+    const result = await processGitHubWebhookDeliveriesOnce();
+
+    expect(result).toMatchObject({
+      repoId: 10,
+      claimed: 1,
+      processed: 0,
+      failed: 0,
+      skipped: 0,
+      leaseLost: 1
+    });
+    expect(mocks.failGitHubWebhookDelivery).not.toHaveBeenCalled();
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "webhooks",
+        status: "success",
+        raw: expect.objectContaining({
+          claimed: 1,
+          failed: 0,
+          leaseLost: 1
+        })
+      })
+    );
+  });
+
+  test("treats lost webhook fail leases as recoverable worker competition", async () => {
+    const { processGitHubWebhookDeliveriesOnce } = await import("./sync");
+    mocks.claimNextGitHubWebhookDelivery
+      .mockResolvedValueOnce({
+        id: 100,
+        repoId: 10,
+        deliveryId: "delivery-bad-lease-lost",
+        eventName: "issues",
+        action: "opened",
+        attempts: 1,
+        payload: { action: "opened" },
+        processingOwner: "worker-1"
+      })
+      .mockResolvedValueOnce(null);
+    mocks.failGitHubWebhookDelivery.mockRejectedValueOnce(
+      new Error("Cannot fail webhook delivery 100; lease is no longer valid for this worker.")
+    );
+
+    const result = await processGitHubWebhookDeliveriesOnce();
+
+    expect(result).toMatchObject({
+      repoId: 10,
+      claimed: 1,
+      processed: 0,
+      failed: 0,
+      skipped: 0,
+      leaseLost: 1
+    });
+    expect(mocks.completeGitHubWebhookDelivery).not.toHaveBeenCalled();
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "webhooks",
+        status: "success",
+        raw: expect.objectContaining({
+          claimed: 1,
+          failed: 0,
+          leaseLost: 1
+        })
+      })
+    );
+  });
 });
