@@ -238,6 +238,80 @@ type WebhookDeliveryScopeFilter =
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
 
+const criticalIssueScopeFilters = [
+  "all",
+  "s-1",
+  "s0",
+  "no_action_24h",
+  "no_pr",
+  "owner_gap",
+  "unowned",
+  "non_watched",
+  "timeline_missing",
+  "skipped"
+] satisfies CriticalIssueScopeFilter[];
+const criticalIssueSorts = ["risk", "active_age", "last_action", "number"] satisfies CriticalIssueSort[];
+const prScopeFilters = [
+  "all",
+  "active_issue",
+  "attention",
+  "testing",
+  "stale_testing",
+  "testing_evidence_gap",
+  "ci_failed",
+  "request_changes",
+  "conflict",
+  "no_issue",
+  "issue_link_pending",
+  "evidence_pending",
+  "no_action_24h"
+] satisfies PrScopeFilter[];
+const prSorts = ["risk", "age", "last_action", "testing_wait", "number"] satisfies PrSort[];
+const prBoardTabs = ["rotation", "testing"] satisfies PrBoardTab[];
+const peopleScopeFilterValues = [
+  "all",
+  "critical",
+  "attention",
+  "triage",
+  "deferred",
+  "pending_pr",
+  "testing",
+  "yesterday_pr"
+] satisfies PeopleScopeFilter[];
+const peopleBoardSorts = [
+  "workload",
+  "active",
+  "pr_age",
+  "pr_attention",
+  "triage",
+  "testing_wait",
+  "name"
+] satisfies PeopleBoardSort[];
+const personalDrilldownFilters = [
+  "active_issues",
+  "pr_attention",
+  "pending_pr",
+  "testing",
+  "triage",
+  "deferred",
+  "yesterday_pr",
+  "threads"
+] satisfies PersonalDrilldownFilter[];
+
+interface DashboardHashOptions {
+  personLogin?: string | null;
+  criticalIssueAiFilter?: CriticalIssueAiFilter;
+  criticalIssueScopeFilter?: CriticalIssueScopeFilter;
+  criticalIssueOwnerFilter?: CriticalIssueOwnerFilter;
+  criticalIssueSort?: CriticalIssueSort;
+  prScopeFilter?: PrScopeFilter;
+  prSort?: PrSort;
+  prBoardTab?: PrBoardTab;
+  peopleScopeFilter?: PeopleScopeFilter;
+  peopleSort?: PeopleBoardSort;
+  personalDrilldownFilter?: PersonalDrilldownFilter;
+}
+
 interface ObservedPersonPreview {
   login: string;
   summary: PersonSummary;
@@ -317,6 +391,72 @@ function selectedPersonFromHash(hash: string): string | null {
   return person && person.length > 0 ? person : null;
 }
 
+function hashEnumParam<T extends string>(
+  hash: string,
+  key: string,
+  allowedValues: readonly T[],
+  fallback: T
+): T {
+  const value = dashboardHashParams(hash).get(key)?.trim();
+  return value && (allowedValues as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+function hashTextParam(hash: string, key: string, fallback: string): string {
+  const value = dashboardHashParams(hash).get(key)?.trim();
+  return value && value.length > 0 ? value : fallback;
+}
+
+export function criticalIssueAiFilterFromHash(hash: string): CriticalIssueAiFilter {
+  return hashTextParam(hash, "ai", "all");
+}
+
+export function criticalIssueScopeFilterFromHash(hash: string): CriticalIssueScopeFilter {
+  return hashEnumParam(hash, "scope", criticalIssueScopeFilters, "all");
+}
+
+export function criticalIssueOwnerFilterFromHash(hash: string): CriticalIssueOwnerFilter {
+  const value = dashboardHashParams(hash).get("owner")?.trim();
+  if (!value || value === "all") {
+    return "all";
+  }
+  if (value === "unowned") {
+    return "unowned";
+  }
+  return value.startsWith("owner:") && value.length > "owner:".length ? (value as `owner:${string}`) : "all";
+}
+
+export function criticalIssueSortFromHash(hash: string): CriticalIssueSort {
+  return hashEnumParam(hash, "sort", criticalIssueSorts, "risk");
+}
+
+export function prScopeFilterFromHash(hash: string): PrScopeFilter {
+  return hashEnumParam(hash, "scope", prScopeFilters, "all");
+}
+
+export function prSortFromHash(hash: string): PrSort {
+  return hashEnumParam(hash, "sort", prSorts, "risk");
+}
+
+export function prBoardTabFromHash(hash: string): PrBoardTab {
+  const scope = prScopeFilterFromHash(hash);
+  if (isTestingPrScope(scope)) {
+    return "testing";
+  }
+  return hashEnumParam(hash, "tab", prBoardTabs, "rotation");
+}
+
+export function peopleScopeFilterFromHash(hash: string): PeopleScopeFilter {
+  return hashEnumParam(hash, "scope", peopleScopeFilterValues, "all");
+}
+
+export function peopleSortFromHash(hash: string): PeopleBoardSort {
+  return hashEnumParam(hash, "sort", peopleBoardSorts, "workload");
+}
+
+export function personalDrilldownFilterFromHash(hash: string): PersonalDrilldownFilter {
+  return hashEnumParam(hash, "drilldown", personalDrilldownFilters, "active_issues");
+}
+
 type DashboardObjectTarget =
   { objectType: "issue"; objectNumber: number } | { objectType: "pull_request"; objectNumber: number };
 
@@ -370,13 +510,43 @@ function dashboardSourceTargetFromHash(hash: string): DashboardSourceTarget | nu
   return null;
 }
 
-function dashboardHashForView(view: DashboardView, personLogin?: string | null): string {
-  const base = view.toLowerCase();
-  if (view !== "Personal" || !personLogin) {
-    return base;
+function setHashParamIfChanged<T extends string>(
+  params: URLSearchParams,
+  key: string,
+  value: T | null | undefined,
+  defaultValue: T
+): void {
+  if (value && value !== defaultValue) {
+    params.set(key, value);
   }
-  const params = new URLSearchParams({ person: personLogin });
-  return `${base}?${params.toString()}`;
+}
+
+export function dashboardHashForView(view: DashboardView, options: DashboardHashOptions = {}): string {
+  const base = view.toLowerCase();
+  const params = new URLSearchParams();
+  if (view === "Issues") {
+    setHashParamIfChanged(params, "ai", options.criticalIssueAiFilter, "all");
+    setHashParamIfChanged(params, "scope", options.criticalIssueScopeFilter, "all");
+    setHashParamIfChanged(params, "owner", options.criticalIssueOwnerFilter, "all");
+    setHashParamIfChanged(params, "sort", options.criticalIssueSort, "risk");
+  }
+  if (view === "PRs") {
+    setHashParamIfChanged(params, "scope", options.prScopeFilter, "all");
+    setHashParamIfChanged(params, "sort", options.prSort, "risk");
+    setHashParamIfChanged(params, "tab", options.prBoardTab, "rotation");
+  }
+  if (view === "People") {
+    setHashParamIfChanged(params, "scope", options.peopleScopeFilter, "all");
+    setHashParamIfChanged(params, "sort", options.peopleSort, "workload");
+  }
+  if (view === "Personal") {
+    if (options.personLogin) {
+      params.set("person", options.personLogin);
+    }
+    setHashParamIfChanged(params, "drilldown", options.personalDrilldownFilter, "active_issues");
+  }
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 function initialDashboardView(): DashboardView {
@@ -385,6 +555,10 @@ function initialDashboardView(): DashboardView {
 
 function initialSelectedPerson(): string | null {
   return typeof window === "undefined" ? null : selectedPersonFromHash(window.location.hash);
+}
+
+function initialHash(): string {
+  return typeof window === "undefined" ? "" : window.location.hash;
 }
 
 function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
@@ -14990,26 +15164,38 @@ export default function App() {
   const [tokenRetryRemainingSeconds, setTokenRetryRemainingSeconds] = useState<number | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(initialSelectedPerson);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
-  const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
-  const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
-  const [criticalIssueOwnerFilter, setCriticalIssueOwnerFilter] = useState<CriticalIssueOwnerFilter>("all");
-  const [criticalIssueSort, setCriticalIssueSort] = useState<CriticalIssueSort>("risk");
-  const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
-  const [prSort, setPrSort] = useState<PrSort>("risk");
-  const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
+  const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>(() =>
+    criticalIssueAiFilterFromHash(initialHash())
+  );
+  const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>(() =>
+    criticalIssueScopeFilterFromHash(initialHash())
+  );
+  const [criticalIssueOwnerFilter, setCriticalIssueOwnerFilter] = useState<CriticalIssueOwnerFilter>(() =>
+    criticalIssueOwnerFilterFromHash(initialHash())
+  );
+  const [criticalIssueSort, setCriticalIssueSort] = useState<CriticalIssueSort>(() =>
+    criticalIssueSortFromHash(initialHash())
+  );
+  const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>(() => prScopeFilterFromHash(initialHash()));
+  const [prSort, setPrSort] = useState<PrSort>(() => prSortFromHash(initialHash()));
+  const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>(() => prBoardTabFromHash(initialHash()));
   const [prRotationTablePage, setPrRotationTablePage] = useState(1);
   const [prRotationTablePageSize, setPrRotationTablePageSize] = useState(prRotationTableDefaultPageSize);
   const [prTestingTablePage, setPrTestingTablePage] = useState(1);
   const [prTestingTablePageSize, setPrTestingTablePageSize] = useState(prTestingTableDefaultPageSize);
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [testingEvidenceOpen, setTestingEvidenceOpen] = useState(false);
-  const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
-  const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>("workload");
+  const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>(() =>
+    peopleScopeFilterFromHash(initialHash())
+  );
+  const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>(() => peopleSortFromHash(initialHash()));
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
     useState<NotificationDeliveryScopeFilter>("attention");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
-  const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
+  const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>(() =>
+    personalDrilldownFilterFromHash(initialHash())
+  );
   const [workObjectPreview, setWorkObjectPreview] = useState<TeamWorkPreview | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
@@ -15329,20 +15515,52 @@ export default function App() {
     }
   }
 
-  function replaceDashboardHash(nextView: DashboardView, personLogin: string | null = selectedPerson) {
+  function dashboardHashOptions(
+    personLogin: string | null = selectedPerson,
+    overrides: DashboardHashOptions = {}
+  ): DashboardHashOptions {
+    const options: DashboardHashOptions = {
+      personLogin,
+      criticalIssueAiFilter,
+      criticalIssueScopeFilter,
+      criticalIssueOwnerFilter,
+      criticalIssueSort,
+      prScopeFilter,
+      prSort,
+      prBoardTab,
+      peopleScopeFilter,
+      peopleSort,
+      personalDrilldownFilter,
+      ...overrides
+    };
+    if (overrides.personLogin === undefined) {
+      options.personLogin = personLogin;
+    }
+    return options;
+  }
+
+  function replaceDashboardHash(
+    nextView: DashboardView,
+    personLogin: string | null = selectedPerson,
+    overrides: DashboardHashOptions = {}
+  ) {
     if (typeof window === "undefined") {
       return;
     }
-    const nextHash = `#${dashboardHashForView(nextView, personLogin)}`;
+    const nextHash = `#${dashboardHashForView(nextView, dashboardHashOptions(personLogin, overrides))}`;
     if (window.location.hash !== nextHash) {
       window.history.replaceState(null, "", nextHash);
     }
     setCurrentHash(nextHash);
   }
 
-  function selectView(nextView: DashboardView, personLogin: string | null = selectedPerson) {
+  function selectView(
+    nextView: DashboardView,
+    personLogin: string | null = selectedPerson,
+    overrides: DashboardHashOptions = {}
+  ) {
     setView(nextView);
-    replaceDashboardHash(nextView, personLogin);
+    replaceDashboardHash(nextView, personLogin, overrides);
   }
 
   function selectPerson(login: string) {
@@ -15360,7 +15578,7 @@ export default function App() {
   function openPersonalDrilldown(login: string, filter: PersonalDrilldownFilter) {
     setPersonalDrilldownFilter(filter);
     setSelectedPerson(login);
-    selectView("Personal", login);
+    selectView("Personal", login, { personalDrilldownFilter: filter });
   }
 
   function openObservedPersonPreview(login: string) {
@@ -15395,7 +15613,11 @@ export default function App() {
 
   function openPeopleBoardMetric(login: string, filter: PersonalDrilldownFilter) {
     if (peopleBoardUsesObserved) {
-      setPeopleScopeFilter(peopleScopeForPersonalMetric(filter));
+      const scope = peopleScopeForPersonalMetric(filter);
+      setPeopleScopeFilter(scope);
+      if (view === "People") {
+        replaceDashboardHash("People", selectedPerson, { peopleScopeFilter: scope });
+      }
       openObservedPersonPreview(login);
       return;
     }
@@ -15403,22 +15625,29 @@ export default function App() {
   }
 
   function openObservedPersonalMetric(login: string, filter: PersonalDrilldownFilter) {
-    setPeopleScopeFilter(peopleScopeForPersonalMetric(filter));
+    const scope = peopleScopeForPersonalMetric(filter);
+    setPeopleScopeFilter(scope);
     setPersonalDrilldownFilter(filter);
-    selectObservedPersonal(login);
+    setSelectedPerson(login);
+    if (view === "Personal") {
+      replaceDashboardHash("Personal", login, { personalDrilldownFilter: filter });
+    } else if (view === "People") {
+      replaceDashboardHash("People", selectedPerson, { peopleScopeFilter: scope });
+    }
   }
 
   function openIssuesWithFilter(filters: OpenIssuesFilterOptions) {
-    if (filters.ai) {
-      setCriticalIssueAiFilter(filters.ai);
-    }
-    if (filters.scope) {
-      setCriticalIssueScopeFilter(filters.scope);
-    }
-    if (filters.owner) {
-      setCriticalIssueOwnerFilter(filters.owner);
-    }
-    selectView("Issues");
+    const nextAi = filters.ai ?? criticalIssueAiFilter;
+    const nextScope = filters.scope ?? criticalIssueScopeFilter;
+    const nextOwner = filters.owner ?? criticalIssueOwnerFilter;
+    setCriticalIssueAiFilter(nextAi);
+    setCriticalIssueScopeFilter(nextScope);
+    setCriticalIssueOwnerFilter(nextOwner);
+    selectView("Issues", selectedPerson, {
+      criticalIssueAiFilter: nextAi,
+      criticalIssueScopeFilter: nextScope,
+      criticalIssueOwnerFilter: nextOwner
+    });
   }
 
   function openCriticalIssueScope(scope: CriticalIssueScopeFilter) {
@@ -15430,8 +15659,9 @@ export default function App() {
   }
 
   function openPrsWithFilter(scope: PrScopeFilter) {
+    const nextTab = prBoardTabForScope(scope);
     setPrScopeFilter(scope);
-    setPrBoardTab(prBoardTabForScope(scope));
+    setPrBoardTab(nextTab);
     if (scope === "stale_testing") {
       setTestingIssueQueueFilter("stale");
     } else if (scope === "testing_evidence_gap") {
@@ -15439,13 +15669,17 @@ export default function App() {
     } else if (scope === "testing") {
       setTestingIssueQueueFilter("all");
     }
-    selectView("PRs");
+    selectView("PRs", selectedPerson, { prScopeFilter: scope, prBoardTab: nextTab });
   }
 
   function switchPrBoardTab(nextTab: PrBoardTab) {
+    const nextScope = nextTab === "rotation" && isTestingPrScope(prScopeFilter) ? "all" : prScopeFilter;
     setPrBoardTab(nextTab);
-    if (nextTab === "rotation" && isTestingPrScope(prScopeFilter)) {
-      setPrScopeFilter("all");
+    if (nextScope !== prScopeFilter) {
+      setPrScopeFilter(nextScope);
+    }
+    if (view === "PRs") {
+      replaceDashboardHash("PRs", selectedPerson, { prBoardTab: nextTab, prScopeFilter: nextScope });
     }
   }
 
@@ -15467,7 +15701,72 @@ export default function App() {
 
   function openPeopleWithFilter(scope: PeopleScopeFilter) {
     setPeopleScopeFilter(scope);
-    selectView("People");
+    selectView("People", selectedPerson, { peopleScopeFilter: scope });
+  }
+
+  function changeCriticalIssueAiFilter(value: CriticalIssueAiFilter) {
+    setCriticalIssueAiFilter(value);
+    if (view === "Issues") {
+      replaceDashboardHash("Issues", selectedPerson, { criticalIssueAiFilter: value });
+    }
+  }
+
+  function changeCriticalIssueScopeFilter(value: CriticalIssueScopeFilter) {
+    setCriticalIssueScopeFilter(value);
+    if (view === "Issues") {
+      replaceDashboardHash("Issues", selectedPerson, { criticalIssueScopeFilter: value });
+    }
+  }
+
+  function changeCriticalIssueOwnerFilter(value: CriticalIssueOwnerFilter) {
+    setCriticalIssueOwnerFilter(value);
+    if (view === "Issues") {
+      replaceDashboardHash("Issues", selectedPerson, { criticalIssueOwnerFilter: value });
+    }
+  }
+
+  function changeCriticalIssueSort(value: CriticalIssueSort) {
+    setCriticalIssueSort(value);
+    if (view === "Issues") {
+      replaceDashboardHash("Issues", selectedPerson, { criticalIssueSort: value });
+    }
+  }
+
+  function changePrScopeFilter(value: PrScopeFilter) {
+    const nextTab = prBoardTabForScope(value);
+    setPrScopeFilter(value);
+    setPrBoardTab(nextTab);
+    if (view === "PRs") {
+      replaceDashboardHash("PRs", selectedPerson, { prScopeFilter: value, prBoardTab: nextTab });
+    }
+  }
+
+  function changePrSort(value: PrSort) {
+    setPrSort(value);
+    if (view === "PRs") {
+      replaceDashboardHash("PRs", selectedPerson, { prSort: value });
+    }
+  }
+
+  function changePeopleScopeFilter(value: PeopleScopeFilter) {
+    setPeopleScopeFilter(value);
+    if (view === "People") {
+      replaceDashboardHash("People", selectedPerson, { peopleScopeFilter: value });
+    }
+  }
+
+  function changePeopleSort(value: PeopleBoardSort) {
+    setPeopleSort(value);
+    if (view === "People") {
+      replaceDashboardHash("People", selectedPerson, { peopleSort: value });
+    }
+  }
+
+  function changePersonalDrilldownFilter(value: PersonalDrilldownFilter) {
+    setPersonalDrilldownFilter(value);
+    if (view === "Personal") {
+      replaceDashboardHash("Personal", selectedPerson, { personalDrilldownFilter: value });
+    }
   }
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
@@ -15762,6 +16061,16 @@ export default function App() {
       setCurrentHash(nextHash);
       const nextView = dashboardViewFromHash(nextHash);
       setView(nextView);
+      setCriticalIssueAiFilter(criticalIssueAiFilterFromHash(nextHash));
+      setCriticalIssueScopeFilter(criticalIssueScopeFilterFromHash(nextHash));
+      setCriticalIssueOwnerFilter(criticalIssueOwnerFilterFromHash(nextHash));
+      setCriticalIssueSort(criticalIssueSortFromHash(nextHash));
+      setPrScopeFilter(prScopeFilterFromHash(nextHash));
+      setPrSort(prSortFromHash(nextHash));
+      setPrBoardTab(prBoardTabFromHash(nextHash));
+      setPeopleScopeFilter(peopleScopeFilterFromHash(nextHash));
+      setPeopleSort(peopleSortFromHash(nextHash));
+      setPersonalDrilldownFilter(personalDrilldownFilterFromHash(nextHash));
       if (nextView === "Personal") {
         setSelectedPerson(selectedPersonFromHash(nextHash));
       }
@@ -16536,6 +16845,10 @@ export default function App() {
               className="table-count-button"
               onClick={() => {
                 setTestingIssueQueueFilter("all");
+                setPrBoardTab("testing");
+                if (view === "PRs") {
+                  replaceDashboardHash("PRs", selectedPerson, { prBoardTab: "testing" });
+                }
                 window.setTimeout(
                   () => document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth" }),
                   0
@@ -16557,8 +16870,7 @@ export default function App() {
               type="button"
               className="table-count-button"
               onClick={() => {
-                setPrScopeFilter("testing");
-                setPrBoardTab("testing");
+                changePrScopeFilter("testing");
                 window.setTimeout(
                   () => document.getElementById("testing-pr-table-panel")?.scrollIntoView({ behavior: "smooth" }),
                   0
@@ -16587,7 +16899,7 @@ export default function App() {
           )
       }
     ],
-    []
+    [changePrScopeFilter, selectedPerson, view]
   );
   const testingIssueTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentIssueTransitions"][number]> =
     useMemo(
@@ -16809,6 +17121,9 @@ export default function App() {
   const openTestingIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
     setTestingIssueQueueFilter(nextFilter);
     setPrBoardTab("testing");
+    if (view === "PRs") {
+      replaceDashboardHash("PRs", selectedPerson, { prBoardTab: "testing" });
+    }
     window.setTimeout(scrollTestingIssueQueueIntoView, 0);
   };
   const openTestingEvidencePanel = () => {
@@ -17596,7 +17911,7 @@ export default function App() {
                         scopeFilter={testingPrTableScope}
                         sort={prSort}
                         onScopeFilterChange={openPrsWithFilter}
-                        onSortChange={setPrSort}
+                        onSortChange={changePrSort}
                       />
                       <Table
                         rowKey="number"
@@ -17684,13 +17999,8 @@ export default function App() {
                       criticalIssuesByPr={criticalIssuesByPr}
                       scopeFilter={prScopeFilter}
                       sort={prSort}
-                      onScopeFilterChange={(scope) => {
-                        setPrScopeFilter(scope);
-                        if (isTestingPrScope(scope)) {
-                          setPrBoardTab("testing");
-                        }
-                      }}
-                      onSortChange={setPrSort}
+                      onScopeFilterChange={changePrScopeFilter}
+                      onSortChange={changePrSort}
                     />
                     <PrActionQueue
                       prs={filteredPendingPrs}
@@ -17711,25 +18021,15 @@ export default function App() {
                         <PrFilterBar
                           scopeFilter={prScopeFilter}
                           sort={prSort}
-                          onScopeFilterChange={(scope) => {
-                            setPrScopeFilter(scope);
-                            if (isTestingPrScope(scope)) {
-                              setPrBoardTab("testing");
-                            }
-                          }}
-                          onSortChange={setPrSort}
+                          onScopeFilterChange={changePrScopeFilter}
+                          onSortChange={changePrSort}
                         />
                         <PrBoardSummary
                           prs={data.pendingPrs}
                           filteredPrs={filteredPendingPrs}
                           criticalIssuesByPr={criticalIssuesByPr}
                           scopeFilter={prScopeFilter}
-                          onScopeFilterChange={(scope) => {
-                            setPrScopeFilter(scope);
-                            if (isTestingPrScope(scope)) {
-                              setPrBoardTab("testing");
-                            }
-                          }}
+                          onScopeFilterChange={changePrScopeFilter}
                         />
                       </div>
                     </details>
@@ -17818,7 +18118,7 @@ export default function App() {
                         trendPoints={personalTrendPoints}
                         onAnalyticsPeriodChange={setAnalyticsPeriod}
                         drilldownFilter={personalDrilldownFilter}
-                        onDrilldownChange={setPersonalDrilldownFilter}
+                        onDrilldownChange={changePersonalDrilldownFilter}
                       />
                     ) : (
                       <Empty description="No watched users configured for personal action lists" />
@@ -17968,10 +18268,10 @@ export default function App() {
                   scopeFilter={criticalIssueScopeFilter}
                   ownerFilter={criticalIssueOwnerFilter}
                   sort={criticalIssueSort}
-                  onAiFilterChange={setCriticalIssueAiFilter}
-                  onScopeFilterChange={setCriticalIssueScopeFilter}
-                  onOwnerFilterChange={setCriticalIssueOwnerFilter}
-                  onSortChange={setCriticalIssueSort}
+                  onAiFilterChange={changeCriticalIssueAiFilter}
+                  onScopeFilterChange={changeCriticalIssueScopeFilter}
+                  onOwnerFilterChange={changeCriticalIssueOwnerFilter}
+                  onSortChange={changeCriticalIssueSort}
                   onPreview={setWorkObjectPreview}
                 />
                 {criticalOwnerCoverageRows.length > 0 ? (
@@ -18053,7 +18353,7 @@ export default function App() {
                     <button
                       type="button"
                       className={`inline-filter-chip ${peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("all")}
+                      onClick={() => changePeopleScopeFilter("all")}
                     >
                       {peopleBoardUsesObserved
                         ? `${peopleBoardCounts.all} observed`
@@ -18064,7 +18364,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.critical > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("critical")}
+                      onClick={() => changePeopleScopeFilter("critical")}
                     >
                       {peopleBoardCounts.critical} people s-1/s0
                     </button>
@@ -18073,7 +18373,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.attention > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("attention")}
+                      onClick={() => changePeopleScopeFilter("attention")}
                     >
                       {peopleBoardCounts.attention} people PR attention
                     </button>
@@ -18082,7 +18382,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.triage > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "triage" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("triage")}
+                      onClick={() => changePeopleScopeFilter("triage")}
                     >
                       {peopleBoardCounts.triage} people triage
                     </button>
@@ -18091,7 +18391,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.deferred > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("deferred")}
+                      onClick={() => changePeopleScopeFilter("deferred")}
                     >
                       {peopleBoardCounts.deferred} people deferred
                     </button>
@@ -18100,7 +18400,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.pending_pr > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "pending_pr" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("pending_pr")}
+                      onClick={() => changePeopleScopeFilter("pending_pr")}
                     >
                       {peopleBoardCounts.pending_pr} people pending PR
                     </button>
@@ -18109,7 +18409,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.testing > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "testing" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("testing")}
+                      onClick={() => changePeopleScopeFilter("testing")}
                     >
                       {peopleBoardCounts.testing} people issue testing
                     </button>
@@ -18118,7 +18418,7 @@ export default function App() {
                       className={`inline-filter-chip ${
                         peopleBoardCounts.yesterday_pr > 0 ? "" : "inline-filter-chip-muted"
                       } ${peopleScopeFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => setPeopleScopeFilter("yesterday_pr")}
+                      onClick={() => changePeopleScopeFilter("yesterday_pr")}
                     >
                       {peopleBoardCounts.yesterday_pr} people PR yday
                     </button>
@@ -18136,15 +18436,15 @@ export default function App() {
                 <PeopleFilterBar
                   scopeFilter={peopleScopeFilter}
                   sort={peopleSort}
-                  onScopeFilterChange={setPeopleScopeFilter}
-                  onSortChange={setPeopleSort}
+                  onScopeFilterChange={changePeopleScopeFilter}
+                  onSortChange={changePeopleSort}
                 />
                 <PeopleBoardSummary
                   people={peopleBoardPeople}
                   personalViews={data.personalViews}
                   filteredPeople={filteredPeople}
                   scopeFilter={peopleScopeFilter}
-                  onScopeFilterChange={setPeopleScopeFilter}
+                  onScopeFilterChange={changePeopleScopeFilter}
                 />
                 <PeopleFocusQueue
                   people={filteredPeople}
