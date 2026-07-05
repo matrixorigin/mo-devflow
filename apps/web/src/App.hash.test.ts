@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiDriftSignalMatchesSignalFilter,
   criticalIssueAiFilterFromHash,
   criticalIssueOwnerFilterFromHash,
   criticalIssueScopeFilterFromHash,
@@ -29,7 +30,8 @@ import {
   serviceReadTokenStatusText,
   syncHealthCursorText,
   testingIssueQueueFilterFromHash,
-  testingIssueTesterFilterFromHash
+  testingIssueTesterFilterFromHash,
+  workflowViolationMatchesSignalFilter
 } from "./App";
 
 describe("dashboard hash filters", () => {
@@ -341,6 +343,70 @@ describe("dashboard hash filters", () => {
     expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12]);
     expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
+  });
+
+  it("filters workflow violations by management severity and notification state", () => {
+    const violation = {
+      severity: "critical",
+      relatedLogin: null,
+      fixable: true,
+      notification: {
+        status: "sent",
+        recipientScope: "mapped_employee",
+        attemptedAt: "2026-07-05T09:00:00.000Z",
+        acknowledgedAt: null,
+        acknowledgedBy: null
+      }
+    } as any;
+    const failedViolation = {
+      ...violation,
+      severity: "warning",
+      relatedLogin: "alice",
+      fixable: false,
+      notification: {
+        ...violation.notification,
+        status: "failed_transient"
+      }
+    } as any;
+
+    expect(workflowViolationMatchesSignalFilter(violation, "critical")).toBe(true);
+    expect(workflowViolationMatchesSignalFilter(violation, "unowned")).toBe(true);
+    expect(workflowViolationMatchesSignalFilter(violation, "fixable")).toBe(true);
+    expect(workflowViolationMatchesSignalFilter(violation, "ack_pending")).toBe(true);
+    expect(workflowViolationMatchesSignalFilter(failedViolation, "notification_failed")).toBe(true);
+    expect(workflowViolationMatchesSignalFilter(failedViolation, "critical")).toBe(false);
+  });
+
+  it("filters AI drift by ai-easy default, partial evidence, and notification state", () => {
+    const signal = {
+      severity: "warning",
+      ownerLogin: null,
+      aiEffortLabel: null,
+      sourceCompleteness: "partial_cache",
+      notification: {
+        status: "sent",
+        recipientScope: "fallback",
+        attemptedAt: "2026-07-05T09:00:00.000Z",
+        acknowledgedAt: "2026-07-05T10:00:00.000Z",
+        acknowledgedBy: "lead"
+      }
+    } as any;
+    const failedSignal = {
+      ...signal,
+      notification: {
+        ...signal.notification,
+        status: "skipped_no_webhook",
+        acknowledgedAt: null,
+        acknowledgedBy: null
+      }
+    } as any;
+
+    expect(aiDriftSignalMatchesSignalFilter(signal, "ai_easy")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "partial_evidence")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "unowned")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "notified")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "ack_pending")).toBe(false);
+    expect(aiDriftSignalMatchesSignalFilter(failedSignal, "notification_failed")).toBe(true);
   });
 
   it("selects the period PR list that matches the stronger day, week, or month count", () => {

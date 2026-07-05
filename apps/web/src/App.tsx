@@ -273,6 +273,18 @@ type PersonalDrilldownFilter =
   | "threads";
 type WebhookDeliveryScopeFilter =
   "all" | "pending" | "failed" | "processed" | "ignored" | "connectivity_probe" | "duplicates";
+type WorkflowSignalFilter =
+  "all" | "critical" | "warning" | "unowned" | "fixable" | "notified" | "ack_pending" | "notification_failed";
+type DriftSignalFilter =
+  | "all"
+  | "critical"
+  | "warning"
+  | "unowned"
+  | "ai_easy"
+  | "partial_evidence"
+  | "notified"
+  | "ack_pending"
+  | "notification_failed";
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
 
@@ -2275,6 +2287,82 @@ function NotificationTraceTag({ notification }: { notification: NotificationTrac
       </Space>
     </Tooltip>
   );
+}
+
+function notificationTraceWasAttempted(notification: NotificationTraceView): boolean {
+  return notification.status !== null;
+}
+
+function notificationTraceNeedsAck(notification: NotificationTraceView): boolean {
+  return (
+    notification.status !== null &&
+    notificationStatusRequiresAcknowledgement(notification.status) &&
+    notification.acknowledgedAt === null
+  );
+}
+
+function notificationTraceFailed(notification: NotificationTraceView): boolean {
+  return (
+    notification.status === "failed_transient" ||
+    notification.status === "failed_permanent" ||
+    notification.status === "skipped_no_webhook"
+  );
+}
+
+export function workflowViolationMatchesSignalFilter(
+  violation: WorkflowViolationView,
+  filter: WorkflowSignalFilter
+): boolean {
+  if (filter === "critical") {
+    return violation.severity === "critical";
+  }
+  if (filter === "warning") {
+    return violation.severity === "warning";
+  }
+  if (filter === "unowned") {
+    return violation.relatedLogin === null;
+  }
+  if (filter === "fixable") {
+    return violation.fixable;
+  }
+  if (filter === "notified") {
+    return notificationTraceWasAttempted(violation.notification);
+  }
+  if (filter === "ack_pending") {
+    return notificationTraceNeedsAck(violation.notification);
+  }
+  if (filter === "notification_failed") {
+    return notificationTraceFailed(violation.notification);
+  }
+  return true;
+}
+
+export function aiDriftSignalMatchesSignalFilter(signal: AiDriftSignalView, filter: DriftSignalFilter): boolean {
+  if (filter === "critical") {
+    return signal.severity === "critical";
+  }
+  if (filter === "warning") {
+    return signal.severity === "warning";
+  }
+  if (filter === "unowned") {
+    return signal.ownerLogin === null;
+  }
+  if (filter === "ai_easy") {
+    return effectiveAiEffortLabel(signal.aiEffortLabel) === "ai-easy";
+  }
+  if (filter === "partial_evidence") {
+    return signal.sourceCompleteness === "partial_cache";
+  }
+  if (filter === "notified") {
+    return notificationTraceWasAttempted(signal.notification);
+  }
+  if (filter === "ack_pending") {
+    return notificationTraceNeedsAck(signal.notification);
+  }
+  if (filter === "notification_failed") {
+    return notificationTraceFailed(signal.notification);
+  }
+  return true;
 }
 
 function workerStatusColor(value: DashboardSummary["sync"]["worker"]["status"]): string {
@@ -9566,6 +9654,123 @@ function CriticalBoardStat({
     <span className={`critical-board-stat critical-board-stat-${tone} ${active ? "critical-board-stat-active" : ""}`}>
       {content}
     </span>
+  );
+}
+
+function WorkflowSignalSummary({
+  violations,
+  activeFilter,
+  onFilterChange
+}: {
+  violations: WorkflowViolationView[];
+  activeFilter: WorkflowSignalFilter;
+  onFilterChange: (filter: WorkflowSignalFilter) => void;
+}) {
+  const count = (filter: WorkflowSignalFilter) =>
+    violations.filter((violation) => workflowViolationMatchesSignalFilter(violation, filter)).length;
+  const critical = count("critical");
+  const warning = count("warning");
+  const unowned = count("unowned");
+  const fixable = count("fixable");
+  const notified = count("notified");
+  const ackPending = count("ack_pending");
+  const failed = count("notification_failed");
+  const items: Array<{
+    filter: WorkflowSignalFilter;
+    label: string;
+    value: number;
+    tone: "critical" | "attention" | "good" | "muted";
+  }> = [
+    { filter: "all", label: "all", value: violations.length, tone: violations.length > 0 ? "attention" : "good" },
+    { filter: "critical", label: "critical", value: critical, tone: critical > 0 ? "critical" : "good" },
+    { filter: "warning", label: "warning", value: warning, tone: warning > 0 ? "attention" : "good" },
+    { filter: "unowned", label: "unowned", value: unowned, tone: unowned > 0 ? "critical" : "good" },
+    { filter: "fixable", label: "fixable", value: fixable, tone: fixable > 0 ? "attention" : "muted" },
+    { filter: "notified", label: "notified", value: notified, tone: notified > 0 ? "attention" : "muted" },
+    { filter: "ack_pending", label: "ack pending", value: ackPending, tone: ackPending > 0 ? "attention" : "good" },
+    {
+      filter: "notification_failed",
+      label: "notify failed",
+      value: failed,
+      tone: failed > 0 ? "critical" : "good"
+    }
+  ];
+
+  return (
+    <div className="critical-board-summary signal-board-summary" aria-label="Workflow violation filters">
+      {items.map((item) => (
+        <CriticalBoardStat
+          active={activeFilter === item.filter}
+          key={item.filter}
+          label={item.label}
+          tone={item.tone}
+          value={item.value}
+          onClick={() => onFilterChange(item.filter)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DriftSignalSummary({
+  signals,
+  activeFilter,
+  onFilterChange
+}: {
+  signals: AiDriftSignalView[];
+  activeFilter: DriftSignalFilter;
+  onFilterChange: (filter: DriftSignalFilter) => void;
+}) {
+  const count = (filter: DriftSignalFilter) =>
+    signals.filter((signal) => aiDriftSignalMatchesSignalFilter(signal, filter)).length;
+  const critical = count("critical");
+  const warning = count("warning");
+  const unowned = count("unowned");
+  const aiEasy = count("ai_easy");
+  const partial = count("partial_evidence");
+  const notified = count("notified");
+  const ackPending = count("ack_pending");
+  const failed = count("notification_failed");
+  const items: Array<{
+    filter: DriftSignalFilter;
+    label: string;
+    value: number;
+    tone: "critical" | "attention" | "good" | "muted";
+  }> = [
+    { filter: "all", label: "all", value: signals.length, tone: signals.length > 0 ? "attention" : "good" },
+    { filter: "critical", label: "critical", value: critical, tone: critical > 0 ? "critical" : "good" },
+    { filter: "warning", label: "warning", value: warning, tone: warning > 0 ? "attention" : "good" },
+    { filter: "unowned", label: "unowned", value: unowned, tone: unowned > 0 ? "critical" : "good" },
+    { filter: "ai_easy", label: "ai-easy", value: aiEasy, tone: aiEasy > 0 ? "attention" : "muted" },
+    {
+      filter: "partial_evidence",
+      label: "partial evidence",
+      value: partial,
+      tone: partial > 0 ? "attention" : "good"
+    },
+    { filter: "notified", label: "notified", value: notified, tone: notified > 0 ? "attention" : "muted" },
+    { filter: "ack_pending", label: "ack pending", value: ackPending, tone: ackPending > 0 ? "attention" : "good" },
+    {
+      filter: "notification_failed",
+      label: "notify failed",
+      value: failed,
+      tone: failed > 0 ? "critical" : "good"
+    }
+  ];
+
+  return (
+    <div className="critical-board-summary signal-board-summary" aria-label="AI drift filters">
+      {items.map((item) => (
+        <CriticalBoardStat
+          active={activeFilter === item.filter}
+          key={item.filter}
+          label={item.label}
+          tone={item.tone}
+          value={item.value}
+          onClick={() => onFilterChange(item.filter)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -18209,6 +18414,8 @@ export default function App() {
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
     useState<NotificationDeliveryScopeFilter>("attention");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
+  const [violationSignalFilter, setViolationSignalFilter] = useState<WorkflowSignalFilter>("all");
+  const [driftSignalFilter, setDriftSignalFilter] = useState<DriftSignalFilter>("all");
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>(() =>
     personalDrilldownFilterFromHash(initialHash())
   );
@@ -18264,6 +18471,22 @@ export default function App() {
     dashboardSourceTarget?.sourceType === "workflow_violation" && data !== null && !targetedViolation;
   const missingDriftTarget =
     dashboardSourceTarget?.sourceType === "ai_drift_signal" && data !== null && !targetedDriftSignal;
+  const filteredWorkflowViolations = data
+    ? data.workflowViolations.filter((violation) =>
+        workflowViolationMatchesSignalFilter(violation, violationSignalFilter)
+      )
+    : [];
+  const filteredAiDriftSignals = data
+    ? data.aiDriftSignals.filter((signal) => aiDriftSignalMatchesSignalFilter(signal, driftSignalFilter))
+    : [];
+  const changeViolationSignalFilter = (filter: WorkflowSignalFilter): void => {
+    setViolationSignalFilter(filter);
+    setViolationTablePage(1);
+  };
+  const changeDriftSignalFilter = (filter: DriftSignalFilter): void => {
+    setDriftSignalFilter(filter);
+    setDriftTablePage(1);
+  };
 
   useEffect(() => {
     latestDataRef.current = data;
@@ -18316,6 +18539,7 @@ export default function App() {
       return;
     }
     if (dashboardSourceTarget.sourceType === "workflow_violation") {
+      setViolationSignalFilter("all");
       const targetIndex = data.workflowViolations.findIndex(
         (violation) => violation.sourceId === dashboardSourceTarget.sourceId
       );
@@ -18324,6 +18548,7 @@ export default function App() {
       }
       return;
     }
+    setDriftSignalFilter("all");
     const targetIndex = data.aiDriftSignals.findIndex((signal) => signal.sourceId === dashboardSourceTarget.sourceId);
     if (targetIndex >= 0) {
       setDriftTablePage(Math.floor(targetIndex / signalTargetPageSize) + 1);
@@ -21290,6 +21515,11 @@ export default function App() {
                     showIcon
                   />
                 ) : null}
+                <DriftSignalSummary
+                  signals={data.aiDriftSignals}
+                  activeFilter={driftSignalFilter}
+                  onFilterChange={changeDriftSignalFilter}
+                />
                 <Table
                   rowKey={(signal) => signal.sourceId}
                   rowClassName={(signal) =>
@@ -21297,13 +21527,13 @@ export default function App() {
                   }
                   size="middle"
                   columns={driftColumns}
-                  dataSource={data.aiDriftSignals}
+                  dataSource={filteredAiDriftSignals}
                   scroll={{ x: 1700 }}
-                  pagination={tablePagination(data.aiDriftSignals.length, signalTargetPageSize, {
+                  pagination={tablePagination(filteredAiDriftSignals.length, signalTargetPageSize, {
                     current: driftTablePage,
                     onChange: setDriftTablePage
                   })}
-                  locale={{ emptyText: <Empty description="No active AI drift signals in cache" /> }}
+                  locale={{ emptyText: <Empty description={`No ${labelText(driftSignalFilter)} AI drift signals`} /> }}
                 />
               </section>
             ) : null}
@@ -21336,6 +21566,11 @@ export default function App() {
                     showIcon
                   />
                 ) : null}
+                <WorkflowSignalSummary
+                  violations={data.workflowViolations}
+                  activeFilter={violationSignalFilter}
+                  onFilterChange={changeViolationSignalFilter}
+                />
                 <Table
                   rowKey={(violation) => violation.sourceId}
                   rowClassName={(violation) =>
@@ -21343,13 +21578,15 @@ export default function App() {
                   }
                   size="middle"
                   columns={violationColumns}
-                  dataSource={data.workflowViolations}
+                  dataSource={filteredWorkflowViolations}
                   scroll={{ x: 1580 }}
-                  pagination={tablePagination(data.workflowViolations.length, signalTargetPageSize, {
+                  pagination={tablePagination(filteredWorkflowViolations.length, signalTargetPageSize, {
                     current: violationTablePage,
                     onChange: setViolationTablePage
                   })}
-                  locale={{ emptyText: <Empty description="No active workflow violations in cache" /> }}
+                  locale={{
+                    emptyText: <Empty description={`No ${labelText(violationSignalFilter)} workflow violations`} />
+                  }}
                 />
               </section>
             ) : null}
