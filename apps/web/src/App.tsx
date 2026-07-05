@@ -724,7 +724,6 @@ function AccountControl({
   teamSignIn,
   capability,
   tokenEncryptionUnavailable,
-  headerWriteBackDisabled,
   onConnectToken,
   onSignOut
 }: {
@@ -733,7 +732,6 @@ function AccountControl({
   teamSignIn: SessionView["teamSignIn"];
   capability: GitHubWriteCapability | null;
   tokenEncryptionUnavailable: boolean;
-  headerWriteBackDisabled: boolean;
   onConnectToken: () => void;
   onSignOut: () => void;
 }) {
@@ -843,11 +841,7 @@ function AccountControl({
       />
       {capability ? <TokenCapabilityPanel capability={capability} /> : null}
       <Space size={[8, 8]} wrap>
-        <Button
-          icon={<KeyRound size={16} />}
-          disabled={tokenEncryptionUnavailable || headerWriteBackDisabled}
-          onClick={onConnectToken}
-        >
+        <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={onConnectToken}>
           {authenticatedUser ? "Update saved token" : "Sign in with GitHub token"}
         </Button>
         {authenticatedUser ? (
@@ -858,6 +852,37 @@ function AccountControl({
       </Space>
     </Space>
   );
+
+  if (!authenticatedUser) {
+    return (
+      <Space className="account-anonymous-actions" size={6} wrap={false}>
+        <Tooltip
+          title={
+            tokenEncryptionUnavailable
+              ? tokenEncryptionSetupHint
+              : "Sign in with your own GitHub token. The service read token remains deployment config."
+          }
+        >
+          <Button
+            type="primary"
+            className="account-signin-button"
+            icon={<KeyRound size={16} />}
+            disabled={tokenEncryptionUnavailable}
+            onClick={onConnectToken}
+          >
+            Sign in
+          </Button>
+        </Tooltip>
+        <Popover placement="bottomRight" trigger="click" content={content}>
+          <Button className="account-observer-button" aria-label="Anonymous observer session details">
+            <UserRound size={16} aria-hidden="true" />
+            <span>Observer</span>
+            <Tag>{teamSignIn.tokenConnectedUsers} saved tokens</Tag>
+          </Button>
+        </Popover>
+      </Space>
+    );
+  }
 
   return (
     <Popover placement="bottomRight" trigger="click" content={content}>
@@ -12880,7 +12905,6 @@ export default function App() {
   const cacheImpactItems = data ? cacheEvidenceImpactItems(data) : [];
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
-  const headerWriteBackDisabled = headerIssueLabelCapability?.status === "write_back_disabled";
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
   const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
   const systemViewMenuItems: MenuProps["items"] = systemViewOptions.map((option) => ({
@@ -12939,7 +12963,6 @@ export default function App() {
             }
             capability={headerIssueLabelCapability ?? null}
             tokenEncryptionUnavailable={tokenEncryptionUnavailable}
-            headerWriteBackDisabled={headerWriteBackDisabled}
             onConnectToken={openTokenReconnect}
             onSignOut={() => void disconnectSession()}
           />
@@ -14103,6 +14126,12 @@ export default function App() {
                 ? "The saved token is keyed by this validated GitHub identity. This browser has its own session; another machine must sign in again to create its own session for the same GitHub user."
                 : "Sign-in validates the token with GitHub, creates or updates that GitHub user's saved token, then signs in only this browser session. Other teammates and other machines sign in separately."
             }
+            showIcon
+          />
+          <Alert
+            type="info"
+            title="Service read token is server-side configuration."
+            description="This personal sign-in does not become the team's source token. It validates a GitHub identity, saves that user's token for confirmed actions, and creates a session only for this browser."
             showIcon
           />
           {authenticatedUser ? (

@@ -149,6 +149,27 @@ body {
   min-width: 0;
 }
 
+.account-anonymous-actions {
+  align-items: center;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.account-signin-button {
+  font-weight: 700;
+}
+
+.account-observer-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-observer-button .ant-tag {
+  margin-inline-end: 0;
+}
+
 .account-control {
   align-items: center;
   display: inline-flex;
@@ -6515,6 +6536,20 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .topbar-actions > .ant-space-item:not(:first-child) .ant-btn > span:not(.ant-btn-icon) {
+    display: none;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) .account-signin-button {
+    min-width: 86px;
+    padding-inline: 10px;
+    width: auto;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) .account-signin-button > span:not(.ant-btn-icon) {
+    display: inline-flex;
+  }
+
+  .topbar-actions > .ant-space-item:not(:first-child) .account-observer-button {
     display: none;
   }
 
