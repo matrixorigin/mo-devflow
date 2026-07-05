@@ -4526,10 +4526,48 @@ function TeamRotationOverview({
             </Button>
           </Space>
         </div>
+        <TeamMomentumStrip
+          summary={trendMomentumSummary(trendPoints)}
+          actions={trendActions}
+          period={analyticsPeriod}
+        />
         {flowSummary ? <FlowEfficiencyStrip summary={flowSummary} actions={trendActions} /> : null}
         <TrendChart points={trendPoints} actions={trendActions} />
       </section>
     </div>
+  );
+}
+
+function TeamMomentumStrip({
+  actions,
+  period,
+  summary
+}: {
+  actions: FlowEfficiencyActions;
+  period: MetricPeriod;
+  summary: TrendMomentumSummary;
+}) {
+  if (summary.items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="team-momentum-strip" aria-label="Team latest movement">
+      <div className="team-momentum-heading">
+        <span>{metricPeriodLabel(period)} movement</span>
+        <strong>{summary.latestLabel}</strong>
+        <small>{summary.previousLabel ? `vs ${summary.previousLabel}` : "no previous point"}</small>
+      </div>
+      <div className="team-momentum-grid">
+        {summary.items.map((item) => (
+          <AnalyticsMomentumCard
+            item={item}
+            onClick={flowEfficiencyDiagnosticAction(item.target, actions)}
+            key={item.key}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
