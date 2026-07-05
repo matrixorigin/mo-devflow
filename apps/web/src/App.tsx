@@ -10,6 +10,7 @@ import {
   Input,
   Layout,
   Modal,
+  Popover,
   Segmented,
   Skeleton,
   Space,
@@ -664,6 +665,113 @@ function TokenCapabilityPanel({ capability }: { capability: GitHubWriteCapabilit
         </Space>
       </div>
     </Space>
+  );
+}
+
+function AccountControl({
+  authenticatedUser,
+  capability,
+  tokenEncryptionUnavailable,
+  headerWriteBackDisabled,
+  onConnectToken,
+  onSignOut
+}: {
+  authenticatedUser: NonNullable<SessionView["user"]> | null;
+  capability: GitHubWriteCapability | null;
+  tokenEncryptionUnavailable: boolean;
+  headerWriteBackDisabled: boolean;
+  onConnectToken: () => void;
+  onSignOut: () => void;
+}) {
+  const statusLabel = authenticatedUser
+    ? capability?.enabled
+      ? "write ready"
+      : capability
+        ? labelText(capability.status)
+        : "connected"
+    : "cached view";
+  const statusColor = authenticatedUser && capability ? capabilityStatusColor(capability.status) : "default";
+  const content = (
+    <Space orientation="vertical" size={12} className="account-session-popover">
+      <div className="account-session-heading">
+        {authenticatedUser ? (
+          <Avatar size={36} src={authenticatedUser.avatarUrl}>
+            {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
+          </Avatar>
+        ) : (
+          <Avatar size={36} icon={<UserRound size={18} />} />
+        )}
+        <div>
+          <Text strong>{authenticatedUser ? authenticatedUser.githubLogin : "Anonymous observer"}</Text>
+          <Text type="secondary">{authenticatedUser ? "Current browser session" : "Cached dashboard only"}</Text>
+        </div>
+      </div>
+      <div className="account-session-facts">
+        <div>
+          <span>Writes act as</span>
+          <strong>{authenticatedUser ? authenticatedUser.githubLogin : "none"}</strong>
+        </div>
+        <div>
+          <span>Token owner</span>
+          <strong>{authenticatedUser ? "validated GitHub user" : "not connected"}</strong>
+        </div>
+        <div>
+          <span>New machine</span>
+          <strong>{authenticatedUser ? "connect again" : "connect there"}</strong>
+        </div>
+      </div>
+      <Text type="secondary" className="account-session-copy">
+        {authenticatedUser
+          ? "Multiple teammates can use this deployment at the same time. The submitted token is validated by GitHub, keyed by that GitHub ID, and this browser receives its own session cookie. Another browser or machine connects again to create its own session for the same GitHub user."
+          : "Anonymous users only observe cached data. Each teammate connects a personal GitHub token in their own browser session when they need manual repair or confirmed GitHub writes."}
+      </Text>
+      <Alert
+        type="info"
+        title="Service read token is deployment config"
+        description="Repository-wide polling, webhook repair, and cache backfill use the configured read token on the server. A leader's Connect session is not the shared source token."
+        showIcon
+      />
+      {capability ? <TokenCapabilityPanel capability={capability} /> : null}
+      <Space size={[8, 8]} wrap>
+        <Button
+          icon={<KeyRound size={16} />}
+          disabled={tokenEncryptionUnavailable || headerWriteBackDisabled}
+          onClick={onConnectToken}
+        >
+          {authenticatedUser ? "Reconnect token" : "Connect personal token"}
+        </Button>
+        {authenticatedUser ? (
+          <Button icon={<LogOut size={16} />} onClick={onSignOut}>
+            Sign out this browser
+          </Button>
+        ) : null}
+      </Space>
+    </Space>
+  );
+
+  return (
+    <Popover placement="bottomRight" trigger="click" content={content}>
+      <Button
+        className={`account-control ${authenticatedUser ? "account-control-authenticated" : "account-control-anonymous"}`}
+        aria-label={
+          authenticatedUser ? `Account session for ${authenticatedUser.githubLogin}` : "Anonymous account session"
+        }
+      >
+        {authenticatedUser ? (
+          <Avatar size={24} src={authenticatedUser.avatarUrl}>
+            {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
+          </Avatar>
+        ) : (
+          <UserRound size={16} aria-hidden="true" />
+        )}
+        <span className="account-control-copy">
+          <span>{authenticatedUser ? authenticatedUser.githubLogin : "Observer"}</span>
+          <small>{authenticatedUser ? "this browser" : "anonymous"}</small>
+        </span>
+        <Tag color={statusColor}>{statusLabel}</Tag>
+        <ChevronDown size={14} aria-hidden="true" />
+      </Button>
+    </Popover>
   );
 }
 
@@ -12455,57 +12563,14 @@ export default function App() {
               </Button>
             </Dropdown>
           </nav>
-          {authenticatedUser && headerIssueLabelCapability ? (
-            <Space className="account-actions" size={[8, 8]} wrap>
-              <Avatar size={28} src={authenticatedUser.avatarUrl}>
-                {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
-              </Avatar>
-              <Tooltip
-                title={`This browser session is connected as ${authenticatedUser.githubLogin}. GitHub writes use this identity.`}
-              >
-                <Tag>{authenticatedUser.githubLogin}</Tag>
-              </Tooltip>
-              <Tag color="blue">this browser</Tag>
-              <Tooltip title={<TokenCapabilityPanel capability={headerIssueLabelCapability} />}>
-                <Tag color={capabilityStatusColor(headerIssueLabelCapability.status)}>
-                  {headerIssueLabelCapability.enabled ? "write ready" : labelText(headerIssueLabelCapability.status)}
-                </Tag>
-              </Tooltip>
-              <Tooltip
-                title={
-                  tokenEncryptionUnavailable
-                    ? tokenEncryptionSetupHint
-                    : headerIssueLabelCapability.enabled
-                      ? "Reconnect personal token"
-                      : headerIssueLabelCapability.message
-                }
-              >
-                <Button
-                  aria-label="Reconnect personal GitHub token"
-                  icon={<KeyRound size={16} />}
-                  disabled={tokenEncryptionUnavailable || headerWriteBackDisabled}
-                  onClick={openTokenReconnect}
-                >
-                  {headerIssueLabelCapability.enabled ? null : headerWriteBackDisabled ? "Read-only" : "Reconnect"}
-                </Button>
-              </Tooltip>
-              <Tooltip title="Sign out of this browser session">
-                <Button icon={<LogOut size={16} />} onClick={() => void disconnectSession()} />
-              </Tooltip>
-            </Space>
-          ) : (
-            <Tooltip
-              title={
-                tokenEncryptionUnavailable
-                  ? tokenEncryptionSetupHint
-                  : "Connect your own GitHub token. Each teammate uses a separate session."
-              }
-            >
-              <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={openTokenReconnect}>
-                Connect GitHub
-              </Button>
-            </Tooltip>
-          )}
+          <AccountControl
+            authenticatedUser={authenticatedUser}
+            capability={headerIssueLabelCapability ?? null}
+            tokenEncryptionUnavailable={tokenEncryptionUnavailable}
+            headerWriteBackDisabled={headerWriteBackDisabled}
+            onConnectToken={openTokenReconnect}
+            onSignOut={() => void disconnectSession()}
+          />
           <Tooltip title="Refresh cached dashboard">
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading || refreshing} />
           </Tooltip>
