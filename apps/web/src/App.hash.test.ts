@@ -124,13 +124,14 @@ describe("dashboard hash filters", () => {
       violationSignalFilter: "fixable"
     });
     const driftHash = dashboardHashForView("Drift", {
-      driftSignalFilter: "partial_evidence"
+      driftSignalFilter: "slow_to_test"
     });
 
     expect(violationHash).toBe("violations?signal=fixable");
-    expect(driftHash).toBe("drift?signal=partial_evidence");
+    expect(driftHash).toBe("drift?signal=slow_to_test");
     expect(violationSignalFilterFromHash(`#${violationHash}`)).toBe("fixable");
-    expect(driftSignalFilterFromHash(`#${driftHash}`)).toBe("partial_evidence");
+    expect(driftSignalFilterFromHash(`#${driftHash}`)).toBe("slow_to_test");
+    expect(driftSignalFilterFromHash("#drift?signal=pr_blockers")).toBe("pr_blockers");
     expect(violationSignalFilterFromHash("#violations?source_id=42&signal=critical")).toBe("all");
     expect(driftSignalFilterFromHash("#drift?source_id=42&signal=notification_failed")).toBe("all");
   });
@@ -477,6 +478,7 @@ describe("dashboard hash filters", () => {
 
   it("filters AI drift by ai-easy default, partial evidence, and notification state", () => {
     const signal = {
+      ruleKey: "ai_easy_critical_too_old",
       severity: "warning",
       ownerLogin: null,
       aiEffortLabel: null,
@@ -489,6 +491,7 @@ describe("dashboard hash filters", () => {
         acknowledgedBy: "lead"
       }
     } as any;
+    const blockerSignal = { ...signal, ruleKey: "ai_easy_pr_has_blockers" } as any;
     const failedSignal = {
       ...signal,
       notification: {
@@ -500,6 +503,9 @@ describe("dashboard hash filters", () => {
     } as any;
 
     expect(aiDriftSignalMatchesSignalFilter(signal, "ai_easy")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "slow_to_test")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "pr_blockers")).toBe(false);
+    expect(aiDriftSignalMatchesSignalFilter(blockerSignal, "pr_blockers")).toBe(true);
     expect(aiDriftSignalMatchesSignalFilter(signal, "partial_evidence")).toBe(true);
     expect(aiDriftSignalMatchesSignalFilter(signal, "unowned")).toBe(true);
     expect(aiDriftSignalMatchesSignalFilter(signal, "notified")).toBe(true);
