@@ -1,6 +1,7 @@
 import type {
   CriticalIssueLinkedPullRequestView,
   CriticalIssueView,
+  DashboardSummary,
   PendingPrView,
   PersonSummary,
   PersonalActionView,
@@ -62,6 +63,117 @@ export const peopleScopeFilters: PeopleScopeFilter[] = [
 ];
 
 export type PeopleBoardScopeCounts = Record<PeopleScopeFilter, number>;
+export type TeamCommandSignalTarget = "violations" | "drift" | "notifications";
+export type TeamCommandSignalTone = "critical" | "attention" | "normal";
+
+export interface TeamCommandSignal {
+  key: string;
+  title: string;
+  detail: string;
+  tone: TeamCommandSignalTone;
+  target: TeamCommandSignalTarget;
+  priority: number;
+}
+
+export function teamCommandSignals(input: {
+  counts: Pick<
+    DashboardSummary["counts"],
+    "workflowViolations" | "criticalWorkflowViolations" | "aiDriftSignals" | "criticalAiDriftSignals"
+  >;
+  notifications: {
+    failedDeliveries: number;
+    unacknowledgedDeliveries: number;
+    escalationPendingDeliveries: number;
+    readinessStatus: DashboardSummary["notifications"]["readiness"]["status"];
+  };
+}): TeamCommandSignal[] {
+  const signals: TeamCommandSignal[] = [];
+  const { counts, notifications } = input;
+
+  if (counts.criticalWorkflowViolations > 0) {
+    signals.push({
+      key: "workflow-critical",
+      title: `${counts.criticalWorkflowViolations} critical workflow violations need fix`,
+      detail: `${counts.workflowViolations} total violations; fix triage, severity, deferred, and AI label breaks first`,
+      tone: "critical",
+      target: "violations",
+      priority: 880 + counts.criticalWorkflowViolations
+    });
+  } else if (counts.workflowViolations > 0) {
+    signals.push({
+      key: "workflow-violations",
+      title: `${counts.workflowViolations} workflow violations need review`,
+      detail: "inspect triage, deferred explanation, severity, and AI effort rule breaks",
+      tone: "attention",
+      target: "violations",
+      priority: 620 + counts.workflowViolations
+    });
+  }
+
+  if (counts.criticalAiDriftSignals > 0) {
+    signals.push({
+      key: "ai-drift-critical",
+      title: `${counts.criticalAiDriftSignals} AI effort estimates look wrong`,
+      detail: `${counts.aiDriftSignals} drift signals; inspect long ai-easy work and blocker-heavy PRs`,
+      tone: "critical",
+      target: "drift",
+      priority: 850 + counts.criticalAiDriftSignals
+    });
+  } else if (counts.aiDriftSignals > 0) {
+    signals.push({
+      key: "ai-drift",
+      title: `${counts.aiDriftSignals} AI effort drift signals need review`,
+      detail: "compare ai-xxx labels with actual issue, PR, blocker, and testing duration",
+      tone: "attention",
+      target: "drift",
+      priority: 610 + counts.aiDriftSignals
+    });
+  }
+
+  if (notifications.failedDeliveries > 0) {
+    signals.push({
+      key: "notification-failures",
+      title: `${notifications.failedDeliveries} notification deliveries failed`,
+      detail: `${notifications.unacknowledgedDeliveries} unacknowledged; repair channel or retry delivery from Notifications`,
+      tone: "critical",
+      target: "notifications",
+      priority: 820 + notifications.failedDeliveries
+    });
+  }
+
+  if (notifications.escalationPendingDeliveries > 0) {
+    signals.push({
+      key: "notification-escalations",
+      title: `${notifications.escalationPendingDeliveries} notifications need escalation`,
+      detail: `${notifications.unacknowledgedDeliveries} attention notifications remain unacknowledged`,
+      tone: "attention",
+      target: "notifications",
+      priority: 790 + notifications.escalationPendingDeliveries
+    });
+  } else if (notifications.unacknowledgedDeliveries > 0) {
+    signals.push({
+      key: "notification-ack",
+      title: `${notifications.unacknowledgedDeliveries} notifications await acknowledgement`,
+      detail: "open Notifications to see which attention items already reached responsible employees",
+      tone: "normal",
+      target: "notifications",
+      priority: 730 + notifications.unacknowledgedDeliveries
+    });
+  }
+
+  if (notifications.readinessStatus === "action_required" || notifications.readinessStatus === "degraded") {
+    signals.push({
+      key: "notification-readiness",
+      title: "Notification channel needs setup",
+      detail: `readiness is ${notifications.readinessStatus.replaceAll("_", " ")}; verify webhook, employee mappings, and fallback routing`,
+      tone: notifications.readinessStatus === "action_required" ? "critical" : "attention",
+      target: "notifications",
+      priority: notifications.readinessStatus === "action_required" ? 805 : 650
+    });
+  }
+
+  return signals.sort((left, right) => right.priority - left.priority);
+}
 
 export type PersonalGanttTone = "critical" | "attention" | "normal" | "muted";
 export type PersonalGanttRowKind = "issue" | "other_prs";

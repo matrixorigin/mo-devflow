@@ -132,6 +132,7 @@ import {
   personalIssueReasons,
   prAttentionReasons,
   sortTestingIssuesForAction,
+  teamCommandSignals,
   testingIssueLinkedBlockerCount,
   testingIssueNeedsAttention,
   sortPeopleByWorkload,
@@ -147,6 +148,7 @@ import {
   type PersonalGanttRow,
   type PeopleScopeFilter,
   type PrCriticalIssueContext,
+  type TeamCommandSignalTarget,
   type WorkloadStatus
 } from "./workbench";
 
@@ -2485,6 +2487,27 @@ function teamCommandActions({
       onClick: () => onOpenPeopleFilter("critical")
     });
   }
+
+  for (const signal of teamCommandSignals({
+    counts: data.counts,
+    notifications: {
+      failedDeliveries: data.notifications.failedDeliveries,
+      unacknowledgedDeliveries: data.notifications.unacknowledgedDeliveries,
+      escalationPendingDeliveries: data.notifications.escalationPendingDeliveries,
+      readinessStatus: data.notifications.readiness.status
+    }
+  })) {
+    actions.push({
+      key: signal.key,
+      title: signal.title,
+      detail: signal.detail,
+      tone: signal.tone,
+      actionLabel: teamCommandSignalActionLabel(signal.target),
+      priority: signal.priority,
+      onClick: () => onNavigate(teamCommandSignalTargetView(signal.target))
+    });
+  }
+
   if (productionReadiness.blockers.length > 0) {
     const blocker = productionReadiness.blockers[0];
     actions.push({
@@ -2521,6 +2544,26 @@ function teamCommandActions({
   }
 
   return actions.sort((left, right) => right.priority - left.priority).slice(0, 4);
+}
+
+function teamCommandSignalActionLabel(target: TeamCommandSignalTarget): string {
+  if (target === "violations") {
+    return "Open violations";
+  }
+  if (target === "drift") {
+    return "Open drift";
+  }
+  return "Open notifications";
+}
+
+function teamCommandSignalTargetView(target: TeamCommandSignalTarget): DashboardView {
+  if (target === "violations") {
+    return "Violations";
+  }
+  if (target === "drift") {
+    return "Drift";
+  }
+  return "Notifications";
 }
 
 function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {

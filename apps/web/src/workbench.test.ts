@@ -34,7 +34,8 @@ import {
   personWorkloadStatus,
   prAttentionReasons,
   sortTestingIssuesForAction,
-  sortPeopleByWorkload
+  sortPeopleByWorkload,
+  teamCommandSignals
 } from "./workbench";
 
 describe("person workload summaries", () => {
@@ -181,6 +182,62 @@ describe("person workload summaries", () => {
     });
     expect(filterPeopleByScope(people, personalViews, "testing").map((person) => person.login)).toEqual([
       "testing-owner"
+    ]);
+  });
+});
+
+describe("team command signals", () => {
+  it("prioritizes critical workflow, AI drift, and notification failures for the team command queue", () => {
+    const signals = teamCommandSignals({
+      counts: {
+        workflowViolations: 5,
+        criticalWorkflowViolations: 2,
+        aiDriftSignals: 4,
+        criticalAiDriftSignals: 1
+      },
+      notifications: {
+        failedDeliveries: 3,
+        unacknowledgedDeliveries: 7,
+        escalationPendingDeliveries: 2,
+        readinessStatus: "ready"
+      }
+    });
+
+    expect(signals.map((signal) => signal.target)).toEqual(["violations", "drift", "notifications", "notifications"]);
+    expect(signals[0]).toMatchObject({
+      key: "workflow-critical",
+      tone: "critical",
+      title: "2 critical workflow violations need fix"
+    });
+    expect(signals[2]).toMatchObject({
+      key: "notification-failures",
+      tone: "critical"
+    });
+  });
+
+  it("keeps notification acknowledgement visible even when delivery has not failed", () => {
+    const signals = teamCommandSignals({
+      counts: {
+        workflowViolations: 0,
+        criticalWorkflowViolations: 0,
+        aiDriftSignals: 0,
+        criticalAiDriftSignals: 0
+      },
+      notifications: {
+        failedDeliveries: 0,
+        unacknowledgedDeliveries: 3,
+        escalationPendingDeliveries: 0,
+        readinessStatus: "ready"
+      }
+    });
+
+    expect(signals).toEqual([
+      expect.objectContaining({
+        key: "notification-ack",
+        target: "notifications",
+        tone: "normal",
+        title: "3 notifications await acknowledgement"
+      })
     ]);
   });
 });
