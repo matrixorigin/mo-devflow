@@ -900,12 +900,16 @@ export async function upsertRepoProfile(profile: RepoProfile): Promise<number> {
       ]
     );
   }
-  const [rows] = await pool.execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [profile.key]);
+  const [rows] = await pool.execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ? LIMIT 1", [
+    profile.key
+  ]);
   return asNumber(rows[0]?.id);
 }
 
 export async function getRepoId(profileKey: string): Promise<number | null> {
-  const [rows] = await getPool().execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ?", [profileKey]);
+  const [rows] = await getPool().execute<RowData[]>("SELECT id FROM repo_profiles WHERE profile_key = ? LIMIT 1", [
+    profileKey
+  ]);
   return rows[0] ? asNumber(rows[0].id) : null;
 }
 
