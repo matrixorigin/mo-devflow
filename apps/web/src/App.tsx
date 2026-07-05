@@ -5504,9 +5504,9 @@ function TeamCriticalFlowEfficiencyStrip({
         onClick={efficiency.issuesWithoutPr > 0 ? onOpenNoPrIssues : onOpenIssues}
       />
       <TeamCriticalFlowEfficiencyMetric
-        label="s-1/s0 to test"
+        label="s-1/s0 to issue testing"
         value={optionalHours(efficiency.averageActiveToTestingHours)}
-        detail={`${efficiency.issuesInTesting} in test | ${efficiency.testingCachePendingIssues} cache pending`}
+        detail={`${efficiency.issuesInTesting} in issue testing | ${efficiency.testingCachePendingIssues} cache pending`}
         tone={testingTone}
         onClick={onOpenTestingIssues}
       />
@@ -11048,9 +11048,15 @@ function PeoplePrFlowMatrix({
       render: (_, row) => {
         const throughput = row.periods[period];
         return (
-          <button type="button" className="people-matrix-period" onClick={() => openPeriod(row, period)}>
+          <button
+            type="button"
+            className="people-matrix-period"
+            aria-label={`Open ${row.login} ${metricPeriodText(period)} PR list with duration`}
+            onClick={() => openPeriod(row, period)}
+          >
             <strong>{personalPrThroughputPair(throughput)}</strong>
             <small>{personalPrPeriodThroughputDetail(row.personal, period)}</small>
+            <em>Open PR list</em>
           </button>
         );
       }
@@ -11076,7 +11082,7 @@ function PeoplePrFlowMatrix({
       )
     },
     {
-      title: "s-1/s0 → PR → Test",
+      title: "s-1/s0 → PR → Issue Testing",
       width: 260,
       render: (_, row) => (
         <button
@@ -11088,11 +11094,12 @@ function PeoplePrFlowMatrix({
               ? "people-matrix-flow-alert"
               : ""
           }`}
+          aria-label={`Open ${row.login} active s-1/s0 to PR and issue testing flow`}
           onClick={() => openFlow(row)}
         >
           <strong>{personalCriticalFlowEfficiencyCompactSummary(row.flow)}</strong>
           <small>
-            to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to test{" "}
+            to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to issue testing{" "}
             {optionalHours(row.flow.averageActiveToTestingHours)}
           </small>
         </button>
@@ -11104,8 +11111,10 @@ function PeoplePrFlowMatrix({
     <section className="people-pr-flow-matrix" aria-label="Team PR and issue flow matrix">
       <div className="subsection-heading subsection-heading-compact">
         <div>
-          <Title level={5}>Team PR / Flow Matrix</Title>
-          <Text type="secondary">Per-person PR volume, PR duration, blockers, and active issue handoff health.</Text>
+          <Title level={5}>By Person: PRs and Flow</Title>
+          <Text type="secondary">
+            Day/week/month PR counts open the PR list; flow shows s-1/s0 to linked PR and issue testing.
+          </Text>
         </div>
         <Tag>
           {rows.length} people | sort {peopleSortLabel(sort)}
@@ -12838,7 +12847,7 @@ function PersonQueueRhythmStrip({
         <span>s-1/s0 → PR → Issue Testing</span>
         <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
         <small>
-          avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to test{" "}
+          avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to issue testing{" "}
           {optionalHours(flow.averageActiveToTestingHours)}
         </small>
       </button>
@@ -17191,7 +17200,7 @@ function WatchedPersonOperationsSummary({
       <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
         <div className="person-ops-pr-rhythm-heading">
           <span>PRs day / week / month</span>
-          <small>created / merged counts, PR list, avg duration, and active issue flow</small>
+          <small>created / merged counts, PR list, avg duration, and s-1/s0 flow</small>
         </div>
         <div className="person-ops-pr-periods">
           {throughputRows.map((row) => {
@@ -17222,10 +17231,10 @@ function WatchedPersonOperationsSummary({
             }`}
             onClick={() => onSelect(flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing")}
           >
-            <span>s-1/s0 → PR → test</span>
+            <span>s-1/s0 → PR → Issue Testing</span>
             <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
             <small>
-              avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to test{" "}
+              avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
               {optionalHours(flow.averageActiveToTestingHours)}
             </small>
           </button>
@@ -17732,7 +17741,7 @@ function PersonalPrThroughputPanel({
       <div className="subsection-heading">
         <div>
           <Title level={5}>PRs By Day / Week / Month</Title>
-          <Text type="secondary">Click a period to inspect created PRs, merged PRs, duration, age, and blockers.</Text>
+          <Text type="secondary">Click a period to inspect the PR list, duration, age, and blockers.</Text>
         </div>
         <Space size={[4, 4]} wrap>
           <button type="button" className="inline-filter-chip" onClick={() => onDrilldownChange("pending_pr")}>
@@ -17885,7 +17894,7 @@ function PersonalPrThroughputPanel({
               }
             />
             <PersonalFlowEfficiencyMetric
-              label="s-1/s0 to test"
+              label="s-1/s0 to issue testing"
               value={optionalHours(flow.averageActiveToTestingHours)}
               detail="avg from s-1/s0"
               onClick={() => onDrilldownChange("testing")}
