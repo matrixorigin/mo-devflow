@@ -11,6 +11,13 @@ export function dashboardQueryFailurePayload(): ApiErrorPayload {
   };
 }
 
+export function dashboardLoginRequiredPayload(): ApiErrorPayload {
+  return {
+    error: "dashboard_login_required",
+    message: "This repository profile does not allow anonymous dashboard reads. Sign in with GitHub to view cached data."
+  };
+}
+
 export function publicStartupMigrationError(error: string | null): string | null {
   if (!error) {
     return null;

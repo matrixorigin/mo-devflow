@@ -1115,7 +1115,9 @@ function dashboardLoadErrorMessage(error: DashboardLoadError): string {
 
 function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError }) {
   const detail =
-    error.code === "dashboard_query_failed"
+    error.code === "dashboard_login_required"
+      ? "This repository profile has disabled anonymous dashboard reads. Sign in with GitHub to view the cached workflow data allowed for your account."
+      : error.code === "dashboard_query_failed"
       ? "The API could not read the local MatrixOne cache. Check API health, API logs, and MO_DEVFLOW_DB_* configuration."
       : error.status === 503
         ? "The API is reachable but unhealthy. Open API health to inspect database, migration, worker, and queue status."
@@ -19477,6 +19479,11 @@ export default function App() {
                 >
                   Retry
                 </Button>
+                {error.code === "dashboard_login_required" ? (
+                  <Button icon={<Github size={14} />} size="small" onClick={signInWithGitHub}>
+                    Sign in
+                  </Button>
+                ) : null}
                 <Button href="/health" icon={<ExternalLink size={14} />} size="small" target="_blank">
                   API health
                 </Button>

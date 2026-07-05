@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { dashboardQueryFailurePayload, publicStartupMigrationError } from "./apiErrors";
+import { dashboardLoginRequiredPayload, dashboardQueryFailurePayload, publicStartupMigrationError } from "./apiErrors";
 
 describe("public API error payloads", () => {
   test("does not expose underlying dashboard query failures", () => {
@@ -17,5 +17,13 @@ describe("public API error payloads", () => {
     expect(publicStartupMigrationError("Access denied for user root. internal error: check password failed")).toBe(
       "Database migration is not ready. Check API logs and MatrixOne connection configuration."
     );
+  });
+
+  test("explains dashboard login requirements without exposing server internals", () => {
+    expect(dashboardLoginRequiredPayload()).toEqual({
+      error: "dashboard_login_required",
+      message:
+        "This repository profile does not allow anonymous dashboard reads. Sign in with GitHub to view cached data."
+    });
   });
 });

@@ -20,6 +20,7 @@ import { publicRepoProfileView } from "./profileView";
 import { registerRefreshRoutes } from "./refreshRoutes";
 import { registerWebhookRoutes } from "./webhookRoutes";
 import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashboardCache";
+import { dashboardReadAccess } from "./dashboardAccess";
 import { readCookieValue, sessionCookieName } from "./sessionCookie";
 import { dashboardQueryFailurePayload, publicStartupMigrationError } from "./apiErrors";
 
@@ -149,6 +150,10 @@ app.get("/api/dashboard", async (request, reply) => {
       authenticated: Boolean(session),
       userId: session?.userId ?? null
     };
+    const access = dashboardReadAccess(profile, viewer);
+    if (!access.allowed) {
+      return reply.status(access.statusCode).send(access.payload);
+    }
     const ifNoneMatchHeader = request.headers["if-none-match"];
     const ifNoneMatch = Array.isArray(ifNoneMatchHeader) ? ifNoneMatchHeader.join(",") : ifNoneMatchHeader;
     let repoId: number | null = null;
