@@ -9,6 +9,7 @@ import {
   dashboardHashForView,
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
+  driftSignalFilterFromHash,
   peopleScopeFilterFromHash,
   peopleSortLabel,
   peopleSortFromHash,
@@ -31,6 +32,7 @@ import {
   syncHealthCursorText,
   testingIssueQueueFilterFromHash,
   testingIssueTesterFilterFromHash,
+  violationSignalFilterFromHash,
   workflowViolationMatchesSignalFilter
 } from "./App";
 
@@ -92,6 +94,22 @@ describe("dashboard hash filters", () => {
         personalDrilldownFilter: "active_issues"
       })
     ).toBe("personal?person=alice");
+  });
+
+  it("round-trips workflow signal filters without hiding source deep links", () => {
+    const violationHash = dashboardHashForView("Violations", {
+      violationSignalFilter: "fixable"
+    });
+    const driftHash = dashboardHashForView("Drift", {
+      driftSignalFilter: "partial_evidence"
+    });
+
+    expect(violationHash).toBe("violations?signal=fixable");
+    expect(driftHash).toBe("drift?signal=partial_evidence");
+    expect(violationSignalFilterFromHash(`#${violationHash}`)).toBe("fixable");
+    expect(driftSignalFilterFromHash(`#${driftHash}`)).toBe("partial_evidence");
+    expect(violationSignalFilterFromHash("#violations?source_id=42&signal=critical")).toBe("all");
+    expect(driftSignalFilterFromHash("#drift?source_id=42&signal=notification_failed")).toBe("all");
   });
 
   it("round-trips issue testing queue filters through PR board links", () => {

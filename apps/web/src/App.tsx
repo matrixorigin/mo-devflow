@@ -325,6 +325,27 @@ const testingIssueQueueFilters = [
   "unlinked",
   "data_gap"
 ] satisfies TestingIssueQueueFilter[];
+const workflowSignalFilters = [
+  "all",
+  "critical",
+  "warning",
+  "unowned",
+  "fixable",
+  "notified",
+  "ack_pending",
+  "notification_failed"
+] satisfies WorkflowSignalFilter[];
+const driftSignalFilters = [
+  "all",
+  "critical",
+  "warning",
+  "unowned",
+  "ai_easy",
+  "partial_evidence",
+  "notified",
+  "ack_pending",
+  "notification_failed"
+] satisfies DriftSignalFilter[];
 const peopleScopeFilterValues = [
   "all",
   "critical",
@@ -367,6 +388,8 @@ interface DashboardHashOptions {
   prBoardTab?: PrBoardTab;
   testingIssueQueueFilter?: TestingIssueQueueFilter;
   testingIssueTesterFilter?: string | null;
+  violationSignalFilter?: WorkflowSignalFilter;
+  driftSignalFilter?: DriftSignalFilter;
   peopleScopeFilter?: PeopleScopeFilter;
   peopleSort?: PeopleBoardSort;
   personalDrilldownFilter?: PersonalDrilldownFilter;
@@ -533,6 +556,20 @@ export function personalDrilldownFilterFromHash(hash: string): PersonalDrilldown
   return hashEnumParam(hash, "drilldown", personalDrilldownFilters, "active_issues");
 }
 
+export function violationSignalFilterFromHash(hash: string): WorkflowSignalFilter {
+  if (positiveHashNumberParam(dashboardHashParams(hash), "source_id")) {
+    return "all";
+  }
+  return hashEnumParam(hash, "signal", workflowSignalFilters, "all");
+}
+
+export function driftSignalFilterFromHash(hash: string): DriftSignalFilter {
+  if (positiveHashNumberParam(dashboardHashParams(hash), "source_id")) {
+    return "all";
+  }
+  return hashEnumParam(hash, "signal", driftSignalFilters, "all");
+}
+
 type DashboardObjectTarget =
   { objectType: "issue"; objectNumber: number } | { objectType: "pull_request"; objectNumber: number };
 
@@ -627,6 +664,12 @@ export function dashboardHashForView(view: DashboardView, options: DashboardHash
       params.set("person", options.personLogin);
     }
     setHashParamIfChanged(params, "drilldown", options.personalDrilldownFilter, "active_issues");
+  }
+  if (view === "Violations") {
+    setHashParamIfChanged(params, "signal", options.violationSignalFilter, "all");
+  }
+  if (view === "Drift") {
+    setHashParamIfChanged(params, "signal", options.driftSignalFilter, "all");
   }
   const query = params.toString();
   return query ? `${base}?${query}` : base;
@@ -18414,8 +18457,12 @@ export default function App() {
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
     useState<NotificationDeliveryScopeFilter>("attention");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
-  const [violationSignalFilter, setViolationSignalFilter] = useState<WorkflowSignalFilter>("all");
-  const [driftSignalFilter, setDriftSignalFilter] = useState<DriftSignalFilter>("all");
+  const [violationSignalFilter, setViolationSignalFilter] = useState<WorkflowSignalFilter>(() =>
+    violationSignalFilterFromHash(initialHash())
+  );
+  const [driftSignalFilter, setDriftSignalFilter] = useState<DriftSignalFilter>(() =>
+    driftSignalFilterFromHash(initialHash())
+  );
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>(() =>
     personalDrilldownFilterFromHash(initialHash())
   );
@@ -18482,10 +18529,12 @@ export default function App() {
   const changeViolationSignalFilter = (filter: WorkflowSignalFilter): void => {
     setViolationSignalFilter(filter);
     setViolationTablePage(1);
+    replaceDashboardHash("Violations", selectedPerson, { violationSignalFilter: filter });
   };
   const changeDriftSignalFilter = (filter: DriftSignalFilter): void => {
     setDriftSignalFilter(filter);
     setDriftTablePage(1);
+    replaceDashboardHash("Drift", selectedPerson, { driftSignalFilter: filter });
   };
 
   useEffect(() => {
@@ -18792,6 +18841,8 @@ export default function App() {
       prBoardTab,
       testingIssueQueueFilter,
       testingIssueTesterFilter,
+      violationSignalFilter,
+      driftSignalFilter,
       peopleScopeFilter,
       peopleSort,
       personalDrilldownFilter,
@@ -19445,6 +19496,8 @@ export default function App() {
       setPrBoardTab(prBoardTabFromHash(nextHash));
       setTestingIssueQueueFilter(testingIssueQueueFilterFromHash(nextHash));
       setTestingIssueTesterFilter(testingIssueTesterFilterFromHash(nextHash));
+      setViolationSignalFilter(violationSignalFilterFromHash(nextHash));
+      setDriftSignalFilter(driftSignalFilterFromHash(nextHash));
       setPeopleScopeFilter(peopleScopeFilterFromHash(nextHash));
       setPeopleSort(peopleSortFromHash(nextHash));
       setPersonalDrilldownFilter(personalDrilldownFilterFromHash(nextHash));
