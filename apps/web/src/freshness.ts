@@ -606,7 +606,7 @@ export function summarizeProductionReadiness(input: {
         ? "read-only"
         : writeCapability?.enabled
           ? "ready"
-          : (writeCapability?.status.replaceAll("_", " ") ?? "token needed"),
+          : (writeCapability?.status.replaceAll("_", " ") ?? "personal token needed"),
       detail: !data.profileConfiguration.writeBackEnabled
         ? "Repository profile keeps GitHub write-back disabled."
         : (writeCapability?.message ??
@@ -891,8 +891,8 @@ export function summarizeCacheEvidence(input: {
       ],
       recommendedAction:
         skippedLayers.length > 0
-          ? "Enable the skipped backfill layers with a service/user token or non-zero backfill limit, then queue the targeted repair."
-          : "Run authenticated or service-token backfill for PR detail, comments, reviews, and timeline data."
+          ? "Enable the skipped backfill layers with a service read token, a personal token, or a non-zero backfill limit, then queue the targeted repair."
+          : "Run personal-token or service-token backfill for PR detail, comments, reviews, and timeline data."
     };
   }
 
@@ -906,7 +906,7 @@ export function summarizeCacheEvidence(input: {
       )}. ${input.visibility.note ?? "Some cached objects are outside the current viewer scope."}`,
       facts,
       affectedConclusions: ["team and personal totals for objects outside the current access scope"],
-      recommendedAction: "Connect an authorized GitHub token to view data allowed by that token."
+      recommendedAction: "Connect an authorized personal GitHub token to view data allowed by that token."
     };
   }
 

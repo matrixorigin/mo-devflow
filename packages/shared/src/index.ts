@@ -1201,7 +1201,7 @@ export function buildGitHubWriteCapabilities(input: {
       issueLabels: {
         enabled: false,
         status: "missing_token",
-        message: "Connect or reconnect a GitHub token before workflow fixes are enabled.",
+        message: "Connect or reconnect a personal GitHub token before workflow fixes are enabled.",
         requiredScopes,
         currentScopes,
         requiredRepoPermissions,

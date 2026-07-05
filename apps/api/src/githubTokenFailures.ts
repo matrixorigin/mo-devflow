@@ -15,8 +15,8 @@ export function githubTokenFailureForWorkflowRead(error: unknown): GitHubTokenWo
       error: "github_token_reconnect_required",
       message:
         classified.status === 401
-          ? "GitHub rejected the connected token. Reconnect a valid GitHub token before workflow fixes are enabled."
-          : "GitHub token no longer has access to this repository or issue. Reconnect a token with the required permissions.",
+          ? "GitHub rejected the connected personal token. Reconnect a valid personal GitHub token before workflow fixes are enabled."
+          : "Personal GitHub token no longer has access to this repository or issue. Reconnect a token with the required permissions.",
       shouldRevokeToken: true
     };
   }

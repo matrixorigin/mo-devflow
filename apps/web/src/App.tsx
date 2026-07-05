@@ -4257,7 +4257,9 @@ function HealthLayerRow({
         {item.skipped ? <span>skipped {item.skipReason ?? "no reason recorded"}</span> : null}
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
-      <Tooltip title={authenticated ? "Queue this sync layer" : "Connect GitHub token to queue worker refresh jobs"}>
+      <Tooltip
+        title={authenticated ? "Queue this sync layer" : "Connect a personal token to queue worker refresh jobs"}
+      >
         <span>
           <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
             Refresh layer
@@ -4304,7 +4306,7 @@ function HealthBoard({
   const productionReadiness = summarizeProductionReadiness({ data, session });
   const refreshDisabledReason = authenticated
     ? undefined
-    : "Anonymous users can inspect cached health only. Connect a GitHub token to queue worker refresh jobs.";
+    : "Anonymous users can inspect cached health only. Connect a personal token to queue worker refresh jobs.";
 
   return (
     <section className="section">
@@ -4324,7 +4326,7 @@ function HealthBoard({
           type="info"
           showIcon
           title="Observer mode"
-          description="Cached data remains visible. Queueing repair, webhook retry, and worker refresh actions requires a connected GitHub token and CSRF-protected session."
+          description="Cached data remains visible. Queueing repair, webhook retry, and worker refresh actions requires a connected personal token and CSRF-protected session."
           action={
             <Button size="small" onClick={onConnectToken}>
               Connect
@@ -5082,7 +5084,7 @@ function CacheRepairPlan({
             Suggested worker layers based on the sampled stale or incomplete objects and sync health.
           </Text>
         </div>
-        <Tooltip title={authenticated ? "Queue these repair layers" : "Connect GitHub token first"}>
+        <Tooltip title={authenticated ? "Queue these repair layers" : "Connect a personal token first"}>
           <Space size={6}>
             <Button
               size="small"
@@ -5116,7 +5118,7 @@ function CacheRepairPlan({
           </Text>
         ))}
         {!authenticated ? (
-          <Text type="secondary">Manual repair queueing requires a connected GitHub token.</Text>
+          <Text type="secondary">Manual repair queueing requires a connected personal token.</Text>
         ) : null}
       </div>
     </div>
@@ -5317,7 +5319,9 @@ function CacheEvidenceBanner({
               {compactRepair.layers.length > 0 ? (
                 <Space size={6} wrap className="evidence-alert-repair-actions">
                   <Tooltip
-                    title={authenticated ? "Queue the recommended cache repair layers" : "Connect GitHub token first"}
+                    title={
+                      authenticated ? "Queue the recommended cache repair layers" : "Connect a personal token first"
+                    }
                   >
                     <Button
                       size="small"
@@ -10921,7 +10925,7 @@ function WriteAuditBoard({
         <Alert
           className="band"
           type="info"
-          title="Connect GitHub token to view write audit"
+          title="Connect a personal token to view write audit"
           description="Write audit rows are only shown to logged-in users and are filtered by the same cached object visibility policy as issues and PRs."
           showIcon
         />
@@ -10940,7 +10944,7 @@ function WriteAuditBoard({
               description={
                 authenticated
                   ? `No ${writeAuditScopeLabel(scopeFilter)} visible in cache`
-                  : "Connect GitHub token to view write audit"
+                  : "Connect a personal token to view write audit"
               }
             />
           )
@@ -11362,7 +11366,7 @@ export default function App() {
 
   async function retryFailedWebhooks() {
     if (!session?.authenticated) {
-      setWebhookRetryError("Connect GitHub token before retrying failed webhooks.");
+      setWebhookRetryError("Connect a personal token before retrying failed webhooks.");
       return;
     }
     setWebhookRetrySaving(true);
@@ -11389,7 +11393,7 @@ export default function App() {
 
   async function acknowledgeNotification(delivery: NotificationDeliveryView) {
     if (!session?.authenticated) {
-      setNotificationAckError("Connect GitHub token before acknowledging notifications.");
+      setNotificationAckError("Connect a personal token before acknowledging notifications.");
       return;
     }
     if (!notificationStatusRequiresAcknowledgement(delivery.status)) {
@@ -11417,7 +11421,7 @@ export default function App() {
 
   async function retryNotification(delivery: NotificationDeliveryView) {
     if (!session?.authenticated) {
-      setNotificationAckError("Connect GitHub token before retrying notifications.");
+      setNotificationAckError("Connect a personal token before retrying notifications.");
       return;
     }
     if (!notificationStatusAllowsRetry(delivery.status)) {
@@ -11445,7 +11449,7 @@ export default function App() {
 
   async function sendNotificationTest() {
     if (!session?.authenticated) {
-      setNotificationAckError("Connect GitHub token before sending notification tests.");
+      setNotificationAckError("Connect a personal token before sending notification tests.");
       return;
     }
     setNotificationTestSaving(true);
@@ -12022,14 +12026,14 @@ export default function App() {
           const tokenServerReady = session?.tokenEncryptionConfigured !== false;
           const canPreview = supportsPreview && tokenServerReady && issueLabelCapability?.enabled === true;
           const tooltip = !session?.authenticated
-            ? "Connect GitHub token to preview fixes"
+            ? "Connect a personal token to preview fixes"
             : !tokenServerReady
               ? tokenEncryptionSetupHint
               : !supportsPreview
                 ? "No safe preview action for this rule yet"
                 : issueLabelCapability?.enabled
                   ? `Preview ${labelText(actionKey)}`
-                  : (issueLabelCapability?.message ?? "Reconnect GitHub token before workflow fixes are enabled");
+                  : (issueLabelCapability?.message ?? "Reconnect a personal token before workflow fixes are enabled");
           return (
             <Tooltip title={tooltip}>
               <span>
@@ -12189,7 +12193,7 @@ export default function App() {
           }
           return (
             <Tooltip
-              title={session?.authenticated ? "Acknowledge notification" : "Connect GitHub token to acknowledge"}
+              title={session?.authenticated ? "Acknowledge notification" : "Connect a personal token to acknowledge"}
             >
               <span>
                 <Button
@@ -12222,7 +12226,9 @@ export default function App() {
             return <Text type="secondary">-</Text>;
           }
           return (
-            <Tooltip title={session?.authenticated ? "Retry notification delivery" : "Connect GitHub token to retry"}>
+            <Tooltip
+              title={session?.authenticated ? "Retry notification delivery" : "Connect a personal token to retry"}
+            >
               <span>
                 <Button
                   size="small"
@@ -12584,12 +12590,12 @@ export default function App() {
                   tokenEncryptionUnavailable
                     ? tokenEncryptionSetupHint
                     : headerIssueLabelCapability.enabled
-                      ? "Reconnect GitHub token"
+                      ? "Reconnect personal token"
                       : headerIssueLabelCapability.message
                 }
               >
                 <Button
-                  aria-label="Reconnect GitHub token"
+                  aria-label="Reconnect personal GitHub token"
                   icon={<KeyRound size={16} />}
                   disabled={tokenEncryptionUnavailable || headerWriteBackDisabled}
                   onClick={openTokenReconnect}
@@ -12618,7 +12624,7 @@ export default function App() {
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading || refreshing} />
           </Tooltip>
           <Tooltip
-            title={session?.authenticated ? "Queue worker refresh" : "Connect GitHub token to queue worker refresh"}
+            title={session?.authenticated ? "Queue worker refresh" : "Connect a personal token to queue worker refresh"}
           >
             <Button
               icon={<RefreshCcw size={16} />}
@@ -12996,7 +13002,7 @@ export default function App() {
                       title={
                         session?.authenticated
                           ? "Send a controlled Enterprise WeChat test message"
-                          : "Connect GitHub token before sending notification tests"
+                          : "Connect a personal token before sending notification tests"
                       }
                     >
                       <span>
@@ -13662,7 +13668,7 @@ export default function App() {
       <Modal
         title={
           authenticatedUser
-            ? `Reconnect GitHub token for ${authenticatedUser.githubLogin}`
+            ? `Reconnect personal GitHub token for ${authenticatedUser.githubLogin}`
             : "Connect Your GitHub Token"
         }
         open={tokenModalOpen}
@@ -13779,7 +13785,7 @@ export default function App() {
             <Alert
               type="info"
               title="Observer mode"
-              description="You can inspect cached data without logging in. Queueing worker refresh jobs requires a connected GitHub token."
+              description="You can inspect cached data without logging in. Queueing worker refresh jobs requires a connected personal token."
               action={
                 <Button size="small" onClick={openTokenReconnect}>
                   Connect

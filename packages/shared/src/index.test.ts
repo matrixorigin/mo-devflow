@@ -137,7 +137,7 @@ describe("repo profile configuration status", () => {
 });
 
 describe("GitHub write capabilities", () => {
-  test("requires a validated connected token before issue label writes are enabled", () => {
+  test("requires a validated personal token before issue label writes are enabled", () => {
     const capabilities = buildGitHubWriteCapabilities({
       writeBackEnabled: true,
       tokenScopes: ["repo"],

@@ -28,7 +28,7 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a GitHub token before queueing refresh jobs."
+        message: "Connect a personal GitHub token before queueing refresh jobs."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -80,7 +80,7 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a GitHub token before retrying failed webhook deliveries."
+        message: "Connect a personal GitHub token before retrying failed webhook deliveries."
       });
     }
     if (!hasValidCsrfToken(request)) {

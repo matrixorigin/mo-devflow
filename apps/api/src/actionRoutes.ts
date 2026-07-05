@@ -96,7 +96,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a GitHub token before previewing workflow fixes."
+        message: "Connect a personal GitHub token before previewing workflow fixes."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -280,7 +280,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a GitHub token before confirming workflow fixes."
+        message: "Connect a personal GitHub token before confirming workflow fixes."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -439,7 +439,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         afterState: applied.afterState,
         message: stale
           ? "GitHub state changed since preview; no operation was executed."
-          : "Workflow fix executed with the connected GitHub token."
+          : "Workflow fix executed with the connected personal GitHub token."
       });
       const persisted = await persistExecution({
         repoId: storedPreview.repoId,

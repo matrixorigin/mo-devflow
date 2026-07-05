@@ -653,7 +653,7 @@ describe("production readiness summary", () => {
     });
     expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({
       status: "waiting",
-      value: "token needed"
+      value: "personal token needed"
     });
   });
 

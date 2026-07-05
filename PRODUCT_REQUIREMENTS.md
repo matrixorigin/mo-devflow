@@ -596,7 +596,7 @@ The product should always keep the dashboard as the source of truth. Notificatio
 
 ## 14. Write Operations
 
-Write operations are available only to logged-in users with a connected GitHub token.
+Write operations are available only to logged-in users with a connected personal GitHub token.
 
 The product should validate token capability before offering a write action. If the token is missing, expired, lacks scope, or no longer has repository permission, the UI should explain the problem and keep the action disabled.
 
