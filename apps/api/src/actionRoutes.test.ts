@@ -476,6 +476,7 @@ describe("action routes", () => {
       access: { ...profile.access, writeBackEnabled: true }
     };
     mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
     mocks.claimWorkflowFixPreviewForUser.mockResolvedValue(false);
     mocks.getWorkflowFixPreviewForUser
       .mockResolvedValueOnce({
@@ -514,7 +515,79 @@ describe("action routes", () => {
         error: "workflow_fix_preview_not_confirmable",
         message: "Preview is already confirming."
       });
+      expect(mocks.getActiveGitHubTokenForUser).toHaveBeenCalledWith(1);
+      expect(mocks.fetchIssueWritePermission).not.toHaveBeenCalled();
+      expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(mocks.markWorkflowFixPreviewStatus).not.toHaveBeenCalled();
+      expect(mocks.recordWorkflowFixExecution).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("does not claim workflow fix confirmation when profile loading fails", async () => {
+    mocks.loadRepoProfile.mockImplementation(() => {
+      throw new Error("bad profile yaml");
+    });
+
+    const app = Fastify({ logger: false });
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({
+        error: "workflow_fix_profile_unavailable",
+        message:
+          "Workflow fix confirmation is unavailable because the repository profile could not be loaded. No GitHub operation was executed."
+      });
+      expect(mocks.claimWorkflowFixPreviewForUser).not.toHaveBeenCalled();
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(mocks.fetchIssueWritePermission).not.toHaveBeenCalled();
+      expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(mocks.markWorkflowFixPreviewStatus).not.toHaveBeenCalled();
+      expect(mocks.recordWorkflowFixExecution).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("does not claim workflow fix confirmation when the local token store fails", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockRejectedValue(new Error("token table unavailable"));
+
+    const app = Fastify({ logger: false });
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({
+        error: "workflow_fix_token_store_unavailable",
+        message:
+          "Workflow fix confirmation is unavailable because the local token store could not be read. No GitHub operation was executed."
+      });
+      expect(mocks.claimWorkflowFixPreviewForUser).not.toHaveBeenCalled();
       expect(mocks.fetchIssueWritePermission).not.toHaveBeenCalled();
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
       expect(mocks.markWorkflowFixPreviewStatus).not.toHaveBeenCalled();

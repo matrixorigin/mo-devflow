@@ -321,35 +321,48 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         message: `Preview is already ${storedPreview.status}.`
       });
     }
-    const claimed = await claimWorkflowFixPreviewForUser({
-      previewId: parsed.data.previewId,
-      userId: session.userId
-    });
-    if (!claimed) {
+    const preview = storedPreview.preview;
+    const claimPreviewOrReply = async (): Promise<boolean> => {
+      const claimed = await claimWorkflowFixPreviewForUser({
+        previewId: parsed.data.previewId,
+        userId: session.userId
+      });
+      if (claimed) {
+        return true;
+      }
       const latestPreview = await getWorkflowFixPreviewForUser({
         previewId: parsed.data.previewId,
         userId: session.userId
       });
-      return reply.status(409).send({
+      await reply.status(409).send({
         error: "workflow_fix_preview_not_confirmable",
         message: `Preview is already ${latestPreview?.status ?? "not confirmable"}.`
       });
-    }
+      return false;
+    };
 
-    const preview = storedPreview.preview;
+    const persistClaimedRouteExecution = async (
+      input: Omit<Parameters<typeof persistRouteExecution>[0], "repoId" | "userId" | "githubLogin" | "preview">
+    ): Promise<WorkflowFixExecutionResult | void> => {
+      if (!(await claimPreviewOrReply())) {
+        return undefined;
+      }
+      return persistRouteExecution({
+        repoId: storedPreview.repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        preview,
+        ...input
+      });
+    };
+
     if (new Date(storedPreview.expiresAt).getTime() <= Date.now()) {
       const result = executionResult({
         previewId: preview.previewId,
         status: "stale_preview",
         message: "Preview has expired. Generate a fresh preview before executing."
       });
-      return persistRouteExecution({
-        repoId: storedPreview.repoId,
-        userId: session.userId,
-        githubLogin: session.githubLogin,
-        preview,
-        result
-      });
+      return persistClaimedRouteExecution({ result });
     }
     if (preview.blockedReason || preview.operations.length === 0) {
       const result = executionResult({
@@ -357,16 +370,20 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         status: "blocked",
         message: preview.blockedReason ?? "Preview contains no executable operations."
       });
-      return persistRouteExecution({
-        repoId: storedPreview.repoId,
-        userId: session.userId,
-        githubLogin: session.githubLogin,
-        preview,
-        result
-      });
+      return persistClaimedRouteExecution({ result });
     }
 
-    const profile = loadRepoProfile();
+    let profile: ReturnType<typeof loadRepoProfile>;
+    try {
+      profile = loadRepoProfile();
+    } catch (error) {
+      app.log.error({ error, previewId: preview.previewId }, "workflow fix confirm profile load failed");
+      return reply.status(503).send({
+        error: "workflow_fix_profile_unavailable",
+        message:
+          "Workflow fix confirmation is unavailable because the repository profile could not be loaded. No GitHub operation was executed."
+      });
+    }
     const capability = buildGitHubWriteCapabilities({
       writeBackEnabled: profile.access.writeBackEnabled,
       tokenScopes: session.tokenScopes,
@@ -379,16 +396,20 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         status: "blocked",
         message: capability.message
       });
-      return persistRouteExecution({
-        repoId: storedPreview.repoId,
-        userId: session.userId,
-        githubLogin: session.githubLogin,
-        preview,
-        result
-      });
+      return persistClaimedRouteExecution({ result });
     }
 
-    const storedToken = await getActiveGitHubTokenForUser(session.userId);
+    let storedToken: Awaited<ReturnType<typeof getActiveGitHubTokenForUser>>;
+    try {
+      storedToken = await getActiveGitHubTokenForUser(session.userId);
+    } catch (error) {
+      app.log.error({ error, previewId: preview.previewId }, "workflow fix confirm token lookup failed");
+      return reply.status(503).send({
+        error: "workflow_fix_token_store_unavailable",
+        message:
+          "Workflow fix confirmation is unavailable because the local token store could not be read. No GitHub operation was executed."
+      });
+    }
     let encryptionConfig;
     try {
       encryptionConfig = tokenEncryptionConfigFromEnv();
@@ -401,13 +422,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         status: "token_unavailable",
         message: "A usable GitHub token is not available for this session."
       });
-      return persistRouteExecution({
-        repoId: storedPreview.repoId,
-        userId: session.userId,
-        githubLogin: session.githubLogin,
-        preview,
-        result
-      });
+      return persistClaimedRouteExecution({ result });
     }
 
     let token: string;
@@ -428,13 +443,10 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         message: "Stored GitHub token could not be decrypted.",
         errorMessage: error instanceof Error ? error.message : String(error)
       });
-      return persistRouteExecution({
-        repoId: storedPreview.repoId,
-        userId: session.userId,
-        githubLogin: session.githubLogin,
-        preview,
-        result
-      });
+      return persistClaimedRouteExecution({ result });
+    }
+    if (!(await claimPreviewOrReply())) {
+      return undefined;
     }
     try {
       const issueWritePermission = await fetchIssueWritePermission({ token, profile });
