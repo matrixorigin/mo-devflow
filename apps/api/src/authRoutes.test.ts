@@ -7,6 +7,7 @@ import { sessionCookieName } from "./sessionCookie";
 
 const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
+  getTeamSignInSummary: vi.fn(),
   listConnectedGitHubUsers: vi.fn(),
   revokeGitHubTokenForUser: vi.fn(),
   revokeSession: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@mo-devflow/config", () => ({
 vi.mock("@mo-devflow/db", () => ({
   createUserSession: mocks.createUserSession,
   getActiveSession: mocks.getActiveSession,
+  getTeamSignInSummary: mocks.getTeamSignInSummary,
   listConnectedGitHubUsers: mocks.listConnectedGitHubUsers,
   revokeGitHubTokenForUser: mocks.revokeGitHubTokenForUser,
   revokeSession: mocks.revokeSession,
@@ -104,6 +106,12 @@ describe("auth routes", () => {
       retryAfterSeconds: null
     });
     mocks.upsertGitHubTokenBinding.mockResolvedValue(1);
+    mocks.getTeamSignInSummary.mockResolvedValue({
+      connectedUsers: 2,
+      tokenConnectedUsers: 2,
+      activeBrowserSessions: 3,
+      lastSeenAt: "2026-07-04T01:00:00.000Z"
+    });
     mocks.listConnectedGitHubUsers.mockResolvedValue([
       {
         githubLogin: "alice",
@@ -154,6 +162,66 @@ describe("auth routes", () => {
     restoreTokenEncryptionEnv();
   });
 
+  test("returns only aggregate team sign-in state for anonymous sessions", async () => {
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/session"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        authenticated: false,
+        user: null,
+        connectedUsers: [],
+        teamSignIn: {
+          connectedUsers: 2,
+          tokenConnectedUsers: 2,
+          activeBrowserSessions: 3,
+          lastSeenAt: "2026-07-04T01:00:00.000Z"
+        },
+        tokenEncryptionConfigured: false
+      });
+      expect(mocks.getTeamSignInSummary).toHaveBeenCalledTimes(1);
+      expect(mocks.listConnectedGitHubUsers).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("keeps anonymous sessions available when team sign-in summary fails", async () => {
+    mocks.getTeamSignInSummary.mockRejectedValue(new Error("summary unavailable"));
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/session"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        authenticated: false,
+        user: null,
+        connectedUsers: [],
+        teamSignIn: {
+          connectedUsers: 0,
+          tokenConnectedUsers: 0,
+          activeBrowserSessions: 0,
+          lastSeenAt: null
+        },
+        tokenEncryptionConfigured: false
+      });
+      expect(mocks.listConnectedGitHubUsers).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("sets a readable CSRF cookie for authenticated sessions", async () => {
     const app = Fastify();
     await registerAuthRoutes(app);
@@ -174,8 +242,15 @@ describe("auth routes", () => {
             activeSessionCount: 1,
             isCurrentUser: true
           })
-        ]
+        ],
+        teamSignIn: {
+          connectedUsers: 2,
+          tokenConnectedUsers: 2,
+          activeBrowserSessions: 3,
+          lastSeenAt: "2026-07-04T01:00:00.000Z"
+        }
       });
+      expect(mocks.getTeamSignInSummary).toHaveBeenCalled();
       expect(mocks.listConnectedGitHubUsers).toHaveBeenCalledWith({ currentUserId: 1 });
       const csrfCookie = setCookieHeaders(response).find((cookie) => cookie.startsWith(`${csrfCookieName}=`));
       expect(csrfCookie).toContain("SameSite=Lax");
@@ -202,6 +277,12 @@ describe("auth routes", () => {
         authenticated: false,
         user: null,
         connectedUsers: [],
+        teamSignIn: {
+          connectedUsers: 2,
+          tokenConnectedUsers: 2,
+          activeBrowserSessions: 3,
+          lastSeenAt: "2026-07-04T01:00:00.000Z"
+        },
         tokenEncryptionConfigured: false
       });
       const cookies = setCookieHeaders(response);
@@ -258,6 +339,12 @@ describe("auth routes", () => {
         authenticated: false,
         user: null,
         connectedUsers: [],
+        teamSignIn: {
+          connectedUsers: 2,
+          tokenConnectedUsers: 2,
+          activeBrowserSessions: 3,
+          lastSeenAt: "2026-07-04T01:00:00.000Z"
+        },
         tokenEncryptionConfigured: false
       });
       expect(mocks.revokeSession).toHaveBeenCalledTimes(1);
@@ -352,7 +439,7 @@ describe("auth routes", () => {
       const body = second.json();
       expect(body).toEqual({
         error: "github_token_bind_rate_limited",
-        message: "Too many GitHub token connection attempts. Retry later.",
+        message: "Too many GitHub token sign-in attempts. Retry later.",
         retryAfterSeconds: expect.any(Number)
       });
       expect(Number(body.retryAfterSeconds)).toBeGreaterThan(0);
@@ -411,7 +498,7 @@ describe("auth routes", () => {
     }
   });
 
-  test("uses the validated GitHub identity as the user when connecting from multiple browser sessions", async () => {
+  test("uses the validated GitHub identity as the user when signing in from multiple browser sessions", async () => {
     process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
     mocks.upsertGitHubTokenBinding.mockResolvedValue(42);
     const app = Fastify();

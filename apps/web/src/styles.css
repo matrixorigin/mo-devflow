@@ -282,6 +282,34 @@ body {
   overflow: auto;
 }
 
+.account-team-summary-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.account-team-summary-grid > div {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.account-team-summary-grid span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.account-team-summary-grid strong {
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
 .account-team-user {
   align-items: center;
   background: #ffffff;
@@ -6219,6 +6247,7 @@ button.flow-diagnostic-card:focus-visible {
   .work-lane-grid-secondary,
   .flow-efficiency-strip,
   .account-session-facts,
+  .account-team-summary-grid,
   .token-session-facts,
   .flow-chart-grid {
     grid-template-columns: 1fr;

@@ -1,4 +1,9 @@
-import type { AuthenticatedUserView, ConnectedGitHubUserView, GitHubRepoPermission } from "@mo-devflow/shared";
+import type {
+  AuthenticatedUserView,
+  ConnectedGitHubUserView,
+  GitHubRepoPermission,
+  TeamSignInSummaryView
+} from "@mo-devflow/shared";
 import { buildGitHubWriteCapabilities, parseJsonArray } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
@@ -192,6 +197,32 @@ export async function listConnectedGitHubUsers(input: {
       isCurrentUser: asNumber(row.user_id) === input.currentUserId
     };
   });
+}
+
+export async function getTeamSignInSummary(): Promise<TeamSignInSummaryView> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT
+       COUNT(DISTINCT u.id) AS connected_users,
+       SUM(CASE WHEN t.user_id IS NULL THEN 0 ELSE 1 END) AS token_connected_users,
+       COALESCE(SUM(COALESCE(s.active_session_count, 0)), 0) AS active_browser_sessions,
+       MAX(COALESCE(s.last_seen_at, t.last_validated_at, u.updated_at)) AS last_seen_at
+     FROM app_users u
+     LEFT JOIN user_github_tokens t ON t.user_id = u.id AND t.revoked_at IS NULL
+     LEFT JOIN (
+       SELECT user_id, COUNT(*) AS active_session_count, MAX(last_seen_at) AS last_seen_at
+       FROM user_sessions
+       WHERE revoked_at IS NULL
+         AND expires_at > UTC_TIMESTAMP()
+       GROUP BY user_id
+     ) s ON s.user_id = u.id`
+  );
+  const row = rows[0] ?? {};
+  return {
+    connectedUsers: asNumber(row.connected_users),
+    tokenConnectedUsers: asNumber(row.token_connected_users),
+    activeBrowserSessions: asNumber(row.active_browser_sessions),
+    lastSeenAt: fromSqlDate(row.last_seen_at)
+  };
 }
 
 export async function createUserSession(input: {

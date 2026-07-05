@@ -4,6 +4,7 @@ import { loadRepoProfile } from "@mo-devflow/config";
 import {
   createUserSession,
   getActiveSession,
+  getTeamSignInSummary,
   listConnectedGitHubUsers,
   revokeGitHubTokenForUser,
   revokeSession,
@@ -12,7 +13,7 @@ import {
   type SessionRecord
 } from "@mo-devflow/db";
 import { classifyGitHubError, fetchIssueWritePermission, validateGitHubToken } from "@mo-devflow/github";
-import type { GitHubRepoPermission, RepoProfile, SessionView } from "@mo-devflow/shared";
+import type { GitHubRepoPermission, RepoProfile, SessionView, TeamSignInSummaryView } from "@mo-devflow/shared";
 import { createSessionToken, encryptSecret, hashSessionToken, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import {
   buildClearCsrfCookie,
@@ -43,11 +44,27 @@ function sessionTtlDaysFromEnv(): number {
   return Math.min(90, Math.floor(parsed));
 }
 
-function anonymousSession(): SessionView {
+const emptyTeamSignInSummary: TeamSignInSummaryView = {
+  connectedUsers: 0,
+  tokenConnectedUsers: 0,
+  activeBrowserSessions: 0,
+  lastSeenAt: null
+};
+
+async function safeTeamSignInSummary(): Promise<TeamSignInSummaryView> {
+  try {
+    return await getTeamSignInSummary();
+  } catch {
+    return emptyTeamSignInSummary;
+  }
+}
+
+async function anonymousSession(): Promise<SessionView> {
   return {
     authenticated: false,
     user: null,
     connectedUsers: [],
+    teamSignIn: await safeTeamSignInSummary(),
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
 }
@@ -72,11 +89,15 @@ async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply)
     );
   }
   const profile = loadRepoProfile();
-  const connectedUsers = await listConnectedGitHubUsers({ currentUserId: session.userId });
+  const [connectedUsers, teamSignIn] = await Promise.all([
+    listConnectedGitHubUsers({ currentUserId: session.userId }),
+    safeTeamSignInSummary()
+  ]);
   return {
     authenticated: true,
     user: toAuthenticatedUserView(session, { writeBackEnabled: profile.access.writeBackEnabled }),
     connectedUsers,
+    teamSignIn,
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
 }
@@ -141,7 +162,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       reply.header("retry-after", String(rateLimit.retryAfterSeconds));
       return reply.status(429).send({
         error: "github_token_bind_rate_limited",
-        message: "Too many GitHub token connection attempts. Retry later.",
+        message: "Too many GitHub token sign-in attempts. Retry later.",
         retryAfterSeconds: rateLimit.retryAfterSeconds
       });
     }
@@ -226,7 +247,10 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       sessionHash: hashSessionToken(sessionToken),
       expiresAt: expiresAt.toISOString()
     });
-    const connectedUsers = await listConnectedGitHubUsers({ currentUserId: userId });
+    const [connectedUsers, teamSignIn] = await Promise.all([
+      listConnectedGitHubUsers({ currentUserId: userId }),
+      safeTeamSignInSummary()
+    ]);
     const secureCookie = cookieSecureFromEnv();
     reply.header("set-cookie", [
       buildSessionCookie(sessionToken, expiresAt, secureCookie),
@@ -248,6 +272,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         { writeBackEnabled: profile.access.writeBackEnabled }
       ),
       connectedUsers,
+      teamSignIn,
       tokenEncryptionConfigured: true
     } satisfies SessionView;
   });
@@ -266,7 +291,10 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
     await revokeGitHubTokenForUser(session.userId);
     const profile = loadRepoProfile();
-    const connectedUsers = await listConnectedGitHubUsers({ currentUserId: session.userId });
+    const [connectedUsers, teamSignIn] = await Promise.all([
+      listConnectedGitHubUsers({ currentUserId: session.userId }),
+      safeTeamSignInSummary()
+    ]);
     return {
       authenticated: true,
       user: toAuthenticatedUserView(
@@ -279,6 +307,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         { writeBackEnabled: profile.access.writeBackEnabled }
       ),
       connectedUsers,
+      teamSignIn,
       tokenEncryptionConfigured: isTokenEncryptionConfigured()
     } satisfies SessionView;
   });

@@ -914,10 +914,18 @@ export interface ConnectedGitHubUserView {
   isCurrentUser: boolean;
 }
 
+export interface TeamSignInSummaryView {
+  connectedUsers: number;
+  tokenConnectedUsers: number;
+  activeBrowserSessions: number;
+  lastSeenAt: string | null;
+}
+
 export interface SessionView {
   authenticated: boolean;
   user: AuthenticatedUserView | null;
   connectedUsers: ConnectedGitHubUserView[];
+  teamSignIn: TeamSignInSummaryView;
   tokenEncryptionConfigured: boolean;
 }
 
