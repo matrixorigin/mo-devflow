@@ -3263,7 +3263,29 @@ function peopleScopeLabel(filter: PeopleScopeFilter): string {
   if (filter === "yesterday_pr") {
     return "yesterday PR";
   }
-  return "all watched";
+  return "all people";
+}
+
+export function peopleSortLabel(sort: PeopleBoardSort): string {
+  if (sort === "active") {
+    return "active issues";
+  }
+  if (sort === "pr_age") {
+    return "PR age";
+  }
+  if (sort === "pr_attention") {
+    return "PR attention";
+  }
+  if (sort === "triage") {
+    return "triage";
+  }
+  if (sort === "testing_wait") {
+    return "issue test wait";
+  }
+  if (sort === "name") {
+    return "name";
+  }
+  return "workload";
 }
 
 function personalTestingStaleCount(person: PersonalActionView): number {
@@ -8888,7 +8910,7 @@ function PeopleFocusQueue({
                 className={`people-focus-action people-focus-action-${focus.tone}`}
                 onClick={() => openMetric(focus.metric)}
               >
-                <span>Open board</span>
+                <span>Open person</span>
                 <strong>{focus.title}</strong>
                 <small>{focus.detail}</small>
               </button>
@@ -10309,7 +10331,7 @@ function PersonWorkloadRow({
         className={`person-queue-next person-queue-next-${focus.tone}`}
         onClick={() => openMetric(focus.metric)}
       >
-        <span>Open person board</span>
+        <span>Open {personalDrilldownLabel(focus.metric)}</span>
         <strong>{focus.title}</strong>
         <small>{focus.detail}</small>
       </button>
@@ -11790,7 +11812,7 @@ function ActionQueueFocusStrip({
       </div>
       <Space className="action-queue-focus-actions" size={[6, 6]} wrap>
         <Button size="small" icon={<ListFilter size={14} />} onClick={() => onOpenBoard(boardFilter)}>
-          Open board
+          Open {personalDrilldownLabel(boardFilter)}
         </Button>
         <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(item)}>
           Preview
@@ -18607,78 +18629,18 @@ export default function App() {
                 <div className="section-heading">
                   <Title level={4}>People Workbench</Title>
                   <Space size={[6, 6]} wrap>
+                    <Tag>{peopleBoardUsesObserved ? "observed owners" : "watched users"}</Tag>
                     <button
                       type="button"
                       className={`inline-filter-chip ${peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""}`}
                       onClick={() => changePeopleScopeFilter("all")}
                     >
-                      {peopleBoardUsesObserved
-                        ? `${peopleBoardCounts.all} observed`
-                        : `${peopleBoardCounts.all} watched`}
+                      {filteredPeople.length}/{peopleBoardCounts.all} shown
                     </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.critical > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "critical" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("critical")}
-                    >
-                      {peopleBoardCounts.critical} people s-1/s0
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.attention > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "attention" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("attention")}
-                    >
-                      {peopleBoardCounts.attention} people PR attention
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.triage > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "triage" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("triage")}
-                    >
-                      {peopleBoardCounts.triage} people triage
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.deferred > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("deferred")}
-                    >
-                      {peopleBoardCounts.deferred} people deferred
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.pending_pr > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "pending_pr" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("pending_pr")}
-                    >
-                      {peopleBoardCounts.pending_pr} people pending PR
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.testing > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "testing" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("testing")}
-                    >
-                      {peopleBoardCounts.testing} people issue testing
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        peopleBoardCounts.yesterday_pr > 0 ? "" : "inline-filter-chip-muted"
-                      } ${peopleScopeFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() => changePeopleScopeFilter("yesterday_pr")}
-                    >
-                      {peopleBoardCounts.yesterday_pr} people PR yday
-                    </button>
+                    <Tag color={peopleScopeFilter === "critical" ? "red" : peopleScopeFilter === "all" ? "default" : "orange"}>
+                      {peopleScopeLabel(peopleScopeFilter)}
+                    </Tag>
+                    <Tag>sort {peopleSortLabel(peopleSort)}</Tag>
                   </Space>
                 </div>
                 {peopleBoardUsesObserved ? (

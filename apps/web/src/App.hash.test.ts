@@ -8,6 +8,7 @@ import {
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
   peopleScopeFilterFromHash,
+  peopleSortLabel,
   peopleSortFromHash,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
@@ -154,5 +155,12 @@ describe("dashboard hash filters", () => {
     expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
     expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
     expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
+  });
+
+  it("uses neutral people sort labels for observed and watched boards", () => {
+    expect(peopleSortLabel("workload")).toBe("workload");
+    expect(peopleSortLabel("active")).toBe("active issues");
+    expect(peopleSortLabel("pr_age")).toBe("PR age");
+    expect(peopleSortLabel("testing_wait")).toBe("issue test wait");
   });
 });
