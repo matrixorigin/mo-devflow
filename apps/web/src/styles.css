@@ -3927,6 +3927,109 @@ button.testing-board-stat:focus-visible {
   padding: 8px 10px;
 }
 
+.action-queue-focus-strip {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 1.35fr) minmax(280px, 1fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.action-queue-focus-critical {
+  border-left-color: #dc2626;
+}
+
+.action-queue-focus-attention {
+  border-left-color: #d97706;
+}
+
+.action-queue-focus-main,
+.flow-thread-focus-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.action-queue-focus-main > strong,
+.flow-thread-focus-main > strong {
+  align-items: center;
+  color: #111827;
+  display: inline-flex;
+  gap: 6px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.action-queue-focus-main > a,
+.flow-thread-focus-main > a,
+.flow-thread-focus-main > span {
+  color: #374151;
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.action-queue-focus-main > a:hover,
+.flow-thread-focus-main > a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.action-queue-focus-facts,
+.flow-thread-focus-facts {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.action-queue-focus-facts > span,
+.flow-thread-focus-facts > span {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+.action-queue-focus-facts strong,
+.action-queue-focus-facts small,
+.flow-thread-focus-facts strong,
+.flow-thread-focus-facts small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-queue-focus-facts strong,
+.flow-thread-focus-facts strong {
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.action-queue-focus-facts small,
+.flow-thread-focus-facts small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.15;
+}
+
 .action-queue-sections {
   display: grid;
   gap: 12px;
@@ -4306,6 +4409,31 @@ button.testing-board-stat:focus-visible {
 .flow-map-filter-status {
   margin-top: -2px;
   min-width: 0;
+}
+
+.flow-thread-focus-strip {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 1.35fr) minmax(360px, 1.2fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.flow-thread-focus-critical {
+  border-left-color: #dc2626;
+}
+
+.flow-thread-focus-attention {
+  border-left-color: #d97706;
+}
+
+.flow-thread-focus-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .flow-thread-sections {
@@ -5830,6 +5958,17 @@ button.flow-diagnostic-card:focus-visible {
     flex-direction: column;
   }
 
+  .action-queue-focus-strip,
+  .flow-thread-focus-strip {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .action-queue-focus-strip .ant-btn,
+  .flow-thread-focus-strip .ant-btn {
+    justify-self: start;
+  }
+
   .action-queue-decision-row {
     grid-template-columns: 1fr;
   }
@@ -5865,6 +6004,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .flow-thread-body {
     grid-template-columns: 1fr;
+  }
+
+  .flow-thread-focus-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .flow-pr-row {
@@ -5986,6 +6129,11 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .activity-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .action-queue-focus-facts,
+  .flow-thread-focus-facts {
     grid-template-columns: 1fr;
   }
 

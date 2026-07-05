@@ -7860,6 +7860,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           ]}
         />
       </div>
+      {selectedItems.length > 0 ? <ActionQueueFocusStrip item={selectedItems[0]} onPreview={setPreviewItem} /> : null}
       {queueFilter === "all" ? (
         <div className="action-queue-sections" role="list" aria-label="Personal action queue">
           <ActionQueueSection
@@ -7908,6 +7909,56 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
       )}
       <PersonalActivityPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
     </div>
+  );
+}
+
+function ActionQueueFocusStrip({
+  item,
+  onPreview
+}: {
+  item: PersonalActivityItem;
+  onPreview: (item: PersonalActivityItem) => void;
+}) {
+  const objectLabel = item.objectType === "pull_request" ? `PR #${item.number}` : `Issue #${item.number}`;
+  const nextAction = personalActivityNextAction(item);
+  const duration = personalDurationText(item);
+  const linkCount = item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length;
+  const linkSummary =
+    linkCount === 0
+      ? "No visible link"
+      : `${item.linkedIssueNumbers.length} issue / ${item.linkedPullRequestNumbers.length} PR`;
+  const lastAction = item.lastHumanActionAt ? formatDate(item.lastHumanActionAt) : "no human action";
+
+  return (
+    <section className={`action-queue-focus-strip action-queue-focus-${item.tone}`} aria-label="Top queue focus">
+      <div className="action-queue-focus-main">
+        <Text type="secondary">Top next action</Text>
+        <strong>
+          <TimerReset size={15} aria-hidden="true" />
+          {nextAction}
+        </strong>
+        <a href={item.htmlUrl} target="_blank" rel="noreferrer">
+          {objectLabel} - {item.title}
+        </a>
+      </div>
+      <div className="action-queue-focus-facts">
+        <span>
+          <strong>{duration}</strong>
+          <small>{labelText(item.durationEvidence)}</small>
+        </span>
+        <span>
+          <strong>{linkSummary}</strong>
+          <small>{personalActivityPrimarySignal(item)}</small>
+        </span>
+        <span>
+          <strong>{lastAction}</strong>
+          <small>last action</small>
+        </span>
+      </div>
+      <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(item)}>
+        Preview
+      </Button>
+    </section>
   );
 }
 
@@ -8487,6 +8538,7 @@ function PersonalFlowMap({ chart }: { chart: PersonalGanttChart }) {
           .
         </Text>
       </div>
+      {filteredRows.length > 0 ? <FlowThreadFocusStrip row={filteredRows[0]} onPreview={setPreviewThread} /> : null}
       <div className="flow-thread-sections" role="list" aria-label="Personal work threads">
         <FlowThreadSection
           title="Critical issue threads"
@@ -8553,6 +8605,67 @@ function flowIssueDurationLabel(kind: PersonalGanttRow["issue"]["durationKind"])
     return "PR age";
   }
   return "issue age";
+}
+
+function FlowThreadFocusStrip({
+  row,
+  onPreview
+}: {
+  row: PersonalGanttRow;
+  onPreview: (row: PersonalGanttRow) => void;
+}) {
+  const statusCounts = flowThreadStatusCounts(row);
+  const nextAction = flowThreadNextAction(row);
+  const durationLabel = flowIssueDurationLabel(row.issue.durationKind);
+  const objectHref = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
+  const objectLabel =
+    row.issue.number !== null
+      ? `Issue #${row.issue.number}`
+      : row.prs.length > 0
+        ? `${row.prs.length} visible PRs`
+        : "Thread";
+
+  return (
+    <section className={`flow-thread-focus-strip flow-thread-focus-${row.tone}`} aria-label="Top work thread focus">
+      <div className="flow-thread-focus-main">
+        <Text type="secondary">Top work thread</Text>
+        <strong>
+          <TimerReset size={15} aria-hidden="true" />
+          {nextAction}
+        </strong>
+        {objectHref ? (
+          <a href={objectHref} target="_blank" rel="noreferrer">
+            {objectLabel} - {row.issue.title}
+          </a>
+        ) : (
+          <span>
+            {objectLabel} - {row.issue.title}
+          </span>
+        )}
+      </div>
+      <div className="flow-thread-focus-facts">
+        <span>
+          <strong>{row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours)}</strong>
+          <small>{durationLabel}</small>
+        </span>
+        <span>
+          <strong>{statusCounts.prs}</strong>
+          <small>visible PRs</small>
+        </span>
+        <span>
+          <strong>{statusCounts.blockedPrs}</strong>
+          <small>blocked</small>
+        </span>
+        <span>
+          <strong>{statusCounts.testingIssues + statusCounts.testingPrs}</strong>
+          <small>testing</small>
+        </span>
+      </div>
+      <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(row)}>
+        Preview
+      </Button>
+    </section>
+  );
 }
 
 function FlowThreadSection({
