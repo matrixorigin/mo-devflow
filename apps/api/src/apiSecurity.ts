@@ -63,7 +63,14 @@ export function buildCorsOptions(env: Record<string, string | undefined> = proce
     },
     credentials: true,
     methods: ["GET", "POST", "DELETE", "OPTIONS"],
-    allowedHeaders: ["content-type", "x-github-delivery", "x-github-event", "x-hub-signature-256"],
+    allowedHeaders: ["content-type", "x-github-delivery", "x-github-event", "x-hub-signature-256", "x-mo-devflow-csrf"],
+    exposedHeaders: [
+      "etag",
+      "retry-after",
+      "x-mo-devflow-dashboard-cache",
+      "x-mo-devflow-dashboard-version",
+      "x-request-id"
+    ],
     maxAge: 600
   };
 }
@@ -73,7 +80,8 @@ export async function registerApiSecurity(
   env: Record<string, string | undefined> = process.env
 ): Promise<void> {
   await app.register(cors, buildCorsOptions(env));
-  app.addHook("onSend", async (_request, reply) => {
+  app.addHook("onSend", async (request, reply) => {
+    reply.header("x-request-id", String(request.id));
     for (const [name, value] of Object.entries(defaultSecurityHeaders)) {
       reply.header(name, value);
     }

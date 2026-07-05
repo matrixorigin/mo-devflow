@@ -688,13 +688,21 @@ function displayError(value: unknown): string {
 class ApiResponseError extends Error {
   readonly status: number;
   readonly code: string | null;
+  readonly requestId: string | null;
   readonly retryAfterSeconds: number | null;
 
-  constructor(input: { message: string; status: number; code: string | null; retryAfterSeconds: number | null }) {
+  constructor(input: {
+    message: string;
+    status: number;
+    code: string | null;
+    requestId: string | null;
+    retryAfterSeconds: number | null;
+  }) {
     super(input.message);
     this.name = "ApiResponseError";
     this.status = input.status;
     this.code = input.code;
+    this.requestId = input.requestId;
     this.retryAfterSeconds = input.retryAfterSeconds;
   }
 }
@@ -714,6 +722,7 @@ async function responseApiError(response: Response): Promise<ApiResponseError> {
       message: body.message ?? body.error ?? `API returned ${response.status}`,
       status: response.status,
       code: body.error ?? null,
+      requestId: response.headers.get("x-request-id"),
       retryAfterSeconds: parseRetryAfterSeconds(response, body.retryAfterSeconds)
     });
   } catch {
@@ -721,19 +730,22 @@ async function responseApiError(response: Response): Promise<ApiResponseError> {
       message: `API returned ${response.status}`,
       status: response.status,
       code: null,
+      requestId: response.headers.get("x-request-id"),
       retryAfterSeconds: parseRetryAfterSeconds(response, null)
     });
   }
 }
 
 async function responseError(response: Response): Promise<string> {
-  return (await responseApiError(response)).message;
+  const error = await responseApiError(response);
+  return error.requestId ? `${error.message} Request id ${error.requestId}.` : error.message;
 }
 
 interface DashboardLoadError {
   message: string;
   status: number | null;
   code: string | null;
+  requestId: string | null;
   retryAfterSeconds: number | null;
 }
 
@@ -743,6 +755,7 @@ function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
       message: value.message,
       status: value.status,
       code: value.code,
+      requestId: value.requestId,
       retryAfterSeconds: value.retryAfterSeconds
     };
   }
@@ -750,6 +763,7 @@ function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
     message: displayError(value),
     status: null,
     code: null,
+    requestId: null,
     retryAfterSeconds: null
   };
 }
@@ -773,7 +787,12 @@ function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError })
     <Space orientation="vertical" size={4}>
       <Text>{dashboardLoadErrorMessage(error)}</Text>
       <Text type="secondary">{detail}</Text>
-      {error.code ? <Tag color="red">{error.code}</Tag> : null}
+      {error.code || error.requestId ? (
+        <Space size={[4, 4]} wrap>
+          {error.code ? <Tag color="red">{error.code}</Tag> : null}
+          {error.requestId ? <Tag>request {error.requestId}</Tag> : null}
+        </Space>
+      ) : null}
     </Space>
   );
 }

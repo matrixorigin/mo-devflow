@@ -63,6 +63,8 @@ describe("API security", () => {
 
       expect(allowed.headers["access-control-allow-origin"]).toBe("https://devflow.example.com");
       expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
+      expect(String(allowed.headers["access-control-expose-headers"])).toContain("x-request-id");
+      expect(String(allowed.headers["access-control-expose-headers"])).toContain("x-mo-devflow-dashboard-cache");
       expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
     } finally {
       await app.close();
@@ -87,6 +89,7 @@ describe("API security", () => {
       expect(response.headers["referrer-policy"]).toBe("no-referrer");
       expect(response.headers["cross-origin-resource-policy"]).toBe("same-site");
       expect(response.headers["permissions-policy"]).toBe("camera=(), microphone=(), geolocation=()");
+      expect(response.headers["x-request-id"]).toBeTruthy();
     } finally {
       await app.close();
     }
@@ -96,7 +99,20 @@ describe("API security", () => {
     expect(buildCorsOptions({ MO_DEVFLOW_ALLOWED_ORIGINS: "http://localhost:5173" })).toMatchObject({
       credentials: true,
       methods: ["GET", "POST", "DELETE", "OPTIONS"],
-      allowedHeaders: ["content-type", "x-github-delivery", "x-github-event", "x-hub-signature-256"],
+      allowedHeaders: [
+        "content-type",
+        "x-github-delivery",
+        "x-github-event",
+        "x-hub-signature-256",
+        "x-mo-devflow-csrf"
+      ],
+      exposedHeaders: [
+        "etag",
+        "retry-after",
+        "x-mo-devflow-dashboard-cache",
+        "x-mo-devflow-dashboard-version",
+        "x-request-id"
+      ],
       maxAge: 600
     });
   });
