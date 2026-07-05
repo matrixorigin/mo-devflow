@@ -179,7 +179,6 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 
 const dashboardAutoRefreshMs = 30_000;
 const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
-const boardRevealStep = 4;
 const tablePageSizeOptions = [8, 10, 20, 50, 100];
 
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
@@ -413,14 +412,14 @@ function useLazyVisibleCount(total: number, initialLimit?: number, resetKey: str
 
   const cappedVisibleCount = Math.min(visibleCount, total);
   const hiddenCount = Math.max(0, total - cappedVisibleCount);
-  const revealCount = Math.min(boardRevealStep, hiddenCount);
+  const revealCount = hiddenCount;
 
   return {
     visibleCount: cappedVisibleCount,
     hiddenCount,
     revealCount,
     canCollapse: initialLimit !== undefined && cappedVisibleCount > baseline,
-    showMore: () => setVisibleCount((current) => Math.min(total, current + boardRevealStep)),
+    showMore: () => setVisibleCount(total),
     reset: () => setVisibleCount(baseline)
   };
 }
@@ -3260,9 +3259,9 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="team-command-more" onClick={lazy.showMore}>
           <span>
-            Show +{lazy.revealCount} more command items ({lazy.hiddenCount} hidden)
+            Show all +{lazy.revealCount} more command items ({lazy.hiddenCount} hidden)
           </span>
-          <strong>Show more</strong>
+          <strong>Show all</strong>
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="team-command-more team-command-more-muted" onClick={lazy.reset}>
@@ -3435,9 +3434,9 @@ function ProductionReadinessStrip({
       {compact && lazy.hiddenCount > 0 ? (
         <button type="button" className="production-readiness-more" onClick={lazy.showMore}>
           <span>
-            Show +{lazy.revealCount} more readiness gates ({lazy.hiddenCount} hidden)
+            Show all +{lazy.revealCount} more readiness gates ({lazy.hiddenCount} hidden)
           </span>
-          <strong>Show more</strong>
+          <strong>Show all</strong>
         </button>
       ) : compact && lazy.canCollapse ? (
         <button
@@ -3539,9 +3538,9 @@ function TeamCriticalFlowPanel({
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="team-critical-flow-more" onClick={lazy.showMore}>
           <span>
-            Show +{lazy.revealCount} more active issues ({lazy.hiddenCount} hidden)
+            Show all +{lazy.revealCount} more active issues ({lazy.hiddenCount} hidden)
           </span>
-          <strong>Show more</strong>
+          <strong>Show all</strong>
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="team-critical-flow-more team-critical-flow-more-muted" onClick={lazy.reset}>
@@ -3872,10 +3871,10 @@ function TeamRotationLane({
         <button type="button" className="team-rotation-more" onClick={onShowMore ?? onAction}>
           <span>
             {onShowMore
-              ? `Show +${Math.min(boardRevealStep, hiddenCount)} more ${overflowLabel ?? "items"} (${hiddenCount} hidden)`
+              ? `Show all +${hiddenCount} more ${overflowLabel ?? "items"} (${hiddenCount} hidden)`
               : `${hiddenCount} more ${overflowLabel ?? "items"} match this filter`}
           </span>
-          <strong>{onShowMore ? "Show more" : actionLabel}</strong>
+          <strong>{onShowMore ? "Show all" : actionLabel}</strong>
         </button>
       ) : onCollapse ? (
         <button type="button" className="team-rotation-more team-rotation-more-muted" onClick={onCollapse}>
@@ -4042,7 +4041,7 @@ function TeamPrRiskRow({
             ))}
             {activeIssueLazy.hiddenCount > 0 ? (
               <button type="button" className="linked-overflow-button" onClick={activeIssueLazy.showMore}>
-                Show +{activeIssueLazy.revealCount} more active ({activeIssueLazy.hiddenCount} hidden)
+                Show all +{activeIssueLazy.revealCount} more active ({activeIssueLazy.hiddenCount} hidden)
               </button>
             ) : activeIssueLazy.canCollapse ? (
               <button type="button" className="linked-overflow-button" onClick={activeIssueLazy.reset}>
@@ -4062,7 +4061,7 @@ function TeamPrRiskRow({
               ))}
               {issueLinkLazy.hiddenCount > 0 ? (
                 <button type="button" className="linked-overflow-button" onClick={issueLinkLazy.showMore}>
-                  Show +{issueLinkLazy.revealCount} more issues ({issueLinkLazy.hiddenCount} hidden)
+                  Show all +{issueLinkLazy.revealCount} more issues ({issueLinkLazy.hiddenCount} hidden)
                 </button>
               ) : issueLinkLazy.canCollapse ? (
                 <button type="button" className="linked-overflow-button" onClick={issueLinkLazy.reset}>
@@ -4223,7 +4222,7 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
               ))}
               {hiddenLinkedPrCount > 0 ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
-                  View +{hiddenLinkedPrCount} more PRs
+                  View all +{hiddenLinkedPrCount} more PRs
                 </button>
               ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
@@ -4615,9 +4614,9 @@ function TeamPeopleFocus({
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="team-rotation-more" onClick={lazy.showMore}>
           <span>
-            Show +{lazy.revealCount} more people ({lazy.hiddenCount} hidden)
+            Show all +{lazy.revealCount} more people ({lazy.hiddenCount} hidden)
           </span>
-          <strong>Show more</strong>
+          <strong>Show all</strong>
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="team-rotation-more team-rotation-more-muted" onClick={lazy.reset}>
@@ -5697,7 +5696,7 @@ function CacheEvidenceSampleGroup({
       )}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="cache-evidence-overflow-button" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} sampled objects ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} sampled objects ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="cache-evidence-overflow-button" onClick={lazy.reset}>
@@ -6028,7 +6027,7 @@ function CacheEvidenceBanner({
                     ))}
                     {hiddenImpactItems > 0 ? (
                       <button type="button" className="evidence-impact-more" onClick={() => onExpandedChange(true)}>
-                        View +{hiddenImpactItems} more
+                        View all +{hiddenImpactItems} more
                       </button>
                     ) : null}
                   </div>
@@ -6820,7 +6819,7 @@ function CriticalIssueLane({
         <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
           <ChevronDown size={14} aria-hidden="true" />
           <span>
-            Show +{lazy.revealCount} more {overflowLabel} ({lazy.hiddenCount} hidden)
+            Show all +{lazy.revealCount} more {overflowLabel} ({lazy.hiddenCount} hidden)
           </span>
         </button>
       ) : lazy.canCollapse ? (
@@ -6872,7 +6871,7 @@ function CriticalIssueBoardRow({
           ))}
           {riskLazy.hiddenCount > 0 ? (
             <button type="button" className="linked-overflow-button" onClick={riskLazy.showMore}>
-              Show +{riskLazy.revealCount} more risks ({riskLazy.hiddenCount} hidden)
+              Show all +{riskLazy.revealCount} more risks ({riskLazy.hiddenCount} hidden)
             </button>
           ) : riskLazy.canCollapse ? (
             <button type="button" className="linked-overflow-button" onClick={riskLazy.reset}>
@@ -6907,7 +6906,7 @@ function CriticalIssueBoardRow({
             ))}
             {linkedPrLazy.hiddenCount > 0 ? (
               <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.showMore}>
-                Show +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
+                Show all +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
               </button>
             ) : linkedPrLazy.canCollapse ? (
               <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.reset}>
@@ -7350,7 +7349,7 @@ function TestingIssueQueuePanel({
       )}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="testing-issue-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more issues in test ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more issues in test ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="testing-issue-more testing-issue-more-muted" onClick={lazy.reset}>
@@ -7553,7 +7552,7 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
               ))}
               {hiddenLinkedPrCount > 0 ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
-                  View +{hiddenLinkedPrCount} more PRs
+                  View all +{hiddenLinkedPrCount} more PRs
                 </button>
               ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
@@ -7708,7 +7707,7 @@ function TestingQueueLane({
       )}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="testing-queue-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="testing-queue-more testing-queue-more-muted" onClick={lazy.reset}>
@@ -7770,7 +7769,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           ))}
           {hiddenRiskCount > 0 ? (
             <button type="button" className="linked-overflow-button" onClick={() => setRisksExpanded(true)}>
-              Show +{hiddenRiskCount} more risks
+              Show all +{hiddenRiskCount} more risks
             </button>
           ) : risks.length > 4 && risksExpanded ? (
             <button type="button" className="linked-overflow-button" onClick={() => setRisksExpanded(false)}>
@@ -7791,7 +7790,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
             ))}
             {hiddenIssueLinkCount > 0 ? (
               <button type="button" className="linked-overflow-button" onClick={() => setIssueLinksExpanded(true)}>
-                Show +{hiddenIssueLinkCount} more issues
+                Show all +{hiddenIssueLinkCount} more issues
               </button>
             ) : issueLinks.length > 4 && issueLinksExpanded ? (
               <button type="button" className="linked-overflow-button" onClick={() => setIssueLinksExpanded(false)}>
@@ -7980,7 +7979,7 @@ function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[]
       </div>
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more rows ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more rows ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
@@ -8040,7 +8039,7 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
         )}
         {prLazy.hiddenCount > 0 ? (
           <button type="button" className="linked-overflow-button" onClick={prLazy.showMore}>
-            Show +{prLazy.revealCount} more PRs
+            Show all +{prLazy.revealCount} more PRs
           </button>
         ) : prLazy.canCollapse ? (
           <button type="button" className="linked-overflow-button" onClick={prLazy.reset}>
@@ -8553,7 +8552,7 @@ function IssueWorkCard({
           ))}
           {linkedPrLazy.hiddenCount > 0 ? (
             <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.showMore}>
-              Show +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
+              Show all +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
             </button>
           ) : linkedPrLazy.canCollapse ? (
             <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.reset}>
@@ -8757,7 +8756,7 @@ function IssueCardList({
       )}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more issues ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more issues ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
@@ -8838,7 +8837,7 @@ function PullRequestCardList({
       )}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
@@ -9217,7 +9216,7 @@ function ActionQueueSection({
       ) : null}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="action-queue-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more {title.toLowerCase()} items ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more {title.toLowerCase()} items ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="action-queue-more action-queue-more-muted" onClick={lazy.reset}>
@@ -9381,7 +9380,7 @@ function PersonalActionQueueItem({
             ))}
             {hiddenReasonCount > 0 ? (
               <button type="button" className="linked-overflow-button" onClick={() => onPreview(item)}>
-                View +{hiddenReasonCount} more signals
+                View all +{hiddenReasonCount} more signals
               </button>
             ) : null}
             {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
@@ -9840,7 +9839,7 @@ function FlowThreadSection({
       ) : null}
       {lazy.hiddenCount > 0 ? (
         <button type="button" className="flow-thread-more" onClick={lazy.showMore}>
-          Show +{lazy.revealCount} more {title.toLowerCase()} ({lazy.hiddenCount} hidden)
+          Show all +{lazy.revealCount} more {title.toLowerCase()} ({lazy.hiddenCount} hidden)
         </button>
       ) : lazy.canCollapse ? (
         <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={lazy.reset}>
@@ -9950,7 +9949,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               ))}
               {linkedIssueUrls.length > 3 ? (
                 <button type="button" onClick={() => onPreview(row)} aria-label="Preview all linked issues">
-                  View +{linkedIssueUrls.length - 3}
+                  View all +{linkedIssueUrls.length - 3}
                 </button>
               ) : null}
             </span>
@@ -9965,7 +9964,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               ))}
               {hiddenTopologyPrCount > 0 ? (
                 <button type="button" onClick={showMorePrs}>
-                  Show +{hiddenTopologyPrCount} more PRs
+                  Show all +{hiddenTopologyPrCount} more PRs
                 </button>
               ) : null}
             </span>
@@ -10014,7 +10013,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
           ))}
           {hiddenSignalCount > 0 ? (
             <button type="button" className="linked-overflow-button" onClick={() => onPreview(row)}>
-              View +{hiddenSignalCount} more signals
+              View all +{hiddenSignalCount} more signals
             </button>
           ) : null}
         </div>
@@ -10048,7 +10047,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                 ))}
                 {prLazy.hiddenCount > 0 ? (
                   <button type="button" className="flow-pr-more" onClick={showMorePrs}>
-                    Show +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
+                    Show all +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
                   </button>
                 ) : prLazy.canCollapse ? (
                   <button type="button" className="flow-pr-more flow-pr-more-muted" onClick={prLazy.reset}>
@@ -10210,7 +10209,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
               ))}
               {hiddenPreviewPrCount > 0 ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(true)}>
-                  View +{hiddenPreviewPrCount} more PRs
+                  View all +{hiddenPreviewPrCount} more PRs
                 </button>
               ) : row.prs.length > 10 && previewPrsExpanded ? (
                 <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(false)}>
@@ -10288,7 +10287,7 @@ function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
       )}
       {prLazy.hiddenCount > 0 ? (
         <button type="button" className="flow-timeline-overflow" onClick={prLazy.showMore}>
-          Show +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
+          Show all +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
         </button>
       ) : prLazy.canCollapse ? (
         <button type="button" className="flow-timeline-overflow flow-timeline-overflow-muted" onClick={prLazy.reset}>
@@ -10385,7 +10384,7 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
             ))}
             {linkedIssueLazy.hiddenCount > 0 ? (
               <button type="button" className="flow-pr-link-overflow" onClick={linkedIssueLazy.showMore}>
-                Show +{linkedIssueLazy.revealCount} more issues ({linkedIssueLazy.hiddenCount} hidden)
+                Show all +{linkedIssueLazy.revealCount} more issues ({linkedIssueLazy.hiddenCount} hidden)
               </button>
             ) : linkedIssueLazy.canCollapse ? (
               <button
@@ -10788,7 +10787,7 @@ function PersonalRotationOverview({
           </div>
           {threadLazy.hiddenCount > 0 ? (
             <button type="button" className="critical-lane-more" onClick={threadLazy.showMore}>
-              Show +{threadLazy.revealCount} more threads ({threadLazy.hiddenCount} hidden)
+              Show all +{threadLazy.revealCount} more threads ({threadLazy.hiddenCount} hidden)
             </button>
           ) : threadLazy.canCollapse ? (
             <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={threadLazy.reset}>
@@ -10858,7 +10857,7 @@ function PersonalRotationOverview({
           </div>
           {prLazy.hiddenCount > 0 ? (
             <button type="button" className="critical-lane-more" onClick={prLazy.showMore}>
-              Show +{prLazy.revealCount} more PR blockers ({prLazy.hiddenCount} hidden)
+              Show all +{prLazy.revealCount} more PR blockers ({prLazy.hiddenCount} hidden)
             </button>
           ) : prLazy.canCollapse ? (
             <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={prLazy.reset}>
@@ -10902,7 +10901,8 @@ function PersonalRotationOverview({
                   )}
                   {testingIssueLazy.hiddenCount > 0 ? (
                     <button type="button" className="critical-lane-more" onClick={testingIssueLazy.showMore}>
-                      Show +{testingIssueLazy.revealCount} more testing issues ({testingIssueLazy.hiddenCount} hidden)
+                      Show all +{testingIssueLazy.revealCount} more testing issues ({testingIssueLazy.hiddenCount}{" "}
+                      hidden)
                     </button>
                   ) : testingIssueLazy.canCollapse ? (
                     <button
@@ -10937,7 +10937,7 @@ function PersonalRotationOverview({
                   )}
                   {testingPrLazy.hiddenCount > 0 ? (
                     <button type="button" className="critical-lane-more" onClick={testingPrLazy.showMore}>
-                      Show +{testingPrLazy.revealCount} more linked PRs ({testingPrLazy.hiddenCount} hidden)
+                      Show all +{testingPrLazy.revealCount} more linked PRs ({testingPrLazy.hiddenCount} hidden)
                     </button>
                   ) : testingPrLazy.canCollapse ? (
                     <button
@@ -13647,7 +13647,7 @@ export default function App() {
                     className="linked-overflow-button"
                     aria-label={`View ${hiddenOperations.length} more operations`}
                   >
-                    View +{hiddenOperations.length} more
+                    View all +{hiddenOperations.length} more
                   </button>
                 </Popover>
               ) : null}
@@ -13782,7 +13782,7 @@ export default function App() {
                       className="linked-overflow-button"
                       aria-label={`View ${hiddenSignals.length} more handoff signals`}
                     >
-                      View +{hiddenSignals.length} more
+                      View all +{hiddenSignals.length} more
                     </button>
                   </Popover>
                 ) : null}
