@@ -2,6 +2,7 @@ import type {
   CriticalIssueLinkedPullRequestView,
   CriticalIssueView,
   DashboardSummary,
+  NotificationDeliveryView,
   PendingPrView,
   PersonSummary,
   PersonalActionView,
@@ -65,6 +66,7 @@ export const peopleScopeFilters: PeopleScopeFilter[] = [
 export type PeopleBoardScopeCounts = Record<PeopleScopeFilter, number>;
 export type TeamCommandSignalTarget = "violations" | "drift" | "notifications";
 export type TeamCommandSignalTone = "critical" | "attention" | "normal";
+export type NotificationDeliveryScopeFilter = "all" | "attention" | "failed" | "ack_pending" | "digest";
 
 export interface TeamCommandSignal {
   key: string;
@@ -173,6 +175,48 @@ export function teamCommandSignals(input: {
   }
 
   return signals.sort((left, right) => right.priority - left.priority);
+}
+
+export function notificationDeliveryMatchesScope(
+  delivery: NotificationDeliveryView,
+  filter: NotificationDeliveryScopeFilter
+): boolean {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "failed") {
+    return delivery.status === "failed_transient" || delivery.status === "failed_permanent";
+  }
+  if (filter === "ack_pending") {
+    return delivery.status === "sent" && !delivery.acknowledgedAt;
+  }
+  if (filter === "digest") {
+    return (
+      delivery.sourceType === "daily_digest" ||
+      delivery.sourceType === "weekly_digest" ||
+      delivery.sourceType === "monthly_digest"
+    );
+  }
+  return (
+    !notificationDeliveryMatchesScope(delivery, "digest") &&
+    (notificationDeliveryMatchesScope(delivery, "failed") ||
+      notificationDeliveryMatchesScope(delivery, "ack_pending") ||
+      delivery.status === "retry_requested" ||
+      delivery.status === "skipped_no_webhook" ||
+      delivery.status === "skipped_quiet_hours")
+  );
+}
+
+export function notificationDeliveryScopeCounts(
+  deliveries: NotificationDeliveryView[]
+): Record<NotificationDeliveryScopeFilter, number> {
+  return {
+    all: deliveries.length,
+    attention: deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "attention")).length,
+    failed: deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "failed")).length,
+    ack_pending: deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "ack_pending")).length,
+    digest: deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "digest")).length
+  };
 }
 
 export type PersonalGanttTone = "critical" | "attention" | "normal" | "muted";

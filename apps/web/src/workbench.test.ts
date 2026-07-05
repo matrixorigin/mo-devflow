@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CriticalIssueView,
   DailyMetricPoint,
+  NotificationDeliveryView,
   PersonSummary,
   PersonalActionView,
   PersonalIssueView,
@@ -21,6 +22,8 @@ import {
   observedOwnerThreads,
   peopleBoardScopeCounts,
   peopleScopeFilters,
+  notificationDeliveryScopeCounts,
+  notificationDeliveryMatchesScope,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
   personalFlowThreadCounts,
@@ -239,6 +242,32 @@ describe("team command signals", () => {
         title: "3 notifications await acknowledgement"
       })
     ]);
+  });
+});
+
+describe("notification delivery filters", () => {
+  it("groups failed, acknowledgement-pending, digest, and attention deliveries for the notification board", () => {
+    const deliveries = [
+      notificationDelivery({ id: 1, status: "failed_transient", sourceType: "attention_item" }),
+      notificationDelivery({ id: 2, status: "sent", acknowledgedAt: null, sourceType: "workflow_violation" }),
+      notificationDelivery({ id: 3, status: "sent", acknowledgedAt: "2026-07-04T01:00:00.000Z" }),
+      notificationDelivery({ id: 4, status: "sent", sourceType: "daily_digest", objectType: "digest" }),
+      notificationDelivery({ id: 5, status: "skipped_quiet_hours", sourceType: "ai_drift_signal" })
+    ];
+
+    expect(notificationDeliveryScopeCounts(deliveries)).toMatchObject({
+      all: 5,
+      attention: 3,
+      failed: 1,
+      ack_pending: 2,
+      digest: 1
+    });
+    expect(
+      deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "attention")).map((d) => d.id)
+    ).toEqual([1, 2, 5]);
+    expect(
+      deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "digest")).map((d) => d.id)
+    ).toEqual([4]);
   });
 });
 
@@ -996,6 +1025,23 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
     averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: input.sourceCompleteness ?? "complete_cache",
     generatedAt: input.generatedAt ?? "2026-07-04T00:00:00Z"
+  };
+}
+
+function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: number }): NotificationDeliveryView {
+  return {
+    id: input.id,
+    sourceType: input.sourceType ?? "attention_item",
+    ruleKey: input.ruleKey ?? "critical_no_human_action",
+    objectType: input.objectType ?? "issue",
+    objectNumber: input.objectNumber ?? 42,
+    recipientScope: input.recipientScope ?? "mapped_employee",
+    channel: input.channel ?? "wecom",
+    status: input.status ?? "sent",
+    errorMessage: input.errorMessage ?? null,
+    attemptedAt: input.attemptedAt ?? "2026-07-04T00:00:00.000Z",
+    acknowledgedAt: input.acknowledgedAt ?? null,
+    acknowledgedBy: input.acknowledgedBy ?? null
   };
 }
 

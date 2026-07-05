@@ -114,6 +114,8 @@ import {
   flowEfficiencySummary,
   observedPeopleFromDashboard,
   observedOwnerThreads,
+  notificationDeliveryMatchesScope,
+  notificationDeliveryScopeCounts,
   peopleBoardScopeCounts,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
@@ -140,6 +142,7 @@ import {
   type FlowEfficiencyDiagnosticTarget,
   type FlowEfficiencySummary,
   type ObservedOwnerThread,
+  type NotificationDeliveryScopeFilter,
   type PersonalActionQueueFilter,
   type PersonalActivityItem,
   type PersonalFlowThreadFilter,
@@ -1017,6 +1020,22 @@ function notificationReadinessColor(value: DashboardSummary["notifications"]["re
     return "red";
   }
   return "default";
+}
+
+function notificationDeliveryScopeLabel(filter: NotificationDeliveryScopeFilter): string {
+  if (filter === "attention") {
+    return "attention deliveries";
+  }
+  if (filter === "failed") {
+    return "failed deliveries";
+  }
+  if (filter === "ack_pending") {
+    return "acknowledgement pending";
+  }
+  if (filter === "digest") {
+    return "digest deliveries";
+  }
+  return "all deliveries";
 }
 
 function workflowExecutionStatusColor(value: WriteActionExecutionView["status"]): string {
@@ -10696,6 +10715,8 @@ export default function App() {
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
+  const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
+    useState<NotificationDeliveryScopeFilter>("attention");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>("active_issues");
   const [workObjectPreview, setWorkObjectPreview] = useState<TeamWorkPreview | null>(null);
@@ -12210,6 +12231,12 @@ export default function App() {
       )
     : [];
   const filteredPeople = data ? filterPeopleByScope(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
+  const notificationDeliveryCounts = data ? notificationDeliveryScopeCounts(data.notifications.lastDeliveries) : null;
+  const filteredNotificationDeliveries = data
+    ? data.notifications.lastDeliveries.filter((delivery) =>
+        notificationDeliveryMatchesScope(delivery, notificationDeliveryScopeFilter)
+      )
+    : [];
   const teamFlowSummary = data
     ? flowEfficiencySummary({
         points: teamTrendPoints,
@@ -12787,14 +12814,62 @@ export default function App() {
                     showIcon
                   />
                 ) : null}
+                {notificationDeliveryCounts ? (
+                  <div
+                    className="critical-board-summary notification-delivery-summary"
+                    aria-label="Notification filters"
+                  >
+                    <CriticalBoardStat
+                      label="attention"
+                      value={notificationDeliveryCounts.attention}
+                      tone={notificationDeliveryCounts.attention > 0 ? "attention" : "good"}
+                      active={notificationDeliveryScopeFilter === "attention"}
+                      onClick={() => setNotificationDeliveryScopeFilter("attention")}
+                    />
+                    <CriticalBoardStat
+                      label="failed"
+                      value={notificationDeliveryCounts.failed}
+                      tone={notificationDeliveryCounts.failed > 0 ? "critical" : "good"}
+                      active={notificationDeliveryScopeFilter === "failed"}
+                      onClick={() => setNotificationDeliveryScopeFilter("failed")}
+                    />
+                    <CriticalBoardStat
+                      label="ack pending"
+                      value={notificationDeliveryCounts.ack_pending}
+                      tone={notificationDeliveryCounts.ack_pending > 0 ? "attention" : "good"}
+                      active={notificationDeliveryScopeFilter === "ack_pending"}
+                      onClick={() => setNotificationDeliveryScopeFilter("ack_pending")}
+                    />
+                    <CriticalBoardStat
+                      label="digests"
+                      value={notificationDeliveryCounts.digest}
+                      tone="muted"
+                      active={notificationDeliveryScopeFilter === "digest"}
+                      onClick={() => setNotificationDeliveryScopeFilter("digest")}
+                    />
+                    <CriticalBoardStat
+                      label="all"
+                      value={notificationDeliveryCounts.all}
+                      tone="muted"
+                      active={notificationDeliveryScopeFilter === "all"}
+                      onClick={() => setNotificationDeliveryScopeFilter("all")}
+                    />
+                  </div>
+                ) : null}
                 <Table
                   rowKey="id"
                   size="middle"
                   columns={notificationColumns}
-                  dataSource={data.notifications.lastDeliveries}
+                  dataSource={filteredNotificationDeliveries}
                   scroll={{ x: 1340 }}
                   pagination={{ pageSize: 8 }}
-                  locale={{ emptyText: <Empty description="No notification delivery attempts recorded" /> }}
+                  locale={{
+                    emptyText: (
+                      <Empty
+                        description={`No ${notificationDeliveryScopeLabel(notificationDeliveryScopeFilter)} recorded`}
+                      />
+                    )
+                  }}
                 />
               </section>
             ) : null}
