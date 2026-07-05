@@ -13776,6 +13776,14 @@ export default function App() {
         criticalIssuesByPr
       )
     : [];
+  const testingPrTableScope: PrScopeFilter = isTestingPrScope(prScopeFilter) ? prScopeFilter : "testing";
+  const testingPendingPrsForTable = data
+    ? sortPendingPrsForDisplay(
+        filterPendingPrs(data.pendingPrs, testingPrTableScope, criticalIssuesByPr),
+        prSort,
+        criticalIssuesByPr
+      )
+    : [];
   const prEvidenceRepairSummary = data ? prEvidenceGapSummary(data.pendingPrs, criticalIssuesByPr) : null;
   const filteredCriticalIssuesForTable = data
     ? sortCriticalIssuesForDisplay(
@@ -14544,6 +14552,30 @@ export default function App() {
                       onTestingIssueFilterChange={setTestingIssueQueueFilter}
                       onOpenPrsFilter={openPrsWithFilter}
                     />
+                    <div className="testing-pr-table-panel" aria-label="Issue testing PR table">
+                      <div className="subsection-heading subsection-heading-compact">
+                        <span className="testing-pr-table-heading-copy">
+                          <Text strong>Issue testing PR table</Text>
+                          <Text type="secondary">Paginated linked PR rows for issues currently in testing.</Text>
+                        </span>
+                        <Tag>{testingPendingPrsForTable.length} PRs</Tag>
+                      </div>
+                      <PrFilterBar
+                        scopeFilter={testingPrTableScope}
+                        sort={prSort}
+                        onScopeFilterChange={openPrsWithFilter}
+                        onSortChange={setPrSort}
+                      />
+                      <Table
+                        rowKey="number"
+                        size="middle"
+                        columns={prColumns}
+                        dataSource={testingPendingPrsForTable}
+                        scroll={{ x: 1832 }}
+                        pagination={tablePagination(testingPendingPrsForTable.length, 8)}
+                        locale={{ emptyText: <Empty description="No issue testing PRs in cache" /> }}
+                      />
+                    </div>
                     <details className="secondary-disclosure pr-diagnostic-disclosure">
                       <summary>
                         <span>Issue testing evidence</span>

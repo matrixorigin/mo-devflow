@@ -2589,6 +2589,18 @@ button.team-status-row:focus-visible {
   min-width: 0;
 }
 
+.testing-pr-table-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.testing-pr-table-heading-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .pr-diagnostic-disclosure {
   margin-bottom: 0;
 }
