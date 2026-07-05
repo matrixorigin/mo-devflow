@@ -2880,6 +2880,38 @@ function ageHoursAt(row: RowData, asOf: Date): number | null {
   return Math.max(0, Math.round(((asOf.getTime() - new Date(createdAt).getTime()) / 3_600_000) * 10) / 10);
 }
 
+export interface CriticalActiveMetricSnapshot {
+  active: boolean;
+  ageHours: number | null;
+  evidence: "issue_timeline_event" | "missing_timeline" | "not_active";
+}
+
+export function criticalActiveMetricSnapshot(input: {
+  severity: string | null;
+  criticalLabels: readonly string[];
+  criticalStartedAt: string | null;
+  asOf: Date;
+}): CriticalActiveMetricSnapshot {
+  if (!input.severity || !input.criticalLabels.includes(input.severity)) {
+    return { active: false, ageHours: null, evidence: "not_active" };
+  }
+  if (!input.criticalStartedAt) {
+    return { active: true, ageHours: null, evidence: "missing_timeline" };
+  }
+  const startedAt = new Date(input.criticalStartedAt).getTime();
+  if (!Number.isFinite(startedAt)) {
+    return { active: true, ageHours: null, evidence: "missing_timeline" };
+  }
+  if (startedAt > input.asOf.getTime()) {
+    return { active: false, ageHours: null, evidence: "not_active" };
+  }
+  return {
+    active: true,
+    ageHours: Math.max(0, Math.round(((input.asOf.getTime() - startedAt) / 3_600_000) * 10) / 10),
+    evidence: "issue_timeline_event"
+  };
+}
+
 function averageOrNull(values: number[]): number | null {
   if (values.length === 0) {
     return null;
@@ -2933,6 +2965,7 @@ function applyBacklogSnapshotMetrics(input: {
   profile: RepoProfile;
   issueRows: RowData[];
   prRows: RowData[];
+  criticalStartedAtByIssueNumber: Map<number, string>;
 }): void {
   const people = input.profile.people.watchedUsers;
   const criticalLabels = input.profile.labels.critical;
@@ -2971,9 +3004,19 @@ function applyBacklogSnapshotMetrics(input: {
         if (ageHours === null) {
           continue;
         }
-        if (severity && criticalLabels.includes(severity)) {
+        const activeSnapshot = criticalActiveMetricSnapshot({
+          severity,
+          criticalLabels,
+          criticalStartedAt: input.criticalStartedAtByIssueNumber.get(asNumber(row.number)) ?? null,
+          asOf
+        });
+        if (activeSnapshot.active) {
           point.activeCriticalIssues += 1;
-          activeCriticalAges.push(ageHours);
+          if (activeSnapshot.ageHours !== null) {
+            activeCriticalAges.push(activeSnapshot.ageHours);
+          } else {
+            point.sourceCompleteness = "partial_cache";
+          }
         }
         if (isPersonalNeedsTriageIssue({ lifecycleState, severity }, criticalLabels)) {
           point.needsTriageIssues += 1;
@@ -3173,11 +3216,18 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT owner_login, created_at, closed_at, lifecycle_state, severity
+    `SELECT number, owner_login, created_at, closed_at, lifecycle_state, severity
      FROM issues
      WHERE repo_id = ? AND is_pull_request = 0`,
     [repoId]
   );
+  const criticalSeverityByIssueNumber = new Map(
+    issueRows
+      .map((row) => [asNumber(row.number), row.severity ? asString(row.severity) : null] as const)
+      .filter((entry): entry is [number, string] => entry[0] > 0 && entry[1] !== null)
+      .filter(([, severity]) => profile.labels.critical.includes(severity))
+  );
+  const criticalStartedAtMap = await criticalStartedAtByIssueNumber(repoId, criticalSeverityByIssueNumber, "1 = 1", []);
   for (const row of issueRows) {
     const owner = row.owner_login ? asString(row.owner_login) : "";
     const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
@@ -3211,7 +3261,14 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     }
   }
 
-  applyBacklogSnapshotMetrics({ metrics, dateKeys: keys, profile, issueRows, prRows });
+  applyBacklogSnapshotMetrics({
+    metrics,
+    dateKeys: keys,
+    profile,
+    issueRows,
+    prRows,
+    criticalStartedAtByIssueNumber: criticalStartedAtMap
+  });
 
   const generatedAt = nowSql();
   await pool.execute("DELETE FROM daily_metrics WHERE repo_id = ?", [repoId]);

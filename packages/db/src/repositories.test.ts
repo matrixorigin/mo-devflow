@@ -13,6 +13,7 @@ import {
   buildSyncHealthSummary,
   cacheStaleHoursFromEnv,
   calendarDayRangeInTimezone,
+  criticalActiveMetricSnapshot,
   criticalIssueBlockersFromCache,
   criticalIssueOwnerCoverage,
   criticalIssueOwnershipCounts,
@@ -1281,6 +1282,51 @@ describe("issue timeline backfill candidate selection", () => {
 });
 
 describe("metric aggregation", () => {
+  test("uses severity timeline evidence for active critical issue age", () => {
+    expect(
+      criticalActiveMetricSnapshot({
+        severity: "severity/s0",
+        criticalLabels: ["severity/s-1", "severity/s0"],
+        criticalStartedAt: "2026-07-03T00:00:00.000Z",
+        asOf: new Date("2026-07-04T12:00:00.000Z")
+      })
+    ).toEqual({
+      active: true,
+      ageHours: 36,
+      evidence: "issue_timeline_event"
+    });
+  });
+
+  test("does not use issue created age when severity timeline evidence is missing", () => {
+    expect(
+      criticalActiveMetricSnapshot({
+        severity: "severity/s-1",
+        criticalLabels: ["severity/s-1", "severity/s0"],
+        criticalStartedAt: null,
+        asOf: new Date("2026-07-04T12:00:00.000Z")
+      })
+    ).toEqual({
+      active: true,
+      ageHours: null,
+      evidence: "missing_timeline"
+    });
+  });
+
+  test("does not count an issue as active before its severity label event", () => {
+    expect(
+      criticalActiveMetricSnapshot({
+        severity: "severity/s0",
+        criticalLabels: ["severity/s-1", "severity/s0"],
+        criticalStartedAt: "2026-07-05T00:00:00.000Z",
+        asOf: new Date("2026-07-04T12:00:00.000Z")
+      })
+    ).toEqual({
+      active: false,
+      ageHours: null,
+      evidence: "not_active"
+    });
+  });
+
   const points: DailyMetricPoint[] = [
     {
       date: "2026-06-28",

@@ -2683,7 +2683,9 @@ function teamCommandActions({
 }): TeamCommandAction[] {
   const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
-  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
+  const staleActiveIssues = data.criticalIssues.filter(
+    (issue) => issue.criticalAgeHours !== null && issue.criticalAgeHours >= 72
+  );
   const blockerPrs = prRisks.filter((pr) => prAttentionReasons(pr).length > 0);
   const staleTestingRows = testingIssues.filter(
     (issue) => (issue.queueAgeHours ?? 0) >= 24 || issue.syncError !== null
@@ -7741,7 +7743,7 @@ function issueListPriority(issue: CriticalIssueView | PersonalIssueView): number
 
 function issueListDuration(issue: CriticalIssueView | PersonalIssueView): number {
   if (isCriticalIssueView(issue)) {
-    return issue.criticalAgeHours ?? issue.ageHours;
+    return issue.criticalAgeHours ?? 0;
   }
   return issue.ageHours;
 }

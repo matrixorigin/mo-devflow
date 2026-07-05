@@ -326,6 +326,53 @@ describe("team operating signals", () => {
     });
   });
 
+  it("does not treat missing severity timeline as stale active duration", () => {
+    const data = {
+      counts: {
+        criticalIssues: 1,
+        pendingPrs: 0,
+        attentionPrs: 0
+      },
+      criticalIssues: [
+        criticalIssue({
+          severity: "severity/s0",
+          ageHours: 240,
+          criticalAgeHours: null,
+          linkedPullRequests: [linkedPullRequest()]
+        })
+      ],
+      pendingPrs: [],
+      people: [],
+      personalViews: [],
+      testing: {
+        queueIssues: 0,
+        staleQueueIssues: 0,
+        averageIssueQueueAgeHours: null,
+        handoffToCloseSamples: 0,
+        averageHandoffToCloseHours: null
+      },
+      profileWarnings: [],
+      webhooks: webhooks({ processedDeliveries: 1, lastReceivedAt: "2026-07-04T01:00:00.000Z" }),
+      sync: {
+        staleObjects: 0,
+        partialObjects: 0,
+        worker: {
+          status: "active"
+        }
+      }
+    } as unknown as DashboardSummary;
+
+    const signal = teamOperatingSignals({
+      data,
+      flowSummary: { averageActiveIssueAgeHours: null, averagePendingPrAgeHours: null }
+    }).find((item) => item.key === "issue_flow");
+
+    expect(signal).toMatchObject({
+      detail: "0 >3d | 0 no PR | 0 triage | avg unknown",
+      tone: "attention"
+    });
+  });
+
   it("routes data trust to webhook setup when near-real-time delivery is not enabled", () => {
     const data = {
       counts: {
@@ -743,7 +790,10 @@ describe("flow efficiency summary", () => {
         }),
         pullRequest({ ageHours: 12, attentionFlags: [], testingState: "not_ready", testingQueueAgeHours: null })
       ],
-      activeIssues: [criticalIssue({ ageHours: 48 }), criticalIssue({ ageHours: 24 })],
+      activeIssues: [
+        criticalIssue({ ageHours: 240, criticalAgeHours: 18 }),
+        criticalIssue({ ageHours: 120, criticalAgeHours: 6 })
+      ],
       needsTriageIssues: 3,
       deferredIssues: 1
     });
@@ -763,7 +813,7 @@ describe("flow efficiency summary", () => {
       attentionPrs: 1,
       prAttentionRatePercent: 50,
       activeCriticalIssues: 2,
-      averageActiveIssueAgeHours: 36,
+      averageActiveIssueAgeHours: 12,
       needsTriageIssues: 3,
       deferredIssues: 1,
       testingQueuePrs: 1,
@@ -781,6 +831,17 @@ describe("flow efficiency summary", () => {
 
     expect(summary.testingQueuePrs).toBe(2);
     expect(summary.averageTestingQueueAgeHours).toBe(18);
+  });
+
+  it("keeps active issue duration unknown when severity timeline is missing", () => {
+    const summary = flowEfficiencySummary({
+      points: [],
+      pendingPrs: [],
+      activeIssues: [criticalIssue({ ageHours: 240, criticalAgeHours: null })]
+    });
+
+    expect(summary.activeCriticalIssues).toBe(1);
+    expect(summary.averageActiveIssueAgeHours).toBeNull();
   });
 
   it("prioritizes actionable flow diagnostics from rotation metrics", () => {

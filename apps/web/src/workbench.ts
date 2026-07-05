@@ -377,6 +377,7 @@ export interface FlowEfficiencyPullRequest {
 
 export interface FlowEfficiencyIssue {
   ageHours: number;
+  criticalAgeHours?: number | null;
 }
 
 export interface PrCriticalIssueContext {
@@ -585,7 +586,7 @@ export function flowEfficiencySummary(input: {
       input.pendingPrs.length
     ),
     activeCriticalIssues: input.activeIssues.length,
-    averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.ageHours)),
+    averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.criticalAgeHours)),
     needsTriageIssues: input.needsTriageIssues ?? 0,
     deferredIssues: input.deferredIssues ?? 0,
     testingQueuePrs: input.testingQueuePrs ?? testingPrs.length + testingIssues.length,
@@ -1212,7 +1213,9 @@ export function teamOperatingSignals(input: {
   const { data, flowSummary } = input;
   const triage = input.triageSnapshot ?? teamTriageSnapshot(data);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
-  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
+  const staleActiveIssues = data.criticalIssues.filter(
+    (issue) => issue.criticalAgeHours !== null && issue.criticalAgeHours >= 72
+  );
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
   const triageHeavy = triage.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
   const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
@@ -2431,8 +2434,8 @@ function percentage(numerator: number, denominator: number): number | null {
   return Math.round((numerator / denominator) * 100);
 }
 
-function average(values: number[]): number | null {
-  const finiteValues = values.filter((value) => Number.isFinite(value));
+function average(values: Array<number | null | undefined>): number | null {
+  const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (finiteValues.length === 0) {
     return null;
   }
