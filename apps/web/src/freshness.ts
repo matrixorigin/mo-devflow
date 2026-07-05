@@ -568,10 +568,17 @@ export function summarizeProductionReadiness(input: {
   const webhookReadiness = summarizeWebhookReadiness(data);
   const tokenEncryptionMissing = session?.tokenEncryptionConfigured === false;
   const authenticated = Boolean(session?.authenticated && session.user);
+  const authenticatedLogin = session?.user?.githubLogin ?? null;
+  const personalTokenConnected = Boolean(session?.user?.tokenLastValidatedAt);
   const writeCapability = session?.user?.writeCapabilities.issueLabels ?? null;
   const writeActionFailures = data.writeActions.filter((action) =>
     ["failed", "stale_preview", "token_unavailable", "blocked"].includes(action.status)
   ).length;
+  const writeBackAction = writeCapability?.enabled ? "Open audit" : authenticated ? "Connect write token" : "Sign in";
+  const writeBackTarget = writeCapability?.enabled ? "audit" : "connect_token";
+  const writeBackFallbackDetail = authenticated
+    ? "Connect a personal write token with issue label/comment permissions before confirmed writes."
+    : "Sign in with GitHub first. Personal write tokens are connected only after login.";
 
   const gates: ProductionReadinessGate[] = [
     {
@@ -629,20 +636,24 @@ export function summarizeProductionReadiness(input: {
     },
     {
       key: "token",
-      label: "Personal write token",
-      status: tokenEncryptionMissing ? "needs_action" : authenticated ? "ready" : "waiting",
-      tone: tokenEncryptionMissing ? "critical" : authenticated ? "good" : "attention",
+      label: tokenEncryptionMissing ? "Token storage" : authenticated ? "Personal write token" : "GitHub session",
+      status: tokenEncryptionMissing ? "needs_action" : personalTokenConnected ? "ready" : "waiting",
+      tone: tokenEncryptionMissing ? "critical" : personalTokenConnected ? "good" : "attention",
       value: tokenEncryptionMissing
         ? "server setup"
-        : authenticated
-          ? (session?.user?.githubLogin ?? "connected")
-          : "observer",
+        : personalTokenConnected
+          ? (authenticatedLogin ?? "connected")
+          : authenticated
+            ? "not connected"
+            : "observer",
       detail: tokenEncryptionMissing
         ? "Token encryption is missing, so users cannot connect GitHub tokens."
-        : authenticated
-          ? "GitHub writes and privileged actions use the connected user's identity."
-          : "Anonymous viewers can inspect cached data only.",
-      action: authenticated ? "Reconnect personal token" : "Connect personal token",
+        : personalTokenConnected
+          ? "GitHub writes and privileged actions use this user's connected personal token."
+          : authenticated
+            ? `Signed in as ${authenticatedLogin ?? "this GitHub user"}; connect a personal write token only when write actions are needed.`
+            : "Anonymous viewers can inspect cached data only. Sign in with GitHub OAuth before connecting a personal write token.",
+      action: personalTokenConnected ? "Update write token" : authenticated ? "Connect write token" : "Sign in",
       target: "connect_token"
     },
     {
@@ -666,13 +677,14 @@ export function summarizeProductionReadiness(input: {
         ? "read-only"
         : writeCapability?.enabled
           ? "ready"
-          : (writeCapability?.status.replaceAll("_", " ") ?? "personal token needed"),
+          : authenticated
+            ? (writeCapability?.status.replaceAll("_", " ") ?? "write token needed")
+            : "login needed",
       detail: !data.profileConfiguration.writeBackEnabled
         ? "Repository profile keeps GitHub write-back disabled."
-        : (writeCapability?.message ??
-          "Connect a personal token with issue label/comment permissions before confirmed writes."),
-      action: writeCapability?.enabled ? "Open audit" : "Connect personal token",
-      target: writeCapability?.enabled ? "audit" : "connect_token"
+        : (writeCapability?.message ?? writeBackFallbackDetail),
+      action: writeBackAction,
+      target: writeBackTarget
     },
     {
       key: "notifications",

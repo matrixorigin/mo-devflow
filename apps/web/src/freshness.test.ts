@@ -765,10 +765,13 @@ describe("production readiness summary", () => {
       label: "waiting for evidence"
     });
     expect(summary.gates.find((gate) => gate.key === "token")).toMatchObject({
+      label: "GitHub session",
       status: "waiting",
       value: "observer",
+      action: "Sign in",
       target: "connect_token"
     });
+    expect(summary.gates.find((gate) => gate.key === "token")?.detail).toContain("GitHub OAuth");
     expect(summary.gates.find((gate) => gate.key === "service_token")).toMatchObject({
       label: "Service read token",
       status: "ready",
@@ -782,7 +785,42 @@ describe("production readiness summary", () => {
     });
     expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({
       status: "waiting",
-      value: "personal token needed"
+      value: "login needed",
+      action: "Sign in"
+    });
+  });
+
+  test("separates signed-in GitHub session from personal write token readiness", () => {
+    const session = authenticatedSession({
+      tokenLastValidatedAt: null,
+      writeCapabilities: {
+        issueLabels: {
+          enabled: false,
+          status: "missing_token",
+          message: "Connect or reconnect a personal GitHub token before workflow fixes are enabled.",
+          requiredScopes: ["repo", "public_repo"],
+          currentScopes: [],
+          requiredRepoPermissions: ["admin", "maintain", "write", "triage"],
+          repoPermission: "none"
+        }
+      }
+    });
+    const summary = summarizeProductionReadiness({
+      data: dashboard(),
+      session
+    });
+
+    expect(summary.gates.find((gate) => gate.key === "token")).toMatchObject({
+      label: "Personal write token",
+      status: "waiting",
+      value: "not connected",
+      action: "Connect write token"
+    });
+    expect(summary.gates.find((gate) => gate.key === "token")?.detail).toContain("Signed in as alice");
+    expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({
+      status: "needs_action",
+      value: "missing token",
+      action: "Connect write token"
     });
   });
 
