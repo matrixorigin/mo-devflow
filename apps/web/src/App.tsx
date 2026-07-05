@@ -3371,7 +3371,13 @@ function TeamWorkPreviewModal({ preview, onClose }: { preview: TeamWorkPreview |
 
 function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; onClose: () => void }) {
   const riskTags = criticalIssueRiskTags(issue);
-  const linkedPrs = issue.linkedPullRequests.slice(0, 8);
+  const [linkedPrsExpanded, setLinkedPrsExpanded] = useState(false);
+  const linkedPrs = linkedPrsExpanded ? issue.linkedPullRequests : issue.linkedPullRequests.slice(0, 8);
+  const hiddenLinkedPrCount = Math.max(0, issue.linkedPullRequests.length - linkedPrs.length);
+
+  useEffect(() => {
+    setLinkedPrsExpanded(false);
+  }, [issue.number]);
 
   return (
     <Modal
@@ -3471,6 +3477,15 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
                   </Space>
                 </a>
               ))}
+              {hiddenLinkedPrCount > 0 ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
+                  +{hiddenLinkedPrCount} more PRs. Show all
+                </button>
+              ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
+                  Show compact PR list
+                </button>
+              ) : null}
             </div>
           ) : (
             <Text type="secondary">No linked PR is visible in cache.</Text>
@@ -6303,12 +6318,19 @@ function TestingIssueQueueRow({
 }
 
 function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueueView | null; onClose: () => void }) {
+  const [linkedPrsExpanded, setLinkedPrsExpanded] = useState(false);
+
+  useEffect(() => {
+    setLinkedPrsExpanded(false);
+  }, [issue?.number]);
+
   if (!issue) {
     return null;
   }
 
   const linkedBlockers = testingIssueLinkedBlockerCount(issue);
-  const linkedPullRequests = issue.linkedPullRequests.slice(0, 8);
+  const linkedPullRequests = linkedPrsExpanded ? issue.linkedPullRequests : issue.linkedPullRequests.slice(0, 8);
+  const hiddenLinkedPrCount = Math.max(0, issue.linkedPullRequests.length - linkedPullRequests.length);
 
   return (
     <Modal
@@ -6404,6 +6426,15 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
                   </Space>
                 </a>
               ))}
+              {hiddenLinkedPrCount > 0 ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
+                  +{hiddenLinkedPrCount} more PRs. Show all
+                </button>
+              ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
+                  Show compact PR list
+                </button>
+              ) : null}
             </div>
           ) : (
             <Text type="secondary">No linked PR is visible in cache.</Text>
@@ -8748,6 +8779,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
 }
 
 function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null; onClose: () => void }) {
+  const [previewPrsExpanded, setPreviewPrsExpanded] = useState(false);
+
+  useEffect(() => {
+    setPreviewPrsExpanded(false);
+  }, [row?.id]);
+
   if (!row) {
     return null;
   }
@@ -8761,6 +8798,8 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
   const linkedIssueUrls = sourceUrl
     ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
     : [];
+  const previewPrs = previewPrsExpanded ? row.prs : row.prs.slice(0, 10);
+  const hiddenPreviewPrCount = Math.max(0, row.prs.length - previewPrs.length);
 
   return (
     <Modal
@@ -8851,7 +8890,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
             <Text type="secondary">No linked PR is visible in cache.</Text>
           ) : (
             <div className="team-object-preview-list">
-              {row.prs.slice(0, 10).map((pr) => (
+              {previewPrs.map((pr) => (
                 <a
                   className="team-object-preview-linked"
                   href={pr.htmlUrl}
@@ -8885,8 +8924,14 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                   </Space>
                 </a>
               ))}
-              {row.prs.length > 10 ? (
-                <Text type="secondary">+{row.prs.length - 10} more PRs in this thread.</Text>
+              {hiddenPreviewPrCount > 0 ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(true)}>
+                  +{hiddenPreviewPrCount} more PRs. Show all
+                </button>
+              ) : row.prs.length > 10 && previewPrsExpanded ? (
+                <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(false)}>
+                  Show compact PR list
+                </button>
               ) : null}
             </div>
           )}
