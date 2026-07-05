@@ -8444,8 +8444,7 @@ function PersonWorkloadBoard({
 type ObservedThreadPullRequest = CriticalIssueLinkedPullRequestView | PendingPrView;
 
 function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[] }) {
-  const lazy = useLazyVisibleCount(threads.length, 8);
-  const visibleThreads = threads.slice(0, lazy.visibleCount);
+  const pagedThreads = usePagedList(threads, cardListDefaultPageSize, threads.map((thread) => thread.id).join(","));
 
   return (
     <section className="observed-thread-panel" aria-label="Observed issue and PR flow">
@@ -8454,24 +8453,28 @@ function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[]
           <Text strong>Issue and PR Flow</Text>
           <Text type="secondary">Active issue first, then linked PR evidence</Text>
         </span>
-        <Tag>{threads.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{threads.length}</Tag>
+          {pagedThreads.visibleItems.length < threads.length ? (
+            <Tag>
+              {pagedThreads.startIndex + 1}-{pagedThreads.startIndex + pagedThreads.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
       <div className="observed-thread-list">
         {threads.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible issue or PR work for this owner" />
         ) : (
-          visibleThreads.map((thread) => <ObservedPersonThreadRow thread={thread} key={thread.id} />)
+          pagedThreads.visibleItems.map((thread) => <ObservedPersonThreadRow thread={thread} key={thread.id} />)
         )}
       </div>
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="rows"
-        className="critical-lane-more"
-        collapsedLabel="Show compact flow"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={threads.length}
+        page={pagedThreads.page}
+        pageSize={pagedThreads.pageSize}
+        defaultPageSize={cardListDefaultPageSize}
+        onChange={pagedThreads.onPageChange}
       />
     </section>
   );
@@ -8704,17 +8707,26 @@ function ObservedPersonDetailPanels({
 }
 
 function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: CriticalIssueView[] }) {
+  const pagedIssues = usePagedList(issues, 6, issues.map((issue) => issue.number).join(","));
+
   return (
     <section>
       <div className="observed-person-section-title">
         <Text strong>{title}</Text>
-        <Tag>{issues.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{issues.length}</Tag>
+          {pagedIssues.visibleItems.length < issues.length ? (
+            <Tag>
+              {pagedIssues.startIndex + 1}-{pagedIssues.startIndex + pagedIssues.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
       <div className="observed-person-list">
         {issues.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible active issue owned by this login" />
         ) : (
-          issues.map((issue) => (
+          pagedIssues.visibleItems.map((issue) => (
             <a className="observed-person-row" href={issue.htmlUrl} target="_blank" rel="noreferrer" key={issue.number}>
               <span className="observed-person-row-main">
                 <span>
@@ -8737,22 +8749,38 @@ function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: Cr
           ))
         )}
       </div>
+      <CardListPagination
+        total={issues.length}
+        page={pagedIssues.page}
+        pageSize={pagedIssues.pageSize}
+        defaultPageSize={6}
+        onChange={pagedIssues.onPageChange}
+      />
     </section>
   );
 }
 
 function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrView[] }) {
+  const pagedPrs = usePagedList(prs, 6, `${title}:${prs.map((pr) => pr.number).join(",")}`);
+
   return (
     <section>
       <div className="observed-person-section-title">
         <Text strong>{title}</Text>
-        <Tag>{prs.length}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{prs.length}</Tag>
+          {pagedPrs.visibleItems.length < prs.length ? (
+            <Tag>
+              {pagedPrs.startIndex + 1}-{pagedPrs.startIndex + pagedPrs.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
       </div>
       <div className="observed-person-list">
         {prs.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible pending PR by this login" />
         ) : (
-          prs.map((pr) => {
+          pagedPrs.visibleItems.map((pr) => {
             const reasons = prAttentionReasons(pr);
             return (
               <a className="observed-person-row" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
@@ -8788,6 +8816,13 @@ function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrVi
           })
         )}
       </div>
+      <CardListPagination
+        total={prs.length}
+        page={pagedPrs.page}
+        pageSize={pagedPrs.pageSize}
+        defaultPageSize={6}
+        onChange={pagedPrs.onPageChange}
+      />
     </section>
   );
 }
