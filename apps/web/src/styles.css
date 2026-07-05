@@ -2038,6 +2038,12 @@ button.team-monitor-tile:hover,
   outline: none;
 }
 
+.table-count-button-active {
+  background: #dbeafe;
+  border-color: #2563eb;
+  color: #1e40af;
+}
+
 .team-critical-context-row > span:first-child {
   color: #991b1b;
   font-weight: 600;

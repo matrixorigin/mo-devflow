@@ -195,7 +195,13 @@ type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter =
   "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "unowned" | "non_watched" | "timeline_missing" | "skipped";
 type CriticalIssueAiFilter = "all" | string;
+type CriticalIssueOwnerFilter = "all" | "unowned" | `owner:${string}`;
 type CriticalIssueSort = "risk" | "active_age" | "last_action" | "number";
+type OpenIssuesFilterOptions = Partial<{
+  ai: CriticalIssueAiFilter;
+  scope: CriticalIssueScopeFilter;
+  owner: CriticalIssueOwnerFilter;
+}>;
 type PrScopeFilter =
   | "all"
   | "active_issue"
@@ -2069,6 +2075,34 @@ function criticalIssueMatchesAi(issue: CriticalIssueView, aiFilter: CriticalIssu
   return aiFilter === "all" || effectiveAiEffortLabel(issue.aiEffortLabel) === aiFilter;
 }
 
+function criticalIssueOwnerFilterFor(ownerLogin: string | null): CriticalIssueOwnerFilter {
+  return ownerLogin ? `owner:${ownerLogin}` : "unowned";
+}
+
+function criticalIssueOwnerFilterLogin(ownerFilter: CriticalIssueOwnerFilter): string | null {
+  return ownerFilter.startsWith("owner:") ? ownerFilter.slice("owner:".length) : null;
+}
+
+function criticalIssueOwnerFilterLabel(ownerFilter: CriticalIssueOwnerFilter): string {
+  if (ownerFilter === "all") {
+    return "all owners";
+  }
+  if (ownerFilter === "unowned") {
+    return "unowned";
+  }
+  return criticalIssueOwnerFilterLogin(ownerFilter) ?? "owner";
+}
+
+function criticalIssueMatchesOwner(issue: CriticalIssueView, ownerFilter: CriticalIssueOwnerFilter): boolean {
+  if (ownerFilter === "all") {
+    return true;
+  }
+  if (ownerFilter === "unowned") {
+    return issue.ownerScope === "unowned";
+  }
+  return issue.ownerLogin === criticalIssueOwnerFilterLogin(ownerFilter);
+}
+
 function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: CriticalIssueScopeFilter): boolean {
   if (scopeFilter === "s-1") {
     return issue.severity === "severity/s-1";
@@ -2100,10 +2134,14 @@ function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: Critic
 function filterCriticalIssues(
   issues: CriticalIssueView[],
   aiFilter: CriticalIssueAiFilter,
-  scopeFilter: CriticalIssueScopeFilter
+  scopeFilter: CriticalIssueScopeFilter,
+  ownerFilter: CriticalIssueOwnerFilter = "all"
 ): CriticalIssueView[] {
   return issues.filter(
-    (issue) => criticalIssueMatchesAi(issue, aiFilter) && criticalIssueMatchesScope(issue, scopeFilter)
+    (issue) =>
+      criticalIssueMatchesAi(issue, aiFilter) &&
+      criticalIssueMatchesScope(issue, scopeFilter) &&
+      criticalIssueMatchesOwner(issue, ownerFilter)
   );
 }
 
@@ -2712,19 +2750,25 @@ function CriticalIssueFilterBar({
   issues,
   aiFilter,
   scopeFilter,
+  ownerFilter,
   sort,
   onAiFilterChange,
   onScopeFilterChange,
+  onOwnerFilterChange,
   onSortChange
 }: {
   issues: CriticalIssueView[];
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
+  ownerFilter: CriticalIssueOwnerFilter;
   sort: CriticalIssueSort;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onOwnerFilterChange: (value: CriticalIssueOwnerFilter) => void;
   onSortChange: (value: CriticalIssueSort) => void;
 }) {
+  const ownerLabel = criticalIssueOwnerFilterLabel(ownerFilter);
+
   return (
     <div className="board-filter-bar" aria-label="Critical issue filters">
       <div className="board-filter-group">
@@ -2754,6 +2798,27 @@ function CriticalIssueFilterBar({
           onChange={(value) => onAiFilterChange(String(value))}
           options={criticalIssueAiOptions(issues)}
         />
+      </div>
+      <div className="board-filter-group">
+        <Text type="secondary">Owner</Text>
+        <Space size={[4, 4]} wrap>
+          <button
+            type="button"
+            className={`inline-filter-chip ${ownerFilter === "all" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => onOwnerFilterChange("all")}
+          >
+            All owners
+          </button>
+          {ownerFilter !== "all" ? (
+            <button
+              type="button"
+              className="inline-filter-chip inline-filter-chip-active"
+              onClick={() => onOwnerFilterChange("all")}
+            >
+              {ownerLabel}
+            </button>
+          ) : null}
+        </Space>
       </div>
       <CriticalIssueSortControl sort={sort} onSortChange={onSortChange} />
     </div>
@@ -2904,10 +2969,12 @@ function TeamRotationOverview({
   onPersonSelect,
   criticalAiFilter,
   criticalScopeFilter,
+  criticalOwnerFilter,
   criticalIssueSort,
   prSort,
   onCriticalAiFilterChange,
   onCriticalScopeFilterChange,
+  onCriticalOwnerFilterChange,
   onCriticalIssueSortChange,
   onPrSortChange,
   onOpenIssuesFilter,
@@ -2925,18 +2992,20 @@ function TeamRotationOverview({
   onPersonSelect: (login: string) => void;
   criticalAiFilter: CriticalIssueAiFilter;
   criticalScopeFilter: CriticalIssueScopeFilter;
+  criticalOwnerFilter: CriticalIssueOwnerFilter;
   criticalIssueSort: CriticalIssueSort;
   prSort: PrSort;
   onCriticalAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onCriticalScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onCriticalOwnerFilterChange: (value: CriticalIssueOwnerFilter) => void;
   onCriticalIssueSortChange: (value: CriticalIssueSort) => void;
   onPrSortChange: (value: PrSort) => void;
-  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
   const criticalIssues = sortCriticalIssuesForDisplay(
-    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter),
+    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter, criticalOwnerFilter),
     criticalIssueSort
   );
   const criticalIssuesByPr = useMemo(
@@ -2987,7 +3056,7 @@ function TeamRotationOverview({
   const criticalLaneLazy = useLazyVisibleCount(
     criticalIssues.length,
     6,
-    `${criticalScopeFilter}:${criticalAiFilter}:${criticalIssueSort}`
+    `${criticalScopeFilter}:${criticalAiFilter}:${criticalOwnerFilter}:${criticalIssueSort}`
   );
   const prRiskLaneLazy = useLazyVisibleCount(prRisks.length, 6, prSort);
   const testingLaneLazy = useLazyVisibleCount(testingIssues.length, 5, data.testing.queueIssues);
@@ -3063,7 +3132,9 @@ function TeamRotationOverview({
       <div className="team-rotation-grid">
         <div className="team-rotation-main">
           <TeamRotationLane
-            title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
+            title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalIssueOwnerFilterLabel(
+              criticalOwnerFilter
+            )}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
             count={criticalIssues.length}
             visibleCount={criticalLaneLazy.visibleCount}
             overflowLabel={criticalOverflowLabel(criticalScopeFilter)}
@@ -3077,9 +3148,11 @@ function TeamRotationOverview({
                 issues={data.criticalIssues}
                 aiFilter={criticalAiFilter}
                 scopeFilter={criticalScopeFilter}
+                ownerFilter={criticalOwnerFilter}
                 sort={criticalIssueSort}
                 onAiFilterChange={onCriticalAiFilterChange}
                 onScopeFilterChange={onCriticalScopeFilterChange}
+                onOwnerFilterChange={onCriticalOwnerFilterChange}
                 onSortChange={onCriticalIssueSortChange}
               />
             }
@@ -3217,7 +3290,7 @@ function teamCommandActions({
   productionReadiness: ProductionReadinessSummary;
   onNavigate: (view: DashboardView) => void;
   onConnectToken: () => void;
-  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }): TeamCommandAction[] {
@@ -3437,7 +3510,7 @@ function TeamHealthStrip({
 }: {
   signals: TeamOperatingSignal[];
   onNavigate: (view: DashboardView) => void;
-  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
+  onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
@@ -3462,7 +3535,7 @@ function TeamHealthStrip({
 function openTeamOperatingSignal(
   signal: TeamOperatingSignal,
   onNavigate: (view: DashboardView) => void,
-  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void,
+  onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void,
   onOpenPrsFilter: (scope: PrScopeFilter) => void,
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void
 ): void {
@@ -6751,25 +6824,30 @@ function CriticalIssueBoard({
   issues,
   aiFilter,
   scopeFilter,
+  ownerFilter,
   sort,
   onAiFilterChange,
   onScopeFilterChange,
+  onOwnerFilterChange,
   onSortChange,
   onPreview
 }: {
   issues: CriticalIssueView[];
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
+  ownerFilter: CriticalIssueOwnerFilter;
   sort: CriticalIssueSort;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onOwnerFilterChange: (value: CriticalIssueOwnerFilter) => void;
   onSortChange: (value: CriticalIssueSort) => void;
   onPreview: (preview: TeamWorkPreview) => void;
 }) {
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
   }
-  const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter);
+  const ownerFilteredIssues = issues.filter((issue) => criticalIssueMatchesOwner(issue, ownerFilter));
+  const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter, ownerFilter);
   const sMinusOneIssues = sortCriticalIssuesForDisplay(
     filteredIssues.filter((issue) => issue.severity === "severity/s-1"),
     sort
@@ -6782,12 +6860,14 @@ function CriticalIssueBoard({
     filteredIssues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0"),
     sort
   );
-  const missingTimeline = issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length;
-  const noLinkedPr = issues.filter((issue) => issue.linkedPullRequests.length === 0).length;
-  const ownerGaps = issues.filter((issue) => issue.ownerScope !== "watched").length;
-  const unownedIssues = issues.filter((issue) => issue.ownerScope === "unowned").length;
-  const nonWatchedIssues = issues.filter((issue) => issue.ownerScope === "non_watched").length;
-  const skipped = issues.filter((issue) => issue.workflowSkipped).length;
+  const missingTimeline = ownerFilteredIssues.filter(
+    (issue) => issue.criticalAgeEvidence === "missing_timeline"
+  ).length;
+  const noLinkedPr = ownerFilteredIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const ownerGaps = ownerFilteredIssues.filter((issue) => issue.ownerScope !== "watched").length;
+  const unownedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "unowned").length;
+  const nonWatchedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "non_watched").length;
+  const skipped = ownerFilteredIssues.filter((issue) => issue.workflowSkipped).length;
 
   return (
     <div className="critical-board">
@@ -6795,9 +6875,11 @@ function CriticalIssueBoard({
         issues={issues}
         aiFilter={aiFilter}
         scopeFilter={scopeFilter}
+        ownerFilter={ownerFilter}
         sort={sort}
         onAiFilterChange={onAiFilterChange}
         onScopeFilterChange={onScopeFilterChange}
+        onOwnerFilterChange={onOwnerFilterChange}
         onSortChange={onSortChange}
       />
       <div className="critical-board-summary" aria-label="Active critical issue summary">
@@ -6805,22 +6887,23 @@ function CriticalIssueBoard({
           label="shown"
           value={filteredIssues.length}
           tone={filteredIssues.length > 0 ? "attention" : "good"}
-          active={scopeFilter === "all" && aiFilter === "all"}
+          active={scopeFilter === "all" && aiFilter === "all" && ownerFilter === "all"}
           onClick={() => {
             onScopeFilterChange("all");
             onAiFilterChange("all");
+            onOwnerFilterChange("all");
           }}
         />
         <CriticalBoardStat
           label="s-1"
-          value={issues.filter((issue) => issue.severity === "severity/s-1").length}
+          value={ownerFilteredIssues.filter((issue) => issue.severity === "severity/s-1").length}
           tone="critical"
           active={scopeFilter === "s-1"}
           onClick={() => onScopeFilterChange("s-1")}
         />
         <CriticalBoardStat
           label="s0"
-          value={issues.filter((issue) => issue.severity === "severity/s0").length}
+          value={ownerFilteredIssues.filter((issue) => issue.severity === "severity/s0").length}
           tone="attention"
           active={scopeFilter === "s0"}
           onClick={() => onScopeFilterChange("s0")}
@@ -12808,6 +12891,7 @@ export default function App() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
+  const [criticalIssueOwnerFilter, setCriticalIssueOwnerFilter] = useState<CriticalIssueOwnerFilter>("all");
   const [criticalIssueSort, setCriticalIssueSort] = useState<CriticalIssueSort>("risk");
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
   const [prSort, setPrSort] = useState<PrSort>("risk");
@@ -13222,14 +13306,25 @@ export default function App() {
     selectObservedPersonal(login);
   }
 
-  function openIssuesWithFilter(filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) {
+  function openIssuesWithFilter(filters: OpenIssuesFilterOptions) {
     if (filters.ai) {
       setCriticalIssueAiFilter(filters.ai);
     }
     if (filters.scope) {
       setCriticalIssueScopeFilter(filters.scope);
     }
+    if (filters.owner) {
+      setCriticalIssueOwnerFilter(filters.owner);
+    }
     selectView("Issues");
+  }
+
+  function openCriticalIssueScope(scope: CriticalIssueScopeFilter) {
+    openIssuesWithFilter({ ai: "all", scope, owner: "all" });
+  }
+
+  function openCriticalIssuesForOwner(row: CriticalOwnerCoverageView) {
+    openIssuesWithFilter({ ai: "all", scope: "all", owner: criticalIssueOwnerFilterFor(row.ownerLogin) });
   }
 
   function openPrsWithFilter(scope: PrScopeFilter) {
@@ -13575,7 +13670,22 @@ export default function App() {
         title: "s-1/s0",
         dataIndex: "criticalIssues",
         width: 110,
-        render: (value) => <Text strong>{value}</Text>
+        render: (value, row) => {
+          const ownerFilter = criticalIssueOwnerFilterFor(row.ownerLogin);
+          return value > 0 ? (
+            <button
+              type="button"
+              className={`table-count-button ${
+                criticalIssueOwnerFilter === ownerFilter ? "table-count-button-active" : ""
+              }`}
+              onClick={() => openCriticalIssuesForOwner(row)}
+            >
+              {value}
+            </button>
+          ) : (
+            <Tag>0</Tag>
+          );
+        }
       },
       {
         title: "Avg Age",
@@ -13584,7 +13694,7 @@ export default function App() {
         render: (value) => (value === null ? "-" : hours(value))
       }
     ],
-    []
+    [criticalIssueOwnerFilter]
   );
 
   const criticalColumns: ColumnsType<CriticalIssueView> = useMemo(
@@ -14595,7 +14705,12 @@ export default function App() {
   const prEvidenceRepairSummary = data ? prEvidenceGapSummary(data.pendingPrs, criticalIssuesByPr) : null;
   const filteredCriticalIssuesForTable = data
     ? sortCriticalIssuesForDisplay(
-        filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter),
+        filterCriticalIssues(
+          data.criticalIssues,
+          criticalIssueAiFilter,
+          criticalIssueScopeFilter,
+          criticalIssueOwnerFilter
+        ),
         criticalIssueSort
       )
     : [];
@@ -14891,10 +15006,12 @@ export default function App() {
                 onPersonSelect={openPersonWorkbench}
                 criticalAiFilter={criticalIssueAiFilter}
                 criticalScopeFilter={criticalIssueScopeFilter}
+                criticalOwnerFilter={criticalIssueOwnerFilter}
                 criticalIssueSort={criticalIssueSort}
                 prSort={prSort}
                 onCriticalAiFilterChange={setCriticalIssueAiFilter}
                 onCriticalScopeFilterChange={setCriticalIssueScopeFilter}
+                onCriticalOwnerFilterChange={setCriticalIssueOwnerFilter}
                 onCriticalIssueSortChange={setCriticalIssueSort}
                 onPrSortChange={setPrSort}
                 onOpenIssuesFilter={openIssuesWithFilter}
@@ -15744,9 +15861,11 @@ export default function App() {
                   issues={data.criticalIssues}
                   aiFilter={criticalIssueAiFilter}
                   scopeFilter={criticalIssueScopeFilter}
+                  ownerFilter={criticalIssueOwnerFilter}
                   sort={criticalIssueSort}
                   onAiFilterChange={setCriticalIssueAiFilter}
                   onScopeFilterChange={setCriticalIssueScopeFilter}
+                  onOwnerFilterChange={setCriticalIssueOwnerFilter}
                   onSortChange={setCriticalIssueSort}
                   onPreview={setWorkObjectPreview}
                 />
@@ -15761,8 +15880,12 @@ export default function App() {
                             data.counts.unownedCriticalIssues > 0
                               ? "inline-filter-chip-red"
                               : "inline-filter-chip-muted"
-                          } ${criticalIssueScopeFilter === "unowned" ? "inline-filter-chip-active" : ""}`}
-                          onClick={() => setCriticalIssueScopeFilter("unowned")}
+                          } ${
+                            criticalIssueScopeFilter === "unowned" && criticalIssueOwnerFilter === "all"
+                              ? "inline-filter-chip-active"
+                              : ""
+                          }`}
+                          onClick={() => openCriticalIssueScope("unowned")}
                         >
                           {data.counts.unownedCriticalIssues} unowned
                         </button>
@@ -15770,8 +15893,12 @@ export default function App() {
                           type="button"
                           className={`inline-filter-chip ${
                             data.counts.nonWatchedCriticalIssues > 0 ? "" : "inline-filter-chip-muted"
-                          } ${criticalIssueScopeFilter === "non_watched" ? "inline-filter-chip-active" : ""}`}
-                          onClick={() => setCriticalIssueScopeFilter("non_watched")}
+                          } ${
+                            criticalIssueScopeFilter === "non_watched" && criticalIssueOwnerFilter === "all"
+                              ? "inline-filter-chip-active"
+                              : ""
+                          }`}
+                          onClick={() => openCriticalIssueScope("non_watched")}
                         >
                           {data.counts.nonWatchedCriticalIssues} non-watched
                         </button>
@@ -15780,8 +15907,12 @@ export default function App() {
                             type="button"
                             className={`inline-filter-chip ${
                               data.counts.skippedCriticalIssues > 0 ? "" : "inline-filter-chip-muted"
-                            } ${criticalIssueScopeFilter === "skipped" ? "inline-filter-chip-active" : ""}`}
-                            onClick={() => setCriticalIssueScopeFilter("skipped")}
+                            } ${
+                              criticalIssueScopeFilter === "skipped" && criticalIssueOwnerFilter === "all"
+                                ? "inline-filter-chip-active"
+                                : ""
+                            }`}
+                            onClick={() => openCriticalIssueScope("skipped")}
                           >
                             {data.counts.skippedCriticalIssues} skip automation
                           </button>
