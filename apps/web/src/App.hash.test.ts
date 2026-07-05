@@ -101,9 +101,27 @@ describe("dashboard hash filters", () => {
       label: "Open attention owners",
       options: { peopleScopeFilter: "attention", peopleSort: "pr_attention" }
     });
+    expect(dashboardViewLimitTargetForKey("personal_issues")).toEqual({
+      view: "People",
+      label: "Open all people",
+      options: { peopleScopeFilter: "all", peopleSort: "workload" }
+    });
+    expect(dashboardViewLimitTargetForKey("personal_prs")).toEqual({
+      view: "People",
+      label: "Open PR owners",
+      options: { peopleScopeFilter: "pending_pr", peopleSort: "pr_age" }
+    });
     expect(dashboardViewLimitTargetForKey("workflow_violations")).toEqual({
       view: "Violations",
       label: "Open violations"
+    });
+    expect(dashboardViewLimitTargetForKey("ai_drift")).toEqual({
+      view: "Drift",
+      label: "Open AI drift"
+    });
+    expect(dashboardViewLimitTargetForKey("analytics_rows")).toEqual({
+      view: "Analytics",
+      label: "Open analytics"
     });
     expect(dashboardViewLimitTargetForKey("unknown")).toEqual({
       view: "Health",

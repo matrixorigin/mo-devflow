@@ -618,8 +618,8 @@ export function dashboardViewLimitTargetForKey(key: string): DashboardViewLimitT
   if (key === "personal_issues") {
     return {
       view: "People",
-      label: "Open people board",
-      options: { peopleScopeFilter: "critical", peopleSort: "workload" }
+      label: "Open all people",
+      options: { peopleScopeFilter: "all", peopleSort: "workload" }
     };
   }
   if (key === "personal_prs") {
