@@ -3758,12 +3758,11 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   return metrics.size;
 }
 
-export async function getDashboardDataVersion(repoId: number): Promise<string> {
-  const [rows] = await getPool().execute<RowData[]>(
-    `SELECT source_name, row_count, max_id, max_event_at, max_aux_at
-     FROM (
-       SELECT 'issues' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
+export function dashboardDataVersionSql(): string {
+  return `SELECT source_name, row_count, max_id, max_event_at, max_aux_at
+          FROM (
+            SELECT 'issues' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
        FROM issues WHERE repo_id = ?
        UNION ALL
        SELECT 'pull_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
@@ -3810,13 +3809,45 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
               MAX(acknowledged_at) AS max_event_at, MAX(acknowledged_at) AS max_aux_at
        FROM notification_acknowledgements WHERE repo_id = ?
        UNION ALL
-       SELECT 'github_webhook_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
-       FROM github_webhook_deliveries WHERE repo_id = ?
-       UNION ALL
-       SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
-       FROM write_action_executions WHERE repo_id = ?
+            SELECT 'github_webhook_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ?
+            UNION ALL
+            SELECT 'github_webhook_status_received' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(received_at) AS max_event_at, MAX(processing_started_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'received'
+            UNION ALL
+            SELECT 'github_webhook_status_processing' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(processing_started_at) AS max_event_at, MAX(processing_expires_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'processing'
+            UNION ALL
+            SELECT 'github_webhook_status_processed' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(processed_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'processed'
+            UNION ALL
+            SELECT 'github_webhook_status_failed' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(processed_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'failed'
+            UNION ALL
+            SELECT 'github_webhook_status_failed_normalization' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(processed_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'failed_normalization'
+            UNION ALL
+            SELECT 'github_webhook_status_ignored' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(processed_at) AS max_event_at, MAX(processed_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ? AND status = 'ignored'
+            UNION ALL
+            SELECT 'github_webhook_attempts' AS source_name, COALESCE(SUM(attempts), 0) AS row_count, MAX(id) AS max_id,
+                   MAX(processing_started_at) AS max_event_at, MAX(processing_expires_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ?
+            UNION ALL
+            SELECT 'github_webhook_duplicates' AS source_name, COALESCE(SUM(duplicate_count), 0) AS row_count, MAX(id) AS max_id,
+                   MAX(last_duplicate_at) AS max_event_at, MAX(last_duplicate_at) AS max_aux_at
+            FROM github_webhook_deliveries WHERE repo_id = ?
+            UNION ALL
+            SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+                   MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
+            FROM write_action_executions WHERE repo_id = ?
        UNION ALL
        SELECT 'manual_refresh_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(created_at) AS max_event_at, MAX(created_at) AS max_aux_at
@@ -3824,10 +3855,19 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
        UNION ALL
        SELECT 'attention_items' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
-       FROM attention_items WHERE repo_id = ?
-     ) version_sources
-     ORDER BY source_name`,
-    Array.from({ length: 16 }, () => repoId)
+            FROM attention_items WHERE repo_id = ?
+          ) version_sources
+          ORDER BY source_name`;
+}
+
+export function dashboardDataVersionRepoIdParameterCount(): number {
+  return (dashboardDataVersionSql().match(/\?/g) ?? []).length;
+}
+
+export async function getDashboardDataVersion(repoId: number): Promise<string> {
+  const [rows] = await getPool().execute<RowData[]>(
+    dashboardDataVersionSql(),
+    Array.from({ length: dashboardDataVersionRepoIdParameterCount() }, () => repoId)
   );
 
   const normalized = rows.map((row) => ({

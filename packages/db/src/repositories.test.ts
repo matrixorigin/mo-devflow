@@ -18,6 +18,8 @@ import {
   criticalIssueOwnerCoverage,
   criticalIssueOwnershipCounts,
   criticalIssueOwnerScope,
+  dashboardDataVersionRepoIdParameterCount,
+  dashboardDataVersionSql,
   dateKeyInTimezone,
   deferredIssueTransitionMetricEventsFromRows,
   dashboardVisibilityFilter,
@@ -246,6 +248,40 @@ describe("cache freshness", () => {
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "0.5" })).toBe(0.5);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "not-a-number" })).toBe(6);
     expect(cacheStaleHoursFromEnv({ MO_DEVFLOW_CACHE_STALE_HOURS: "-1" })).toBe(6);
+  });
+});
+
+describe("dashboard data version", () => {
+  function sourceNames(): string[] {
+    return Array.from(dashboardDataVersionSql().matchAll(/SELECT '([^']+)' AS source_name/g), (match) => match[1]);
+  }
+
+  test("keeps data-version parameters aligned with version sources", () => {
+    const placeholders = dashboardDataVersionSql().match(/\?/g) ?? [];
+    const names = sourceNames();
+
+    expect(dashboardDataVersionRepoIdParameterCount()).toBe(placeholders.length);
+    expect(dashboardDataVersionRepoIdParameterCount()).toBe(names.length);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test("tracks webhook in-place status, attempt, and duplicate updates", () => {
+    expect(sourceNames()).toEqual(
+      expect.arrayContaining([
+        "github_webhook_deliveries",
+        "github_webhook_status_received",
+        "github_webhook_status_processing",
+        "github_webhook_status_processed",
+        "github_webhook_status_failed",
+        "github_webhook_status_failed_normalization",
+        "github_webhook_status_ignored",
+        "github_webhook_attempts",
+        "github_webhook_duplicates"
+      ])
+    );
+    expect(dashboardDataVersionSql()).toContain("COALESCE(SUM(attempts), 0)");
+    expect(dashboardDataVersionSql()).toContain("COALESCE(SUM(duplicate_count), 0)");
+    expect(dashboardDataVersionSql()).toContain("MAX(last_duplicate_at)");
   });
 });
 
