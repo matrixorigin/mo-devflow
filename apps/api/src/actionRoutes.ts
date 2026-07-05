@@ -105,7 +105,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a personal GitHub token before previewing workflow fixes."
+        message: "Sign in with GitHub before previewing workflow fixes."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -289,7 +289,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a personal GitHub token before confirming workflow fixes."
+        message: "Sign in with GitHub before confirming workflow fixes."
       });
     }
     if (!hasValidCsrfToken(request)) {

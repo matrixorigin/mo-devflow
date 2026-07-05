@@ -38,7 +38,7 @@ They cannot:
 
 ### 2.2 Logged-in User
 
-Logged-in users connect their own GitHub token.
+Logged-in users sign in with GitHub OAuth. After sign-in, they can connect their own GitHub token when they need GitHub write capability or user-scoped GitHub reads.
 
 They can:
 
@@ -49,9 +49,9 @@ They can:
 
 Key rule: all writes must use the user's own GitHub token. The platform should not perform write operations through a shared service account unless explicitly introduced later.
 
-A single deployment should support many team members connecting independently. Token binding is determined by the validated GitHub identity, not by a manually selected person. The current browser session decides which GitHub user is acting. Signing out clears only that browser session; removing a saved token revokes the stored token for that GitHub user and disables writes until they reconnect.
+A single deployment should support many team members signing in independently. Login is determined by GitHub OAuth identity, not by a manually selected person. The current browser session decides which GitHub user is acting. Signing out clears only that browser session; removing a saved token revokes the stored token for that GitHub user and disables writes until they reconnect.
 
-In the MVP, personal token Connect is also the sign-in mechanism. On a new machine or browser profile, the user must Connect again to create a new browser session. If the submitted token validates to the same GitHub ID, the product updates the same stored app user and creates a separate session for that browser. A later production authentication layer can add GitHub OAuth or SSO so users can sign in before choosing whether to reconnect a token.
+Personal token Connect is not login. It is a post-login capability binding. On a new machine or browser profile, the user signs in with GitHub OAuth again to create a new browser session for the same GitHub ID. If the user connects a personal token after login, the token must validate to that same GitHub ID before the product stores it.
 
 ### 2.3 Maintainer / Team Lead
 

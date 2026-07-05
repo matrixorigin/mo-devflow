@@ -72,7 +72,11 @@ export interface StoredGitHubTokenRecord {
   lastValidatedAt: string | null;
 }
 
-export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord): Promise<number> {
+export async function upsertGitHubIdentity(input: {
+  githubId: string;
+  githubLogin: string;
+  avatarUrl: string | null;
+}): Promise<number> {
   const now = nowSql();
   const pool = getPool();
 
@@ -101,7 +105,13 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
   if (!userId) {
     throw new Error("GitHub user upsert failed.");
   }
+  return userId;
+}
 
+export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord): Promise<number> {
+  const now = nowSql();
+  const pool = getPool();
+  const userId = await upsertGitHubIdentity(input);
   try {
     await pool.execute(
       `INSERT INTO user_github_tokens(

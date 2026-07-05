@@ -301,9 +301,9 @@ Logged-in users bind their own GitHub token. The token is used for:
 - Private or higher-rate reads allowed by that token.
 - Confirmed writes to GitHub.
 
-Token binding is per GitHub user, not per deployment. The API validates the submitted token with GitHub, upserts `app_users` by GitHub ID, stores one active encrypted token row per user in `user_github_tokens`, and creates a browser session in `user_sessions`. Multiple team members can therefore use the same service concurrently from different browsers or browser profiles. The frontend must present the current browser session as the active actor for writes.
+Login is GitHub OAuth. The API exchanges the OAuth code, reads the GitHub identity, upserts `app_users` by GitHub ID, and creates a browser session in `user_sessions`. Multiple team members can therefore use the same service concurrently from different browsers or browser profiles. The frontend must present the current browser session as the active actor for writes.
 
-The MVP does not have a separate GitHub OAuth or SSO login. `POST /api/session/github-token` is both identity proof and token binding: a new machine has no session cookie, so the user connects a token again; if GitHub returns the same `github_id`, the API reuses the same app user and creates another session row. A later OAuth or SSO layer can separate sign-in from token storage without changing the write-audit or per-user token model.
+Token binding is per signed-in GitHub user, not per deployment and not login. `POST /api/session/github-token` requires an authenticated browser session plus CSRF, validates the submitted token with GitHub, rejects it if the token GitHub ID differs from the current session GitHub ID, and stores one active encrypted token row per user in `user_github_tokens`. A new machine signs in with GitHub OAuth again; connecting a personal token is only needed when that user wants confirmed GitHub writes or user-scoped reads.
 
 Token requirements:
 
@@ -323,7 +323,9 @@ Token requirements:
 
 Session and token lifecycle:
 
-- `POST /api/session/github-token` validates and stores the current user's token, then creates a session cookie and CSRF cookie.
+- `GET /api/auth/github/start` redirects to GitHub OAuth when `MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID` and `MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET` are configured.
+- `GET /api/auth/github/callback` validates OAuth state, reads the GitHub identity, creates a session cookie and CSRF cookie, and does not store the OAuth access token.
+- `POST /api/session/github-token` requires an authenticated session and CSRF, validates that the token belongs to the current GitHub user, then stores or updates that user's personal token.
 - `DELETE /api/session/github-token` requires an authenticated session plus CSRF and revokes only the current user's saved token. The browser remains signed in, but write capabilities become unavailable until reconnect.
 - `DELETE /api/session` requires CSRF and revokes only the current browser session. It does not delete the user's saved GitHub token.
 

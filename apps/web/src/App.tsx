@@ -80,6 +80,7 @@ import {
   CircleAlert,
   ClipboardCheck,
   ExternalLink,
+  Github,
   GitMerge,
   GitPullRequest,
   Eye,
@@ -1138,7 +1139,7 @@ function actionErrorGuidance(context: ActionErrorContext, message: string): stri
     return "Reload the page to refresh the browser session token, then retry the action.";
   }
   if (normalized.includes("sign in") || normalized.includes("login")) {
-    return "Sign in with a personal GitHub token in this browser before retrying.";
+    return "Sign in with GitHub in this browser before retrying.";
   }
   if (normalized.includes("rate limit") || normalized.includes("retry later")) {
     return "Wait for the retry window to pass; avoid repeatedly submitting the same action.";
@@ -1445,9 +1446,9 @@ function SessionModelPanel({
           <small>Anonymous users inspect cached data only.</small>
         </div>
         <div>
-          <span>Personal sign-in</span>
+          <span>GitHub sign-in</span>
           <strong>{authenticatedUser ? authenticatedUser.githubLogin : "per user"}</strong>
-          <small>Token is validated by GitHub ID and signs in only this browser.</small>
+          <small>OAuth creates only this browser session for the validated GitHub ID.</small>
         </div>
         <div>
           <span>Service source</span>
@@ -1498,14 +1499,14 @@ function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
 
 function personalTokenActionLabel(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Sign in with GitHub token";
+    return "Connect personal token";
   }
   return hasSavedPersonalToken(user) ? "Update saved token" : "Reconnect personal token";
 }
 
 function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Sign In with GitHub Token";
+    return "Connect Personal GitHub Token";
   }
   return hasSavedPersonalToken(user)
     ? `Update saved GitHub token for ${user.githubLogin}`
@@ -1514,7 +1515,7 @@ function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string 
 
 function tokenModalOkText(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Sign in";
+    return "Connect token";
   }
   return hasSavedPersonalToken(user) ? "Update token" : "Reconnect token";
 }
@@ -1577,18 +1578,22 @@ function AccountControl({
   connectedUsers,
   teamSignIn,
   serviceReadTokenConfigured,
+  githubOAuthConfigured,
   capability,
   tokenEncryptionUnavailable,
   onConnectToken,
+  onSignIn,
   onSignOut
 }: {
   authenticatedUser: NonNullable<SessionView["user"]> | null;
   connectedUsers: SessionView["connectedUsers"];
   teamSignIn: SessionView["teamSignIn"];
   serviceReadTokenConfigured: boolean;
+  githubOAuthConfigured: boolean;
   capability: GitHubWriteCapability | null;
   tokenEncryptionUnavailable: boolean;
   onConnectToken: () => void;
+  onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const tokenStatus = personalTokenStatus(authenticatedUser);
@@ -1614,7 +1619,13 @@ function AccountControl({
         )}
         <div>
           <Text strong>{authenticatedUser ? authenticatedUser.githubLogin : "Not signed in"}</Text>
-          <Text type="secondary">{authenticatedUser ? "Signed in on this browser" : "Read-only cached dashboard"}</Text>
+          <Text type="secondary">
+            {authenticatedUser
+              ? "Signed in on this browser"
+              : githubOAuthConfigured
+                ? "Read-only observer until GitHub sign-in"
+                : "GitHub sign-in is not configured"}
+          </Text>
         </div>
       </div>
       <div className="account-session-facts">
@@ -1633,8 +1644,10 @@ function AccountControl({
       </div>
       <Text type="secondary" className="account-session-copy">
         {authenticatedUser
-          ? `${tokenStatus.detail} Multiple teammates can use this deployment at the same time. Another browser or machine signs in again to create its own session for the same GitHub user.`
-          : "Anonymous users only observe cached data. Each teammate signs in with a personal GitHub token in their own browser session when they need manual repair or confirmed GitHub writes."}
+          ? `${tokenStatus.detail} Multiple teammates can use this deployment at the same time. Another browser or machine signs in again with GitHub to create its own session for the same GitHub user.`
+          : githubOAuthConfigured
+            ? "Anonymous users only observe cached data. Sign in with GitHub to create a browser session; connect a personal token later only when GitHub write actions are needed."
+            : "Anonymous users only observe cached data. Configure GitHub OAuth on the API server before team members can sign in."}
       </Text>
       <SessionModelPanel
         authenticatedUser={authenticatedUser}
@@ -1668,9 +1681,15 @@ function AccountControl({
       {authenticatedUser ? <ConnectedUsersPanel users={connectedUsers} title="Connected GitHub users" /> : null}
       {capability ? <TokenCapabilityPanel capability={capability} /> : null}
       <Space size={[8, 8]} wrap>
-        <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={onConnectToken}>
-          {personalTokenActionLabel(authenticatedUser)}
-        </Button>
+        {authenticatedUser ? (
+          <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={onConnectToken}>
+            {personalTokenActionLabel(authenticatedUser)}
+          </Button>
+        ) : (
+          <Button icon={<Github size={16} />} disabled={!githubOAuthConfigured} onClick={onSignIn}>
+            Sign in with GitHub
+          </Button>
+        )}
         {authenticatedUser ? (
           <Button icon={<LogOut size={16} />} onClick={onSignOut}>
             Sign out this browser
@@ -1685,19 +1704,19 @@ function AccountControl({
       <Space className="account-anonymous-actions" size={6} wrap={false}>
         <Tooltip
           title={
-            tokenEncryptionUnavailable
-              ? tokenEncryptionSetupHint
-              : "Sign in with your own GitHub token. The service read token remains deployment config."
+            githubOAuthConfigured
+              ? "Sign in with GitHub. Personal token connection is a separate step for confirmed write actions."
+              : "GitHub OAuth sign-in is not configured on the API server."
           }
         >
           <Button
             type="primary"
             className="account-signin-button"
-            icon={<KeyRound size={16} />}
-            disabled={tokenEncryptionUnavailable}
-            onClick={onConnectToken}
+            icon={<Github size={16} />}
+            disabled={!githubOAuthConfigured}
+            onClick={onSignIn}
           >
-            Sign in
+            Sign in with GitHub
           </Button>
         </Tooltip>
         <Popover placement="bottomRight" trigger="click" content={content}>
@@ -6426,7 +6445,7 @@ function HealthLayerRow({
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
       <Tooltip
-        title={authenticated ? "Queue this sync layer" : "Sign in with a personal token to queue worker refresh jobs"}
+        title={authenticated ? "Queue this sync layer" : "Sign in with GitHub to queue worker refresh jobs"}
       >
         <span>
           <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
@@ -6717,7 +6736,7 @@ function HealthBoard({
   const productionReadiness = summarizeProductionReadiness({ data, session });
   const refreshDisabledReason = authenticated
     ? undefined
-    : "Anonymous users can inspect cached health only. Sign in with a personal token to queue worker refresh jobs.";
+    : "Anonymous users can inspect cached health only. Sign in with GitHub to queue worker refresh jobs.";
 
   return (
     <section className="section">
@@ -7670,7 +7689,7 @@ function CacheRepairPlan({
             Suggested worker layers based on the sampled stale or incomplete objects and sync health.
           </Text>
         </div>
-        <Tooltip title={authenticated ? "Queue these repair layers" : "Sign in with a personal token first"}>
+        <Tooltip title={authenticated ? "Queue these repair layers" : "Sign in with GitHub first"}>
           <Space size={6}>
             <Button
               size="small"
@@ -8075,7 +8094,7 @@ function CacheEvidenceBanner({
                     title={
                       authenticated
                         ? "Queue the recommended cache repair layers"
-                        : "Sign in with a personal token first"
+                        : "Sign in with GitHub first"
                     }
                   >
                     <Button
@@ -16470,7 +16489,7 @@ function WriteAuditBoard({
         <Alert
           className="band"
           type="info"
-          title="Sign in with a personal token to view write audit"
+          title="Sign in with GitHub to view write audit"
           description="Write audit rows are only shown to logged-in users and are filtered by the same cached object visibility policy as issues and PRs."
           showIcon
         />
@@ -16489,7 +16508,7 @@ function WriteAuditBoard({
               description={
                 authenticated
                   ? `No ${writeAuditScopeLabel(scopeFilter)} visible in cache`
-                  : "Sign in with a personal token to view write audit"
+                  : "Sign in with GitHub to view write audit"
               }
             />
           )
@@ -16785,13 +16804,22 @@ export default function App() {
           activeBrowserSessions: 0,
           lastSeenAt: null
         },
-        tokenEncryptionConfigured: false
+        tokenEncryptionConfigured: false,
+        githubOAuthConfigured: false
       });
       setTokenError(displayError(err));
     }
   }
 
+  function signInWithGitHub() {
+    window.location.href = "/api/auth/github/start";
+  }
+
   async function connectGitHubToken() {
+    if (!session?.authenticated) {
+      setTokenError("Sign in with GitHub before connecting a personal token.");
+      return;
+    }
     setTokenSaving(true);
     setTokenError(null);
     try {
@@ -16821,6 +16849,10 @@ export default function App() {
   }
 
   function openTokenReconnect() {
+    if (!session?.authenticated) {
+      signInWithGitHub();
+      return;
+    }
     setTokenError(null);
     setTokenInput("");
     setTokenModalOpen(true);
@@ -17256,7 +17288,7 @@ export default function App() {
 
   async function retryFailedWebhooks() {
     if (!session?.authenticated) {
-      setWebhookRetryError("Sign in with a personal token before retrying failed webhooks.");
+      setWebhookRetryError("Sign in with GitHub before retrying failed webhooks.");
       return;
     }
     setWebhookRetrySaving(true);
@@ -17289,7 +17321,7 @@ export default function App() {
 
   async function acknowledgeNotification(delivery: NotificationDeliveryView) {
     if (!session?.authenticated) {
-      setNotificationAckError("Sign in with a personal token before acknowledging notifications.");
+      setNotificationAckError("Sign in with GitHub before acknowledging notifications.");
       return;
     }
     if (!notificationStatusRequiresAcknowledgement(delivery.status)) {
@@ -17320,7 +17352,7 @@ export default function App() {
 
   async function retryNotification(delivery: NotificationDeliveryView) {
     if (!session?.authenticated) {
-      setNotificationAckError("Sign in with a personal token before retrying notifications.");
+      setNotificationAckError("Sign in with GitHub before retrying notifications.");
       return;
     }
     if (!notificationStatusAllowsRetry(delivery.status)) {
@@ -17351,7 +17383,7 @@ export default function App() {
 
   async function sendNotificationTest() {
     if (!session?.authenticated) {
-      setNotificationAckError("Sign in with a personal token before sending notification tests.");
+      setNotificationAckError("Sign in with GitHub before sending notification tests.");
       return;
     }
     setNotificationTestSaving(true);
@@ -17922,7 +17954,7 @@ export default function App() {
           const tokenServerReady = session?.tokenEncryptionConfigured !== false;
           const canPreview = supportsPreview && tokenServerReady && issueLabelCapability?.enabled === true;
           const tooltip = !session?.authenticated
-            ? "Sign in with a personal token to preview fixes"
+            ? "Sign in with GitHub, then connect a personal token to preview fixes"
             : !tokenServerReady
               ? tokenEncryptionSetupHint
               : !supportsPreview
@@ -18109,7 +18141,7 @@ export default function App() {
           return (
             <Tooltip
               title={
-                session?.authenticated ? "Acknowledge notification" : "Sign in with a personal token to acknowledge"
+                session?.authenticated ? "Acknowledge notification" : "Sign in with GitHub to acknowledge"
               }
             >
               <span>
@@ -18147,7 +18179,7 @@ export default function App() {
               title={
                 session?.authenticated
                   ? "Queue a notification worker retry for this delivery"
-                  : "Sign in with a personal token to retry"
+                  : "Sign in with GitHub to retry"
               }
             >
               <span>
@@ -18667,9 +18699,11 @@ export default function App() {
               }
             }
             serviceReadTokenConfigured={serviceReadTokenConfigured}
+            githubOAuthConfigured={session?.githubOAuthConfigured ?? false}
             capability={headerIssueLabelCapability ?? null}
             tokenEncryptionUnavailable={tokenEncryptionUnavailable}
             onConnectToken={openTokenReconnect}
+            onSignIn={signInWithGitHub}
             onSignOut={() => void disconnectSession()}
           />
           <Tooltip title="Refresh cached dashboard">
@@ -18677,7 +18711,7 @@ export default function App() {
           </Tooltip>
           <Tooltip
             title={
-              session?.authenticated ? "Queue worker refresh" : "Sign in with a personal token to queue worker refresh"
+              session?.authenticated ? "Queue worker refresh" : "Sign in with GitHub to queue worker refresh"
             }
           >
             <Button
@@ -19100,7 +19134,7 @@ export default function App() {
                       title={
                         session?.authenticated
                           ? "Send a controlled Enterprise WeChat test message"
-                          : "Sign in with a personal token before sending notification tests"
+                          : "Sign in with GitHub before sending notification tests"
                       }
                     >
                       <span>
@@ -19983,12 +20017,12 @@ export default function App() {
                 ? hasSavedPersonalToken(authenticatedUser)
                   ? `This updates only ${authenticatedUser.githubLogin}'s saved token.`
                   : `This reconnects only ${authenticatedUser.githubLogin}'s personal token.`
-                : "Each teammate signs in with their own GitHub token."
+                : "Sign in with GitHub before connecting a personal token."
             }
             description={
               authenticatedUser
-                ? "The token is keyed by the validated GitHub identity. This browser session remains separate from the saved token; another machine signs in again to create its own browser session for the same GitHub user."
-                : "Sign-in validates the token with GitHub, creates or updates that GitHub user's saved token, then signs in only this browser session. Other teammates and other machines sign in separately."
+                ? "The token must belong to the same GitHub identity as this browser session. It is used only for confirmed writes and user-scoped GitHub reads."
+                : "GitHub OAuth creates the browser session. Personal tokens are connected afterward only when this user needs GitHub write capability."
             }
             showIcon
           />
@@ -20075,14 +20109,14 @@ export default function App() {
           {tokenRetryActive ? (
             <Alert
               type="warning"
-              title={`GitHub token sign-in is rate limited. Retry in ${retryDelayText(tokenRetryRemainingSeconds)}.`}
+              title={`GitHub token connect is rate limited. Retry in ${retryDelayText(tokenRetryRemainingSeconds)}.`}
               showIcon
             />
           ) : null}
           {tokenError ? (
             <Alert
               type={tokenRetryActive ? "warning" : "error"}
-              title="GitHub token sign-in failed"
+              title="GitHub token connect failed"
               description={<ActionErrorDescription context="token" message={tokenError} />}
               showIcon
             />

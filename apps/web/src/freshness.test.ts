@@ -249,6 +249,7 @@ function anonymousSession(input: Partial<SessionView> = {}): SessionView {
       lastSeenAt: null
     },
     tokenEncryptionConfigured: true,
+    githubOAuthConfigured: true,
     ...input
   };
 }
@@ -264,6 +265,7 @@ function authenticatedSession(input: Partial<SessionView["user"]> = {}): Session
       lastSeenAt: "2026-07-04T01:00:00.000Z"
     },
     tokenEncryptionConfigured: true,
+    githubOAuthConfigured: true,
     user: {
       githubLogin: "alice",
       githubId: "1",

@@ -72,6 +72,13 @@ ignored `.env` file so personal GitHub token binding can work in development.
 For deployed environments, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` yourself to a
 32-byte base64 key, for example `openssl rand -base64 32`, and keep it in secret
 management rather than source control.
+User registration and login use GitHub OAuth, not personal access tokens. Set
+`MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID` and
+`MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET` on the API server. If the API is behind
+a proxy or exposed on a public host, set `MO_DEVFLOW_PUBLIC_URL` or the exact
+`MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI`. After OAuth login, each user may connect
+their own personal token for write-capable actions; the connected token must
+belong to the same GitHub identity as the logged-in user.
 Token binding attempts are guarded per client IP by
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_MAX` attempts per
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS`; the default is 5 attempts per

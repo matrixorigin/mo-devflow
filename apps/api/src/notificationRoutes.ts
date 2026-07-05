@@ -25,7 +25,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a personal GitHub token before sending notification tests."
+        message: "Sign in with GitHub before sending notification tests."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -105,7 +105,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a personal GitHub token before retrying notifications."
+        message: "Sign in with GitHub before retrying notifications."
       });
     }
     if (!hasValidCsrfToken(request)) {
@@ -196,7 +196,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     if (!session) {
       return reply.status(401).send({
         error: "login_required",
-        message: "Connect a personal GitHub token before acknowledging notifications."
+        message: "Sign in with GitHub before acknowledging notifications."
       });
     }
     if (!hasValidCsrfToken(request)) {

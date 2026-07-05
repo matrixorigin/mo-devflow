@@ -930,6 +930,7 @@ export interface SessionView {
   connectedUsers: ConnectedGitHubUserView[];
   teamSignIn: TeamSignInSummaryView;
   tokenEncryptionConfigured: boolean;
+  githubOAuthConfigured: boolean;
 }
 
 export const csrfCookieName = "mo_devflow_csrf";

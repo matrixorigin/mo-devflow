@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   revokeSession: vi.fn(),
   createUserSession: vi.fn(),
   toAuthenticatedUserView: vi.fn(),
+  upsertGitHubIdentity: vi.fn(),
   upsertGitHubTokenBinding: vi.fn(),
   loadRepoProfile: vi.fn(),
   classifyGitHubError: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@mo-devflow/db", () => ({
   revokeGitHubTokenForUser: mocks.revokeGitHubTokenForUser,
   revokeSession: mocks.revokeSession,
   toAuthenticatedUserView: mocks.toAuthenticatedUserView,
+  upsertGitHubIdentity: mocks.upsertGitHubIdentity,
   upsertGitHubTokenBinding: mocks.upsertGitHubTokenBinding
 }));
 
@@ -51,6 +53,11 @@ const originalRateLimitEnv = {
   windowSeconds: process.env.MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS
 };
 const originalTokenEncryptionKey = process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+const originalOAuthEnv = {
+  clientId: process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID,
+  clientSecret: process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET,
+  redirectUri: process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI
+};
 
 function restoreRateLimitEnv(): void {
   if (originalRateLimitEnv.max === undefined) {
@@ -73,10 +80,36 @@ function restoreTokenEncryptionEnv(): void {
   }
 }
 
+function restoreOAuthEnv(): void {
+  if (originalOAuthEnv.clientId === undefined) {
+    delete process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID;
+  } else {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = originalOAuthEnv.clientId;
+  }
+  if (originalOAuthEnv.clientSecret === undefined) {
+    delete process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET;
+  } else {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = originalOAuthEnv.clientSecret;
+  }
+  if (originalOAuthEnv.redirectUri === undefined) {
+    delete process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI;
+  } else {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI = originalOAuthEnv.redirectUri;
+  }
+}
+
+function csrfHeaders(token = "c".repeat(43)) {
+  return {
+    cookie: `${sessionCookieName}=session-value; ${csrfCookieName}=${token}`,
+    [csrfHeaderName]: token
+  };
+}
+
 describe("auth routes", () => {
   beforeEach(() => {
     restoreRateLimitEnv();
     restoreTokenEncryptionEnv();
+    restoreOAuthEnv();
     vi.clearAllMocks();
     mocks.loadRepoProfile.mockReturnValue({
       key: "matrixorigin/matrixone",
@@ -106,6 +139,7 @@ describe("auth routes", () => {
       retryAfterSeconds: null
     });
     mocks.upsertGitHubTokenBinding.mockResolvedValue(1);
+    mocks.upsertGitHubIdentity.mockResolvedValue(1);
     mocks.getTeamSignInSummary.mockResolvedValue({
       connectedUsers: 2,
       tokenConnectedUsers: 2,
@@ -160,6 +194,8 @@ describe("auth routes", () => {
   afterEach(() => {
     restoreRateLimitEnv();
     restoreTokenEncryptionEnv();
+    restoreOAuthEnv();
+    vi.unstubAllGlobals();
   });
 
   test("returns only aggregate team sign-in state for anonymous sessions", async () => {
@@ -183,7 +219,8 @@ describe("auth routes", () => {
           activeBrowserSessions: 3,
           lastSeenAt: "2026-07-04T01:00:00.000Z"
         },
-        tokenEncryptionConfigured: false
+        tokenEncryptionConfigured: false,
+        githubOAuthConfigured: false
       });
       expect(mocks.getTeamSignInSummary).toHaveBeenCalledTimes(1);
       expect(mocks.listConnectedGitHubUsers).not.toHaveBeenCalled();
@@ -214,7 +251,8 @@ describe("auth routes", () => {
           activeBrowserSessions: 0,
           lastSeenAt: null
         },
-        tokenEncryptionConfigured: false
+        tokenEncryptionConfigured: false,
+        githubOAuthConfigured: false
       });
       expect(mocks.listConnectedGitHubUsers).not.toHaveBeenCalled();
     } finally {
@@ -260,6 +298,127 @@ describe("auth routes", () => {
     }
   });
 
+  test("reports GitHub OAuth sign-in availability from session state", async () => {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/session"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        authenticated: false,
+        githubOAuthConfigured: true
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("starts GitHub OAuth sign-in when configured", async () => {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI = "http://localhost:18081/api/auth/github/callback";
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/auth/github/start"
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(String(response.headers.location)).toContain("https://github.com/login/oauth/authorize");
+      expect(String(response.headers.location)).toContain("client_id=client-id");
+      expect(String(response.headers.location)).toContain("scope=read%3Auser");
+      expect(setCookieHeaders(response).some((cookie) => cookie.startsWith("mo_devflow_oauth_state="))).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("creates a browser session from GitHub OAuth callback without storing an OAuth token", async () => {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI = "http://localhost:18081/api/auth/github/callback";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ access_token: "oauth-access-token" })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ id: 1001, login: "alice", avatar_url: "https://example.test/avatar.png" })
+        })
+    );
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/auth/github/callback?code=code-1&state=state-1",
+        headers: { cookie: "mo_devflow_oauth_state=state-1" }
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(response.headers.location).toBe("/");
+      expect(mocks.upsertGitHubIdentity).toHaveBeenCalledWith({
+        githubId: "1001",
+        githubLogin: "alice",
+        avatarUrl: "https://example.test/avatar.png"
+      });
+      expect(mocks.upsertGitHubTokenBinding).not.toHaveBeenCalled();
+      expect(mocks.createUserSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 1,
+          sessionHash: expect.any(String),
+          expiresAt: expect.any(String)
+        })
+      );
+      const cookies = setCookieHeaders(response);
+      expect(cookies.some((cookie) => cookie.startsWith(`${sessionCookieName}=`))).toBe(true);
+      expect(cookies.some((cookie) => cookie.startsWith(`${csrfCookieName}=`))).toBe(true);
+      expect(cookies.some((cookie) => cookie.startsWith("mo_devflow_oauth_state=") && cookie.includes("Max-Age=0"))).toBe(
+        true
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects GitHub OAuth callback with missing state", async () => {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/auth/github/callback?code=code-1&state=state-1"
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        error: "github_oauth_state_invalid",
+        message: "GitHub sign-in state is missing or expired. Start sign-in again."
+      });
+      expect(mocks.createUserSession).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("clears session and CSRF cookies when the session is no longer active", async () => {
     mocks.getActiveSession.mockResolvedValue(null);
     const app = Fastify();
@@ -283,7 +442,8 @@ describe("auth routes", () => {
           activeBrowserSessions: 3,
           lastSeenAt: "2026-07-04T01:00:00.000Z"
         },
-        tokenEncryptionConfigured: false
+        tokenEncryptionConfigured: false,
+        githubOAuthConfigured: false
       });
       const cookies = setCookieHeaders(response);
       expect(cookies.some((cookie) => cookie.startsWith(`${sessionCookieName}=`) && cookie.includes("Max-Age=0"))).toBe(
@@ -345,7 +505,8 @@ describe("auth routes", () => {
           activeBrowserSessions: 3,
           lastSeenAt: "2026-07-04T01:00:00.000Z"
         },
-        tokenEncryptionConfigured: false
+        tokenEncryptionConfigured: false,
+        githubOAuthConfigured: false
       });
       expect(mocks.revokeSession).toHaveBeenCalledTimes(1);
       const cookies = setCookieHeaders(response);
@@ -425,6 +586,7 @@ describe("auth routes", () => {
       const first = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token: "too-short" }
       });
       expect(first.statusCode).toBe(422);
@@ -432,6 +594,7 @@ describe("auth routes", () => {
       const second = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token: "too-short" }
       });
 
@@ -439,7 +602,7 @@ describe("auth routes", () => {
       const body = second.json();
       expect(body).toEqual({
         error: "github_token_bind_rate_limited",
-        message: "Too many GitHub token sign-in attempts. Retry later.",
+        message: "Too many GitHub token connect attempts. Retry later.",
         retryAfterSeconds: expect.any(Number)
       });
       expect(Number(body.retryAfterSeconds)).toBeGreaterThan(0);
@@ -466,6 +629,7 @@ describe("auth routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token }
       });
 
@@ -488,64 +652,46 @@ describe("auth routes", () => {
       );
       expect(mocks.toAuthenticatedUserView).toHaveBeenCalledWith(
         expect.objectContaining({
+          userId: 1,
+          githubLogin: "alice",
           tokenScopes: ["repo"],
-          tokenRepoPermission: "triage"
+          tokenRepoPermission: "triage",
+          sessionExpiresAt: "2999-07-04T00:00:00.000Z"
         }),
         { writeBackEnabled: true }
       );
+      expect(mocks.createUserSession).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
   });
 
-  test("uses the validated GitHub identity as the user when signing in from multiple browser sessions", async () => {
+  test("rejects connecting a token that belongs to a different GitHub identity", async () => {
     process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
-    mocks.upsertGitHubTokenBinding.mockResolvedValue(42);
+    mocks.validateGitHubToken.mockResolvedValue({
+      githubId: "2002",
+      githubLogin: "bob",
+      avatarUrl: null,
+      scopes: ["repo"],
+      rateLimitRemaining: 99
+    });
     const app = Fastify();
     await registerAuthRoutes(app);
 
     try {
-      const first = await app.inject({
+      const response = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token: `ghp_${"d".repeat(40)}` }
       });
-      const second = await app.inject({
-        method: "POST",
-        url: "/api/session/github-token",
-        payload: { token: `ghp_${"e".repeat(40)}` }
-      });
 
-      expect(first.statusCode).toBe(200);
-      expect(second.statusCode).toBe(200);
-      expect(mocks.upsertGitHubTokenBinding).toHaveBeenCalledTimes(2);
-      expect(mocks.upsertGitHubTokenBinding).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          githubId: "1001",
-          githubLogin: "alice"
-        })
-      );
-      expect(mocks.upsertGitHubTokenBinding).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          githubId: "1001",
-          githubLogin: "alice"
-        })
-      );
-      expect(mocks.createUserSession).toHaveBeenCalledTimes(2);
-      expect(mocks.createUserSession).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          userId: 42
-        })
-      );
-      expect(mocks.createUserSession).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          userId: 42
-        })
-      );
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: "github_token_identity_mismatch",
+        message: "This token belongs to bob, but the current browser is signed in as alice."
+      });
+      expect(mocks.upsertGitHubTokenBinding).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -571,6 +717,7 @@ describe("auth routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token }
       });
 
@@ -611,6 +758,7 @@ describe("auth routes", () => {
       const response = await app.inject({
         method: "POST",
         url: "/api/session/github-token",
+        headers: csrfHeaders(),
         payload: { token }
       });
 
