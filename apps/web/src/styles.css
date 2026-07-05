@@ -6918,9 +6918,123 @@ button.testing-board-stat:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.person-command-callout {
+  appearance: none;
+  align-content: start;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  grid-column: 2 / -1;
+  min-width: 0;
+  padding: 10px 12px;
+  text-align: left;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.person-command-callout:hover,
+.person-command-callout:focus-visible {
+  background: #eef6ff;
+  border-color: #93c5fd;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  outline: none;
+}
+
+.person-command-callout span,
+.person-command-callout strong,
+.person-command-callout small,
+.person-command-callout em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.person-command-callout span {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.person-command-callout strong {
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.person-command-callout small {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.person-command-callout em {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.person-command-callout-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.person-command-callout-critical:hover,
+.person-command-callout-critical:focus-visible {
+  background: #fee2e2;
+}
+
+.person-command-callout-critical span,
+.person-command-callout-critical em {
+  color: #b91c1c;
+}
+
+.person-command-callout-attention {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.person-command-callout-attention:hover,
+.person-command-callout-attention:focus-visible {
+  background: #fef3c7;
+}
+
+.person-command-callout-attention span,
+.person-command-callout-attention em {
+  color: #92400e;
+}
+
+.person-command-callout-good {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  border-left-color: #16a34a;
+}
+
+.person-command-callout-good:hover,
+.person-command-callout-good:focus-visible {
+  background: #dcfce7;
+}
+
+.person-command-callout-good span,
+.person-command-callout-good em {
+  color: #15803d;
+}
+
 .person-ops-tiles {
   display: grid;
   gap: 8px;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   min-width: 0;
 }
@@ -11108,6 +11222,10 @@ button.flow-diagnostic-card:focus-visible {
   .person-ops-summary,
   .person-ops-summary-observed {
     grid-template-columns: 1fr;
+  }
+
+  .person-command-callout {
+    grid-column: 1 / -1;
   }
 
   .person-ops-pr-rhythm {

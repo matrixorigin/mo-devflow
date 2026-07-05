@@ -141,6 +141,7 @@ import {
   personalActivityNeedsLink,
   personalActivityNextAction,
   personalActivityPrimarySignal,
+  personalCommandSummary,
   personalDailyPlan,
   personalDurationText,
   personalFlowThreadCounts,
@@ -187,6 +188,7 @@ import {
   type PersonalGanttPrBar,
   type PersonalGanttRow,
   type PersonalDailyPlanItem,
+  type PersonalCommandSummary,
   type PersonalOperatingSignal,
   type PeopleBoardSort,
   type PeopleScopeFilter,
@@ -18049,6 +18051,27 @@ function personOpsTone(count: number, critical = false): "critical" | "attention
   return critical ? "critical" : "attention";
 }
 
+function PersonalCommandCallout({
+  summary,
+  onSelect
+}: {
+  summary: PersonalCommandSummary;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`person-command-callout person-command-callout-${summary.tone}`}
+      onClick={() => onSelect(summary.target)}
+    >
+      <span>Current focus</span>
+      <strong>{summary.title}</strong>
+      <small>{summary.detail}</small>
+      <em>{summary.actionLabel}</em>
+    </button>
+  );
+}
+
 function WatchedPersonOperationsSummary({
   person,
   signals,
@@ -18063,6 +18086,7 @@ function WatchedPersonOperationsSummary({
   onThroughputSelect: (selection: PersonalPrThroughputSelection) => void;
 }) {
   const dailyPlan = personalDailyPlan(signals);
+  const commandSummary = personalCommandSummary(person, signals);
   const testingWork = personalTestingWorkCount(person);
   const staleTestingIssues = person.testingIssues.filter(isTestingIssueStale).length;
   const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
@@ -18089,6 +18113,7 @@ function WatchedPersonOperationsSummary({
           </Text>
         </div>
       </div>
+      <PersonalCommandCallout summary={commandSummary} onSelect={onSelect} />
       <div className="person-ops-tiles">
         <PersonOpsTile
           label="Active issues"

@@ -35,6 +35,7 @@ import {
   personalGanttChart,
   personalActivityItems,
   personalActivityNextAction,
+  personalCommandSummary,
   personalDurationText,
   personalIssueReasons,
   personalOperatingSignals,
@@ -1695,6 +1696,46 @@ describe("personal operating signals", () => {
         target: "pending_pr"
       })
     ]);
+  });
+
+  it("summarizes the personal command focus from the same daily plan priority", () => {
+    const activePerson = personalView({
+      activeCriticalIssues: [
+        criticalIssue({
+          number: 10,
+          criticalAgeHours: 72,
+          linkedPullRequests: []
+        })
+      ],
+      testingIssues: [testingIssue({ number: 30, queueAgeHours: 36 })],
+      attentionPrs: [pullRequest({ number: 20, attentionFlags: ["ci_failed"], ciState: "failure" })],
+      pendingPrs: [pullRequest({ number: 20, attentionFlags: ["ci_failed"], ciState: "failure" })]
+    });
+    const testingPerson = personalView({
+      testingIssues: [testingIssue({ number: 31, queueAgeHours: 48 })]
+    });
+    const clearPerson = personalView({});
+
+    expect(personalCommandSummary(activePerson)).toMatchObject({
+      title: "Do now: Active issues (1)",
+      detail: "3.0d active | 1 no PR | 0 timeline missing",
+      tone: "critical",
+      target: "active_issues",
+      actionLabel: "Open active issues"
+    });
+    expect(personalCommandSummary(testingPerson)).toMatchObject({
+      title: "Do now: Issue testing (1)",
+      detail: "1 need update | max wait 2.0d | 0 linked PR",
+      tone: "critical",
+      target: "testing",
+      actionLabel: "Open issue testing"
+    });
+    expect(personalCommandSummary(clearPerson)).toMatchObject({
+      title: "Personal rotation is clear",
+      tone: "good",
+      target: "pending_pr",
+      actionLabel: "Review PR movement"
+    });
   });
 });
 

@@ -79,6 +79,14 @@ export interface PersonalDailyPlanItem {
   priority: number;
 }
 
+export interface PersonalCommandSummary {
+  title: string;
+  detail: string;
+  tone: PersonalOperatingSignalTone;
+  target: PersonalOperatingSignalTarget;
+  actionLabel: string;
+}
+
 export type PeopleScopeFilter =
   "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
 export type PeopleBoardSort =
@@ -1484,6 +1492,46 @@ export function personalDailyPlan(signals: PersonalOperatingSignal[], maxItems =
     key: `${stages[index] ?? "Watch"}:${signal.key}`,
     stage: stages[index] ?? "Watch"
   }));
+}
+
+function personalCommandActionLabel(target: PersonalOperatingSignalTarget): string {
+  if (target === "active_issues") {
+    return "Open active issues";
+  }
+  if (target === "pr_attention") {
+    return "Open PR blockers";
+  }
+  if (target === "testing") {
+    return "Open issue testing";
+  }
+  if (target === "triage") {
+    return "Open triage";
+  }
+  return "Open PR movement";
+}
+
+export function personalCommandSummary(
+  person: PersonalActionView,
+  signals: PersonalOperatingSignal[] = personalOperatingSignals(person)
+): PersonalCommandSummary {
+  const [topItem] = personalDailyPlan(signals, 1);
+  if (!topItem) {
+    return {
+      title: "Personal rotation is clear",
+      detail: "No active s-1/s0, PR blocker, issue testing wait, triage backlog, or pending PR is visible in cache.",
+      tone: "good",
+      target: "pending_pr",
+      actionLabel: "Review PR movement"
+    };
+  }
+
+  return {
+    title: `${topItem.stage}: ${topItem.label} (${topItem.value})`,
+    detail: topItem.detail,
+    tone: topItem.tone,
+    target: topItem.target,
+    actionLabel: personalCommandActionLabel(topItem.target)
+  };
 }
 
 function testingCountForPerson(login: string, personalByLogin: Map<string, PersonalActionView>): number {
