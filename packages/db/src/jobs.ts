@@ -50,6 +50,7 @@ const leasedJobColumns = [
   "lease_expires_at"
 ].join(", ");
 const jobFailureBreakdownSampleLimit = 100;
+const jobClaimCandidateLimit = 8;
 
 function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
   return (syncHealthLayers as readonly string[]).includes(value);
@@ -328,38 +329,41 @@ export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds:
          OR (status = 'running' AND lease_expires_at < ?)
        )
      ORDER BY next_run_at ASC, id ASC
-     LIMIT 1`,
+     LIMIT ${jobClaimCandidateLimit}`,
     [now, now]
   );
-  const candidate = candidates[0];
-  if (!candidate) {
-    return null;
+
+  for (const candidate of candidates) {
+    const candidateId = asNumber(candidate.id);
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE jobs
+       SET status = 'running',
+           lease_owner = ?,
+           lease_expires_at = ?,
+           attempts = attempts + 1,
+           updated_at = ?
+       WHERE id = ?
+         AND next_run_at <= ?
+         AND (
+           status IN ('pending', 'failed', 'complete')
+           OR (status = 'running' AND lease_expires_at < ?)
+         )`,
+      [input.leaseOwner, leaseExpiresAt, now, candidateId, now, now]
+    );
+    if (Number(result.affectedRows ?? 0) === 0) {
+      continue;
+    }
+
+    const [rows] = await pool.execute<RowData[]>(
+      `SELECT ${leasedJobColumns} FROM jobs WHERE id = ? AND lease_owner = ? LIMIT 1`,
+      [candidateId, input.leaseOwner]
+    );
+    if (rows[0]) {
+      return toLeasedJob(rows[0]);
+    }
   }
 
-  const [result] = await pool.execute<ResultSetHeader>(
-    `UPDATE jobs
-     SET status = 'running',
-         lease_owner = ?,
-         lease_expires_at = ?,
-         attempts = attempts + 1,
-         updated_at = ?
-     WHERE id = ?
-       AND next_run_at <= ?
-       AND (
-         status IN ('pending', 'failed', 'complete')
-         OR (status = 'running' AND lease_expires_at < ?)
-       )`,
-    [input.leaseOwner, leaseExpiresAt, now, asNumber(candidate.id), now, now]
-  );
-  if (Number(result.affectedRows ?? 0) === 0) {
-    return null;
-  }
-
-  const [rows] = await pool.execute<RowData[]>(
-    `SELECT ${leasedJobColumns} FROM jobs WHERE id = ? AND lease_owner = ? LIMIT 1`,
-    [asNumber(candidate.id), input.leaseOwner]
-  );
-  return rows[0] ? toLeasedJob(rows[0]) : null;
+  return null;
 }
 
 export async function completeLeasedJob(input: {
@@ -368,6 +372,7 @@ export async function completeLeasedJob(input: {
   nextRunAt: string;
   payload?: unknown;
 }): Promise<void> {
+  const now = nowSql();
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE jobs
      SET status = 'complete',
@@ -377,11 +382,14 @@ export async function completeLeasedJob(input: {
          payload_json = ?,
          next_run_at = ?,
          updated_at = ?
-     WHERE id = ? AND lease_owner = ?`,
-    [stringify(input.payload ?? {}), sqlDate(input.nextRunAt), nowSql(), input.jobId, input.leaseOwner]
+     WHERE id = ?
+       AND status = 'running'
+       AND lease_owner = ?
+       AND lease_expires_at >= ?`,
+    [stringify(input.payload ?? {}), sqlDate(input.nextRunAt), now, input.jobId, input.leaseOwner, now]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error(`Cannot complete job ${input.jobId}; lease is no longer owned by this worker.`);
+    throw new Error(`Cannot complete job ${input.jobId}; lease is no longer valid for this worker.`);
   }
 }
 
@@ -391,6 +399,7 @@ export async function failLeasedJob(input: {
   nextRunAt: string;
   errorMessage: string;
 }): Promise<void> {
+  const now = nowSql();
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE jobs
      SET status = 'failed',
@@ -399,11 +408,14 @@ export async function failLeasedJob(input: {
          last_error = ?,
          next_run_at = ?,
          updated_at = ?
-     WHERE id = ? AND lease_owner = ?`,
-    [input.errorMessage, sqlDate(input.nextRunAt), nowSql(), input.jobId, input.leaseOwner]
+     WHERE id = ?
+       AND status = 'running'
+       AND lease_owner = ?
+       AND lease_expires_at >= ?`,
+    [input.errorMessage, sqlDate(input.nextRunAt), now, input.jobId, input.leaseOwner, now]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error(`Cannot fail job ${input.jobId}; lease is no longer owned by this worker.`);
+    throw new Error(`Cannot fail job ${input.jobId}; lease is no longer valid for this worker.`);
   }
 }
 
@@ -413,6 +425,7 @@ export async function blockLeasedJob(input: {
   nextRunAt: string;
   errorMessage: string;
 }): Promise<void> {
+  const now = nowSql();
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE jobs
      SET status = 'blocked',
@@ -421,11 +434,14 @@ export async function blockLeasedJob(input: {
          last_error = ?,
          next_run_at = ?,
          updated_at = ?
-     WHERE id = ? AND lease_owner = ?`,
-    [input.errorMessage, sqlDate(input.nextRunAt), nowSql(), input.jobId, input.leaseOwner]
+     WHERE id = ?
+       AND status = 'running'
+       AND lease_owner = ?
+       AND lease_expires_at >= ?`,
+    [input.errorMessage, sqlDate(input.nextRunAt), now, input.jobId, input.leaseOwner, now]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error(`Cannot block job ${input.jobId}; lease is no longer owned by this worker.`);
+    throw new Error(`Cannot block job ${input.jobId}; lease is no longer valid for this worker.`);
   }
 }
 
