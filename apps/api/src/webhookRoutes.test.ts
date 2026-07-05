@@ -69,7 +69,7 @@ const profile: RepoProfile = {
 
 let originalWebhookSecret: string | undefined;
 
-async function createWebhookApp() {
+async function createWebhookApp(options?: Parameters<typeof registerWebhookRoutes>[1]) {
   const app = Fastify();
   app.removeContentTypeParser("application/json");
   app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
@@ -77,7 +77,7 @@ async function createWebhookApp() {
     request.rawBody = rawBody;
     done(null, rawBody ? JSON.parse(rawBody) : {});
   });
-  await registerWebhookRoutes(app);
+  await registerWebhookRoutes(app, options);
   return app;
 }
 
@@ -110,7 +110,8 @@ describe("webhook routes", () => {
   });
 
   test("rejects GitHub webhooks when the webhook secret is not configured", async () => {
-    const app = await createWebhookApp();
+    const onDashboardMutated = vi.fn();
+    const app = await createWebhookApp({ onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -135,6 +136,7 @@ describe("webhook routes", () => {
       expect(mocks.loadRepoProfile).not.toHaveBeenCalled();
       expect(mocks.upsertRepoProfile).not.toHaveBeenCalled();
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -146,7 +148,8 @@ describe("webhook routes", () => {
       action: "opened",
       repository: { full_name: "matrixorigin/matrixone" }
     });
-    const app = await createWebhookApp();
+    const onDashboardMutated = vi.fn();
+    const app = await createWebhookApp({ onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -199,6 +202,51 @@ describe("webhook routes", () => {
           expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
         ])
       );
+      expect(onDashboardMutated).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("does not clear dashboard cache or queue refresh jobs for duplicate webhook deliveries", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "opened",
+      repository: { full_name: "matrixorigin/matrixone" }
+    });
+    mocks.recordGitHubWebhookDelivery.mockResolvedValueOnce({
+      duplicate: true,
+      deliveryId: "delivery-duplicate",
+      status: "received"
+    });
+    const onDashboardMutated = vi.fn();
+    const app = await createWebhookApp({ onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-duplicate",
+          "x-github-event": "issues",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        accepted: false,
+        duplicate: true,
+        deliveryId: "delivery-duplicate",
+        eventName: "issues",
+        status: "received",
+        refreshQueued: false
+      });
+      expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledOnce();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -451,7 +499,8 @@ describe("webhook routes", () => {
       hook_id: 123,
       repository: { full_name: "matrixorigin/matrixone" }
     });
-    const app = await createWebhookApp();
+    const onDashboardMutated = vi.fn();
+    const app = await createWebhookApp({ onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -488,6 +537,7 @@ describe("webhook routes", () => {
       );
       expect(mocks.recordGitHubWebhookDelivery).not.toHaveBeenCalled();
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(onDashboardMutated).toHaveBeenCalledOnce();
     } finally {
       await app.close();
     }

@@ -81,7 +81,7 @@ await registerAuthRoutes(app);
 await registerActionRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 await registerRefreshRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 await registerNotificationRoutes(app);
-await registerWebhookRoutes(app);
+await registerWebhookRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 
 app.get("/health", async (_request, reply) => {
   try {

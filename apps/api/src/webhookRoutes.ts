@@ -17,7 +17,17 @@ import {
 } from "./githubWebhook";
 import { webhookDeliveryRefreshJobs } from "./refreshJobs";
 
-export async function registerWebhookRoutes(app: FastifyInstance): Promise<void> {
+interface WebhookRouteOptions {
+  onDashboardMutated?: () => void;
+}
+
+function notifyDashboardMutation(options: WebhookRouteOptions, duplicate: boolean): void {
+  if (!duplicate) {
+    options.onDashboardMutated?.();
+  }
+}
+
+export async function registerWebhookRoutes(app: FastifyInstance, options: WebhookRouteOptions = {}): Promise<void> {
   app.post("/api/webhooks/github", async (request, reply) => {
     const rawBody = request.rawBody;
     if (typeof rawBody !== "string") {
@@ -79,6 +89,7 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
         rawPayload: rawBody,
         ignoredReason: "repository_mismatch"
       });
+      notifyDashboardMutation(options, result.duplicate);
       return reply.status(result.duplicate ? 200 : 202).send({
         accepted: false,
         duplicate: result.duplicate,
@@ -101,6 +112,7 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
         rawPayload: rawBody,
         ignoredReason: "connectivity_probe"
       });
+      notifyDashboardMutation(options, result.duplicate);
       return reply.status(result.duplicate ? 200 : 202).send({
         accepted: !result.duplicate,
         duplicate: result.duplicate,
@@ -123,6 +135,7 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
         rawPayload: rawBody,
         ignoredReason: "unsupported_event"
       });
+      notifyDashboardMutation(options, result.duplicate);
       return reply.status(result.duplicate ? 200 : 202).send({
         accepted: false,
         duplicate: result.duplicate,
@@ -144,6 +157,7 @@ export async function registerWebhookRoutes(app: FastifyInstance): Promise<void>
       payload: request.body,
       rawPayload: rawBody
     });
+    notifyDashboardMutation(options, result.duplicate);
     let refreshQueued = false;
     if (!result.duplicate) {
       try {
