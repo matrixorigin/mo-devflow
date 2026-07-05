@@ -29,6 +29,7 @@ import {
   profileSetupPlan,
   profileSetupPlanForViewer,
   pullRequestWithPreservedInsight,
+  testingIssueHandoffToCloseSamplesFromRows,
   testingIssueTransitionsFromQueueIssues,
   testingIssuesForLogin,
   visibleClassesForDashboard
@@ -1078,6 +1079,76 @@ describe("pull request testing transition events", () => {
         testingSignals: ["issue_label:#44:testing"],
         occurredAt: "2026-07-03T09:00:00.000Z",
         sourceCompleteness: "complete_cache"
+      }
+    ]);
+  });
+
+  test("measures issue testing handoff to close from issue timeline evidence", () => {
+    const profile: RepoProfile = {
+      ...baseProfile,
+      people: { ...baseProfile.people, testers: ["tester-a", "tester-b"] },
+      testing: { handoffSignals: { labels: ["testing"] } }
+    };
+    const samples = testingIssueHandoffToCloseSamplesFromRows(
+      profile,
+      [
+        {
+          number: 50,
+          is_pull_request: 0,
+          closed_at: "2026-07-05 12:00:00"
+        },
+        {
+          number: 51,
+          is_pull_request: 0,
+          closed_at: "2026-07-05 12:00:00"
+        }
+      ],
+      [
+        {
+          issue_number: 50,
+          event_type: "assigned",
+          assignee_login: "tester-a",
+          label_name: null,
+          occurred_at: "2026-07-01 08:00:00"
+        },
+        {
+          issue_number: 50,
+          event_type: "unassigned",
+          assignee_login: "tester-a",
+          label_name: null,
+          occurred_at: "2026-07-02 08:00:00"
+        },
+        {
+          issue_number: 50,
+          event_type: "assigned",
+          assignee_login: "tester-b",
+          label_name: null,
+          occurred_at: "2026-07-04 12:00:00"
+        },
+        {
+          issue_number: 51,
+          event_type: "labeled",
+          assignee_login: null,
+          label_name: "testing",
+          occurred_at: "2026-07-05 06:00:00"
+        }
+      ]
+    );
+
+    expect(samples).toEqual([
+      {
+        issueNumber: 50,
+        testers: ["tester-b"],
+        handoffStartedAt: "2026-07-04T12:00:00Z",
+        closedAt: "2026-07-05T12:00:00Z",
+        handoffToCloseHours: 24
+      },
+      {
+        issueNumber: 51,
+        testers: [],
+        handoffStartedAt: "2026-07-05T06:00:00Z",
+        closedAt: "2026-07-05T12:00:00Z",
+        handoffToCloseHours: 6
       }
     ]);
   });

@@ -80,8 +80,8 @@ Testers are a special configured role.
 The product should track issues assigned to configured testers and measure:
 
 - Issue testing queue age.
-- Issue testing handoff to test pass time.
-- Test pass to issue closure or linked PR merge time.
+- Issue testing handoff to issue close time.
+- If the repo later defines an explicit test-pass signal, split the above into handoff-to-pass and pass-to-close time.
 - Linked PR blockers while an issue is in testing.
 - Pending testing workload per tester.
 - Testing turnover efficiency.
@@ -431,8 +431,8 @@ The product should handle:
 
 Testing flow metrics:
 
-- Issue testing handoff to test pass time.
-- Test pass to issue close or linked PR merge time.
+- Issue testing handoff to issue close time from cached issue timeline and close evidence.
+- If an explicit test-pass signal is configured later, handoff-to-pass and pass-to-close should be measured separately.
 - Current testing queue by tester.
 - Testing queue age.
 - Testing turnover trend by day, week, and month.

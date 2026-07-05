@@ -241,23 +241,54 @@ function testingSignalBelongsToProfile(profile: RepoProfile, signal: string): bo
   return Boolean(issueLabel && testingLabelSet(profile).has(normalizedLabel(issueLabel[1])));
 }
 
-type TestingTurnoverMetrics = Pick<
-  TestingSummary,
-  | "requestToPassSamples"
-  | "passToCloseSamples"
-  | "closedWithoutPassSignalSamples"
-  | "averageRequestToPassHours"
-  | "averagePassToCloseHours"
->;
+type TestingTurnoverMetrics = Pick<TestingSummary, "handoffToCloseSamples" | "averageHandoffToCloseHours">;
 
 function emptyTestingTurnoverMetrics(): TestingTurnoverMetrics {
   return {
-    requestToPassSamples: 0,
-    passToCloseSamples: 0,
-    closedWithoutPassSignalSamples: 0,
-    averageRequestToPassHours: null,
-    averagePassToCloseHours: null
+    handoffToCloseSamples: 0,
+    averageHandoffToCloseHours: null
   };
+}
+
+interface TestingIssueHandoffToCloseSample {
+  issueNumber: number;
+  testers: string[];
+  handoffStartedAt: string;
+  closedAt: string;
+  handoffToCloseHours: number;
+}
+
+function hoursBetween(start: string, end: string): number | null {
+  const startTime = new Date(start).getTime();
+  const endTime = new Date(end).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+    return null;
+  }
+  return Math.round(((endTime - startTime) / 3_600_000) * 10) / 10;
+}
+
+function testingTurnoverMetricsFromIssueSamples(samples: TestingIssueHandoffToCloseSample[]): TestingTurnoverMetrics {
+  const hours = samples.map((sample) => sample.handoffToCloseHours);
+  return {
+    handoffToCloseSamples: samples.length,
+    averageHandoffToCloseHours: averageHours(hours)
+  };
+}
+
+function testingTurnoverMetricsByTesterFromIssueSamples(
+  samples: TestingIssueHandoffToCloseSample[]
+): Map<string, TestingTurnoverMetrics> {
+  const samplesByTester = new Map<string, TestingIssueHandoffToCloseSample[]>();
+  for (const sample of samples) {
+    for (const tester of sample.testers) {
+      samplesByTester.set(tester, [...(samplesByTester.get(tester) ?? []), sample]);
+    }
+  }
+  const result = new Map<string, TestingTurnoverMetrics>();
+  for (const [tester, testerSamples] of samplesByTester.entries()) {
+    result.set(tester, testingTurnoverMetricsFromIssueSamples(testerSamples));
+  }
+  return result;
 }
 
 function isDuplicateError(error: unknown): boolean {
@@ -2065,6 +2096,174 @@ async function testingHandoffStartedAtByIssueNumber(
   return startedAtByIssueNumber;
 }
 
+interface TestingHandoffCloseEvidence {
+  startedAt: string;
+  testers: string[];
+}
+
+function testingHandoffCloseEvidenceFromEvents(
+  profile: RepoProfile,
+  issueNumber: number,
+  closedAt: string,
+  eventRows: Array<Record<string, unknown>>
+): TestingHandoffCloseEvidence | null {
+  const testerLogins = testingAssigneeLoginSet(profile);
+  const testingLabels = testingLabelSet(profile);
+  if (testerLogins.size === 0 && testingLabels.size === 0) {
+    return null;
+  }
+
+  const activeAssignments = new Map<string, string>();
+  const activeLabels = new Map<string, string>();
+  let currentStartedAt: string | null = null;
+  let currentTesters = new Set<string>();
+  let lastStartedAt: string | null = null;
+  let lastTesters = new Set<string>();
+  const closedTime = new Date(closedAt).getTime();
+
+  for (const row of eventRows) {
+    const occurredAt = fromSqlDate(row.occurred_at);
+    if (!occurredAt) {
+      continue;
+    }
+    const occurredTime = new Date(occurredAt).getTime();
+    if (!Number.isFinite(occurredTime) || occurredTime > closedTime) {
+      continue;
+    }
+
+    const wasActive = activeAssignments.size > 0 || activeLabels.size > 0;
+    const eventType = asString(row.event_type);
+    const assignee = row.assignee_login ? asString(row.assignee_login) : "";
+    const assigneeKey = normalizedLogin(assignee);
+    const label = row.label_name ? asString(row.label_name) : "";
+    const labelKey = normalizedLabel(label);
+
+    if (eventType === "assigned" || eventType === "unassigned") {
+      if (!testerLogins.has(assigneeKey)) {
+        continue;
+      }
+      if (eventType === "assigned") {
+        activeAssignments.set(assigneeKey, assignee);
+      } else {
+        activeAssignments.delete(assigneeKey);
+      }
+    } else if (eventType === "labeled" || eventType === "unlabeled") {
+      if (!testingLabels.has(labelKey)) {
+        continue;
+      }
+      if (eventType === "labeled") {
+        activeLabels.set(labelKey, label);
+      } else {
+        activeLabels.delete(labelKey);
+      }
+    } else {
+      continue;
+    }
+
+    const isActive = activeAssignments.size > 0 || activeLabels.size > 0;
+    if (!wasActive && isActive) {
+      currentStartedAt = occurredAt;
+      currentTesters = new Set(activeAssignments.values());
+    } else if (isActive && eventType === "assigned") {
+      currentTesters.add(assignee);
+    }
+
+    if (currentStartedAt && isActive) {
+      lastStartedAt = currentStartedAt;
+      lastTesters = new Set(currentTesters);
+    }
+
+    if (wasActive && !isActive) {
+      if (currentStartedAt) {
+        lastStartedAt = currentStartedAt;
+        lastTesters = new Set(currentTesters);
+      }
+      currentStartedAt = null;
+      currentTesters = new Set();
+    }
+  }
+
+  if (!lastStartedAt) {
+    return null;
+  }
+
+  return {
+    startedAt: lastStartedAt,
+    testers: uniqueValues(Array.from(lastTesters))
+  };
+}
+
+export function testingIssueHandoffToCloseSamplesFromRows(
+  profile: RepoProfile,
+  issueRows: Array<Record<string, unknown>>,
+  timelineRows: Array<Record<string, unknown>>
+): TestingIssueHandoffToCloseSample[] {
+  const eventsByIssueNumber = new Map<number, Array<Record<string, unknown>>>();
+  for (const row of timelineRows) {
+    const issueNumber = asNumber(row.issue_number);
+    eventsByIssueNumber.set(issueNumber, [...(eventsByIssueNumber.get(issueNumber) ?? []), row]);
+  }
+
+  const samples: TestingIssueHandoffToCloseSample[] = [];
+  for (const row of issueRows) {
+    if (asNumber(row.is_pull_request) === 1) {
+      continue;
+    }
+    const issueNumber = asNumber(row.number);
+    const closedAt = fromSqlDate(row.closed_at);
+    if (!closedAt) {
+      continue;
+    }
+    const evidence = testingHandoffCloseEvidenceFromEvents(
+      profile,
+      issueNumber,
+      closedAt,
+      eventsByIssueNumber.get(issueNumber) ?? []
+    );
+    if (!evidence) {
+      continue;
+    }
+    const handoffToCloseHours = hoursBetween(evidence.startedAt, closedAt);
+    if (handoffToCloseHours === null) {
+      continue;
+    }
+    samples.push({
+      issueNumber,
+      testers: evidence.testers,
+      handoffStartedAt: evidence.startedAt,
+      closedAt,
+      handoffToCloseHours
+    });
+  }
+
+  return samples.sort(
+    (left, right) => right.closedAt.localeCompare(left.closedAt) || left.issueNumber - right.issueNumber
+  );
+}
+
+async function testingIssueHandoffToCloseSamples(
+  repoId: number,
+  profile: RepoProfile,
+  issueRows: RowData[],
+  visibilitySql: string,
+  visibilityParams: number[]
+): Promise<TestingIssueHandoffToCloseSample[]> {
+  if (!issueRows.some((row) => fromSqlDate(row.closed_at) !== null)) {
+    return [];
+  }
+  const [timelineRows] = await getPool().execute<RowData[]>(
+    `SELECT issue_number, event_type, assignee_login, label_name, occurred_at
+     FROM issue_timeline_events e
+     WHERE repo_id = ?
+       AND event_type IN ('assigned', 'unassigned', 'labeled', 'unlabeled')
+       AND ${visibilitySql}
+     ORDER BY issue_number ASC, occurred_at ASC, id ASC
+     LIMIT 50000`,
+    [repoId, ...visibilityParams]
+  );
+  return testingIssueHandoffToCloseSamplesFromRows(profile, issueRows, timelineRows);
+}
+
 function testingIssueContextsWithHandoffEvidence(
   contexts: Map<number, TestingIssueContext>,
   handoffStartedAtByIssueNumber: Map<number, TestingHandoffStartEvidence>
@@ -3202,7 +3401,8 @@ export async function getDashboardSummary(
   );
   const [issueRows] = await pool.execute<RowData[]>(
     `SELECT i.number, i.title, i.html_url, i.owner_login, i.lifecycle_state, i.severity, i.state, i.is_pull_request,
-            i.assignees_json, i.created_at, i.updated_at, i.is_complete, i.sync_error, i.last_synced_at
+            i.labels_json, i.assignees_json, i.created_at, i.updated_at, i.closed_at,
+            i.is_complete, i.sync_error, i.last_synced_at
      FROM issues i
      WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
     [repoId, ...issueListVisibility.params]
@@ -3799,13 +3999,22 @@ export async function getDashboardSummary(
   const issueQueueAges = testingIssueViews
     .map((issue) => issue.queueAgeHours)
     .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
+  const handoffToCloseSamples = await testingIssueHandoffToCloseSamples(
+    repoId,
+    profile,
+    issueRows,
+    timelineEventVisibility.sql,
+    timelineEventVisibility.params
+  );
   const testerKeys = new Set([
     ...testingAssigneeLogins(profile),
     ...testingIssueViews.flatMap((issue) => issue.testers),
-    ...testingQueuePrs.flatMap((pr) => pr.testingTesters)
+    ...testingQueuePrs.flatMap((pr) => pr.testingTesters),
+    ...handoffToCloseSamples.flatMap((sample) => sample.testers)
   ]);
   const recentIssueTestingTransitions = testingIssueTransitionsFromQueueIssues(testingIssueViews);
-  const emptyTurnover = emptyTestingTurnoverMetrics();
+  const testingTurnover = testingTurnoverMetricsFromIssueSamples(handoffToCloseSamples);
+  const testingTurnoverByTester = testingTurnoverMetricsByTesterFromIssueSamples(handoffToCloseSamples);
   const testing: TestingSummary = {
     queueIssues: testingIssueViews.length,
     queuePrs: testingQueuePrs.length,
@@ -3819,7 +4028,7 @@ export async function getDashboardSummary(
     averageQueueAgeHours: averageHours(queueAges),
     issueTransitionEvents: testingIssueViews.length,
     lastIssueTransitionAt: latestIsoOrNull(recentIssueTestingTransitions.map((transition) => transition.occurredAt)),
-    ...emptyTurnover,
+    ...testingTurnover,
     issues: testingIssueViews,
     recentIssueTransitions: recentIssueTestingTransitions,
     testers: Array.from(testerKeys).map((login) => {
@@ -3827,13 +4036,14 @@ export async function getDashboardSummary(
       const prs = testingQueuePrs.filter((pr) => pr.testingTesters.includes(login));
       const issueAges = issues.map((issue) => issue.queueAgeHours);
       const ages = prs.map((pr) => pr.testingQueueAgeHours);
+      const turnover = testingTurnoverByTester.get(login) ?? emptyTestingTurnoverMetrics();
       return {
         login,
         queueIssues: issues.length,
         queuePrs: prs.length,
         averageIssueQueueAgeHours: averageHours(issueAges),
         averageQueueAgeHours: averageHours(ages),
-        ...emptyTestingTurnoverMetrics()
+        ...turnover
       };
     })
   };

@@ -471,7 +471,7 @@ PR stale detection should use `last_human_action_at` by default. System-only eve
 
 Review-request attention should be derived from requested reviewers plus review insight. Until review-request timeline timestamps are backfilled, a PR with requested reviewers, no cached review response, and stale `updated_at` can be flagged as `review_requested_no_response` with partial-cache evidence.
 
-Testing state derivation should be event-sourced from normalized issue assignment facts. A PR is in testing only when at least one linked issue is currently assigned to a configured tester. State transitions should be persisted with the issue assignment signal so ambiguous or incorrect handoff evidence can be debugged.
+Testing state derivation should be event-sourced from normalized issue assignment and issue-label facts. A PR is in testing only when at least one linked issue currently matches the configured issue-scoped handoff rules. Current testing queue entries should expose the handoff evidence and source completeness. Testing turnover should use cached issue timeline handoff evidence plus issue close timestamps; until an explicit test-pass signal is configured, the trustworthy historical metric is issue handoff-to-close time.
 
 PR reviewer, PR label, PR assignee, and PR comment events must not create testing handoff state. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.
 

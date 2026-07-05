@@ -5988,11 +5988,7 @@ function TestingCommandBoard({
   const partialIssueTransitions = testing.recentIssueTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
-  const hasTurnoverHistory =
-    testing.issueTransitionEvents > 0 ||
-    testing.requestToPassSamples > 0 ||
-    testing.passToCloseSamples > 0 ||
-    testing.closedWithoutPassSignalSamples > 0;
+  const hasTurnoverHistory = testing.issueTransitionEvents > 0 || testing.handoffToCloseSamples > 0;
   const testerRows = [...testing.testers]
     .sort((left, right) => {
       const queueDelta = right.queueIssues - left.queueIssues;
@@ -6082,11 +6078,13 @@ function TestingCommandBoard({
         />
         {hasTurnoverHistory ? (
           <TestingBoardStat
-            label="closed without pass"
-            value={testing.closedWithoutPassSignalSamples}
-            tone={testing.closedWithoutPassSignalSamples > 0 ? "critical" : "normal"}
-            actionLabel="Filter"
-            onClick={() => onOpenPrsFilter("testing")}
+            label="handoff to close"
+            value={testing.averageHandoffToCloseHours === null ? "-" : hours(testing.averageHandoffToCloseHours)}
+            tone={
+              testing.averageHandoffToCloseHours !== null && testing.averageHandoffToCloseHours >= 24
+                ? "attention"
+                : "normal"
+            }
           />
         ) : null}
         {hasTurnoverHistory ? (
@@ -6585,11 +6583,8 @@ function TestingTurnoverBreakdown({
   testing: DashboardSummary["testing"];
   partialIssueTransitions: number;
 }) {
-  const requestToPassTone =
-    testing.averageRequestToPassHours !== null && testing.averageRequestToPassHours >= 24 ? "attention" : "normal";
-  const passToCloseTone =
-    testing.averagePassToCloseHours !== null && testing.averagePassToCloseHours >= 24 ? "attention" : "normal";
-  const hasSamples = testing.requestToPassSamples > 0 || testing.passToCloseSamples > 0;
+  const handoffToCloseTone =
+    testing.averageHandoffToCloseHours !== null && testing.averageHandoffToCloseHours >= 24 ? "attention" : "normal";
 
   return (
     <div className="testing-turnover-strip" aria-label="Testing turnover breakdown">
@@ -6600,22 +6595,16 @@ function TestingTurnoverBreakdown({
         tone={testing.staleQueueIssues > 0 ? "critical" : testing.queueIssues > 0 ? "attention" : "normal"}
       />
       <TestingTurnoverCard
-        label="Start to pass"
-        value={testing.averageRequestToPassHours === null ? "-" : hours(testing.averageRequestToPassHours)}
-        detail={`${testing.requestToPassSamples} samples`}
-        tone={requestToPassTone}
-      />
-      <TestingTurnoverCard
-        label="Pass to close"
-        value={testing.averagePassToCloseHours === null ? "-" : hours(testing.averagePassToCloseHours)}
-        detail={`${testing.passToCloseSamples} samples`}
-        tone={passToCloseTone}
+        label="Handoff to close"
+        value={testing.averageHandoffToCloseHours === null ? "-" : hours(testing.averageHandoffToCloseHours)}
+        detail={`${testing.handoffToCloseSamples} closed issue samples`}
+        tone={handoffToCloseTone}
       />
       <TestingTurnoverCard
         label="Data gaps"
         value={partialIssueTransitions}
-        detail={hasSamples ? `${testing.closedWithoutPassSignalSamples} closed without pass` : "no pass samples yet"}
-        tone={partialIssueTransitions > 0 || testing.closedWithoutPassSignalSamples > 0 ? "attention" : "normal"}
+        detail="timeline evidence still backfilling"
+        tone={partialIssueTransitions > 0 ? "attention" : "normal"}
       />
     </div>
   );
@@ -12026,29 +12015,14 @@ export default function App() {
         render: (value) => (value === null ? "-" : hours(value))
       },
       {
-        title: "Start To Pass",
-        dataIndex: "averageRequestToPassHours",
+        title: "Handoff To Close",
+        dataIndex: "averageHandoffToCloseHours",
         render: (value, row) =>
           value === null ? (
-            <Text type="secondary">{row.requestToPassSamples} samples</Text>
+            <Text type="secondary">{row.handoffToCloseSamples} samples</Text>
           ) : (
-            `${hours(value)} (${row.requestToPassSamples})`
+            `${hours(value)} (${row.handoffToCloseSamples})`
           )
-      },
-      {
-        title: "Pass To Close",
-        dataIndex: "averagePassToCloseHours",
-        render: (value, row) =>
-          value === null ? (
-            <Text type="secondary">{row.passToCloseSamples} samples</Text>
-          ) : (
-            `${hours(value)} (${row.passToCloseSamples})`
-          )
-      },
-      {
-        title: "Closed No Pass",
-        dataIndex: "closedWithoutPassSignalSamples",
-        render: (value) => (value > 0 ? <Tag color="orange">{value}</Tag> : <Tag>0</Tag>)
       }
     ],
     []
@@ -12181,10 +12155,7 @@ export default function App() {
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const testingHasTurnoverHistory = data
-    ? data.testing.issueTransitionEvents > 0 ||
-      data.testing.requestToPassSamples > 0 ||
-      data.testing.passToCloseSamples > 0 ||
-      data.testing.closedWithoutPassSignalSamples > 0
+    ? data.testing.issueTransitionEvents > 0 || data.testing.handoffToCloseSamples > 0
     : false;
   const testingHasIssueTransitions = data
     ? data.testing.issueTransitionEvents > 0 || data.testing.recentIssueTransitions.length > 0

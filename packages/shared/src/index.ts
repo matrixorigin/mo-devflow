@@ -537,11 +537,8 @@ export interface TestingSummary {
   averageQueueAgeHours: number | null;
   issueTransitionEvents: number;
   lastIssueTransitionAt: string | null;
-  requestToPassSamples: number;
-  passToCloseSamples: number;
-  closedWithoutPassSignalSamples: number;
-  averageRequestToPassHours: number | null;
-  averagePassToCloseHours: number | null;
+  handoffToCloseSamples: number;
+  averageHandoffToCloseHours: number | null;
   issues: TestingIssueQueueView[];
   recentIssueTransitions: TestingIssueTransitionView[];
   testers: Array<{
@@ -550,11 +547,8 @@ export interface TestingSummary {
     queuePrs: number;
     averageIssueQueueAgeHours: number | null;
     averageQueueAgeHours: number | null;
-    requestToPassSamples: number;
-    passToCloseSamples: number;
-    closedWithoutPassSignalSamples: number;
-    averageRequestToPassHours: number | null;
-    averagePassToCloseHours: number | null;
+    handoffToCloseSamples: number;
+    averageHandoffToCloseHours: number | null;
   }>;
 }
 
