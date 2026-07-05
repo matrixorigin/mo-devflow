@@ -6946,6 +6946,53 @@ function FreshnessStatusBar({
       </div>
       {expanded ? (
         <div className="freshness-detail">
+          <div className="freshness-update-path" aria-label="Update path">
+            <button
+              type="button"
+              className={`freshness-path-card freshness-path-${webhookReadiness.tone}`}
+              onClick={onOpenWebhooks}
+            >
+              <span>GitHub changes</span>
+              <strong>{webhookStatusChipLabel(webhookReadiness).replace("updates: ", "").replace("hook: ", "")}</strong>
+              <small>{webhookReadiness.description}</small>
+            </button>
+            <button
+              type="button"
+              className={`freshness-path-card freshness-path-${sync.worker.status === "active" && sync.jobQueue.status === "healthy" ? "good" : "critical"}`}
+              onClick={onOpenHealth}
+            >
+              <span>Worker repair</span>
+              <strong>
+                {sync.worker.status === "active" ? (sync.worker.phase ?? "active") : sync.worker.status} /{" "}
+                {sync.jobQueue.queueDepth} queued
+              </strong>
+              <small>
+                {sync.worker.secondsSinceHeartbeat === null
+                  ? "heartbeat unknown"
+                  : `heartbeat ${Math.round(sync.worker.secondsSinceHeartbeat)}s ago`}
+              </small>
+            </button>
+            <div
+              className={`freshness-path-card freshness-path-${refreshing ? "normal" : autoRefreshError ? "attention" : "good"}`}
+            >
+              <span>Browser view</span>
+              <strong>{refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}</strong>
+              <small>{autoRefreshError ? autoRefreshError : `loaded ${formatDate(lastLoadedAt)}`}</small>
+            </div>
+            <button
+              type="button"
+              className={`freshness-path-card freshness-path-${
+                sync.staleObjects > 0 ? "critical" : sync.partialObjects > 0 ? "attention" : "good"
+              }`}
+              onClick={onOpenHealth}
+            >
+              <span>Cache snapshot</span>
+              <strong>{formatDate(sync.generatedAt)}</strong>
+              <small>
+                {sync.staleObjects} stale / {sync.partialObjects} incomplete
+              </small>
+            </button>
+          </div>
           <Space className="freshness-meta" size={[4, 4]} wrap>
             <Tag color={freshness.oldestLayerSuccessAt ? "default" : "red"}>
               oldest sync {formatDate(freshness.oldestLayerSuccessAt)}
