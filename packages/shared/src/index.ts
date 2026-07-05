@@ -1217,10 +1217,14 @@ export function extractLinkedIssueNumbers(text: string): number[] {
     linked.add(Number(match[1]));
   }
   const keywordPattern =
-    /\b(?:(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+|(?:refs?|references?|relates?\s+to|related\s+to|see(?:\s+also)?|issues?)\s*:?\s+)([^\n.]+)/gi;
+    /\b(?:(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+|(?:refs?|references?|relates?\s+to|related\s+to|see(?:\s+also)?|issues?)\s*:?\s+)([^\n.]+)/gi;
   for (const match of text.matchAll(keywordPattern)) {
     const clause = match[1] ?? "";
     for (const issueMatch of clause.matchAll(/#(\d+)/g)) {
+      const matchIndex = issueMatch.index ?? 0;
+      if (matchIndex > 0 && clause[matchIndex - 1] === "(" && clause.slice(0, matchIndex - 1).trim().length > 0) {
+        continue;
+      }
       linked.add(Number(issueMatch[1]));
     }
     for (const issueMatch of clause.matchAll(/\/issues\/(\d+)/gi)) {

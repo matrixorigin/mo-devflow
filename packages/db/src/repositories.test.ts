@@ -798,6 +798,12 @@ describe("linked PR issue references", () => {
   test("keeps parenthesized issue references only when a strong keyword introduces them", () => {
     expect(extractLinkedIssueNumbers("Fixes (#25200). Cherry-pick #25262")).toEqual([25200]);
   });
+
+  test("extracts colon-separated closing keyword references", () => {
+    expect(
+      extractLinkedIssueNumbers("Fix: #123\nResolve: https://github.com/matrixorigin/matrixone/issues/456")
+    ).toEqual([123, 456]);
+  });
 });
 
 describe("critical issue cache blockers", () => {
