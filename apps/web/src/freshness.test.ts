@@ -82,6 +82,7 @@ function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardS
     duplicateDeliveries: 0,
     connectivityProbeDeliveries: 0,
     lastReceivedAt: null,
+    oldestPendingReceivedAt: null,
     lastConnectivityProbeAt: null,
     latestFailure: null,
     eventSummaries: [],
@@ -513,7 +514,8 @@ describe("webhook readiness summary", () => {
       webhooks: webhooks({
         pendingDeliveries: 2,
         processedDeliveries: 4,
-        lastReceivedAt: "2026-07-04T01:00:00.000Z"
+        lastReceivedAt: "2026-07-04T01:00:00.000Z",
+        oldestPendingReceivedAt: "2026-07-04T00:30:00.000Z"
       })
     });
 
@@ -523,6 +525,7 @@ describe("webhook readiness summary", () => {
       title: "Webhook deliveries are queued"
     });
     expect(summary.facts).toContain("2 pending");
+    expect(summary.facts).toContain("oldest pending 2026-07-04T00:30:00.000Z");
   });
 
   test("reports healthy receiving when deliveries are processed without failures", () => {

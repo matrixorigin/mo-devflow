@@ -14834,6 +14834,11 @@ function WebhookUpdatePathPanel({
     data.sync.staleObjects > 0 || data.sync.partialObjects > 0
       ? `${data.sync.staleObjects} stale objects, ${data.sync.partialObjects} incomplete objects.`
       : `Dashboard generated ${formatDate(data.sync.generatedAt)}.`;
+  const webhookProcessingDetail =
+    data.webhooks.latestFailure ??
+    (data.webhooks.pendingDeliveries > 0 && data.webhooks.oldestPendingReceivedAt
+      ? `Oldest pending delivery received ${formatDate(data.webhooks.oldestPendingReceivedAt)}.`
+      : `${data.webhooks.normalizationFailedDeliveries} normalization failures, ${data.webhooks.duplicateDeliveries} duplicates.`);
 
   return (
     <section className="webhook-update-path" aria-label="Webhook update path">
@@ -14897,8 +14902,7 @@ function WebhookUpdatePathPanel({
                 : `${data.webhooks.processedDeliveries} processed`
           }
           detail={
-            data.webhooks.latestFailure ??
-            `${data.webhooks.normalizationFailedDeliveries} normalization failures, ${data.webhooks.duplicateDeliveries} duplicates.`
+            webhookProcessingDetail
           }
           tone={processingTone}
         >

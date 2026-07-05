@@ -59,6 +59,7 @@ const operational: OperationalHealthSummary = {
     duplicateDeliveries: 0,
     connectivityProbeDeliveries: 0,
     lastReceivedAt: null,
+    oldestPendingReceivedAt: null,
     lastConnectivityProbeAt: null,
     latestFailure: null,
     eventSummaries: [],

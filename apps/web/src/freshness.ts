@@ -300,6 +300,9 @@ export function summarizeWebhookReadiness(
       facts: [
         `${webhooks.pendingDeliveries} pending`,
         `${processed} processed`,
+        webhooks.oldestPendingReceivedAt
+          ? `oldest pending ${webhooks.oldestPendingReceivedAt}`
+          : "oldest pending unknown",
         webhooks.lastReceivedAt ? `last ${webhooks.lastReceivedAt}` : "no processed delivery yet"
       ],
       nextActions: [

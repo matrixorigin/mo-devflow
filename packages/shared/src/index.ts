@@ -1040,6 +1040,7 @@ export interface WebhookIngestionHealth {
   duplicateDeliveries: number;
   connectivityProbeDeliveries: number;
   lastReceivedAt: string | null;
+  oldestPendingReceivedAt: string | null;
   lastConnectivityProbeAt: string | null;
   latestFailure: string | null;
   eventSummaries: GitHubWebhookEventHealth[];

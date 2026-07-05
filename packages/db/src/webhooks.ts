@@ -307,6 +307,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
        SUM(duplicate_count) AS duplicate_deliveries,
        SUM(CASE WHEN event_name = 'ping' THEN 1 ELSE 0 END) AS connectivity_probe_deliveries,
        MAX(received_at) AS last_received_at,
+       MIN(CASE WHEN status IN ('received', 'processing') THEN received_at ELSE NULL END) AS oldest_pending_received_at,
        MAX(CASE WHEN event_name = 'ping' THEN received_at ELSE NULL END) AS last_connectivity_probe_at
      FROM github_webhook_deliveries
      WHERE repo_id = ?`,
@@ -379,6 +380,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     duplicateDeliveries: asNumber(row.duplicate_deliveries),
     connectivityProbeDeliveries: asNumber(row.connectivity_probe_deliveries),
     lastReceivedAt: fromSqlDate(row.last_received_at),
+    oldestPendingReceivedAt: fromSqlDate(row.oldest_pending_received_at),
     lastConnectivityProbeAt: fromSqlDate(row.last_connectivity_probe_at),
     latestFailure: failure ? `${asString(failure.delivery_id)}: ${asString(failure.error_message)}` : null,
     eventSummaries: eventRows.map((eventRow) =>
