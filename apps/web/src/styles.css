@@ -602,6 +602,26 @@ body {
   border-color: #d1d5db;
 }
 
+.evidence-impact-more {
+  appearance: none;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  color: #9a3412;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.1;
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+.evidence-impact-more:hover,
+.evidence-impact-more:focus-visible {
+  background: #ffedd5;
+  border-color: #f97316;
+  outline: none;
+}
+
 .evidence-alert-repair-actions {
   flex: 0 1 auto;
   justify-content: flex-end;
@@ -705,6 +725,26 @@ body {
 
 .cache-evidence-overflow {
   display: block;
+}
+
+.cache-evidence-overflow-button {
+  appearance: none;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  justify-self: start;
+  line-height: 1.15;
+  padding: 3px 7px;
+}
+
+.cache-evidence-overflow-button:hover,
+.cache-evidence-overflow-button:focus-visible {
+  background: #eff6ff;
+  border-color: #60a5fa;
+  outline: none;
 }
 
 .cache-impact-board {

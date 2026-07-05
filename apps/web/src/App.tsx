@@ -3780,15 +3780,20 @@ function TeamPrRiskRow({
   const reasons = prAttentionReasons(pr);
   const visibleReasons = reasons.slice(0, 4);
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
-  const visibleActiveIssues = activeIssues.slice(0, 3);
+  const activeIssueLazy = useLazyVisibleCount(activeIssues.length, 3, pr.number);
+  const visibleActiveIssues = activeIssues.slice(0, activeIssueLazy.visibleCount);
   const linkedIssues = pr.linkedIssueNumbers.map((number) => ({
     number,
     url: linkedObjectUrl(pr.htmlUrl, "issues", number)
   }));
   const otherLinkedIssues = linkedIssues.filter((link) => !activeIssueNumbers.has(link.number));
-  const visibleIssueLinks = (activeIssues.length > 0 ? otherLinkedIssues : linkedIssues).slice(0, 4);
-  const hiddenIssueLinks =
-    (activeIssues.length > 0 ? otherLinkedIssues : linkedIssues).length - visibleIssueLinks.length;
+  const issueLinkCandidates = activeIssues.length > 0 ? otherLinkedIssues : linkedIssues;
+  const issueLinkLazy = useLazyVisibleCount(
+    issueLinkCandidates.length,
+    4,
+    `${pr.number}:${activeIssues.length}:${pr.linkedIssueNumbers.join(",")}`
+  );
+  const visibleIssueLinks = issueLinkCandidates.slice(0, issueLinkLazy.visibleCount);
 
   return (
     <article className="team-work-row">
@@ -3844,17 +3849,14 @@ function TeamPrRiskRow({
                 </a>
               </Tooltip>
             ))}
-            {activeIssues.length > visibleActiveIssues.length ? (
-              onPreview ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview PR ${pr.number} with ${activeIssues.length - visibleActiveIssues.length} more active issues`}
-                  count={activeIssues.length - visibleActiveIssues.length}
-                  label="more active"
-                  onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
-                />
-              ) : (
-                <span>+{activeIssues.length - visibleActiveIssues.length}</span>
-              )
+            {activeIssueLazy.hiddenCount > 0 ? (
+              <button type="button" className="linked-overflow-button" onClick={activeIssueLazy.showMore}>
+                +{activeIssueLazy.revealCount} more active ({activeIssueLazy.hiddenCount} hidden)
+              </button>
+            ) : activeIssueLazy.canCollapse ? (
+              <button type="button" className="linked-overflow-button" onClick={activeIssueLazy.reset}>
+                Show fewer active
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -3867,17 +3869,14 @@ function TeamPrRiskRow({
                   #{link.number}
                 </a>
               ))}
-              {hiddenIssueLinks > 0 ? (
-                onPreview ? (
-                  <LinkedOverflowButton
-                    ariaLabel={`Preview PR ${pr.number} with ${hiddenIssueLinks} more linked issues`}
-                    count={hiddenIssueLinks}
-                    label="more issues"
-                    onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
-                  />
-                ) : (
-                  <span>+{hiddenIssueLinks}</span>
-                )
+              {issueLinkLazy.hiddenCount > 0 ? (
+                <button type="button" className="linked-overflow-button" onClick={issueLinkLazy.showMore}>
+                  +{issueLinkLazy.revealCount} more issues ({issueLinkLazy.hiddenCount} hidden)
+                </button>
+              ) : issueLinkLazy.canCollapse ? (
+                <button type="button" className="linked-overflow-button" onClick={issueLinkLazy.reset}>
+                  Show fewer issues
+                </button>
               ) : null}
             </>
           </div>
@@ -5418,11 +5417,12 @@ function CacheEvidenceSampleGroup({
   samples: CacheEvidenceSample[];
   emptyText: string;
 }) {
+  const lazy = useLazyVisibleCount(samples.length, 6, title);
+
   if (total <= 0) {
     return null;
   }
-  const visibleSamples = samples.slice(0, 6);
-  const hiddenFetchedSamples = Math.max(0, samples.length - visibleSamples.length);
+  const visibleSamples = samples.slice(0, lazy.visibleCount);
   const notFetchedSamples = Math.max(0, total - samples.length);
 
   return (
@@ -5442,10 +5442,18 @@ function CacheEvidenceSampleGroup({
       ) : (
         <Text type="secondary">{emptyText}</Text>
       )}
-      {hiddenFetchedSamples > 0 || notFetchedSamples > 0 ? (
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="cache-evidence-overflow-button" onClick={lazy.showMore}>
+          +{lazy.revealCount} sampled objects ({lazy.hiddenCount} hidden)
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="cache-evidence-overflow-button" onClick={lazy.reset}>
+          Show compact sample
+        </button>
+      ) : null}
+      {notFetchedSamples > 0 ? (
         <Text type="secondary" className="cache-evidence-overflow">
-          {hiddenFetchedSamples > 0 ? `+${hiddenFetchedSamples} sampled objects hidden in this compact view. ` : ""}
-          {notFetchedSamples > 0 ? `+${notFetchedSamples} other visible objects outside the sample.` : ""}
+          {notFetchedSamples} other visible objects are outside this stored sample.
         </Text>
       ) : null}
     </div>
@@ -5765,7 +5773,11 @@ function CacheEvidenceBanner({
                         <span>{item.label}</span>
                       </button>
                     ))}
-                    {hiddenImpactItems > 0 ? <Tag color="orange">+{hiddenImpactItems} more</Tag> : null}
+                    {hiddenImpactItems > 0 ? (
+                      <button type="button" className="evidence-impact-more" onClick={() => onExpandedChange(true)}>
+                        +{hiddenImpactItems} more
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -6485,7 +6497,10 @@ function CriticalIssueBoardRow({
   onPreview?: (issue: CriticalIssueView) => void;
 }) {
   const riskTags = criticalIssueRiskTags(issue);
-  const linkedPrs = issue.linkedPullRequests.slice(0, 3);
+  const riskLazy = useLazyVisibleCount(riskTags.length, 5, issue.number);
+  const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 3, issue.number);
+  const visibleRiskTags = riskTags.slice(0, riskLazy.visibleCount);
+  const linkedPrs = issue.linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
   return (
     <article
       className={`critical-issue-row critical-issue-row-${issue.severity === "severity/s-1" ? "critical" : "attention"}`}
@@ -6506,20 +6521,19 @@ function CriticalIssueBoardRow({
           </Tooltip>
           <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
           <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
-          {riskTags.slice(0, 5).map((tag) => (
+          {visibleRiskTags.map((tag) => (
             <Tooltip title={tag.tooltip} key={tag.key}>
               <Tag color={tag.color}>{tag.label}</Tag>
             </Tooltip>
           ))}
-          {riskTags.length > 5 && onPreview ? (
-            <LinkedOverflowButton
-              ariaLabel={`Preview issue ${issue.number} with ${riskTags.length - 5} more risk signals`}
-              count={riskTags.length - 5}
-              label="more risks"
-              onClick={() => onPreview(issue)}
-            />
-          ) : riskTags.length > 5 ? (
-            <Tag>+{riskTags.length - 5}</Tag>
+          {riskLazy.hiddenCount > 0 ? (
+            <button type="button" className="linked-overflow-button" onClick={riskLazy.showMore}>
+              +{riskLazy.revealCount} more risks ({riskLazy.hiddenCount} hidden)
+            </button>
+          ) : riskLazy.canCollapse ? (
+            <button type="button" className="linked-overflow-button" onClick={riskLazy.reset}>
+              Show fewer risks
+            </button>
           ) : null}
         </div>
       </div>
@@ -6547,17 +6561,14 @@ function CriticalIssueBoardRow({
                 </a>
               </Tooltip>
             ))}
-            {issue.linkedPullRequests.length > linkedPrs.length ? (
-              onPreview ? (
-                <LinkedOverflowButton
-                  ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - linkedPrs.length} more linked PRs`}
-                  count={issue.linkedPullRequests.length - linkedPrs.length}
-                  label="more PRs"
-                  onClick={() => onPreview(issue)}
-                />
-              ) : (
-                <span>+{issue.linkedPullRequests.length - linkedPrs.length}</span>
-              )
+            {linkedPrLazy.hiddenCount > 0 ? (
+              <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.showMore}>
+                +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
+              </button>
+            ) : linkedPrLazy.canCollapse ? (
+              <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.reset}>
+                Show fewer PRs
+              </button>
             ) : null}
           </div>
         ) : (
@@ -8135,6 +8146,9 @@ function IssueWorkCard({
   const durationText = critical
     ? personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" })
     : hours(issue.ageHours);
+  const linkedPullRequests = critical ? issue.linkedPullRequests : [];
+  const linkedPrLazy = useLazyVisibleCount(linkedPullRequests.length, 4, issue.number);
+  const visibleLinkedPrs = linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
 
   return (
     <article className={`work-item-card ${critical ? "work-item-critical" : ""}`}>
@@ -8183,9 +8197,9 @@ function IssueWorkCard({
           </Tooltip>
         ) : null}
       </div>
-      {critical && issue.linkedPullRequests.length > 0 ? (
+      {critical && linkedPullRequests.length > 0 ? (
         <div className="linked-pr-strip">
-          {issue.linkedPullRequests.slice(0, 4).map((pr) => (
+          {visibleLinkedPrs.map((pr) => (
             <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
               <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
                 #{pr.number}
@@ -8193,17 +8207,14 @@ function IssueWorkCard({
               </a>
             </Tooltip>
           ))}
-          {issue.linkedPullRequests.length > 4 ? (
-            onPreview ? (
-              <LinkedOverflowButton
-                ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 4} more linked PRs`}
-                count={issue.linkedPullRequests.length - 4}
-                label="more PRs"
-                onClick={() => onPreview(issue)}
-              />
-            ) : (
-              <span>+{issue.linkedPullRequests.length - 4}</span>
-            )
+          {linkedPrLazy.hiddenCount > 0 ? (
+            <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.showMore}>
+              +{linkedPrLazy.revealCount} more PRs ({linkedPrLazy.hiddenCount} hidden)
+            </button>
+          ) : linkedPrLazy.canCollapse ? (
+            <button type="button" className="linked-overflow-button" onClick={linkedPrLazy.reset}>
+              Show fewer PRs
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -13113,12 +13124,14 @@ export default function App() {
         title: "Operations",
         dataIndex: "executedOperations",
         width: 300,
-        render: (operations: WriteActionExecutionView["executedOperations"]) =>
-          operations.length === 0 ? (
+        render: (operations: WriteActionExecutionView["executedOperations"]) => {
+          const visibleOperations = operations.slice(0, 4);
+          const hiddenOperations = operations.slice(4);
+          return operations.length === 0 ? (
             <Tag>none</Tag>
           ) : (
             <Space size={[4, 4]} wrap>
-              {operations.slice(0, 4).map((operation, index) => (
+              {visibleOperations.map((operation, index) => (
                 <Tooltip
                   key={`${operation.type}-${index}`}
                   title={operation.type === "add_comment" ? operation.body : undefined}
@@ -13128,9 +13141,33 @@ export default function App() {
                   </Tag>
                 </Tooltip>
               ))}
-              {operations.length > 4 ? <Tag>+{operations.length - 4}</Tag> : null}
+              {hiddenOperations.length > 0 ? (
+                <Popover
+                  trigger="click"
+                  title={`${hiddenOperations.length} more operations`}
+                  content={
+                    <Space size={[4, 4]} wrap>
+                      {hiddenOperations.map((operation, index) => (
+                        <Tooltip
+                          key={`${operation.type}-${index}`}
+                          title={operation.type === "add_comment" ? operation.body : undefined}
+                        >
+                          <Tag color={operation.type === "remove_label" ? "orange" : "green"}>
+                            {workflowOperationSummary(operation)}
+                          </Tag>
+                        </Tooltip>
+                      ))}
+                    </Space>
+                  }
+                >
+                  <button type="button" className="linked-overflow-button">
+                    +{hiddenOperations.length} more
+                  </button>
+                </Popover>
+              ) : null}
             </Space>
-          )
+          );
+        }
       },
       {
         title: "Finished",
@@ -13228,19 +13265,40 @@ export default function App() {
           title: "Handoff evidence",
           dataIndex: "testingSignals",
           ellipsis: true,
-          render: (signals: string[]) =>
-            signals.length === 0 ? (
+          render: (signals: string[]) => {
+            const visibleSignals = signals.slice(0, 4);
+            const hiddenSignals = signals.slice(4);
+            return signals.length === 0 ? (
               <Text type="secondary">-</Text>
             ) : (
               <Space size={[4, 4]} wrap>
-                {signals.slice(0, 4).map((signal) => (
+                {visibleSignals.map((signal) => (
                   <Tooltip key={signal} title={signal}>
                     <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
                   </Tooltip>
                 ))}
-                {signals.length > 4 ? <Tag>+{signals.length - 4}</Tag> : null}
+                {hiddenSignals.length > 0 ? (
+                  <Popover
+                    trigger="click"
+                    title={`${hiddenSignals.length} more handoff signals`}
+                    content={
+                      <Space size={[4, 4]} wrap>
+                        {hiddenSignals.map((signal) => (
+                          <Tooltip key={signal} title={signal}>
+                            <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
+                          </Tooltip>
+                        ))}
+                      </Space>
+                    }
+                  >
+                    <button type="button" className="linked-overflow-button">
+                      +{hiddenSignals.length} more
+                    </button>
+                  </Popover>
+                ) : null}
               </Space>
-            )
+            );
+          }
         },
         {
           title: "Started",
