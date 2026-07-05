@@ -8292,6 +8292,12 @@ function PersonWorkloadBoard({
           ...sortedPeopleByWorkload.filter((person) => person.login !== selectedLogin)
         ]
       : sortedPeopleByWorkload;
+  const pagedPeople = usePagedList(
+    sortedPeople,
+    12,
+    `${sort}:${mode}:${compact}:${people.map((person) => person.login).join(",")}`
+  );
+  const visiblePeople = compact ? sortedPeople : pagedPeople.visibleItems;
 
   if (sortedPeople.length === 0) {
     return (
@@ -8302,113 +8308,135 @@ function PersonWorkloadBoard({
   }
 
   return (
-    <div className={`person-board${compact ? " person-board-compact" : ""}`} role="list">
-      {sortedPeople.map((person) => {
-        const personal = personalByLogin.get(person.login);
-        const testingWork = personal ? personalTestingWorkCount(personal) : 0;
-        const status = personWorkloadStatus(person);
-        const reasons = personPrimaryReasons(person, testingWork);
-        const focus = personCardFocus(person, personal);
-        const selected = selectedLogin === person.login;
-        const openMetric = (metric: PersonalDrilldownFilter) => {
-          if (onMetricSelect) {
-            onMetricSelect(person.login, metric);
-            return;
-          }
-          onSelect(person.login);
-        };
+    <div className="person-board-shell">
+      {!compact ? (
+        <div className="person-board-status">
+          <Text type="secondary">
+            Showing {pagedPeople.startIndex + 1}-{pagedPeople.startIndex + visiblePeople.length} of{" "}
+            {sortedPeople.length} people.
+          </Text>
+        </div>
+      ) : null}
+      <div className={`person-board${compact ? " person-board-compact" : ""}`} role="list">
+        {visiblePeople.map((person) => {
+          const personal = personalByLogin.get(person.login);
+          const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+          const status = personWorkloadStatus(person);
+          const reasons = personPrimaryReasons(person, testingWork);
+          const focus = personCardFocus(person, personal);
+          const selected = selectedLogin === person.login;
+          const openMetric = (metric: PersonalDrilldownFilter) => {
+            if (onMetricSelect) {
+              onMetricSelect(person.login, metric);
+              return;
+            }
+            onSelect(person.login);
+          };
 
-        return (
-          <article className={`person-card person-card-${status}${selected ? " is-selected" : ""}`} key={person.login}>
-            <button
-              type="button"
-              className="person-card-open"
-              aria-pressed={selected}
-              aria-label={
-                mode === "observed" ? `Preview ${person.login} observed work` : `Open ${person.login} workbench`
-              }
-              onClick={() => onSelect(person.login)}
+          return (
+            <article
+              className={`person-card person-card-${status}${selected ? " is-selected" : ""}`}
+              key={person.login}
             >
-              <span className="person-card-header">
-                <span className="person-avatar" aria-hidden="true">
-                  {person.login.slice(0, 1).toUpperCase()}
+              <button
+                type="button"
+                className="person-card-open"
+                aria-pressed={selected}
+                aria-label={
+                  mode === "observed" ? `Preview ${person.login} observed work` : `Open ${person.login} workbench`
+                }
+                onClick={() => onSelect(person.login)}
+              >
+                <span className="person-card-header">
+                  <span className="person-avatar" aria-hidden="true">
+                    {person.login.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="person-card-title">
+                    <Text strong>{person.login}</Text>
+                    <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
+                  </span>
                 </span>
-                <span className="person-card-title">
-                  <Text strong>{person.login}</Text>
-                  <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
-                </span>
+              </button>
+              <button
+                type="button"
+                className={`person-next-action person-next-action-${focus.tone}`}
+                onClick={() => openMetric(focus.metric)}
+                aria-label={`Open ${person.login} ${focus.title}`}
+              >
+                <span>Next action</span>
+                <strong>{focus.title}</strong>
+                <small>{focus.detail}</small>
+              </button>
+              <span className="person-stat-grid">
+                <button
+                  type="button"
+                  onClick={() => openMetric("active_issues")}
+                  aria-label={`Open ${person.login} active s-1/s0 issues`}
+                >
+                  <strong>{person.activeCriticalIssues}</strong>
+                  <small>s-1/s0</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMetric("pr_attention")}
+                  aria-label={`Open ${person.login} PR attention items`}
+                >
+                  <strong>{person.attentionPrs}</strong>
+                  <small>attention</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMetric("triage")}
+                  aria-label={`Open ${person.login} needs triage issues`}
+                >
+                  <strong>{person.needsTriageIssues}</strong>
+                  <small>triage</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMetric("pending_pr")}
+                  aria-label={`Open ${person.login} pending PRs`}
+                >
+                  <strong>{person.pendingPrs}</strong>
+                  <small>pending PR</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMetric("testing")}
+                  aria-label={`Open ${person.login} issue testing`}
+                >
+                  <strong>{testingWork}</strong>
+                  <small>issue test</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMetric("yesterday_pr")}
+                  aria-label={`Open ${person.login} yesterday PR activity`}
+                >
+                  <strong>
+                    {person.prsCreatedYesterday}/{person.prsMergedYesterday}
+                  </strong>
+                  <small>PR yday</small>
+                </button>
               </span>
-            </button>
-            <button
-              type="button"
-              className={`person-next-action person-next-action-${focus.tone}`}
-              onClick={() => openMetric(focus.metric)}
-              aria-label={`Open ${person.login} ${focus.title}`}
-            >
-              <span>Next action</span>
-              <strong>{focus.title}</strong>
-              <small>{focus.detail}</small>
-            </button>
-            <span className="person-stat-grid">
-              <button
-                type="button"
-                onClick={() => openMetric("active_issues")}
-                aria-label={`Open ${person.login} active s-1/s0 issues`}
-              >
-                <strong>{person.activeCriticalIssues}</strong>
-                <small>s-1/s0</small>
-              </button>
-              <button
-                type="button"
-                onClick={() => openMetric("pr_attention")}
-                aria-label={`Open ${person.login} PR attention items`}
-              >
-                <strong>{person.attentionPrs}</strong>
-                <small>attention</small>
-              </button>
-              <button
-                type="button"
-                onClick={() => openMetric("triage")}
-                aria-label={`Open ${person.login} needs triage issues`}
-              >
-                <strong>{person.needsTriageIssues}</strong>
-                <small>triage</small>
-              </button>
-              <button
-                type="button"
-                onClick={() => openMetric("pending_pr")}
-                aria-label={`Open ${person.login} pending PRs`}
-              >
-                <strong>{person.pendingPrs}</strong>
-                <small>pending PR</small>
-              </button>
-              <button
-                type="button"
-                onClick={() => openMetric("testing")}
-                aria-label={`Open ${person.login} issue testing`}
-              >
-                <strong>{testingWork}</strong>
-                <small>issue test</small>
-              </button>
-              <button
-                type="button"
-                onClick={() => openMetric("yesterday_pr")}
-                aria-label={`Open ${person.login} yesterday PR activity`}
-              >
-                <strong>
-                  {person.prsCreatedYesterday}/{person.prsMergedYesterday}
-                </strong>
-                <small>PR yday</small>
-              </button>
-            </span>
-            <span className="person-reasons">
-              {reasons.slice(0, 3).map((reason) => (
-                <span key={reason}>{reason}</span>
-              ))}
-            </span>
-          </article>
-        );
-      })}
+              <span className="person-reasons">
+                {reasons.slice(0, 3).map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
+              </span>
+            </article>
+          );
+        })}
+      </div>
+      {!compact ? (
+        <CardListPagination
+          total={sortedPeople.length}
+          page={pagedPeople.page}
+          pageSize={pagedPeople.pageSize}
+          defaultPageSize={12}
+          onChange={pagedPeople.onPageChange}
+        />
+      ) : null}
     </div>
   );
 }

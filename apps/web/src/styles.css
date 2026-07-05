@@ -3584,11 +3584,23 @@ button.testing-board-stat:focus-visible {
   white-space: nowrap;
 }
 
+.person-board-shell {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.person-board-status {
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .person-board {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  margin-bottom: 18px;
   max-width: 100%;
   min-width: 0;
   width: 100%;
@@ -7319,6 +7331,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .person-board {
     grid-template-columns: 1fr;
+  }
+
+  .person-board-status {
+    justify-content: flex-start;
   }
 
   .person-board-compact {
