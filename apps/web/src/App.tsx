@@ -1662,6 +1662,125 @@ function FlowEfficiencyStrip({
   );
 }
 
+function AnalyticsDecisionPanel({
+  actions,
+  authenticated,
+  onQueueMetrics,
+  points,
+  summary
+}: {
+  actions: FlowEfficiencyActions;
+  authenticated: boolean;
+  onQueueMetrics: () => void;
+  points: TrendMetricPoint[];
+  summary: FlowEfficiencySummary;
+}) {
+  const evidence = points.length > 0 ? trendEvidenceSummary(points) : null;
+  const diagnostics = flowEfficiencyDiagnostics(summary);
+  const primaryDiagnostic = diagnostics[0] ?? null;
+  const primaryAction = primaryDiagnostic
+    ? flowEfficiencyDiagnosticAction(primaryDiagnostic.target, actions)
+    : undefined;
+  const actionCards = [
+    {
+      key: "active",
+      label: "Active issues",
+      value: summary.activeCriticalIssues,
+      detail: `avg ${optionalHours(summary.averageActiveIssueAgeHours)}`,
+      tone: summary.activeCriticalIssues > 0 ? "critical" : "good",
+      onClick: actions.activeCriticalAge
+    },
+    {
+      key: "pr_attention",
+      label: "PR attention",
+      value: summary.attentionPrs,
+      detail: `${percentText(summary.prAttentionRatePercent)} of pending`,
+      tone: summary.attentionPrs > 0 ? "attention" : "good",
+      onClick: actions.prAttention
+    },
+    {
+      key: "testing",
+      label: "Issue testing",
+      value: summary.testingQueuePrs,
+      detail: `avg wait ${optionalHours(summary.averageTestingQueueAgeHours)}`,
+      tone:
+        summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
+          ? "critical"
+          : summary.testingQueuePrs > 0
+            ? "attention"
+            : "good",
+      onClick: actions.testingQueue
+    },
+    {
+      key: "triage",
+      label: "Triage",
+      value: summary.needsTriageIssues,
+      detail: `${summary.deferredIssues} deferred`,
+      tone: summary.needsTriageIssues > 0 ? "attention" : "good",
+      onClick: actions.triageFlow
+    },
+    {
+      key: "violations",
+      label: "Violations",
+      value: summary.workflowViolations,
+      detail: "rule output",
+      tone: summary.workflowViolations > 0 ? "attention" : "good",
+      onClick: actions.workflowViolations
+    }
+  ] satisfies Array<{
+    key: string;
+    label: string;
+    value: number;
+    detail: string;
+    tone: "critical" | "attention" | "good";
+    onClick?: () => void;
+  }>;
+
+  return (
+    <section className="analytics-decision-panel" aria-label="Analytics decision support">
+      <div className="analytics-focus-card">
+        <span>Current focus</span>
+        <strong>{primaryDiagnostic?.title ?? "No flow bottleneck in cached data"}</strong>
+        <small>
+          {primaryDiagnostic?.detail ?? "throughput, backlog, and testing signals are within current thresholds"}
+        </small>
+        {primaryAction ? (
+          <Button size="small" type="primary" onClick={primaryAction}>
+            Open related board
+          </Button>
+        ) : null}
+      </div>
+      <div className="analytics-evidence-card">
+        <span>Trend evidence</span>
+        <strong>{evidence ? evidence.evidenceLabel : "no cached metrics"}</strong>
+        <small>
+          {evidence
+            ? `${evidence.totalPoints} points | last ${formatDate(evidence.latestGeneratedAt)}`
+            : "Run metrics sync before relying on charts."}
+        </small>
+        <Button size="small" onClick={onQueueMetrics}>
+          {authenticated ? "Queue metrics refresh" : "Sign in to refresh"}
+        </Button>
+      </div>
+      <div className="analytics-action-grid">
+        {actionCards.map((card) => (
+          <button
+            type="button"
+            className={`analytics-action-card analytics-action-${card.tone}`}
+            disabled={!card.onClick}
+            onClick={card.onClick}
+            key={card.key}
+          >
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+            <small>{card.detail}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function FlowEfficiencyDiagnostics({
   diagnostics,
   actions
@@ -13546,6 +13665,16 @@ export default function App() {
         deferredIssues: teamTriage?.deferredIssues ?? 0
       })
     : null;
+  const analyticsFlowActions: FlowEfficiencyActions = {
+    prFlow: () => openPrsWithFilter("all"),
+    issueDrain: () => openIssuesWithFilter({}),
+    triageFlow: () => openPeopleWithFilter("triage"),
+    pendingPrAge: () => openPrsWithFilter("all"),
+    prAttention: () => openPrsWithFilter("attention"),
+    activeCriticalAge: () => openIssuesWithFilter({}),
+    testingQueue: () => openPrsWithFilter("testing"),
+    workflowViolations: () => selectView("Violations")
+  };
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
   const testingHasTurnoverHistory = data
@@ -14441,18 +14570,16 @@ export default function App() {
                 </div>
                 <Alert className="band" type="info" title={data.analytics.sourceNote} showIcon />
                 {teamFlowSummary ? (
-                  <FlowEfficiencyStrip
-                    summary={teamFlowSummary}
-                    actions={{
-                      prFlow: () => openPrsWithFilter("all"),
-                      issueDrain: () => openIssuesWithFilter({}),
-                      pendingPrAge: () => openPrsWithFilter("all"),
-                      prAttention: () => openPrsWithFilter("attention"),
-                      activeCriticalAge: () => openIssuesWithFilter({}),
-                      testingQueue: () => openPrsWithFilter("testing"),
-                      workflowViolations: () => selectView("Violations")
-                    }}
-                  />
+                  <>
+                    <AnalyticsDecisionPanel
+                      summary={teamFlowSummary}
+                      points={teamTrendPoints}
+                      actions={analyticsFlowActions}
+                      authenticated={Boolean(session?.authenticated)}
+                      onQueueMetrics={() => openManualRefreshModal(["metrics"])}
+                    />
+                    <FlowEfficiencyStrip summary={teamFlowSummary} actions={analyticsFlowActions} />
+                  </>
                 ) : null}
                 <TrendChart points={teamTrendPoints} />
               </section>
