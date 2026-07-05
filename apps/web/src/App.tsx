@@ -5351,7 +5351,11 @@ function TeamPrRiskRow({
             <Tag color={severityColor(activeIssues[0]?.severity ?? null)}>
               {activeIssues.length} active issue{activeIssues.length === 1 ? "" : "s"}
             </Tag>
-          ) : null}
+          ) : (
+            <Tooltip title={issueLinkStatus.detail}>
+              <Tag color={issueLinkStatus.color}>{issueLinkStatus.shortLabel}</Tag>
+            </Tooltip>
+          )}
           {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
           {onPreview ? (
             <Tooltip title="Preview PR">
@@ -5418,7 +5422,10 @@ function TeamPrRiskRow({
         {visibleIssueLinks.length > 0 ? (
           <div className="team-linked-row">
             <>
-              <span>{activeIssues.length > 0 ? "Other issues" : "Issues"}</span>
+              <span>{activeIssues.length > 0 ? "Other issues" : "Linked issues"}</span>
+              <Tooltip title={issueLinkStatus.detail}>
+                <Tag color={issueLinkStatus.color}>{issueLinkStatus.shortLabel}</Tag>
+              </Tooltip>
               {visibleIssueLinks.map((link) => (
                 <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
                   #{link.number}
@@ -5798,6 +5805,9 @@ function TeamPullRequestPreviewModal({
           {pr.mergeStateStatus ? (
             <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
           ) : null}
+          <Tooltip title={issueLinkStatus.detail}>
+            <Tag color={issueLinkStatus.color}>{issueLinkStatus.label}</Tag>
+          </Tooltip>
           {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
         </Space>
 
@@ -5816,6 +5826,11 @@ function TeamPullRequestPreviewModal({
             <span>Issue links</span>
             <strong>{visibleIssueNumbers.length}</strong>
             <small>{issueLinkStatus.shortLabel}</small>
+          </div>
+          <div className="team-object-preview-metric">
+            <span>Active s-1/s0 links</span>
+            <strong>{activeIssues.length}</strong>
+            <small>{activeIssues.length > 0 ? "critical work visible" : "no active issue link"}</small>
           </div>
         </div>
 
@@ -5840,6 +5855,14 @@ function TeamPullRequestPreviewModal({
 
         <section className="team-object-preview-section">
           <Text strong>Issue context</Text>
+          <Space size={[4, 4]} wrap>
+            <Tooltip title={issueLinkStatus.detail}>
+              <Tag color={issueLinkStatus.color}>{issueLinkStatus.label}</Tag>
+            </Tooltip>
+            {activeIssues.length === 0 && issueLinks.length > 0 ? (
+              <Tag>linked issues are not active s-1/s0 in cache</Tag>
+            ) : null}
+          </Space>
           {activeIssues.length > 0 ? (
             <div className="team-object-preview-list">
               {activeIssues.map((issue) => (
@@ -5918,6 +5941,11 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
       {otherIssueNumbers.length > 0 ? (
         <Space size={[4, 4]} wrap>
           <Text type="secondary">{activeIssues.length > 0 ? "other" : "issues"}</Text>
+          {activeIssues.length === 0 ? (
+            <Tooltip title={issueLinkStatus.detail}>
+              <Tag color={issueLinkStatus.color}>{issueLinkStatus.shortLabel}</Tag>
+            </Tooltip>
+          ) : null}
           {otherIssueNumbers.slice(0, otherIssueLazy.visibleCount).map((number) => (
             <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
               #{number}
