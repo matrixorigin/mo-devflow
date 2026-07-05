@@ -71,6 +71,7 @@ import {
   syncRateLimitSummary,
   syncHealthCursorText,
   teamCriticalFlowCommandSummary,
+  teamPrimaryFocus,
   testingIssueEvidenceGapSummary,
   testingIssueHasConfirmedNoLinkedPr,
   testingIssueHasDataGap,
@@ -203,6 +204,45 @@ describe("dashboard hash filters", () => {
       title: "Notification route is ready",
       tone: "normal",
       scopeFilter: "all"
+    });
+  });
+
+  it("maps the team primary focus to the board that should open next", () => {
+    expect(teamPrimaryFocus(teamFocusData({ criticalIssues: [{}], criticalIssueCount: 1 }), 1)).toMatchObject({
+      target: "s_minus_one",
+      actionLabel: "Open s-1 issues"
+    });
+    expect(
+      teamPrimaryFocus(
+        teamFocusData({
+          criticalIssues: [{ lastHumanActionAt: "2026-07-04T00:00:00.000Z" }],
+          criticalIssueCount: 1
+        }),
+        0
+      )
+    ).toMatchObject({
+      target: "idle_active",
+      actionLabel: "Open idle issues"
+    });
+    expect(teamPrimaryFocus(teamFocusData({ testing: { staleQueueIssues: 2, queueIssues: 3 } }), 0)).toMatchObject({
+      target: "testing_stale",
+      actionLabel: "Open stale testing"
+    });
+    expect(teamPrimaryFocus(teamFocusData({ pendingPrs: 4, attentionPrs: 2 }), 0)).toMatchObject({
+      target: "pr_attention",
+      actionLabel: "Open PR attention"
+    });
+    expect(teamPrimaryFocus(teamFocusData({ workflowViolations: 1, aiDriftSignals: 3 }), 0)).toMatchObject({
+      target: "violations",
+      actionLabel: "Open violations"
+    });
+    expect(teamPrimaryFocus(teamFocusData({ aiDriftSignals: 2 }), 0)).toMatchObject({
+      target: "drift",
+      actionLabel: "Open drift"
+    });
+    expect(teamPrimaryFocus(teamFocusData(), 0)).toMatchObject({
+      target: "analytics",
+      actionLabel: "Open analytics"
     });
   });
 
@@ -1450,6 +1490,34 @@ function notificationDeliveryForCommand(input: Record<string, any> = {}) {
     sourceActive: true,
     acknowledgedAt: "2026-07-05T02:00:00.000Z",
     ...input
+  } as any;
+}
+
+function teamFocusData(input: Record<string, any> = {}) {
+  const criticalIssues = (input.criticalIssues ?? []).map((issue: Record<string, any>) => ({
+    lastHumanActionAt: "2026-07-05T23:00:00.000Z",
+    ...issue
+  }));
+  const testing = {
+    staleQueueIssues: 0,
+    queueIssues: 0,
+    ...(input.testing ?? {})
+  };
+  const pendingPrs = input.pendingPrs ?? 0;
+  const attentionPrs = input.attentionPrs ?? 0;
+  return {
+    counts: {
+      criticalIssues: input.criticalIssueCount ?? criticalIssues.length,
+      attentionPrs,
+      pendingPrs,
+      workflowViolations: input.workflowViolations ?? 0,
+      aiDriftSignals: input.aiDriftSignals ?? 0
+    },
+    criticalIssues,
+    testing,
+    sync: {
+      generatedAt: "2026-07-06T00:00:00.000Z"
+    }
   } as any;
 }
 

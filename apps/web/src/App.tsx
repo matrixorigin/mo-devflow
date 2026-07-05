@@ -4855,6 +4855,7 @@ function TeamRotationOverview({
           staleTestingIssues={staleTestingIssues}
           triageSnapshot={triageSnapshot}
           topAction={commandActions[0] ?? null}
+          onNavigate={onNavigate}
           onOpenIssuesFilter={onOpenIssuesFilter}
           onOpenPrsFilter={onOpenPrsFilter}
           onOpenTestingIssueQueue={onOpenTestingIssueQueue}
@@ -5218,19 +5219,21 @@ function TeamOperationsSummary({
   staleTestingIssues,
   triageSnapshot,
   topAction,
+  onNavigate,
   onOpenIssuesFilter,
   onOpenPrsFilter,
   onOpenTestingIssueQueue,
   onOpenPeopleFilter
 }: {
   data: DashboardSummary;
-  teamFocus: { title: string; detail: string };
+  teamFocus: TeamPrimaryFocusSummary;
   sMinusOneIssues: number;
   idleCriticalIssues: CriticalIssueView[];
   prRisks: PendingPrView[];
   staleTestingIssues: TestingIssueQueueView[];
   triageSnapshot: ReturnType<typeof teamTriageSnapshot>;
   topAction: TeamCommandAction | null;
+  onNavigate: (view: DashboardView) => void;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void;
@@ -5244,17 +5247,45 @@ function TeamOperationsSummary({
       : triageSnapshot.needsTriageIssues > 0
         ? "normal"
         : "good";
+  const openTeamFocus = (): void => {
+    if (teamFocus.target === "s_minus_one") {
+      onOpenIssuesFilter({ scope: "s-1" });
+      return;
+    }
+    if (teamFocus.target === "idle_active") {
+      onOpenIssuesFilter({ scope: "no_action_24h" });
+      return;
+    }
+    if (teamFocus.target === "testing_stale") {
+      onOpenTestingIssueQueue("stale");
+      return;
+    }
+    if (teamFocus.target === "pr_attention") {
+      onOpenPrsFilter("attention");
+      return;
+    }
+    if (teamFocus.target === "violations") {
+      onNavigate("Violations");
+      return;
+    }
+    if (teamFocus.target === "drift") {
+      onNavigate("Drift");
+      return;
+    }
+    onNavigate("Analytics");
+  };
 
   return (
     <section className="team-ops-summary" aria-label="Team queue summary">
       <div className="team-ops-primary">
-        <div className="team-ops-focus">
+        <button type="button" className="team-ops-focus" onClick={openTeamFocus}>
           <ShieldAlert size={18} aria-hidden="true" />
           <div>
             <Text strong>{teamFocus.title}</Text>
             <span>{teamFocus.detail}</span>
+            <em>{teamFocus.actionLabel}</em>
           </div>
-        </div>
+        </button>
         <div className="team-ops-tiles">
           <TeamOpsSummaryTile
             label="s-1 / s0"
@@ -8591,43 +8622,66 @@ function HealthFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { title: string; detail: string } {
+type TeamPrimaryFocusTarget =
+  "s_minus_one" | "idle_active" | "testing_stale" | "pr_attention" | "violations" | "drift" | "analytics";
+
+interface TeamPrimaryFocusSummary {
+  title: string;
+  detail: string;
+  actionLabel: string;
+  target: TeamPrimaryFocusTarget;
+}
+
+export function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): TeamPrimaryFocusSummary {
   const idleActiveIssues = data.criticalIssues.filter((issue) =>
     criticalIssueNoHumanAction(issue, data.sync.generatedAt)
   );
   if (sMinusOneIssues > 0) {
     return {
       title: `${sMinusOneIssues} active s-1 issues are the first queue.`,
-      detail: `${data.counts.criticalIssues} active s-1/s0 total; ${data.counts.attentionPrs} PRs also need attention.`
+      detail: `${data.counts.criticalIssues} active s-1/s0 total; ${data.counts.attentionPrs} PRs also need attention.`,
+      actionLabel: "Open s-1 issues",
+      target: "s_minus_one"
     };
   }
   if (idleActiveIssues.length > 0) {
     return {
       title: `${idleActiveIssues.length} active s-1/s0 issues need an owner update.`,
-      detail: "Last cached human issue action is older than 24h; open the no-action issue filter."
+      detail: "Last cached human issue action is older than 24h; open the no-action issue filter.",
+      actionLabel: "Open idle issues",
+      target: "idle_active"
     };
   }
   if (data.testing.staleQueueIssues > 0) {
     return {
       title: `${data.testing.staleQueueIssues} issues have waited on test too long.`,
-      detail: `${data.testing.queueIssues} issues match configured issue testing rules.`
+      detail: `${data.testing.queueIssues} issues match configured issue testing rules.`,
+      actionLabel: "Open stale testing",
+      target: "testing_stale"
     };
   }
   if (data.counts.attentionPrs > 0) {
     return {
       title: `${data.counts.attentionPrs} pending PRs need attention.`,
-      detail: `${data.counts.pendingPrs} pending PRs are visible in cache.`
+      detail: `${data.counts.pendingPrs} pending PRs are visible in cache.`,
+      actionLabel: "Open PR attention",
+      target: "pr_attention"
     };
   }
   if (data.counts.workflowViolations + data.counts.aiDriftSignals > 0) {
+    const target = data.counts.workflowViolations > 0 ? "violations" : "drift";
     return {
       title: `${data.counts.workflowViolations + data.counts.aiDriftSignals} workflow or AI drift signals are open.`,
-      detail: `${data.counts.workflowViolations} workflow violations; ${data.counts.aiDriftSignals} AI drift signals.`
+      detail: `${data.counts.workflowViolations} workflow violations; ${data.counts.aiDriftSignals} AI drift signals.`,
+      actionLabel: target === "violations" ? "Open violations" : "Open drift",
+      target
     };
   }
   return {
     title: "No high-priority rotation blockers in cached data.",
-    detail: `${data.counts.pendingPrs} pending PRs and ${data.counts.criticalIssues} active s-1/s0 issues remain visible.`
+    detail: `${data.counts.pendingPrs} pending PRs and ${data.counts.criticalIssues} active s-1/s0 issues remain visible.`,
+    actionLabel: "Open analytics",
+    target: "analytics"
   };
 }
 

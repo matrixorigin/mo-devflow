@@ -1276,15 +1276,31 @@ button.freshness-path-card:focus-visible {
 
 .team-ops-focus {
   align-items: start;
+  appearance: none;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-left: 3px solid #111827;
   border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
   display: grid;
   gap: 8px;
   grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
   padding: 9px 10px;
+  text-align: left;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.team-ops-focus:hover,
+.team-ops-focus:focus-visible {
+  background: #f8fbff;
+  border-color: #93c5fd;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  outline: none;
 }
 
 .team-ops-focus > div {
@@ -1298,6 +1314,14 @@ button.freshness-path-card:focus-visible {
   font-size: 12px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.team-ops-focus em {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .team-ops-tiles {
