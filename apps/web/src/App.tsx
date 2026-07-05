@@ -9377,16 +9377,41 @@ function PersonWorkloadBoard({
     );
   }
 
-  return (
-    <div className="person-board-shell">
-      {!compact ? (
+  if (!compact) {
+    return (
+      <div className="person-board-shell">
         <div className="person-board-status">
           <Text type="secondary">
             Showing {pagedPeople.startIndex + 1}-{pagedPeople.startIndex + visiblePeople.length} of{" "}
             {sortedPeople.length} people.
           </Text>
         </div>
-      ) : null}
+        <div className="person-queue-list" role="list">
+          {visiblePeople.map((person) => (
+            <PersonWorkloadRow
+              key={person.login}
+              mode={mode}
+              person={person}
+              personal={personalByLogin.get(person.login)}
+              selected={selectedLogin === person.login}
+              onSelect={onSelect}
+              onMetricSelect={onMetricSelect}
+            />
+          ))}
+        </div>
+        <CardListPagination
+          total={sortedPeople.length}
+          page={pagedPeople.page}
+          pageSize={pagedPeople.pageSize}
+          defaultPageSize={12}
+          onChange={pagedPeople.onPageChange}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="person-board-shell">
       <div className={`person-board${compact ? " person-board-compact" : ""}`} role="list">
         {visiblePeople.map((person) => {
           const personal = personalByLogin.get(person.login);
@@ -9494,16 +9519,168 @@ function PersonWorkloadBoard({
           );
         })}
       </div>
-      {!compact ? (
-        <CardListPagination
-          total={sortedPeople.length}
-          page={pagedPeople.page}
-          pageSize={pagedPeople.pageSize}
-          defaultPageSize={12}
-          onChange={pagedPeople.onPageChange}
-        />
-      ) : null}
     </div>
+  );
+}
+
+type PersonQueueMetricTone = "critical" | "attention" | "normal" | "good";
+
+function personActiveQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.activeCriticalIssues} active`;
+  }
+  const noLinkedPrs = personal.activeCriticalIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const oldest = optionalHours(maxCriticalActiveAge(personal.activeCriticalIssues));
+  return `oldest ${oldest} | ${noLinkedPrs} no PR`;
+}
+
+function personPrQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.pendingPrs} pending | ${person.attentionPrs} attention`;
+  }
+  return `${prBlockerBreakdownText(personal.attentionPrs)} | ${oldestPersonalPrText(personal.pendingPrs)}`;
+}
+
+function personTriageQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.needsTriageIssues} triage | ${person.deferredIssues} deferred`;
+  }
+  return `${oldestPersonalIssueText(personal.needsTriageIssues)} | ${personal.deferredIssues.length} deferred`;
+}
+
+function personTestingQueueDetail(personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return "watched testing details unavailable";
+  }
+  const staleTesting = personalTestingStaleCount(personal);
+  return `${staleTesting} >24h | ${oldestPersonalTestingText(personal.testingPrs, personal.testingIssues)}`;
+}
+
+function personActiveMetricTone(count: number): PersonQueueMetricTone {
+  return count > 0 ? "critical" : "good";
+}
+
+function PersonWorkloadRow({
+  person,
+  personal,
+  selected,
+  onSelect,
+  onMetricSelect,
+  mode
+}: {
+  person: PersonSummary;
+  personal: PersonalActionView | undefined;
+  selected: boolean;
+  onSelect: (login: string) => void;
+  onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  mode: "watched" | "observed";
+}) {
+  const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+  const staleTesting = personal ? personalTestingStaleCount(personal) : 0;
+  const status = personWorkloadStatus(person);
+  const focus = personCardFocus(person, personal);
+  const reasons = personPrimaryReasons(person, testingWork);
+  const openMetric = (metric: PersonalDrilldownFilter) => {
+    if (onMetricSelect) {
+      onMetricSelect(person.login, metric);
+      return;
+    }
+    onSelect(person.login);
+  };
+
+  return (
+    <article className={`person-queue-row person-queue-row-${status}${selected ? " is-selected" : ""}`} role="listitem">
+      <div className="person-queue-person">
+        <button
+          type="button"
+          className="person-card-open"
+          aria-pressed={selected}
+          aria-label={mode === "observed" ? `Preview ${person.login} observed work` : `Open ${person.login} workbench`}
+          onClick={() => onSelect(person.login)}
+        >
+          <span className="person-card-header">
+            <span className="person-avatar" aria-hidden="true">
+              {person.login.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="person-card-title">
+              <Text strong>{person.login}</Text>
+              <Tag color={workloadStatusColor(status)}>{workloadStatusText(status)}</Tag>
+              {mode === "observed" ? <Tag>observed</Tag> : null}
+            </span>
+          </span>
+        </button>
+        <PersonReasonStrip reasons={reasons} resetKey={`row:${person.login}:${reasons.join("|")}`} />
+      </div>
+
+      <button
+        type="button"
+        className={`person-queue-next person-queue-next-${focus.tone}`}
+        onClick={() => openMetric(focus.metric)}
+      >
+        <span>First action</span>
+        <strong>{focus.title}</strong>
+        <small>{focus.detail}</small>
+      </button>
+
+      <div className="person-queue-metrics" aria-label={`${person.login} work queues`}>
+        <PersonQueueMetric
+          label="Active issues"
+          value={person.activeCriticalIssues}
+          detail={personActiveQueueDetail(person, personal)}
+          tone={personActiveMetricTone(person.activeCriticalIssues)}
+          onClick={() => openMetric("active_issues")}
+        />
+        <PersonQueueMetric
+          label="PR flow"
+          value={`${person.attentionPrs}/${person.pendingPrs}`}
+          detail={personPrQueueDetail(person, personal)}
+          tone={person.attentionPrs > 0 ? "attention" : person.pendingPrs > 0 ? "normal" : "good"}
+          onClick={() => openMetric(person.attentionPrs > 0 ? "pr_attention" : "pending_pr")}
+        />
+        <PersonQueueMetric
+          label="Triage"
+          value={`${person.needsTriageIssues}/${person.deferredIssues}`}
+          detail={personTriageQueueDetail(person, personal)}
+          tone={person.needsTriageIssues > 0 ? "attention" : person.deferredIssues > 0 ? "normal" : "good"}
+          onClick={() => openMetric(person.needsTriageIssues > 0 ? "triage" : "deferred")}
+        />
+        <PersonQueueMetric
+          label="Issue testing"
+          value={testingWork}
+          detail={personTestingQueueDetail(personal)}
+          tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+          onClick={() => openMetric("testing")}
+        />
+      </div>
+
+      <div className="person-queue-actions">
+        <Button size="small" onClick={() => onSelect(person.login)}>
+          {mode === "observed" ? "Preview" : "Workbench"}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function PersonQueueMetric({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: PersonQueueMetricTone;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`person-queue-metric person-queue-metric-${tone}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
