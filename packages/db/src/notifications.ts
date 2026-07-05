@@ -418,7 +418,7 @@ export function notificationReadiness(input: {
 
   if (input.missingEmployeeMappings > 0) {
     warnings.push(
-      `${input.missingEmployeeMappings} owner-routed notification recipients are missing employee mappings and will use fallback routing.`
+      `${input.missingEmployeeMappings} owner-routed or watched-user notification recipients are missing employee mappings and will use fallback routing.`
     );
   }
 

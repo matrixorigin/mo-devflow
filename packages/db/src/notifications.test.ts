@@ -545,7 +545,9 @@ describe("notification acknowledgement health", () => {
       mappedEmployees: 1,
       missingEmployeeMappings: 2,
       blockers: [],
-      warnings: ["2 owner-routed notification recipients are missing employee mappings and will use fallback routing."]
+      warnings: [
+        "2 owner-routed or watched-user notification recipients are missing employee mappings and will use fallback routing."
+      ]
     });
   });
 

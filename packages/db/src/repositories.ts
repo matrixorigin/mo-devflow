@@ -696,6 +696,7 @@ export function notificationEmployeeMappingCandidates(
   attentionSources: Array<{ relatedLogin: string | null; severity: AttentionSeverity }>
 ): NotificationEmployeeMappingCandidate[] {
   const mappedEmployees = employeeMappingLoginSet(profile);
+  const skippedUsers = normalizedLoginSet(profile.workflow.skipUsers);
   const candidates = new Map<
     string,
     {
@@ -705,25 +706,33 @@ export function notificationEmployeeMappingCandidates(
     }
   >();
 
-  for (const source of attentionSources) {
-    const loginKey = source.relatedLogin ? normalizedLogin(source.relatedLogin) : "";
-    if (!loginKey || mappedEmployees.has(loginKey)) {
-      continue;
+  const addCandidate = (login: string | null, severity: AttentionSeverity) => {
+    const loginKey = login ? normalizedLogin(login) : "";
+    if (!loginKey || mappedEmployees.has(loginKey) || skippedUsers.has(loginKey)) {
+      return;
     }
 
     const existing = candidates.get(loginKey);
     if (existing) {
       existing.attentionItems += 1;
-      if (attentionSeverityRank[source.severity] < attentionSeverityRank[existing.highestSeverity]) {
-        existing.highestSeverity = source.severity;
+      if (attentionSeverityRank[severity] < attentionSeverityRank[existing.highestSeverity]) {
+        existing.highestSeverity = severity;
       }
     } else {
       candidates.set(loginKey, {
-        login: source.relatedLogin as string,
+        login: login as string,
         attentionItems: 1,
-        highestSeverity: source.severity
+        highestSeverity: severity
       });
     }
+  };
+
+  for (const login of profile.people.watchedUsers) {
+    addCandidate(login, "info");
+  }
+
+  for (const source of attentionSources) {
+    addCandidate(source.relatedLogin, source.severity);
   }
 
   return Array.from(candidates.values()).sort((left, right) => {
@@ -775,9 +784,9 @@ export function profileActionSuggestions(
       key: "profile:notification_employee_mapping_candidates",
       severity: profile.notifications.wecom.enabled ? "warning" : "info",
       title: "Notification employee mappings missing",
-      description: `${notificationLogins.length} GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient ${profile.notifications.routing.fallbackRecipient}.`,
+      description: `${notificationLogins.length} GitHub logins appear on owner-routed or watched-user notification candidates without notifications.employees mappings; notifications will use fallback recipient ${profile.notifications.routing.fallbackRecipient}.`,
       action:
-        "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+        "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on per-user notifications.",
       relatedLogins: notificationLogins,
       yamlSnippet: `notifications:\n  employees:\n${notificationLogins
         .map((login) => `    ${login}:\n      wecom_user_id: ${employeePlaceholder(login)}`)
@@ -3608,10 +3617,7 @@ interface PersonalPrPeriodListResult {
   detailLimit: number;
 }
 
-export function personalPrPeriodDescriptors(
-  profile: RepoProfile,
-  now = new Date()
-): PersonalPrPeriodDescriptor[] {
+export function personalPrPeriodDescriptors(profile: RepoProfile, now = new Date()): PersonalPrPeriodDescriptor[] {
   const currentDate = dateKeyInTimezone(now, profile.reporting.timezone) ?? "1970-01-01";
   const dayStart = currentDate;
   const dayEnd = addDaysToDateKey(dayStart, 1);
@@ -4088,10 +4094,7 @@ function dashboardDailyMetricsVersionFilter(profile: RepoProfile, viewer: Dashbo
   };
 }
 
-function dashboardNotificationAcknowledgementVersionFilter(
-  profile: RepoProfile,
-  viewer: DashboardViewer
-): SqlFilter {
+function dashboardNotificationAcknowledgementVersionFilter(profile: RepoProfile, viewer: DashboardViewer): SqlFilter {
   const deliveryVisibility = notificationDeliveryVisibilityWhereSql("d", profile, viewer);
   return {
     sql: `EXISTS (
@@ -4777,10 +4780,14 @@ export async function getDashboardSummary(
     ...Array.from(criticalIssueNumbers),
     ...personalIssueRows.map((row) => asNumber(row.number))
   ]);
-  const issueCommentEvidence = await issueCommentEvidenceByIssueNumber(repoId, Array.from(issueCommentEvidenceNumbers), {
-    syncs: commentSyncVisibility,
-    comments: commentVisibility
-  });
+  const issueCommentEvidence = await issueCommentEvidenceByIssueNumber(
+    repoId,
+    Array.from(issueCommentEvidenceNumbers),
+    {
+      syncs: commentSyncVisibility,
+      comments: commentVisibility
+    }
+  );
   const criticalIssues: CriticalIssueView[] = criticalRows.map((row) =>
     toCriticalIssueView(
       row,

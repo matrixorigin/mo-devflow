@@ -776,9 +776,9 @@ describe("profile configuration guidance", () => {
         severity: "warning",
         title: "Notification employee mappings missing",
         description:
-          "1 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
+          "1 GitHub logins appear on owner-routed or watched-user notification candidates without notifications.employees mappings; notifications will use fallback recipient maintainer_group.",
         action:
-          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on per-user notifications.",
         relatedLogins: ["alice"],
         yamlSnippet: "notifications:\n  employees:\n    alice:\n      wecom_user_id: TODO_ALICE"
       }
@@ -826,6 +826,32 @@ describe("profile configuration guidance", () => {
     ]);
   });
 
+  test("includes watched users for daily digest employee mapping readiness", () => {
+    expect(
+      notificationEmployeeMappingCandidates(
+        {
+          ...baseProfile,
+          people: { watchedUsers: ["alice", "Bob", "skip-me"], testers: [] },
+          workflow: { skipUsers: ["skip-me"] },
+          notifications: {
+            ...baseProfile.notifications,
+            employees: {
+              alice: { wecomUserId: "alice-wecom" }
+            }
+          }
+        },
+        [
+          { relatedLogin: "Bob", severity: "critical" },
+          { relatedLogin: "carol", severity: "warning" },
+          { relatedLogin: "skip-me", severity: "critical" }
+        ]
+      )
+    ).toEqual([
+      { login: "Bob", attentionItems: 2, highestSeverity: "critical" },
+      { login: "carol", attentionItems: 1, highestSeverity: "warning" }
+    ]);
+  });
+
   test("suggests notification employee mappings for owner-routed attention", () => {
     expect(
       profileActionSuggestions(
@@ -848,9 +874,9 @@ describe("profile configuration guidance", () => {
         severity: "warning",
         title: "Notification employee mappings missing",
         description:
-          "2 GitHub logins appear on active notification candidates without notifications.employees mappings; owner-routed alerts will use fallback recipient maintainer_group.",
+          "2 GitHub logins appear on owner-routed or watched-user notification candidates without notifications.employees mappings; notifications will use fallback recipient maintainer_group.",
         action:
-          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on owner-routed alerts.",
+          "Add confirmed enterprise WeChat user IDs under notifications.employees before relying on per-user notifications.",
         relatedLogins: ["Bob", "carol"],
         yamlSnippet:
           "notifications:\n  employees:\n    Bob:\n      wecom_user_id: TODO_BOB\n    carol:\n      wecom_user_id: TODO_CAROL"
