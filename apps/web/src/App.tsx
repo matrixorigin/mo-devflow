@@ -7218,6 +7218,7 @@ function TrendChart({ points, actions = {} }: { points: TrendMetricPoint[]; acti
         </div>
         <Text type="secondary">{evidence.message}</Text>
       </div>
+      <TrendChartReadout points={points} actions={actions} />
       <div className="flow-chart-grid">
         <MetricFlowChart
           title="PR Flow"
@@ -7318,6 +7319,108 @@ function TrendChart({ points, actions = {} }: { points: TrendMetricPoint[]; acti
         />
       </div>
     </div>
+  );
+}
+
+interface TrendReadoutItem {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  onClick?: () => void;
+}
+
+function latestTrendPoint(points: TrendMetricPoint[]): TrendMetricPoint {
+  return [...points].sort(
+    (left, right) =>
+      Date.parse(left.date) -
+        Date.parse(right.date) ||
+      Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
+  )[points.length - 1];
+}
+
+function TrendChartReadout({ points, actions }: { points: TrendMetricPoint[]; actions: FlowEfficiencyActions }) {
+  const latest = latestTrendPoint(points);
+  const prOpenDelta = latest.prsCreated - latest.prsMerged;
+  const issueDrain = latest.issuesClosed + latest.issuesDeferred - latest.issuesOpened;
+  const testingWait = latest.averageTestingQueueAgeHours;
+  const items: TrendReadoutItem[] = [
+    {
+      key: "pr_open_delta",
+      label: "PR open delta",
+      value: signedNumber(prOpenDelta),
+      detail: `${latest.prsCreated} created / ${latest.prsMerged} merged`,
+      tone: prOpenDelta > 0 ? "attention" : "good",
+      onClick: actions.prFlow
+    },
+    {
+      key: "issue_drain",
+      label: "Issue drain",
+      value: signedNumber(issueDrain),
+      detail: `${latest.issuesClosed} closed + ${latest.issuesDeferred} deferred / ${latest.issuesOpened} opened`,
+      tone: issueDrain < 0 ? "attention" : "good",
+      onClick: actions.issueDrain
+    },
+    {
+      key: "active_critical",
+      label: "Active s-1/s0",
+      value: String(latest.activeCriticalIssues),
+      detail: `avg active ${optionalHours(latest.averageActiveCriticalIssueAgeHours)}`,
+      tone: latest.activeCriticalIssues > 0 ? "critical" : "good",
+      onClick: actions.activeCriticalAge
+    },
+    {
+      key: "pr_attention",
+      label: "PR attention",
+      value: String(latest.attentionPrs),
+      detail: `${latest.pendingPrs} pending PRs`,
+      tone: latest.attentionPrs > 0 ? "attention" : "good",
+      onClick: actions.prAttention
+    },
+    {
+      key: "testing_wait",
+      label: "Issue test wait",
+      value: optionalHours(testingWait),
+      detail: `${latest.testingQueuePrs} issues in test`,
+      tone: testingWait !== null && testingWait >= 24 ? "critical" : latest.testingQueuePrs > 0 ? "normal" : "good",
+      onClick: actions.testingQueue
+    }
+  ];
+
+  return (
+    <div className="trend-readout" aria-label="Latest trend point readout">
+      <div className="trend-readout-heading">
+        <span>Latest period</span>
+        <strong>{trendPointLabel(latest)}</strong>
+        <small>{formatDate(latest.generatedAt)}</small>
+      </div>
+      <div className="trend-readout-grid">
+        {items.map((item) => (
+          <TrendReadoutCard item={item} key={item.key} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrendReadoutCard({ item }: { item: TrendReadoutItem }) {
+  const content = (
+    <>
+      <span>{item.label}</span>
+      <strong>{item.value}</strong>
+      <small>{item.detail}</small>
+    </>
+  );
+
+  if (!item.onClick) {
+    return <div className={`trend-readout-card trend-readout-${item.tone}`}>{content}</div>;
+  }
+
+  return (
+    <button type="button" className={`trend-readout-card trend-readout-${item.tone}`} onClick={item.onClick}>
+      {content}
+    </button>
   );
 }
 
