@@ -50,6 +50,7 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
       recommendedAction: null,
       byType: []
     },
+    manualRefreshRequests: [],
     worker: {
       status: "active",
       phase: "idle",

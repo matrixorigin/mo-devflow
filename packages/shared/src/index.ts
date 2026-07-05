@@ -1118,6 +1118,11 @@ export interface ManualRefreshResult {
   requestedAt: string;
 }
 
+export interface ManualRefreshRequestView extends ManualRefreshResult {
+  githubLogin: string;
+  status: string;
+}
+
 export interface DashboardSummary {
   repo: {
     key: string;
@@ -1141,6 +1146,7 @@ export interface DashboardSummary {
     partialSamples: CacheObjectEvidenceView[];
     jobQueue: JobQueueHealth;
     worker: WorkerHealth;
+    manualRefreshRequests: ManualRefreshRequestView[];
   };
   counts: {
     criticalIssues: number;

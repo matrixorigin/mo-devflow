@@ -6293,6 +6293,60 @@ button.flow-diagnostic-card:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.manual-refresh-history {
+  border-top: 1px solid #f1f5f9;
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.manual-refresh-history-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.manual-refresh-history-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.manual-refresh-history-row {
+  align-items: start;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.manual-refresh-history-main,
+.manual-refresh-history-facts {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.manual-refresh-history-facts {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.manual-refresh-history-facts span {
+  overflow-wrap: anywhere;
+}
+
+.manual-refresh-history-empty {
+  color: #6b7280;
+}
+
 .sync-health-tags,
 .sync-health-layer {
   max-width: 100%;
@@ -6551,7 +6605,8 @@ button.flow-diagnostic-card:focus-visible {
 
   .health-detail-grid,
   .health-layer-row,
-  .job-queue-type-row {
+  .job-queue-type-row,
+  .manual-refresh-history-row {
     grid-template-columns: 1fr;
   }
 

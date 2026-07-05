@@ -3,7 +3,8 @@ import {
   jobQueueHealthStatus,
   jobQueueOldestPendingWarnHoursFromEnv,
   jobQueueRecommendedAction,
-  jobQueueTypeHealthFromRows
+  jobQueueTypeHealthFromRows,
+  manualRefreshRequestViewFromRow
 } from "./jobs";
 
 const healthyQueue = {
@@ -88,5 +89,62 @@ describe("job queue health", () => {
       status: "healthy",
       recommendedAction: null
     });
+  });
+});
+
+describe("manual refresh request views", () => {
+  test("maps persisted refresh request rows into dashboard history", () => {
+    const view = manualRefreshRequestViewFromRow({
+      id: 42,
+      github_login: "alice",
+      requested_layers_json: JSON.stringify(["github_sync", "rules", "not_a_layer"]),
+      queued_jobs_json: JSON.stringify([
+        {
+          jobKey: "matrixone:github_sync",
+          jobType: "github_sync",
+          status: "pending",
+          nextRunAt: "2026-07-05T06:00:00.000Z"
+        },
+        {
+          jobKey: "matrixone:bad",
+          jobType: "bad",
+          status: "pending",
+          nextRunAt: null
+        }
+      ]),
+      status: "queued",
+      created_at: "2026-07-05 06:00:00"
+    } as Parameters<typeof manualRefreshRequestViewFromRow>[0]);
+
+    expect(view).toMatchObject({
+      requestId: 42,
+      githubLogin: "alice",
+      requestedLayers: ["github_sync", "rules"],
+      queuedJobs: [
+        {
+          jobKey: "matrixone:github_sync",
+          jobType: "github_sync",
+          status: "pending",
+          nextRunAt: "2026-07-05T06:00:00.000Z"
+        }
+      ],
+      status: "queued"
+    });
+    expect(view.requestedAt).toBe("2026-07-05T06:00:00Z");
+  });
+
+  test("keeps malformed persisted JSON from breaking the health dashboard", () => {
+    const view = manualRefreshRequestViewFromRow({
+      id: 43,
+      github_login: "alice",
+      requested_layers_json: "{",
+      queued_jobs_json: "{",
+      status: "queued",
+      created_at: null
+    } as Parameters<typeof manualRefreshRequestViewFromRow>[0]);
+
+    expect(view.requestedLayers).toEqual([]);
+    expect(view.queuedJobs).toEqual([]);
+    expect(view.requestedAt).toBe("1970-01-01T00:00:00.000Z");
   });
 });

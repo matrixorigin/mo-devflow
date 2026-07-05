@@ -1,8 +1,10 @@
 import {
   parseJsonRecord,
+  syncHealthLayers,
   type JobQueueHealth,
   type JobQueueTypeHealth,
   type ManualRefreshLayer,
+  type ManualRefreshRequestView,
   type ManualRefreshResult
 } from "@mo-devflow/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
@@ -34,6 +36,10 @@ export interface QueuedJobNow {
   jobType: ManualRefreshLayer;
   status: string;
   nextRunAt: string | null;
+}
+
+function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
+  return (syncHealthLayers as readonly string[]).includes(value);
 }
 
 function stringify(value: unknown): string {
@@ -174,6 +180,68 @@ export async function recordManualRefreshRequest(input: {
     queuedJobs: input.queuedJobs,
     requestedAt: createdAt
   };
+}
+
+function parseManualRefreshLayers(value: unknown): ManualRefreshLayer[] {
+  const parsed = parseJsonRecord<unknown>(asString(value), []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter((item): item is ManualRefreshLayer => typeof item === "string" && isManualRefreshLayer(item));
+}
+
+function parseQueuedJobs(value: unknown): ManualRefreshResult["queuedJobs"] {
+  const parsed = parseJsonRecord<unknown>(asString(value), []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const candidate = item as Record<string, unknown>;
+    const jobKey = asString(candidate.jobKey);
+    const jobType = asString(candidate.jobType);
+    const status = asString(candidate.status);
+    if (!jobKey || !isManualRefreshLayer(jobType) || !status) {
+      return [];
+    }
+    return [
+      {
+        jobKey,
+        jobType,
+        status,
+        nextRunAt: asNullableString(candidate.nextRunAt)
+      }
+    ];
+  });
+}
+
+export function manualRefreshRequestViewFromRow(row: RowData): ManualRefreshRequestView {
+  return {
+    requestId: asNumber(row.id),
+    githubLogin: asString(row.github_login),
+    requestedLayers: parseManualRefreshLayers(row.requested_layers_json),
+    queuedJobs: parseQueuedJobs(row.queued_jobs_json),
+    status: asString(row.status),
+    requestedAt: fromSqlDate(row.created_at) ?? new Date(0).toISOString()
+  };
+}
+
+export async function listManualRefreshRequestsForDashboard(
+  repoId: number,
+  limit = 8
+): Promise<ManualRefreshRequestView[]> {
+  const safeLimit = Math.max(1, Math.min(20, Math.floor(limit)));
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT id, github_login, requested_layers_json, queued_jobs_json, status, created_at
+     FROM manual_refresh_requests
+     WHERE repo_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ${safeLimit}`,
+    [repoId]
+  );
+  return rows.map(manualRefreshRequestViewFromRow);
 }
 
 export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds: number }): Promise<LeasedJob | null> {

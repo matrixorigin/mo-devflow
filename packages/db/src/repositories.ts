@@ -52,7 +52,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { createHash } from "node:crypto";
 import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
-import { getJobQueueHealth } from "./jobs";
+import { getJobQueueHealth, listManualRefreshRequestsForDashboard } from "./jobs";
 import { getNotificationHealth, notificationRecipientScope } from "./notifications";
 import { addDaysToDateKey, calendarDayRangeInTimezone, dateKeyInTimezone, previousCalendarDayRange } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
@@ -4232,6 +4232,7 @@ export async function getDashboardSummary(
   };
   const jobQueue = await getJobQueueHealth();
   const worker: WorkerHealth = await getWorkerHealth();
+  const manualRefreshRequests = viewer.authenticated ? await listManualRefreshRequestsForDashboard(repoId) : [];
   const webhooks = await getWebhookIngestionHealth(repoId);
   const writeActions: WriteActionExecutionView[] = await listWriteActionExecutionsForDashboard({
     repoId,
@@ -4291,7 +4292,8 @@ export async function getDashboardSummary(
       partialObjects: asNumber(partialRows[0]?.partial_count),
       partialSamples: partialSampleRows.map((row) => cacheObjectEvidenceFromRow(row, staleCutoff)),
       jobQueue,
-      worker
+      worker,
+      manualRefreshRequests
     },
     counts: {
       criticalIssues: criticalIssues.length,

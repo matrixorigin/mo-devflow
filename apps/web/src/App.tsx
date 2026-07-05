@@ -1454,6 +1454,19 @@ function syncHealthTagColor(status: DashboardSummary["sync"]["health"][number]["
   return "red";
 }
 
+function manualRefreshStatusColor(status: string): string {
+  if (status === "queued" || status === "pending" || status === "running") {
+    return "blue";
+  }
+  if (status === "success" || status === "complete") {
+    return "green";
+  }
+  if (status === "failed" || status === "blocked") {
+    return "red";
+  }
+  return "default";
+}
+
 function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
   if (severity === "critical") {
     return "red";
@@ -4856,6 +4869,53 @@ function JobQueueTypeRow({
   );
 }
 
+function ManualRefreshHistory({ requests }: { requests: DashboardSummary["sync"]["manualRefreshRequests"] }) {
+  if (requests.length === 0) {
+    return (
+      <div className="manual-refresh-history manual-refresh-history-empty">
+        <Text type="secondary">No recent manual refresh request is recorded for this repository.</Text>
+      </div>
+    );
+  }
+
+  return (
+    <div className="manual-refresh-history" aria-label="Manual refresh request history">
+      <div className="manual-refresh-history-heading">
+        <Text strong>Manual refresh history</Text>
+        <Tag>{requests.length}</Tag>
+      </div>
+      <div className="manual-refresh-history-list">
+        {requests.map((request) => (
+          <article className="manual-refresh-history-row" key={request.requestId}>
+            <div className="manual-refresh-history-main">
+              <Space size={[4, 4]} wrap>
+                <Tag color={manualRefreshStatusColor(request.status)}>{labelText(request.status)}</Tag>
+                <Text strong>{request.githubLogin}</Text>
+                <Text type="secondary">{formatDate(request.requestedAt)}</Text>
+              </Space>
+              <Space size={[4, 4]} wrap>
+                {request.requestedLayers.map((layer) => (
+                  <Tooltip title={manualRefreshLayerDescription(layer)} key={layer}>
+                    <Tag>{labelText(layer)}</Tag>
+                  </Tooltip>
+                ))}
+              </Space>
+            </div>
+            <div className="manual-refresh-history-facts">
+              <span>{request.queuedJobs.length} jobs</span>
+              {request.queuedJobs.map((job) => (
+                <span key={`${request.requestId}:${job.jobKey}`}>
+                  {labelText(job.jobType)} {labelText(job.status)}
+                </span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function HealthBoard({
   data,
   session,
@@ -5058,6 +5118,7 @@ function HealthBoard({
               ))}
             </div>
           ) : null}
+          {authenticated ? <ManualRefreshHistory requests={data.sync.manualRefreshRequests} /> : null}
         </section>
       </div>
     </section>
