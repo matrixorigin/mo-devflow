@@ -163,6 +163,7 @@ import {
   teamOperatingSignals,
   teamPeopleFocusSummary,
   teamTriageSnapshot,
+  testingTurnoverHealthSummary,
   trendEvidenceSummary,
   trendMomentumSummary,
   testingStateBusinessLabel,
@@ -12515,9 +12516,16 @@ function TestingTurnoverBreakdown({
 }) {
   const handoffToCloseTone =
     testing.averageHandoffToCloseHours !== null && testing.averageHandoffToCloseHours >= 24 ? "attention" : "normal";
+  const health = testingTurnoverHealthSummary({ testing, partialIssueTransitions });
 
   return (
     <div className="testing-turnover-strip" aria-label="Testing turnover breakdown">
+      <article className={`testing-turnover-insight testing-turnover-${health.tone}`}>
+        <span>Testing health</span>
+        <strong>{health.title}</strong>
+        <small>{health.detail}</small>
+        <em>{health.evidence}</em>
+      </article>
       <TestingTurnoverCard
         label="Current wait"
         value={testing.averageIssueQueueAgeHours === null ? "-" : hours(testing.averageIssueQueueAgeHours)}

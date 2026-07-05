@@ -55,6 +55,7 @@ import {
   testingStateBusinessLabel,
   testingStateHelpText,
   testingTesterNeedsAttention,
+  testingTurnoverHealthSummary,
   trendEvidenceSummary,
   trendMomentumSummary
 } from "./workbench";
@@ -1170,6 +1171,60 @@ describe("testing issue action order", () => {
     ]);
     expect(testingTesterNeedsAttention(testers[0]!)).toBe(true);
     expect(testingTesterNeedsAttention(testingTester({ login: "idle" }))).toBe(false);
+  });
+
+  it("summarizes testing turnover health from current queue and close evidence", () => {
+    expect(
+      testingTurnoverHealthSummary({
+        testing: {
+          queueIssues: 3,
+          staleQueueIssues: 1,
+          averageIssueQueueAgeHours: 30,
+          issueTransitionEvents: 4,
+          handoffToCloseSamples: 2,
+          averageHandoffToCloseHours: 18
+        },
+        partialIssueTransitions: 0
+      })
+    ).toMatchObject({
+      title: "1 testing issue is waiting too long",
+      tone: "critical"
+    });
+
+    expect(
+      testingTurnoverHealthSummary({
+        testing: {
+          queueIssues: 2,
+          staleQueueIssues: 0,
+          averageIssueQueueAgeHours: 8,
+          issueTransitionEvents: 2,
+          handoffToCloseSamples: 0,
+          averageHandoffToCloseHours: null
+        },
+        partialIssueTransitions: 0
+      })
+    ).toMatchObject({
+      title: "Testing queue is active, close efficiency is not proven",
+      tone: "attention"
+    });
+
+    expect(
+      testingTurnoverHealthSummary({
+        testing: {
+          queueIssues: 0,
+          staleQueueIssues: 0,
+          averageIssueQueueAgeHours: null,
+          issueTransitionEvents: 5,
+          handoffToCloseSamples: 3,
+          averageHandoffToCloseHours: 12
+        },
+        partialIssueTransitions: 2
+      })
+    ).toMatchObject({
+      title: "Testing turnover has partial timeline evidence",
+      evidence: "2 timeline gaps can make turnover partial",
+      tone: "attention"
+    });
   });
 });
 

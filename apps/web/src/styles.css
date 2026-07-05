@@ -4630,20 +4630,47 @@ button.testing-board-stat:focus-visible {
   padding: 9px 10px;
 }
 
+.testing-turnover-insight {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.testing-turnover-insight span,
+.testing-turnover-insight small,
+.testing-turnover-insight em,
 .testing-turnover-card span,
 .testing-turnover-card small {
   color: #6b7280;
   font-size: 12px;
+  font-style: normal;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.testing-turnover-insight strong,
 .testing-turnover-card strong {
   color: #111827;
   font-size: 20px;
   line-height: 1.15;
+}
+
+.testing-turnover-insight strong {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.testing-turnover-insight small,
+.testing-turnover-insight em {
+  white-space: normal;
 }
 
 .testing-turnover-critical {

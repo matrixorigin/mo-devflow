@@ -9,6 +9,7 @@ import type {
   PersonalActionView,
   PersonalIssueView,
   PersonalPullRequestView,
+  TestingSummary,
   TestingIssueQueueView,
   TestingFlowState
 } from "@mo-devflow/shared";
@@ -723,6 +724,13 @@ export interface TeamCriticalFlowEfficiency {
   averageActiveToFirstPrHours: number | null;
   averageActiveToTestingHours: number | null;
   testingCachePendingIssues: number;
+}
+
+export interface TestingTurnoverHealthSummary {
+  title: string;
+  detail: string;
+  evidence: string;
+  tone: "critical" | "attention" | "normal";
 }
 
 export function effectiveAiEffortLabel(label: string | null): string {
@@ -1747,6 +1755,88 @@ function webhookTrustDetail(data: DashboardSummary): string {
     return "webhook connected";
   }
   return "webhook waiting";
+}
+
+export function testingTurnoverHealthSummary(input: {
+  testing: Pick<
+    TestingSummary,
+    | "queueIssues"
+    | "staleQueueIssues"
+    | "averageIssueQueueAgeHours"
+    | "issueTransitionEvents"
+    | "handoffToCloseSamples"
+    | "averageHandoffToCloseHours"
+  >;
+  partialIssueTransitions: number;
+}): TestingTurnoverHealthSummary {
+  const { testing, partialIssueTransitions } = input;
+  const wait = diagnosticDuration(testing.averageIssueQueueAgeHours);
+  const close = diagnosticDuration(testing.averageHandoffToCloseHours);
+  const sampleEvidence =
+    testing.handoffToCloseSamples > 0
+      ? `${testing.handoffToCloseSamples} close samples`
+      : `${testing.issueTransitionEvents} transition events, no close samples`;
+  const dataGapText =
+    partialIssueTransitions > 0
+      ? `${partialIssueTransitions} timeline gaps can make turnover partial`
+      : "timeline evidence complete for visible transitions";
+
+  if (testing.staleQueueIssues > 0) {
+    const waitingLabel =
+      testing.staleQueueIssues === 1
+        ? "1 testing issue is waiting too long"
+        : `${testing.staleQueueIssues} testing issues are waiting too long`;
+    return {
+      title: waitingLabel,
+      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      evidence: `${sampleEvidence} | ${dataGapText}`,
+      tone: "critical"
+    };
+  }
+  if (testing.averageHandoffToCloseHours !== null && testing.averageHandoffToCloseHours >= 48) {
+    return {
+      title: "Testing close cycle is slow",
+      detail: `${testing.handoffToCloseSamples} closed issue samples average ${close}; current wait ${wait}`,
+      evidence: dataGapText,
+      tone: "attention"
+    };
+  }
+  if (testing.handoffToCloseSamples === 0) {
+    return {
+      title:
+        testing.queueIssues > 0
+          ? "Testing queue is active, close efficiency is not proven"
+          : "No testing close history yet",
+      detail:
+        testing.queueIssues > 0
+          ? `${testing.queueIssues} in test | avg wait ${wait}; wait for issue close samples before judging turnover`
+          : "No visible queue or handoff-to-close samples in cache.",
+      evidence: dataGapText,
+      tone: testing.queueIssues > 0 || partialIssueTransitions > 0 ? "attention" : "normal"
+    };
+  }
+  if (partialIssueTransitions > 0) {
+    return {
+      title: "Testing turnover has partial timeline evidence",
+      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      evidence: dataGapText,
+      tone: "attention"
+    };
+  }
+  if (testing.queueIssues > 0) {
+    return {
+      title: "Testing queue is moving from cached evidence",
+      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      evidence: sampleEvidence,
+      tone: "normal"
+    };
+  }
+  return {
+    title: "Testing queue is clear",
+    detail: `handoff-to-close ${close} from ${testing.handoffToCloseSamples} closed issue samples`,
+    evidence: dataGapText,
+    tone: "normal"
+  };
 }
 
 export function teamOperatingSignals(input: {
