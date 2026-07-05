@@ -17241,6 +17241,14 @@ function WatchedPersonOperationsSummary({
   const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
   const throughputRows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
+  const flowTarget: PersonalDrilldownFilter =
+    flow.issuesWithoutPr > 0 ? "active_no_pr" : flow.issuesInTesting > 0 ? "testing" : "active_issues";
+  const blockerTarget: PersonalDrilldownFilter =
+    person.attentionPrs.length > 0
+      ? "pr_attention"
+      : staleTestingIssues > 0 || testingWork > 0
+        ? "testing"
+        : "pending_pr";
 
   return (
     <section className="person-ops-summary" aria-label={`${person.login} queue summary`}>
@@ -17318,6 +17326,49 @@ function WatchedPersonOperationsSummary({
           tone={yesterdayPrs > 0 ? "normal" : "good"}
           active={activeFilter === "yesterday_pr"}
           onClick={() => onSelect("yesterday_pr")}
+        />
+      </div>
+      <div className="person-ops-insights" aria-label={`${person.login} management summary`}>
+        <PersonOpsInsight
+          label="PR rhythm"
+          value={personalPrThroughputSummary(throughputRows)}
+          detail={`Week list: ${personalPrPeriodThroughputDetail(person, "week")}`}
+          tone={person.attentionPrs.length > 0 ? "attention" : "normal"}
+          onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, "week"))}
+        />
+        <PersonOpsInsight
+          label="s-1/s0 flow"
+          value={personalCriticalFlowEfficiencyCompactSummary(flow)}
+          detail={personalCriticalFlowManagementDetail(flow)}
+          tone={
+            flow.slowEasyIssues > 0 || flow.issuesWithoutPr > 0
+              ? "critical"
+              : flow.activeIssues > 0
+                ? "attention"
+                : "good"
+          }
+          active={isPersonalActiveDrilldown(activeFilter) || activeFilter === "testing"}
+          onClick={() => onSelect(flowTarget)}
+        />
+        <PersonOpsInsight
+          label="Current blocker"
+          value={
+            person.attentionPrs.length > 0
+              ? `${person.attentionPrs.length} PR attention`
+              : staleTestingIssues > 0
+                ? `${staleTestingIssues} stale testing`
+                : `${person.pendingPrs.length} pending PRs`
+          }
+          detail={personalCurrentBlockerDetail(person)}
+          tone={
+            person.attentionPrs.length > 0 || staleTestingIssues > 0
+              ? "critical"
+              : person.pendingPrs.length > 0
+                ? "normal"
+                : "good"
+          }
+          active={activeFilter === blockerTarget}
+          onClick={() => onSelect(blockerTarget)}
         />
       </div>
       <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
@@ -17512,6 +17563,35 @@ function PersonOpsTile({
     <button
       type="button"
       className={`person-ops-tile person-ops-tile-${tone} ${active ? "person-ops-tile-active" : ""}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
+  );
+}
+
+function PersonOpsInsight({
+  label,
+  value,
+  detail,
+  tone,
+  active = false,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`person-ops-insight person-ops-insight-${tone} ${active ? "person-ops-insight-active" : ""}`}
       aria-pressed={active}
       onClick={onClick}
     >
@@ -17754,6 +17834,25 @@ export function personalCriticalFlowEfficiencyCompactSummary(flow: PersonalCriti
   return `PR ${flow.issuesWithPr}/${flow.activeIssues} (${percentText(
     flow.linkedIssueRatePercent
   )}) | test ${flow.issuesInTesting}/${flow.activeIssues} (${percentText(flow.testingIssueRatePercent)})`;
+}
+
+export function personalCriticalFlowManagementDetail(flow: PersonalCriticalFlowEfficiency): string {
+  return `avg to PR ${optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing ${optionalHours(
+    flow.averageActiveToTestingHours
+  )} | ${flow.issuesWithoutPr} no PR`;
+}
+
+export function personalCurrentBlockerDetail(person: PersonalActionView): string {
+  const staleTestingIssues = person.testingIssues.filter(isTestingIssueStale).length;
+  const prDetail =
+    person.attentionPrs.length > 0
+      ? prBlockerBreakdownText(person.attentionPrs)
+      : `${person.pendingPrs.length} pending PRs`;
+  const testingDetail =
+    staleTestingIssues > 0
+      ? `${staleTestingIssues} issue testing >24h`
+      : `${personalTestingWorkCount(person)} issue testing`;
+  return `${prDetail} | ${testingDetail}`;
 }
 
 function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {

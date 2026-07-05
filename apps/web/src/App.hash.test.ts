@@ -25,8 +25,10 @@ import {
   peopleSortFromHash,
   pagedRangeLabel,
   personalActionQueueDisclosureSummary,
+  personalCurrentBlockerDetail,
   personalCriticalFlowEfficiency,
   personalCriticalFlowEfficiencyCompactSummary,
+  personalCriticalFlowManagementDetail,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalPrPeriodAverageDurationText,
@@ -783,7 +785,23 @@ describe("dashboard hash filters", () => {
     });
     expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
     expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | test 1/2 (50%)");
+    expect(personalCriticalFlowManagementDetail(flow)).toBe("avg to PR 18h | to issue testing 1.8d | 1 no PR");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
+    expect(
+      personalCurrentBlockerDetail({
+        attentionPrs: [
+          personalPr({
+            number: 20,
+            ageHours: 30,
+            createdAt: "2026-07-03T09:00:00.000Z",
+            mergedAt: null,
+            ciState: "failure"
+          })
+        ],
+        pendingPrs: [personalPr({ number: 21, ageHours: 12, createdAt: "2026-07-04T09:00:00.000Z", mergedAt: null })],
+        testingIssues: [{ queueAgeHours: 26 }]
+      } as any)
+    ).toBe("1 CI | 1 issue testing >24h");
   });
 
   it("builds the people PR and flow matrix from watched personal analytics", () => {
