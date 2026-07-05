@@ -12,6 +12,7 @@ import {
   peopleSortLabel,
   peopleSortFromHash,
   pagedRangeLabel,
+  personalFlowThreadsSummary,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
   prRotationTableSummary,
@@ -186,5 +187,16 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("active")).toBe("active issues");
     expect(peopleSortLabel("pr_age")).toBe("PR age");
     expect(peopleSortLabel("testing_wait")).toBe("issue test wait");
+  });
+
+  it("summarizes personal flow thread evidence compactly", () => {
+    expect(
+      personalFlowThreadsSummary({
+        rows: [{ id: "thread-1" }],
+        maxAgeHours: 49,
+        sharedPrCount: 1,
+        unlinkedPrCount: 2
+      })
+    ).toBe("1 thread | 1 shared PR | 2 link gaps | oldest 2.0d");
   });
 });

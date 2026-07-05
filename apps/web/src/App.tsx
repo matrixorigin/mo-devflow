@@ -13660,6 +13660,20 @@ function PersonalRotationOverview({
   );
 }
 
+export function personalFlowThreadsSummary(chart: {
+  rows: readonly unknown[];
+  maxAgeHours: number;
+  sharedPrCount: number;
+  unlinkedPrCount: number;
+}): string {
+  const threadNoun = chart.rows.length === 1 ? "thread" : "threads";
+  const sharedNoun = chart.sharedPrCount === 1 ? "shared PR" : "shared PRs";
+  const linkGapNoun = chart.unlinkedPrCount === 1 ? "link gap" : "link gaps";
+  return `${chart.rows.length} ${threadNoun} | ${chart.sharedPrCount} ${sharedNoun} | ${
+    chart.unlinkedPrCount
+  } ${linkGapNoun} | oldest ${hours(chart.maxAgeHours)}`;
+}
+
 function PersonalRotationThreadRow({
   row,
   onPreview
@@ -14470,15 +14484,6 @@ function SelectedPersonWorkbench({
         />
       </details>
 
-      <PersonalRotationOverview
-        person={person}
-        generatedAt={generatedAt}
-        chart={gantt}
-        activityItems={activityItems}
-        drilldownFilter={drilldownFilter}
-        onDrilldownChange={onDrilldownChange}
-      />
-
       <section className="activity-panel personal-action-panel">
         <div className="subsection-heading">
           <Title level={5}>Action Queue</Title>
@@ -14506,6 +14511,36 @@ function SelectedPersonWorkbench({
         onIssuePreview={previewIssue}
         onPullRequestPreview={previewPullRequest}
       />
+
+      <details className="secondary-disclosure personal-flow-disclosure">
+        <summary>
+          <span>Flow threads</span>
+          <Space size={[4, 4]} wrap>
+            <Tag>{personalFlowThreadsSummary(gantt)}</Tag>
+            <button
+              type="button"
+              className={`inline-filter-chip ${drilldownFilter === "threads" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("threads");
+              }}
+            >
+              Open threads
+            </button>
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
+          <PersonalRotationOverview
+            person={person}
+            generatedAt={generatedAt}
+            chart={gantt}
+            activityItems={activityItems}
+            drilldownFilter={drilldownFilter}
+            onDrilldownChange={onDrilldownChange}
+          />
+        </div>
+      </details>
 
       <details className="secondary-disclosure personal-detail-disclosure">
         <summary>
