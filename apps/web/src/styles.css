@@ -483,6 +483,96 @@ body {
   min-width: 0;
 }
 
+.freshness-action-card {
+  appearance: none;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.freshness-action-card:hover,
+.freshness-action-card:focus-visible {
+  background: #dbeafe;
+  outline: none;
+}
+
+.freshness-action-card span,
+.freshness-action-card strong,
+.freshness-action-card small,
+.freshness-action-card em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.freshness-action-card span {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.freshness-action-card strong {
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.freshness-action-card small {
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.freshness-action-card em {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.freshness-action-card-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.freshness-action-card-critical span,
+.freshness-action-card-critical em {
+  color: #b91c1c;
+}
+
+.freshness-action-card-attention {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.freshness-action-card-attention span,
+.freshness-action-card-attention em {
+  color: #92400e;
+}
+
+.freshness-action-card-good {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  border-left-color: #16a34a;
+}
+
+.freshness-action-card-good span,
+.freshness-action-card-good em {
+  color: #15803d;
+}
+
 .freshness-limit-chip {
   align-items: center;
   appearance: none;

@@ -98,6 +98,7 @@ import {
   UserRound
 } from "lucide-react";
 import {
+  freshnessNextActionSummary,
   recommendCacheRepair,
   summarizeCacheEvidence,
   summarizeFreshness,
@@ -9414,6 +9415,21 @@ function FreshnessStatusBar({
 }) {
   const problemLayers = sync.health.filter((item) => item.status !== "success" || item.skipped);
   const refreshModeText = dashboardRefreshModeText(refreshing, refreshWatchActive);
+  const nextAction = freshnessNextActionSummary({
+    freshness,
+    sync,
+    webhookReadiness,
+    refreshing,
+    refreshWatchActive,
+    autoRefreshError
+  });
+  const openNextAction = () => {
+    if (nextAction.target === "webhooks") {
+      onOpenWebhooks();
+      return;
+    }
+    onOpenHealth();
+  };
 
   return (
     <section className={`freshness-bar ${expanded ? "freshness-bar-expanded" : "freshness-bar-compact"}`}>
@@ -9504,6 +9520,16 @@ function FreshnessStatusBar({
       </div>
       {expanded ? (
         <div className="freshness-detail">
+          <button
+            type="button"
+            className={`freshness-action-card freshness-action-card-${nextAction.tone}`}
+            onClick={openNextAction}
+          >
+            <span>Recommended action</span>
+            <strong>{nextAction.title}</strong>
+            <small>{nextAction.detail}</small>
+            <em>{nextAction.actionLabel}</em>
+          </button>
           <div className="freshness-update-path" aria-label="Update path">
             <button
               type="button"

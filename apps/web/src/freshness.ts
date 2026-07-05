@@ -52,6 +52,16 @@ export interface UpdatePipelineSummary {
   tiles: UpdatePipelineTile[];
 }
 
+export type FreshnessNextActionTarget = "health" | "webhooks";
+
+export interface FreshnessNextActionSummary {
+  title: string;
+  detail: string;
+  tone: UpdatePipelineTone;
+  target: FreshnessNextActionTarget;
+  actionLabel: string;
+}
+
 export type WebhookReadinessMode =
   | "polling_only"
   | "waiting_for_delivery"
@@ -597,6 +607,136 @@ export function updatePipelinePrimaryStatus(summary: UpdatePipelineSummary): str
     return "webhook connected";
   }
   return "polling repair";
+}
+
+export function freshnessNextActionSummary(input: {
+  freshness: FreshnessSummary;
+  sync: DashboardSummary["sync"];
+  webhookReadiness: WebhookReadinessSummary;
+  refreshing: boolean;
+  refreshWatchActive: boolean;
+  autoRefreshError: string | null;
+}): FreshnessNextActionSummary {
+  const queue = input.sync.jobQueue;
+  const worker = input.sync.worker;
+  const problemLayers = input.sync.health.filter((item) => item.status !== "success" || item.skipped);
+
+  if (input.autoRefreshError) {
+    return {
+      title: "Browser refresh failed; cached data is still visible",
+      detail: input.autoRefreshError,
+      tone: "attention",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (input.webhookReadiness.mode === "failed" || input.webhookReadiness.mode === "stale_processing") {
+    return {
+      title: input.webhookReadiness.title,
+      detail: input.webhookReadiness.facts.slice(0, 2).join(" | "),
+      tone: "critical",
+      target: "webhooks",
+      actionLabel: "Open webhooks"
+    };
+  }
+
+  if (worker.status !== "active") {
+    return {
+      title: `Worker is ${worker.status}`,
+      detail: worker.recommendedAction ?? workerStatusDetail(worker),
+      tone: "critical",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (queue.failedJobs > 0 || queue.blockedJobs > 0 || queue.staleLeases > 0) {
+    return {
+      title: "Worker queue needs attention",
+      detail: `${queue.failedJobs} failed | ${queue.blockedJobs} blocked | ${queue.staleLeases} stale leases`,
+      tone: "critical",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (input.refreshWatchActive || input.refreshing || queue.runningJobs > 0 || queue.queueDepth > 0) {
+    return {
+      title: "Refresh is already moving through the worker queue",
+      detail: `${queue.queueDepth} queued | ${queue.runningJobs} running | browser ${
+        input.refreshing ? "refreshing" : input.refreshWatchActive ? "watching" : "idle"
+      }`,
+      tone: "attention",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (input.webhookReadiness.mode === "queued") {
+    return {
+      title: "Webhook deliveries are waiting for worker processing",
+      detail: input.webhookReadiness.description,
+      tone: "attention",
+      target: "webhooks",
+      actionLabel: "Open webhooks"
+    };
+  }
+
+  if (input.sync.staleObjects > 0 || input.sync.partialObjects > 0 || input.sync.viewLimits.length > 0) {
+    return {
+      title: "Cached evidence needs refresh or backfill",
+      detail: `${input.sync.staleObjects} stale | ${input.sync.partialObjects} incomplete | ${input.sync.viewLimits.length} view caps`,
+      tone: input.sync.staleObjects > 0 ? "critical" : "attention",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (problemLayers.length > 0 || input.freshness.severity !== "ok") {
+    return {
+      title: input.freshness.label,
+      detail:
+        problemLayers.length > 0
+          ? `${problemLayers.length} sync layers need attention`
+          : "Inspect sync health before relying on current workflow conclusions.",
+      tone: input.freshness.severity === "critical" ? "critical" : "attention",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (
+    input.webhookReadiness.mode === "polling_only" ||
+    input.webhookReadiness.mode === "waiting_for_delivery" ||
+    input.webhookReadiness.mode === "connected_waiting_for_activity"
+  ) {
+    return {
+      title: input.webhookReadiness.title,
+      detail: input.webhookReadiness.description,
+      tone: input.webhookReadiness.tone,
+      target: "webhooks",
+      actionLabel: "Open webhooks"
+    };
+  }
+
+  return {
+    title: "Cache is current",
+    detail: "Worker, queue, webhook readiness, and cached evidence are clear.",
+    tone: "good",
+    target: "health",
+    actionLabel: "Open health"
+  };
+}
+
+function workerStatusDetail(worker: DashboardSummary["sync"]["worker"]): string {
+  if (worker.lastError) {
+    return worker.lastError;
+  }
+  if (worker.secondsSinceHeartbeat === null) {
+    return "Worker heartbeat has not been recorded.";
+  }
+  return `Last heartbeat ${Math.round(worker.secondsSinceHeartbeat)}s ago.`;
 }
 
 export function summarizeProductionReadiness(input: {

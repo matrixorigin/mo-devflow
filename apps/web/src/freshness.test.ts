@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { CacheObjectEvidenceView, DashboardSummary, SessionView, SyncHealth } from "@mo-devflow/shared";
 import {
+  freshnessNextActionSummary,
   recommendCacheRepair,
   summarizeCacheEvidence,
   summarizeFreshness,
@@ -449,6 +450,156 @@ describe("update pipeline summary", () => {
       webhooks: webhooks({ processedDeliveries: 3, lastReceivedAt: "2026-07-04T01:00:00.000Z" })
     });
     expect(updatePipelinePrimaryStatus(queueRunning)).toBe("queue 2 queued");
+  });
+});
+
+describe("freshness next action summary", () => {
+  const healthyFreshness = () => summarizeFreshness(sync({}));
+  const receivingWebhook = () =>
+    summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({ processedDeliveries: 2, lastReceivedAt: "2026-07-04T01:00:00.000Z" })
+    });
+
+  test("sends failed webhook delivery attention to the webhook board", () => {
+    expect(
+      freshnessNextActionSummary({
+        freshness: healthyFreshness(),
+        sync: sync({}),
+        webhookReadiness: summarizeWebhookReadiness({
+          profileWarnings: [],
+          webhooks: webhooks({ failedDeliveries: 2 })
+        }),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Webhook deliveries need attention",
+      tone: "critical",
+      target: "webhooks",
+      actionLabel: "Open webhooks"
+    });
+  });
+
+  test("prioritizes worker and queue health before cache evidence repair", () => {
+    const unhealthySync = sync({
+      staleObjects: 4,
+      worker: { ...sync({}).worker, status: "offline", recommendedAction: "Restart worker" }
+    });
+
+    expect(
+      freshnessNextActionSummary({
+        freshness: summarizeFreshness(unhealthySync),
+        sync: unhealthySync,
+        webhookReadiness: receivingWebhook(),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Worker is offline",
+      detail: "Restart worker",
+      tone: "critical",
+      target: "health"
+    });
+
+    const queueSync = sync({
+      jobQueue: { ...sync({}).jobQueue, failedJobs: 1, blockedJobs: 2, staleLeases: 1 }
+    });
+
+    expect(
+      freshnessNextActionSummary({
+        freshness: summarizeFreshness(queueSync),
+        sync: queueSync,
+        webhookReadiness: receivingWebhook(),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Worker queue needs attention",
+      detail: "1 failed | 2 blocked | 1 stale leases",
+      tone: "critical",
+      target: "health"
+    });
+  });
+
+  test("tells the user to wait when refresh work is already queued or watched", () => {
+    const movingSync = sync({ jobQueue: { ...sync({}).jobQueue, queueDepth: 3, runningJobs: 1 } });
+
+    expect(
+      freshnessNextActionSummary({
+        freshness: summarizeFreshness(movingSync),
+        sync: movingSync,
+        webhookReadiness: receivingWebhook(),
+        refreshing: false,
+        refreshWatchActive: true,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Refresh is already moving through the worker queue",
+      detail: "3 queued | 1 running | browser watching",
+      tone: "attention",
+      target: "health"
+    });
+  });
+
+  test("routes stale or partial cache evidence to health after pipeline is clear", () => {
+    const staleSync = sync({ staleObjects: 2, partialObjects: 5 });
+
+    expect(
+      freshnessNextActionSummary({
+        freshness: summarizeFreshness(staleSync),
+        sync: staleSync,
+        webhookReadiness: receivingWebhook(),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Cached evidence needs refresh or backfill",
+      detail: "2 stale | 5 incomplete | 0 view caps",
+      tone: "critical",
+      target: "health"
+    });
+  });
+
+  test("keeps webhook setup visible when cache is otherwise current", () => {
+    expect(
+      freshnessNextActionSummary({
+        freshness: healthyFreshness(),
+        sync: sync({}),
+        webhookReadiness: summarizeWebhookReadiness({
+          profileWarnings: webhookWarning(),
+          webhooks: webhooks()
+        }),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Webhook ingest is not enabled",
+      tone: "attention",
+      target: "webhooks"
+    });
+  });
+
+  test("reports current cache when worker, queue, webhook, and evidence are clear", () => {
+    expect(
+      freshnessNextActionSummary({
+        freshness: healthyFreshness(),
+        sync: sync({}),
+        webhookReadiness: receivingWebhook(),
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Cache is current",
+      tone: "good",
+      target: "health"
+    });
   });
 });
 
