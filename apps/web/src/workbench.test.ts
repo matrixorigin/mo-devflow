@@ -733,6 +733,7 @@ describe("work item attention reasons", () => {
         aiEffortLabel: null,
         ownerLogin: "bob",
         ownerScope: "non_watched",
+        ownerReason: "linked_pr_author",
         criticalAgeHours: 8,
         blockers: [{ key: "issue:blocked", severity: "critical", message: "blocked", relatedPrNumber: 100 }],
         linkedPullRequests: [
@@ -753,6 +754,10 @@ describe("work item attention reasons", () => {
     expect(contexts.get(100)?.map((issue) => `${issue.number}:${issue.severity}:${issue.aiEffortLabel}`)).toEqual([
       "43:severity/s-1:ai-easy",
       "42:severity/s0:ai-heavy"
+    ]);
+    expect(contexts.get(100)?.map((issue) => `${issue.number}:${issue.ownerLogin}:${issue.ownerReason}`)).toEqual([
+      "43:bob:linked_pr_author",
+      "42:alice:assignee"
     ]);
     expect(contexts.get(101)?.map((issue) => issue.number)).toEqual([43]);
   });
@@ -786,6 +791,7 @@ describe("work item attention reasons", () => {
         severity: "severity/s0",
         ownerLogin: "alice",
         ownerScope: "watched" as const,
+        ownerReason: "assignee",
         aiEffortLabel: "ai-easy",
         criticalAgeHours: 12,
         criticalAgeEvidence: "issue_timeline_event" as const,

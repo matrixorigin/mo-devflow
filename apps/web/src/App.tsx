@@ -804,6 +804,56 @@ function ownerScopeTooltip(scope: CriticalIssueOwnerScope): string {
   return "Owner is in the configured watched users.";
 }
 
+function ownerReasonLabel(reason: string | null): string {
+  if (reason === "assignee") {
+    return "issue assignee";
+  }
+  if (reason === "linked_pr_author") {
+    return "linked PR author";
+  }
+  if (reason === "author") {
+    return "issue author";
+  }
+  return reason ? labelText(reason) : "unknown source";
+}
+
+function criticalIssueOwnerTooltip(
+  issue: Pick<CriticalIssueView, "ownerLogin" | "ownerScope" | "ownerReason">
+): string {
+  const scopeText = ownerScopeTooltip(issue.ownerScope);
+  if (!issue.ownerLogin) {
+    return scopeText;
+  }
+  const reasonText = issue.ownerReason
+    ? `Owner derived from ${ownerReasonLabel(issue.ownerReason)}.`
+    : "Owner derivation source is not available in the current cache.";
+  return `${reasonText} ${scopeText}`;
+}
+
+function CriticalIssueOwnerTag({
+  issue,
+  showScope = false
+}: {
+  issue: Pick<CriticalIssueView, "ownerLogin" | "ownerScope" | "ownerReason">;
+  showScope?: boolean;
+}) {
+  const ownerLabel = issue.ownerLogin ?? "unowned";
+  return (
+    <Tooltip title={criticalIssueOwnerTooltip(issue)}>
+      <Tag color={ownerScopeColor(issue.ownerScope)}>
+        {showScope ? `${ownerLabel} | ${labelText(issue.ownerScope)}` : ownerLabel}
+      </Tag>
+    </Tooltip>
+  );
+}
+
+function criticalIssueOwnerSummary(issue: Pick<CriticalIssueView, "ownerLogin" | "ownerReason">): string {
+  const owner = issue.ownerLogin ?? "unowned";
+  return issue.ownerLogin && issue.ownerReason
+    ? `owner ${owner} via ${ownerReasonLabel(issue.ownerReason)}`
+    : `owner ${owner}`;
+}
+
 function workflowSkipTooltip(): string {
   return "This login is in workflow.skip_users: keep visible, but suppress automated violations, drift signals, attention notifications, and setup suggestions.";
 }
@@ -3803,7 +3853,7 @@ function TeamCriticalFlowRow({
           {issue.title}
         </a>
         <div className="team-critical-flow-meta">
-          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <CriticalIssueOwnerTag issue={issue} />
           <span>{criticalIssueNextAction(issue)}</span>
           <span>last {formatDate(issue.lastHumanActionAt)}</span>
         </div>
@@ -4133,7 +4183,7 @@ function TeamCriticalIssueRow({
           {issue.title}
         </a>
         <div className="team-work-tags">
-          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <CriticalIssueOwnerTag issue={issue} />
           <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
           {visibleRiskTags.map((tag) => (
             <Tooltip title={tag.tooltip} key={tag.key}>
@@ -4383,7 +4433,7 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
         </a>
         <Space size={[4, 4]} wrap>
           <Tag color={severityColor(issue.severity)}>{issue.severity ?? "unknown severity"}</Tag>
-          <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
+          <CriticalIssueOwnerTag issue={issue} />
           <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
           <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
           {issue.workflowSkipped ? <Tag>skip automation</Tag> : null}
@@ -4590,7 +4640,7 @@ function TeamPullRequestPreviewModal({
                   </span>
                   <strong>{issue.title}</strong>
                   <small>
-                    {severityShortLabel(issue.severity)} | owner {issue.ownerLogin ?? "unowned"} |{" "}
+                    {severityShortLabel(issue.severity)} | {criticalIssueOwnerSummary(issue)} |{" "}
                     {issue.criticalAgeHours === null ? "active duration unknown" : hours(issue.criticalAgeHours)}
                   </small>
                 </a>
@@ -6690,7 +6740,7 @@ function prCriticalIssueTooltip(issue: PrCriticalIssueContext): string {
   return [
     issue.title,
     `severity ${severityShortLabel(issue.severity)}`,
-    `owner ${issue.ownerLogin ?? "unowned"}`,
+    criticalIssueOwnerSummary(issue),
     issue.aiEffortLabel,
     personalDurationText({ durationHours: issue.criticalAgeHours, durationKind: "critical_active" }),
     issue.criticalAgeEvidence === "missing_timeline" ? "duration evidence missing" : null,
@@ -7382,9 +7432,7 @@ function CriticalIssueBoardRow({
           {issue.title}
         </a>
         <div className="critical-issue-tags">
-          <Tooltip title={issue.ownerReason ? `Owner derived by ${labelText(issue.ownerReason)}` : undefined}>
-            <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
-          </Tooltip>
+          <CriticalIssueOwnerTag issue={issue} />
           <Tag color={issue.criticalAgeHours === null ? "gold" : "red"}>{criticalIssueDuration(issue)}</Tag>
           <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
           {visibleRiskTags.map((tag) => (
@@ -9251,7 +9299,7 @@ function IssueWorkCard({
           </Tooltip>
         ) : null}
         {!issue.isComplete ? <Tag color="gold">issue detail sync pending</Tag> : null}
-        {critical && issue.ownerLogin ? <Tag>{issue.ownerLogin}</Tag> : null}
+        {critical ? <CriticalIssueOwnerTag issue={issue} /> : null}
         {critical && issue.workflowSkipped ? (
           <Tooltip title={workflowSkipTooltip()}>
             <Tag color="default">skip automation</Tag>
@@ -13816,13 +13864,9 @@ export default function App() {
         dataIndex: "ownerLogin",
         width: 216,
         sorter: (left, right) => (left.ownerLogin ?? "").localeCompare(right.ownerLogin ?? ""),
-        render: (owner, issue) => (
+        render: (_, issue) => (
           <Space size={[4, 4]} wrap>
-            {owner ? (
-              <Tooltip title={issue.ownerReason ? `by ${issue.ownerReason}` : undefined}>
-                <Tag>{owner}</Tag>
-              </Tooltip>
-            ) : null}
+            <CriticalIssueOwnerTag issue={issue} />
             <Tooltip title={ownerScopeTooltip(issue.ownerScope)}>
               <Tag color={ownerScopeColor(issue.ownerScope)}>{labelText(issue.ownerScope)}</Tag>
             </Tooltip>

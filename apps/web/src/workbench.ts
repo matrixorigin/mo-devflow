@@ -388,6 +388,7 @@ export interface PrCriticalIssueContext {
   severity: string | null;
   ownerLogin: string | null;
   ownerScope: CriticalIssueView["ownerScope"];
+  ownerReason: CriticalIssueView["ownerReason"];
   aiEffortLabel: string;
   criticalAgeHours: number | null;
   criticalAgeEvidence: CriticalIssueView["criticalAgeEvidence"];
@@ -480,6 +481,7 @@ export function criticalIssueContextsByPullRequest(
       severity: issue.severity,
       ownerLogin: issue.ownerLogin,
       ownerScope: issue.ownerScope,
+      ownerReason: issue.ownerReason,
       aiEffortLabel: effectiveAiEffortLabel(issue.aiEffortLabel),
       criticalAgeHours: issue.criticalAgeHours,
       criticalAgeEvidence: issue.criticalAgeEvidence,
