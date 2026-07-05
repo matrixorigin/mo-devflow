@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountSessionModeText,
   aiDriftSignalMatchesSignalFilter,
   analyticsPeriodScopeText,
   criticalIssueAiFilterFromHash,
@@ -537,6 +538,26 @@ describe("dashboard hash filters", () => {
   it("labels the deployment service read token separately from personal sign-in", () => {
     expect(serviceReadTokenStatusText(true)).toBe("service ready");
     expect(serviceReadTokenStatusText(false)).toBe("service missing");
+  });
+
+  it("summarizes account mode without conflating login, personal token, and write readiness", () => {
+    expect(accountSessionModeText(null, null)).toBe("observer only");
+    expect(accountSessionModeText({ tokenLastValidatedAt: null }, null)).toBe("login only");
+    expect(
+      accountSessionModeText({ tokenLastValidatedAt: "2026-07-04T01:00:00.000Z" }, { enabled: true, status: "ready" })
+    ).toBe("login + write token");
+    expect(
+      accountSessionModeText(
+        { tokenLastValidatedAt: "2026-07-04T01:00:00.000Z" },
+        { enabled: false, status: "insufficient_scope" }
+      )
+    ).toBe("token needs permission");
+    expect(
+      accountSessionModeText(
+        { tokenLastValidatedAt: "2026-07-04T01:00:00.000Z" },
+        { enabled: false, status: "write_back_disabled" }
+      )
+    ).toBe("login + token, writes disabled");
   });
 
   it("summarizes GitHub rate limits for operational health", () => {

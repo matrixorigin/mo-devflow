@@ -1830,6 +1830,33 @@ function personalTokenActionLabel(user: NonNullable<SessionView["user"]> | null)
   return hasSavedPersonalToken(user) ? "Update write token" : "Connect write token";
 }
 
+export function accountSessionModeText(
+  user: Pick<NonNullable<SessionView["user"]>, "tokenLastValidatedAt"> | null,
+  capability: Pick<GitHubWriteCapability, "enabled" | "status"> | null
+): string {
+  if (!user) {
+    return "observer only";
+  }
+  if (!user.tokenLastValidatedAt) {
+    return "login only";
+  }
+  if (capability?.enabled) {
+    return "login + write token";
+  }
+  if (capability?.status === "write_back_disabled") {
+    return "login + token, writes disabled";
+  }
+  if (
+    capability?.status === "insufficient_scope" ||
+    capability?.status === "insufficient_repo_permission" ||
+    capability?.status === "repo_permission_unverified" ||
+    capability?.status === "scope_unverified"
+  ) {
+    return "token needs permission";
+  }
+  return "login + personal token";
+}
+
 function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
     return "GitHub Login Required";
@@ -2083,7 +2110,7 @@ function AccountControl({
         )}
         <span className="account-control-copy">
           <span>{authenticatedUser ? authenticatedUser.githubLogin : "Observer"}</span>
-          <small>{authenticatedUser ? "GitHub login" : "read only"}</small>
+          <small>{accountSessionModeText(authenticatedUser, capability)}</small>
         </span>
         <Tag color={statusColor}>{statusLabel}</Tag>
         <Tag color={serviceTokenColor}>{serviceTokenLabel}</Tag>
