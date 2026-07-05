@@ -3965,12 +3965,17 @@ export async function getDashboardSummary(
   );
   const [partialRows] = await pool.execute<RowData[]>(
     `SELECT
-       SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+       COALESCE(issue_partial.partial_count, 0) + COALESCE(pr_partial.partial_count, 0) AS partial_count
      FROM (
-       SELECT i.is_complete FROM issues i WHERE i.repo_id = ? AND ${partialIssueVisibility.sql}
-       UNION ALL
-       SELECT p.is_complete FROM pull_requests p WHERE p.repo_id = ? AND ${partialPrVisibility.sql}
-     ) t`,
+       SELECT SUM(CASE WHEN i.is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+       FROM issues i
+       WHERE i.repo_id = ? AND ${partialIssueVisibility.sql}
+     ) issue_partial
+     CROSS JOIN (
+       SELECT SUM(CASE WHEN p.is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+       FROM pull_requests p
+       WHERE p.repo_id = ? AND ${partialPrVisibility.sql}
+     ) pr_partial`,
     [repoId, ...partialIssueVisibility.params, repoId, ...partialPrVisibility.params]
   );
   const [staleRows] = await pool.execute<RowData[]>(

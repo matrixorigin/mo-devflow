@@ -123,12 +123,17 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
             partial_summary.partial_count
      FROM (${activeCacheStaleSummarySql({ staleCutoff })}) stale_summary
      CROSS JOIN (
-       SELECT SUM(CASE WHEN is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+       SELECT COALESCE(issue_partial.partial_count, 0) + COALESCE(pr_partial.partial_count, 0) AS partial_count
        FROM (
-         SELECT i.is_complete FROM issues i WHERE i.repo_id = ?
-         UNION ALL
-         SELECT p.is_complete FROM pull_requests p WHERE p.repo_id = ?
-       ) partial_cache
+         SELECT SUM(CASE WHEN i.is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+         FROM issues i
+         WHERE i.repo_id = ?
+       ) issue_partial
+       CROSS JOIN (
+         SELECT SUM(CASE WHEN p.is_complete = 0 THEN 1 ELSE 0 END) AS partial_count
+         FROM pull_requests p
+         WHERE p.repo_id = ?
+       ) pr_partial
      ) partial_summary`,
     [repoId, repoId, repoId, repoId]
   );

@@ -61,6 +61,9 @@ describe("operational health summary", () => {
     expect(sql).toContain("p.state = 'open'");
     expect(sql).toContain("i.visibility_class = 'anonymous_readable'");
     expect(sql).toContain("p.visibility_class = 'anonymous_readable'");
+    expect(sql).toContain("issue_summary");
+    expect(sql).toContain("pr_summary");
+    expect(sql).not.toContain("UNION ALL");
     expect(sql).not.toContain("is_complete");
   });
 
