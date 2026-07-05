@@ -7341,6 +7341,7 @@ function HealthLayerRow({
         <span>success {formatDate(item.lastSuccessfulAt)}</span>
         <span>attempt {formatDate(item.lastAttemptedAt)}</span>
         {item.rateLimitRemaining !== null ? <span>rate {item.rateLimitRemaining}</span> : null}
+        {item.rateLimitResetAt ? <span>reset {formatDate(item.rateLimitResetAt)}</span> : null}
         {item.skipped ? <span>skipped {item.skipReason ?? "no reason recorded"}</span> : null}
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
@@ -16964,7 +16965,7 @@ function WatchedPersonOperationsSummary({
       <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
       <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
         <div className="person-ops-pr-rhythm-heading">
-          <span>PR rhythm</span>
+          <span>PR volume / duration</span>
           <small>s-1/s0 -&gt; PR -&gt; issue testing</small>
         </div>
         <div className="person-ops-pr-periods">
@@ -16983,7 +16984,8 @@ function WatchedPersonOperationsSummary({
                   {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
                 </strong>
                 <small>
-                  {periodPrVisibleUniqueTotal(periodList)} PRs | avg age {optionalHours(row.averagePendingPrAgeHours)}
+                  {periodPrVisibleUniqueTotal(periodList)} PRs | avg PR time{" "}
+                  {personalPrPeriodAverageDurationText(periodList)}
                 </small>
               </button>
             );
@@ -16993,7 +16995,7 @@ function WatchedPersonOperationsSummary({
             className={`person-ops-pr-period person-ops-pr-period-flow ${
               flow.activeIssues > flow.issuesWithPr || flow.cachePendingIssues > 0 ? "person-ops-pr-period-alert" : ""
             }`}
-            onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, "day"))}
+            onClick={() => onSelect(flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing")}
           >
             <span>Flow</span>
             <strong>
@@ -21334,6 +21336,7 @@ export default function App() {
   };
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
   const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
+  const latestRateLimitResetAt = latestRateLimitHealth?.rateLimitResetAt ?? null;
   const testingHasTurnoverHistory = data
     ? data.testing.issueTransitionEvents > 0 || data.testing.handoffToCloseSamples > 0
     : false;
@@ -21823,7 +21826,9 @@ export default function App() {
                 className="band"
                 type={latestRateLimitRemaining <= 0 ? "error" : "warning"}
                 title="GitHub API rate limit is low"
-                description={`Latest ${latestRateLimitHealth?.layer ?? "sync"} run reported ${latestRateLimitRemaining} requests remaining.`}
+                description={`Latest ${latestRateLimitHealth?.layer ?? "sync"} run reported ${latestRateLimitRemaining} requests remaining${
+                  latestRateLimitResetAt ? `; reset ${formatDate(latestRateLimitResetAt)}` : ""
+                }.`}
                 showIcon
               />
             ) : null}

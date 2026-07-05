@@ -767,6 +767,7 @@ export async function backfillPullRequestDetailsOnce(): Promise<PullRequestDetai
   const pullNumbers = await listPullRequestNumbersForDetailBackfill(repoId, limit);
   summary.selected = pullNumbers.length;
   let latestError: string | null = null;
+  let latestRateLimitResetAt: string | null = null;
   let blocked = false;
 
   for (const pullNumber of pullNumbers) {
@@ -778,6 +779,8 @@ export async function backfillPullRequestDetailsOnce(): Promise<PullRequestDetai
       summary.failed += 1;
       const classified = classifyGitHubError(error);
       latestError = classified.message;
+      latestRateLimitResetAt = classified.rateLimitResetAt ?? latestRateLimitResetAt;
+      summary.rateLimitRemaining = classified.rateLimitRemaining ?? summary.rateLimitRemaining;
       if (classified.kind === "permission" || classified.kind === "not_found") {
         blocked = true;
         break;
@@ -797,6 +800,7 @@ export async function backfillPullRequestDetailsOnce(): Promise<PullRequestDetai
     finishedAt: new Date().toISOString(),
     errorMessage: latestError,
     rateLimitRemaining: summary.rateLimitRemaining,
+    rateLimitResetAt: latestRateLimitResetAt,
     raw: summary
   });
 
@@ -846,6 +850,7 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
   });
   summary.selected = candidates.length;
   let latestError: string | null = null;
+  let latestRateLimitResetAt: string | null = null;
   let blocked = false;
 
   for (const candidate of candidates) {
@@ -900,6 +905,7 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
       summary.failed += 1;
       const classified = classifyGitHubError(error);
       latestError = classified.message;
+      latestRateLimitResetAt = classified.rateLimitResetAt ?? latestRateLimitResetAt;
       if (classified.kind === "permission" || classified.kind === "not_found") {
         blocked = true;
         break;
@@ -920,6 +926,7 @@ export async function backfillIssueCommentsOnce(): Promise<IssueCommentBackfillR
     finishedAt: new Date().toISOString(),
     errorMessage: latestError,
     rateLimitRemaining: summary.rateLimitRemaining,
+    rateLimitResetAt: latestRateLimitResetAt,
     raw: summary
   });
 
@@ -973,6 +980,7 @@ export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfill
   });
   summary.selected = candidates.length;
   let latestError: string | null = null;
+  let latestRateLimitResetAt: string | null = null;
   let blocked = false;
 
   for (const candidate of candidates) {
@@ -1030,6 +1038,7 @@ export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfill
       summary.failed += 1;
       const classified = classifyGitHubError(error);
       latestError = classified.message;
+      latestRateLimitResetAt = classified.rateLimitResetAt ?? latestRateLimitResetAt;
       if (classified.kind === "permission" || classified.kind === "not_found") {
         blocked = true;
         break;
@@ -1050,6 +1059,7 @@ export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfill
     finishedAt: new Date().toISOString(),
     errorMessage: latestError,
     rateLimitRemaining: summary.rateLimitRemaining,
+    rateLimitResetAt: latestRateLimitResetAt,
     raw: summary
   });
 
@@ -1552,6 +1562,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
       finishedAt: new Date().toISOString(),
       errorMessage: classified.message,
       rateLimitRemaining: classified.rateLimitRemaining,
+      rateLimitResetAt: classified.rateLimitResetAt,
       raw: {
         errorKind: classified.kind,
         retriable: classified.retriable,

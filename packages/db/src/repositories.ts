@@ -460,6 +460,7 @@ export function buildSyncHealthSummary(input: {
         cursorValue: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null,
+        rateLimitResetAt: null,
         skipped: false,
         skipReason: null
       };
@@ -481,6 +482,7 @@ export function buildSyncHealthSummary(input: {
         row.rate_limit_remaining === null || row.rate_limit_remaining === undefined
           ? null
           : asNumber(row.rate_limit_remaining),
+      rateLimitResetAt: fromSqlDate(row.rate_limit_reset_at),
       skipped,
       skipReason
     };
@@ -980,13 +982,14 @@ export async function recordSyncRun(input: {
   cursorValue?: string | null;
   errorMessage?: string | null;
   rateLimitRemaining?: number | null;
+  rateLimitResetAt?: string | null;
   raw?: unknown;
 }): Promise<void> {
   await getPool().execute(
     `INSERT INTO sync_runs(
       repo_id, sync_layer, status, source_auth_type, started_at, finished_at,
-      cursor_value, error_message, rate_limit_remaining, raw_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cursor_value, error_message, rate_limit_remaining, rate_limit_reset_at, raw_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.repoId,
       input.syncLayer,
@@ -997,6 +1000,7 @@ export async function recordSyncRun(input: {
       input.cursorValue ?? null,
       input.errorMessage ?? null,
       input.rateLimitRemaining ?? null,
+      sqlDate(input.rateLimitResetAt ?? null),
       input.raw ? stringify(input.raw) : null
     ]
   );
@@ -4240,6 +4244,7 @@ export async function getDashboardSummary(
             latest.error_message,
             latest.cursor_value,
             latest.rate_limit_remaining,
+            latest.rate_limit_reset_at,
             latest.raw_json,
             summary.last_successful_at,
             failure.last_failed_at,

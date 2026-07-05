@@ -86,6 +86,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
             latest.started_at,
             latest.error_message,
             latest.rate_limit_remaining,
+            latest.rate_limit_reset_at,
             summary.last_successful_at,
             failure.last_failed_at,
             failure.last_failure_message

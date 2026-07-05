@@ -34,6 +34,7 @@ const schemaStatements = [
     cursor_value TEXT,
     error_message TEXT,
     rate_limit_remaining INT,
+    rate_limit_reset_at DATETIME,
     raw_json LONGTEXT
   )`,
   `CREATE TABLE IF NOT EXISTS jobs (
@@ -617,6 +618,15 @@ const migrations: SchemaMigration[] = [
     async run(connection, context) {
       if (context.tablesExistedBeforeCreate.has("daily_metrics")) {
         await executeIgnoringMissingColumn(connection, "ALTER TABLE daily_metrics DROP COLUMN testing_queue_prs");
+      }
+    }
+  },
+  {
+    version: "0012",
+    name: "sync_run_rate_limit_reset",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("sync_runs")) {
+        await executeIgnoringDuplicateColumn(connection, "ALTER TABLE sync_runs ADD COLUMN rate_limit_reset_at DATETIME");
       }
     }
   }

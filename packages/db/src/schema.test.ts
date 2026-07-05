@@ -14,6 +14,7 @@ describe("schema contract", () => {
   test("derives expected columns from current create-table statements", () => {
     const expected = expectedSchemaColumnsFromStatements();
 
+    expect(expected.get("sync_runs")).toContain("rate_limit_reset_at");
     expect(expected.get("issues")).toContain("source_user_id");
     expect(expected.get("pull_requests")).toContain("testing_state");
     expect(expected.get("pull_requests")).toContain("linked_issue_numbers_json");
@@ -37,6 +38,10 @@ describe("schema contract", () => {
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");
 
     const specs = expectedSchemaColumnSpecsFromStatements();
+    expect(specs.get("sync_runs")?.get("rate_limit_reset_at")).toEqual({
+      columnType: "DATETIME",
+      nullable: true
+    });
     expect(specs.get("attention_items")?.get("dashboard_url")).toEqual({ columnType: "TEXT", nullable: false });
     expect(specs.get("write_action_executions")?.get("object_number")).toEqual({
       columnType: "BIGINT",

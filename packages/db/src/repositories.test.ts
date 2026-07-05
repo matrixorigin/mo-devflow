@@ -311,6 +311,7 @@ describe("sync health summary", () => {
             cursor_value: '{"mode":"updated_desc_window","issuesOldestUpdatedAt":"2026-07-04T09:00:00Z"}',
             error_message: "rate limited",
             rate_limit_remaining: 0,
+            rate_limit_reset_at: "2026-07-04 11:00:00",
             raw_json: null,
             last_successful_at: "2026-07-04 08:01:00",
             last_failed_at: "2026-07-04 10:01:00",
@@ -324,6 +325,7 @@ describe("sync health summary", () => {
             cursor_value: null,
             error_message: null,
             rate_limit_remaining: null,
+            rate_limit_reset_at: null,
             raw_json: JSON.stringify({ skipped: true, reason: "backfill disabled" }),
             last_successful_at: "2026-07-04 09:00:05",
             last_failed_at: "2026-07-03 11:10:00",
@@ -342,6 +344,7 @@ describe("sync health summary", () => {
         cursorValue: '{"mode":"updated_desc_window","issuesOldestUpdatedAt":"2026-07-04T09:00:00Z"}',
         errorMessage: "rate limited",
         rateLimitRemaining: 0,
+        rateLimitResetAt: "2026-07-04T11:00:00Z",
         skipped: false,
         skipReason: null
       },
@@ -355,6 +358,7 @@ describe("sync health summary", () => {
         cursorValue: null,
         errorMessage: null,
         rateLimitRemaining: null,
+        rateLimitResetAt: null,
         skipped: true,
         skipReason: "backfill disabled"
       }
@@ -372,6 +376,7 @@ describe("sync health summary", () => {
             started_at: "2026-07-04 09:00:00",
             error_message: null,
             rate_limit_remaining: null,
+            rate_limit_reset_at: null,
             last_successful_at: "2026-07-04 09:00:05",
             last_failed_at: null,
             last_failure_message: null
@@ -389,6 +394,7 @@ describe("sync health summary", () => {
         cursorValue: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null,
+        rateLimitResetAt: null,
         skipped: false,
         skipReason: null
       },
@@ -402,6 +408,7 @@ describe("sync health summary", () => {
         cursorValue: null,
         errorMessage: null,
         rateLimitRemaining: null,
+        rateLimitResetAt: null,
         skipped: false,
         skipReason: null
       },
@@ -415,6 +422,7 @@ describe("sync health summary", () => {
         cursorValue: null,
         errorMessage: "Sync layer has not recorded a run yet.",
         rateLimitRemaining: null,
+        rateLimitResetAt: null,
         skipped: false,
         skipReason: null
       }

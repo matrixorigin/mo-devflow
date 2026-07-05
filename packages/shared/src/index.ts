@@ -974,6 +974,7 @@ export interface SyncHealth {
   cursorValue: string | null;
   errorMessage: string | null;
   rateLimitRemaining: number | null;
+  rateLimitResetAt: string | null;
   skipped: boolean;
   skipReason: string | null;
 }

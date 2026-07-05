@@ -21,6 +21,7 @@ function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHeal
     cursorValue: input.cursorValue ?? null,
     errorMessage: input.errorMessage ?? null,
     rateLimitRemaining: input.rateLimitRemaining ?? null,
+    rateLimitResetAt: input.rateLimitResetAt ?? null,
     skipped: input.skipped ?? false,
     skipReason: input.skipReason ?? null
   };
