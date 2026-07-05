@@ -997,6 +997,25 @@ export async function recordSyncRun(input: {
   );
 }
 
+export async function getLatestSuccessfulSyncCursor(input: {
+  repoId: number;
+  syncLayer: SyncHealthLayer;
+}): Promise<string | null> {
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT cursor_value
+     FROM sync_runs
+     WHERE repo_id = ?
+       AND sync_layer = ?
+       AND status = 'success'
+       AND cursor_value IS NOT NULL
+     ORDER BY id DESC
+     LIMIT 1`,
+    [input.repoId, input.syncLayer]
+  );
+  const value = rows[0]?.cursor_value;
+  return value ? asString(value) : null;
+}
+
 export async function upsertIssue(repoId: number, issue: NormalizedIssue): Promise<void> {
   const now = nowSql();
   await getPool().execute("DELETE FROM issues WHERE repo_id = ? AND number = ?", [repoId, issue.number]);

@@ -106,19 +106,27 @@ describe("dashboard hash filters", () => {
       JSON.stringify({
         mode: "updated_desc_window",
         maxPages: 2,
+        previousHighWatermarkAt: "2026-07-03T00:00:00Z",
+        nextHighWatermarkAt: "2026-07-04T10:00:00Z",
         issuesOldestUpdatedAt: "2026-07-04T09:00:00Z",
         openPrsOldestUpdatedAt: "2026-07-04T08:00:00Z",
         closedPrsOldestUpdatedAt: null,
         issuesComplete: false,
-        openPullRequestsComplete: true
+        openPullRequestsComplete: true,
+        issuesWatermarkReached: true,
+        openPullRequestsWatermarkReached: false,
+        closedPullRequestsWatermarkReached: false
       })
     );
 
     expect(text).toContain("Updated-at polling window (bounded window)");
     expect(text).toContain("max 2 pages");
+    expect(text).toContain("previous watermark");
+    expect(text).toContain("next watermark");
     expect(text).toContain("issues oldest");
     expect(text).toContain("open PRs oldest");
     expect(text).toContain("closed PRs oldest -");
+    expect(text).toContain("issues reached previous watermark");
   });
 
   it("preserves unknown sync cursor formats", () => {

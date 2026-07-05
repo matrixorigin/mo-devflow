@@ -4,8 +4,11 @@ import {
   applyWorkflowFixPreview,
   classifyGitHubError,
   fetchIssueWritePermission,
+  fetchGitHubSnapshot,
   configuredGitHubSourceAuthType,
   githubSnapshotCursorValue,
+  githubSnapshotNextHighWatermark,
+  githubSnapshotPreviousHighWatermark,
   githubSnapshotWindowScope,
   githubLinkHeaderHasNextPage,
   linkedIssueNumbersFromPullRequestGraphqlResponse
@@ -13,9 +16,12 @@ import {
 
 const octokitMocks = vi.hoisted(() => ({
   issuesGet: vi.fn(),
+  issuesListForRepo: vi.fn(),
   issuesAddLabels: vi.fn(),
   issuesRemoveLabel: vi.fn(),
   issuesCreateComment: vi.fn(),
+  paginateIterator: vi.fn(),
+  pullsList: vi.fn(),
   reposGet: vi.fn(),
   usersGetAuthenticated: vi.fn()
 }));
@@ -26,9 +32,13 @@ vi.mock("@octokit/rest", () => ({
       rest: {
         issues: {
           get: octokitMocks.issuesGet,
+          listForRepo: octokitMocks.issuesListForRepo,
           addLabels: octokitMocks.issuesAddLabels,
           removeLabel: octokitMocks.issuesRemoveLabel,
           createComment: octokitMocks.issuesCreateComment
+        },
+        pulls: {
+          list: octokitMocks.pullsList
         },
         repos: {
           get: octokitMocks.reposGet
@@ -36,6 +46,9 @@ vi.mock("@octokit/rest", () => ({
         users: {
           getAuthenticated: octokitMocks.usersGetAuthenticated
         }
+      },
+      paginate: {
+        iterator: octokitMocks.paginateIterator
       }
     };
   })
@@ -160,6 +173,53 @@ function issueResponseWithUpdatedAt(labels: string[], updatedAt: string, state: 
       updated_at: updatedAt
     },
     headers: { "x-ratelimit-remaining": "99" }
+  };
+}
+
+function snapshotPage<T>(data: T[], link: string | null = null) {
+  return {
+    data,
+    headers: {
+      ...(link ? { link } : {}),
+      "x-ratelimit-remaining": "88"
+    }
+  };
+}
+
+function snapshotIssue(number: number, updatedAt: string) {
+  return {
+    id: number,
+    number,
+    title: `issue ${number}`,
+    state: "open",
+    user: { login: "alice" },
+    html_url: `https://github.com/matrixorigin/matrixone/issues/${number}`,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    closed_at: null,
+    labels: [],
+    assignees: []
+  };
+}
+
+function snapshotPullRequest(number: number, state: "open" | "closed", updatedAt: string) {
+  return {
+    id: number,
+    number,
+    title: `pr ${number}`,
+    state,
+    user: { login: "alice" },
+    html_url: `https://github.com/matrixorigin/matrixone/pull/${number}`,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    closed_at: state === "closed" ? updatedAt : null,
+    merged_at: null,
+    draft: false,
+    head: { ref: "feature" },
+    base: { ref: "main" },
+    labels: [],
+    assignees: [],
+    requested_reviewers: []
   };
 }
 
@@ -443,34 +503,132 @@ describe("GitHub pagination metadata", () => {
         { updated_at: "not-a-date" },
         { updated_at: "2026-07-04T10:00:00Z" }
       ],
-      false
+      false,
+      true
     );
 
     expect(scope).toEqual({
       returned: 3,
       complete: false,
+      watermarkReached: true,
       newestUpdatedAt: "2026-07-04T10:00:00Z",
       oldestUpdatedAt: "2026-07-04T09:00:00Z"
     });
+    const window = {
+      mode: "updated_desc_window" as const,
+      maxPages: 2,
+      previousHighWatermarkAt: "2026-07-03T00:00:00Z",
+      nextHighWatermarkAt: null,
+      issues: scope,
+      openPullRequests: githubSnapshotWindowScope([{ updated_at: "2026-07-04T08:00:00Z" }], true),
+      closedPullRequests: githubSnapshotWindowScope([], true)
+    };
+    const nextHighWatermarkAt = githubSnapshotNextHighWatermark(window);
+    expect(nextHighWatermarkAt).toBe("2026-07-04T10:00:00Z");
+    expect(
+      githubSnapshotNextHighWatermark({
+        ...window,
+        previousHighWatermarkAt: "2026-07-05T00:00:00Z"
+      })
+    ).toBe("2026-07-05T00:00:00Z");
     expect(
       JSON.parse(
         githubSnapshotCursorValue({
-          mode: "updated_desc_window",
-          maxPages: 2,
-          issues: scope,
-          openPullRequests: githubSnapshotWindowScope([{ updated_at: "2026-07-04T08:00:00Z" }], true),
-          closedPullRequests: githubSnapshotWindowScope([], true)
+          ...window,
+          nextHighWatermarkAt
         })
       )
     ).toEqual({
       mode: "updated_desc_window",
       maxPages: 2,
+      previousHighWatermarkAt: "2026-07-03T00:00:00Z",
+      nextHighWatermarkAt: "2026-07-04T10:00:00Z",
+      issuesNewestUpdatedAt: "2026-07-04T10:00:00Z",
       issuesOldestUpdatedAt: "2026-07-04T09:00:00Z",
+      openPrsNewestUpdatedAt: "2026-07-04T08:00:00Z",
       openPrsOldestUpdatedAt: "2026-07-04T08:00:00Z",
+      closedPrsNewestUpdatedAt: null,
       closedPrsOldestUpdatedAt: null,
       issuesComplete: false,
-      openPullRequestsComplete: true
+      openPullRequestsComplete: true,
+      issuesWatermarkReached: true,
+      openPullRequestsWatermarkReached: false,
+      closedPullRequestsWatermarkReached: false
     });
+    expect(githubSnapshotPreviousHighWatermark(githubSnapshotCursorValue({ ...window, nextHighWatermarkAt }))).toBe(
+      "2026-07-04T10:00:00Z"
+    );
+    expect(githubSnapshotPreviousHighWatermark("not-json")).toBeNull();
+  });
+
+  test("stops updated-desc snapshot pagination after reaching the previous watermark", async () => {
+    const originalEnv = { ...process.env };
+    process.env = {
+      ...originalEnv,
+      MO_DEVFLOW_SYNC_MAX_PAGES: "3",
+      MO_DEVFLOW_PR_DETAIL_MAX_ITEMS: "0",
+      MO_DEVFLOW_ISSUE_COMMENT_MAX_ITEMS: "0"
+    };
+    const pageCounts = new Map<string, number>();
+    const paged = async function* <T>(key: string, pages: Array<{ data: T[]; headers: Record<string, string> }>) {
+      for (const page of pages) {
+        pageCounts.set(key, (pageCounts.get(key) ?? 0) + 1);
+        yield page;
+      }
+    };
+    octokitMocks.paginateIterator.mockImplementation((endpoint: unknown, params: { state?: string }) => {
+      if (endpoint === octokitMocks.issuesListForRepo) {
+        return paged("issues", [
+          snapshotPage(
+            [snapshotIssue(1, "2026-07-04T10:00:00Z")],
+            '<https://api.github.test/issues?page=2>; rel="next"'
+          ),
+          snapshotPage(
+            [snapshotIssue(2, "2026-07-04T09:00:00Z")],
+            '<https://api.github.test/issues?page=3>; rel="next"'
+          ),
+          snapshotPage([snapshotIssue(3, "2026-07-04T08:00:00Z")])
+        ]);
+      }
+      if (endpoint === octokitMocks.pullsList && params.state === "open") {
+        return paged("open-prs", [
+          snapshotPage(
+            [snapshotPullRequest(10, "open", "2026-07-04T09:15:00Z")],
+            '<https://api.github.test/pulls?page=2>; rel="next"'
+          ),
+          snapshotPage([snapshotPullRequest(11, "open", "2026-07-04T08:15:00Z")])
+        ]);
+      }
+      return paged("closed-prs", [
+        snapshotPage(
+          [snapshotPullRequest(12, "closed", "2026-07-04T08:30:00Z")],
+          '<https://api.github.test/pulls?page=2>; rel="next"'
+        ),
+        snapshotPage([snapshotPullRequest(13, "closed", "2026-07-04T07:30:00Z")])
+      ]);
+    });
+
+    try {
+      const snapshot = await fetchGitHubSnapshot(profile, {
+        previousCursorValue: JSON.stringify({
+          mode: "updated_desc_window",
+          nextHighWatermarkAt: "2026-07-04T09:30:00Z"
+        })
+      });
+
+      expect(pageCounts.get("issues")).toBe(2);
+      expect(pageCounts.get("open-prs")).toBe(1);
+      expect(pageCounts.get("closed-prs")).toBe(1);
+      expect(snapshot.syncWindow.previousHighWatermarkAt).toBe("2026-07-04T09:30:00Z");
+      expect(snapshot.syncWindow.nextHighWatermarkAt).toBe("2026-07-04T10:00:00Z");
+      expect(snapshot.syncWindow.issues.watermarkReached).toBe(true);
+      expect(snapshot.syncWindow.openPullRequests.watermarkReached).toBe(true);
+      expect(snapshot.syncWindow.closedPullRequests.watermarkReached).toBe(true);
+      expect(snapshot.issues.map((issue) => issue.number)).toEqual([1, 2]);
+      expect(snapshot.pullRequests.map((pr) => pr.number)).toEqual([10, 12]);
+    } finally {
+      process.env = originalEnv;
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 import { loadEnv, loadRepoProfile } from "@mo-devflow/config";
 import {
   issueAttentionRuleKeys,
+  getLatestSuccessfulSyncCursor,
   listIssueCommentBackfillCandidates,
   listIssueTimelineBackfillCandidates,
   listCachedIssuesForRules,
@@ -1301,7 +1302,8 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
   const repoId = await upsertRepoProfile(profile);
 
   try {
-    const snapshot = await fetchGitHubSnapshot(profile);
+    const previousCursorValue = await getLatestSuccessfulSyncCursor({ repoId, syncLayer: "github_sync" });
+    const snapshot = await fetchGitHubSnapshot(profile, { previousCursorValue });
     const linkedPrAuthorByIssueNumber = linkedPrAuthorsByIssueNumber(snapshot.pullRequests);
     let issueCount = 0;
     let prCount = 0;

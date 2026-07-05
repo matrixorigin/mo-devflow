@@ -55,6 +55,8 @@ export interface GitHubSnapshot {
 export interface GitHubSnapshotSyncWindow {
   mode: "updated_desc_window";
   maxPages: number;
+  previousHighWatermarkAt: string | null;
+  nextHighWatermarkAt: string | null;
   issues: GitHubSnapshotWindowScope;
   openPullRequests: GitHubSnapshotWindowScope;
   closedPullRequests: GitHubSnapshotWindowScope;
@@ -63,6 +65,7 @@ export interface GitHubSnapshotSyncWindow {
 export interface GitHubSnapshotWindowScope {
   returned: number;
   complete: boolean;
+  watermarkReached: boolean;
   newestUpdatedAt: string | null;
   oldestUpdatedAt: string | null;
 }
@@ -684,7 +687,7 @@ export function classifyGitHubError(error: unknown): GitHubErrorClassification {
 async function collectPages<T>(
   iterator: AsyncIterable<{ data: T[]; headers: Record<string, string | number | undefined> }>,
   maxPages: number
-): Promise<{ data: T[]; rateLimitRemaining: number | null; complete: boolean }> {
+): Promise<{ data: T[]; rateLimitRemaining: number | null; complete: boolean; watermarkReached: boolean }> {
   const data: T[] = [];
   let page = 0;
   let rateLimitRemaining: number | null = null;
@@ -698,7 +701,42 @@ async function collectPages<T>(
       break;
     }
   }
-  return { data, rateLimitRemaining, complete };
+  return { data, rateLimitRemaining, complete, watermarkReached: false };
+}
+
+async function collectUpdatedPages<T extends { updated_at?: string | null }>(
+  iterator: AsyncIterable<{ data: T[]; headers: Record<string, string | number | undefined> }>,
+  maxPages: number,
+  previousHighWatermarkAt: string | null
+): Promise<{ data: T[]; rateLimitRemaining: number | null; complete: boolean; watermarkReached: boolean }> {
+  const data: T[] = [];
+  let page = 0;
+  let rateLimitRemaining: number | null = null;
+  let complete = true;
+  let watermarkReached = false;
+  const watermarkMs =
+    previousHighWatermarkAt && Number.isFinite(Date.parse(previousHighWatermarkAt))
+      ? Date.parse(previousHighWatermarkAt)
+      : null;
+
+  for await (const response of iterator) {
+    page += 1;
+    data.push(...response.data);
+    rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+    const hasNext = githubLinkHeaderHasNextPage(response.headers);
+    const pageRange = updatedAtRange(response.data);
+    if (watermarkMs !== null && pageRange.oldestUpdatedAt && Date.parse(pageRange.oldestUpdatedAt) <= watermarkMs) {
+      watermarkReached = true;
+      complete = !hasNext;
+      break;
+    }
+    if (page >= maxPages) {
+      complete = !hasNext;
+      break;
+    }
+  }
+
+  return { data, rateLimitRemaining, complete, watermarkReached };
 }
 
 export function githubLinkHeaderHasNextPage(headers: Record<string, string | number | undefined>): boolean {
@@ -722,24 +760,65 @@ function updatedAtRange(items: Array<{ updated_at?: string | null }>): {
 
 export function githubSnapshotWindowScope(
   items: Array<{ updated_at?: string | null }>,
-  complete: boolean
+  complete: boolean,
+  watermarkReached = false
 ): GitHubSnapshotWindowScope {
   return {
     returned: items.length,
     complete,
+    watermarkReached,
     ...updatedAtRange(items)
   };
+}
+
+function maxIsoDate(values: Array<string | null>): string | null {
+  const timestamps = values
+    .filter((value): value is string => typeof value === "string" && Number.isFinite(Date.parse(value)))
+    .sort((left, right) => Date.parse(right) - Date.parse(left));
+  return timestamps[0] ?? null;
+}
+
+export function githubSnapshotPreviousHighWatermark(cursorValue: string | null | undefined): string | null {
+  if (!cursorValue) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(cursorValue) as Record<string, unknown>;
+    if (parsed.mode !== "updated_desc_window") {
+      return null;
+    }
+    return typeof parsed.nextHighWatermarkAt === "string" ? parsed.nextHighWatermarkAt : null;
+  } catch {
+    return null;
+  }
+}
+
+export function githubSnapshotNextHighWatermark(window: GitHubSnapshotSyncWindow): string | null {
+  return maxIsoDate([
+    window.previousHighWatermarkAt,
+    window.issues.newestUpdatedAt,
+    window.openPullRequests.newestUpdatedAt,
+    window.closedPullRequests.newestUpdatedAt
+  ]);
 }
 
 export function githubSnapshotCursorValue(window: GitHubSnapshotSyncWindow): string {
   return JSON.stringify({
     mode: window.mode,
     maxPages: window.maxPages,
+    previousHighWatermarkAt: window.previousHighWatermarkAt,
+    nextHighWatermarkAt: window.nextHighWatermarkAt,
+    issuesNewestUpdatedAt: window.issues.newestUpdatedAt,
     issuesOldestUpdatedAt: window.issues.oldestUpdatedAt,
+    openPrsNewestUpdatedAt: window.openPullRequests.newestUpdatedAt,
     openPrsOldestUpdatedAt: window.openPullRequests.oldestUpdatedAt,
+    closedPrsNewestUpdatedAt: window.closedPullRequests.newestUpdatedAt,
     closedPrsOldestUpdatedAt: window.closedPullRequests.oldestUpdatedAt,
     issuesComplete: window.issues.complete,
-    openPullRequestsComplete: window.openPullRequests.complete
+    openPullRequestsComplete: window.openPullRequests.complete,
+    issuesWatermarkReached: window.issues.watermarkReached,
+    openPullRequestsWatermarkReached: window.openPullRequests.watermarkReached,
+    closedPullRequestsWatermarkReached: window.closedPullRequests.watermarkReached
   });
 }
 
@@ -1229,13 +1308,17 @@ export async function fetchPullRequestInsightForNumber(input: { profile: RepoPro
   };
 }
 
-export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubSnapshot> {
+export async function fetchGitHubSnapshot(
+  profile: RepoProfile,
+  input: { previousCursorValue?: string | null } = {}
+): Promise<GitHubSnapshot> {
   const { octokit, sourceAuthType } = createGitHubClient();
   const maxPages = Math.max(1, Number(process.env.MO_DEVFLOW_SYNC_MAX_PAGES ?? "2"));
   const owner = profile.repo.owner;
   const repo = profile.repo.name;
+  const previousHighWatermarkAt = githubSnapshotPreviousHighWatermark(input.previousCursorValue);
 
-  const issuesResult = await collectPages(
+  const issuesResult = await collectUpdatedPages(
     octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
       owner,
       repo,
@@ -1244,10 +1327,11 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
       sort: "updated",
       direction: "desc"
     }),
-    maxPages
+    maxPages,
+    previousHighWatermarkAt
   );
 
-  const openPrsResult = await collectPages(
+  const openPrsResult = await collectUpdatedPages(
     octokit.paginate.iterator(octokit.rest.pulls.list, {
       owner,
       repo,
@@ -1256,10 +1340,11 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
       sort: "updated",
       direction: "desc"
     }),
-    maxPages
+    maxPages,
+    previousHighWatermarkAt
   );
 
-  const closedPrsResult = await collectPages(
+  const closedPrsResult = await collectUpdatedPages(
     octokit.paginate.iterator(octokit.rest.pulls.list, {
       owner,
       repo,
@@ -1268,7 +1353,8 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
       sort: "updated",
       direction: "desc"
     }),
-    1
+    1,
+    previousHighWatermarkAt
   );
 
   const prsByNumber = new Map<number, (typeof openPrsResult.data)[number]>();
@@ -1292,6 +1378,31 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
     sourceAuthType
   });
 
+  const issuesWindow = githubSnapshotWindowScope(
+    issuesResult.data,
+    issuesResult.complete,
+    issuesResult.watermarkReached
+  );
+  const openPullRequestsWindow = githubSnapshotWindowScope(
+    openPrsResult.data,
+    openPrsResult.complete,
+    openPrsResult.watermarkReached
+  );
+  const closedPullRequestsWindow = githubSnapshotWindowScope(
+    closedPrsResult.data,
+    closedPrsResult.complete,
+    closedPrsResult.watermarkReached
+  );
+  const syncWindowBase = {
+    mode: "updated_desc_window" as const,
+    maxPages,
+    previousHighWatermarkAt,
+    nextHighWatermarkAt: null,
+    issues: issuesWindow,
+    openPullRequests: openPullRequestsWindow,
+    closedPullRequests: closedPullRequestsWindow
+  };
+
   return {
     issues: issuesResult.data,
     pullRequests: Array.from(prsByNumber.values()),
@@ -1307,11 +1418,8 @@ export async function fetchGitHubSnapshot(profile: RepoProfile): Promise<GitHubS
     issuesComplete: issuesResult.complete,
     openPullRequestsComplete: openPrsResult.complete,
     syncWindow: {
-      mode: "updated_desc_window",
-      maxPages,
-      issues: githubSnapshotWindowScope(issuesResult.data, issuesResult.complete),
-      openPullRequests: githubSnapshotWindowScope(openPrsResult.data, openPrsResult.complete),
-      closedPullRequests: githubSnapshotWindowScope(closedPrsResult.data, closedPrsResult.complete)
+      ...syncWindowBase,
+      nextHighWatermarkAt: githubSnapshotNextHighWatermark(syncWindowBase)
     }
   };
 }

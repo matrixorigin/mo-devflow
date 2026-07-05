@@ -6,8 +6,11 @@ const mocks = vi.hoisted(() => ({
   completeGitHubWebhookDelivery: vi.fn(),
   configuredGitHubSourceAuthType: vi.fn(),
   failGitHubWebhookDelivery: vi.fn(),
+  fetchGitHubSnapshot: vi.fn(),
   fetchIssueCommentsForNumber: vi.fn(),
   fetchPullRequestInsightForNumber: vi.fn(),
+  getLatestSuccessfulSyncCursor: vi.fn(),
+  githubSnapshotCursorValue: vi.fn(),
   listCachedIssuesForRules: vi.fn(),
   listIssueCommentBackfillCandidates: vi.fn(),
   listPullRequestNumbersForDetailBackfill: vi.fn(),
@@ -48,6 +51,7 @@ vi.mock("@mo-devflow/db", () => ({
   claimNextGitHubWebhookDelivery: mocks.claimNextGitHubWebhookDelivery,
   completeGitHubWebhookDelivery: mocks.completeGitHubWebhookDelivery,
   failGitHubWebhookDelivery: mocks.failGitHubWebhookDelivery,
+  getLatestSuccessfulSyncCursor: mocks.getLatestSuccessfulSyncCursor,
   isNotificationInCooldown: vi.fn(),
   listCachedIssuesForRules: mocks.listCachedIssuesForRules,
   listIssueCommentBackfillCandidates: mocks.listIssueCommentBackfillCandidates,
@@ -73,8 +77,9 @@ vi.mock("@mo-devflow/github", () => ({
   classifyGitHubError: vi.fn(),
   configuredGitHubSourceAuthType: mocks.configuredGitHubSourceAuthType,
   fetchIssueCommentsForNumber: mocks.fetchIssueCommentsForNumber,
-  fetchGitHubSnapshot: vi.fn(),
-  fetchPullRequestInsightForNumber: mocks.fetchPullRequestInsightForNumber
+  fetchGitHubSnapshot: mocks.fetchGitHubSnapshot,
+  fetchPullRequestInsightForNumber: mocks.fetchPullRequestInsightForNumber,
+  githubSnapshotCursorValue: mocks.githubSnapshotCursorValue
 }));
 
 vi.mock("@mo-devflow/notifications", () => ({
@@ -141,6 +146,9 @@ describe("webhook review processing", () => {
     mocks.configuredGitHubSourceAuthType.mockReturnValue("service_read_token");
     mocks.loadRepoProfile.mockReturnValue(profile);
     mocks.upsertRepoProfile.mockResolvedValue(10);
+    mocks.getLatestSuccessfulSyncCursor.mockResolvedValue(null);
+    mocks.githubSnapshotCursorValue.mockReturnValue("next-cursor");
+    mocks.resolveStaleAttentionItems.mockResolvedValue(0);
   });
 
   afterEach(() => {
@@ -206,6 +214,68 @@ describe("webhook review processing", () => {
         status: "success",
         sourceAuthType: "service_read_token",
         raw: expect.objectContaining({ selected: 2, refreshed: 2, failed: 0 })
+      })
+    );
+  });
+
+  test("passes the last successful github cursor into snapshot polling", async () => {
+    const { syncGitHubSnapshotOnce } = await import("./sync");
+    const previousCursorValue = JSON.stringify({
+      mode: "updated_desc_window",
+      nextHighWatermarkAt: "2026-07-04T08:00:00Z"
+    });
+    const syncWindow = {
+      mode: "updated_desc_window",
+      maxPages: 2,
+      previousHighWatermarkAt: "2026-07-04T08:00:00Z",
+      nextHighWatermarkAt: "2026-07-04T09:00:00Z",
+      issues: {
+        returned: 0,
+        complete: true,
+        watermarkReached: false,
+        newestUpdatedAt: null,
+        oldestUpdatedAt: null
+      },
+      openPullRequests: {
+        returned: 0,
+        complete: true,
+        watermarkReached: false,
+        newestUpdatedAt: null,
+        oldestUpdatedAt: null
+      },
+      closedPullRequests: {
+        returned: 0,
+        complete: true,
+        watermarkReached: false,
+        newestUpdatedAt: null,
+        oldestUpdatedAt: null
+      }
+    };
+    mocks.getLatestSuccessfulSyncCursor.mockResolvedValue(previousCursorValue);
+    mocks.fetchGitHubSnapshot.mockResolvedValue({
+      issues: [],
+      pullRequests: [],
+      pullRequestInsights: new Map(),
+      issueComments: new Map(),
+      sourceAuthType: "service_read_token",
+      rateLimitRemaining: 42,
+      issuesComplete: true,
+      openPullRequestsComplete: true,
+      syncWindow
+    });
+
+    const result = await syncGitHubSnapshotOnce();
+
+    expect(result).toEqual({ repoId: 10, issues: 0, pullRequests: 0, rateLimitRemaining: 42 });
+    expect(mocks.getLatestSuccessfulSyncCursor).toHaveBeenCalledWith({ repoId: 10, syncLayer: "github_sync" });
+    expect(mocks.fetchGitHubSnapshot).toHaveBeenCalledWith(profile, { previousCursorValue });
+    expect(mocks.recordSyncRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 10,
+        syncLayer: "github_sync",
+        status: "success",
+        cursorValue: "next-cursor",
+        raw: expect.objectContaining({ syncWindow })
       })
     );
   });

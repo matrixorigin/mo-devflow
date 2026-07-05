@@ -931,12 +931,26 @@ export function syncHealthCursorText(cursorValue: string | null): string | null 
     const issuesComplete = parsed.issuesComplete === true;
     const prsComplete = parsed.openPullRequestsComplete === true;
     const completeness = issuesComplete && prsComplete ? "complete window" : "bounded window";
+    const issueWatermark = parsed.issuesWatermarkReached === true ? "issues reached previous watermark" : null;
+    const prWatermark =
+      parsed.openPullRequestsWatermarkReached === true ? "open PRs reached previous watermark" : null;
+    const closedPrWatermark =
+      parsed.closedPullRequestsWatermarkReached === true ? "closed PRs reached previous watermark" : null;
     return [
       `Updated-at polling window (${completeness})`,
       maxPages !== null ? `max ${maxPages} pages` : null,
+      `previous watermark ${formatDate(
+        typeof parsed.previousHighWatermarkAt === "string" ? parsed.previousHighWatermarkAt : null
+      )}`,
+      `next watermark ${formatDate(
+        typeof parsed.nextHighWatermarkAt === "string" ? parsed.nextHighWatermarkAt : null
+      )}`,
       `issues oldest ${formatDate(typeof parsed.issuesOldestUpdatedAt === "string" ? parsed.issuesOldestUpdatedAt : null)}`,
       `open PRs oldest ${formatDate(typeof parsed.openPrsOldestUpdatedAt === "string" ? parsed.openPrsOldestUpdatedAt : null)}`,
-      `closed PRs oldest ${formatDate(typeof parsed.closedPrsOldestUpdatedAt === "string" ? parsed.closedPrsOldestUpdatedAt : null)}`
+      `closed PRs oldest ${formatDate(typeof parsed.closedPrsOldestUpdatedAt === "string" ? parsed.closedPrsOldestUpdatedAt : null)}`,
+      issueWatermark,
+      prWatermark,
+      closedPrWatermark
     ]
       .filter((part): part is string => part !== null)
       .join(" | ");
