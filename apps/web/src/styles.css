@@ -5842,6 +5842,15 @@ button.testing-board-stat:focus-visible {
   padding: 10px 8px;
 }
 
+.personal-execution-timeline {
+  background: #f8fafc;
+  grid-column: 1 / -1;
+}
+
+.personal-execution-timeline .flow-timeline-row {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
 .personal-execution-row:first-child {
   border-top: 0;
 }

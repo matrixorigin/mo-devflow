@@ -14308,6 +14308,54 @@ function ganttToneRankValue(tone: PersonalGanttRow["tone"]): number {
   return 0;
 }
 
+function PersonalExecutionTimeline({
+  row,
+  onPreview
+}: {
+  row: PersonalGanttRow;
+  onPreview: (row: PersonalGanttRow) => void;
+}) {
+  const issueLabel = row.issue.number === null ? "Issue" : `Issue #${row.issue.number}`;
+  const issueDuration = row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours);
+  const issueTitle = `${issueLabel} | ${row.issue.title} | ${issueDuration} | ${row.issue.durationEvidence}`;
+  const visiblePrs = row.prs.slice(0, 3);
+  const hiddenPrCount = Math.max(0, row.prs.length - visiblePrs.length);
+
+  return (
+    <div className="flow-thread-timeline personal-execution-timeline" aria-label={`${row.title} compact timeline`}>
+      <div className="flow-timeline-axis" aria-hidden="true">
+        <span>oldest</span>
+        <span>now</span>
+      </div>
+      <div className="flow-timeline-row flow-timeline-row-issue">
+        <span className="flow-timeline-label">{issueLabel}</span>
+        <div className="flow-timeline-track">
+          <span
+            className={`flow-timeline-bar flow-timeline-bar-${row.issue.tone}`}
+            style={flowTimelineStyle(row.issue)}
+            title={issueTitle}
+          >
+            <span>{issueDuration}</span>
+          </span>
+        </div>
+      </div>
+      {visiblePrs.length === 0 ? (
+        <div className="flow-timeline-row">
+          <span className="flow-timeline-label">PR</span>
+          <div className="flow-timeline-empty">No execution PR linked in cache</div>
+        </div>
+      ) : (
+        visiblePrs.map((pr) => <FlowTimelinePrRow pr={pr} key={pr.number} />)
+      )}
+      {hiddenPrCount > 0 ? (
+        <button type="button" className="flow-timeline-overflow" onClick={() => onPreview(row)}>
+          +{hiddenPrCount} more PRs
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function PersonalExecutionRow({ row, onPreview }: { row: PersonalGanttRow; onPreview: (row: PersonalGanttRow) => void }) {
   const statusCounts = flowThreadStatusCounts(row);
   const reasons = flowThreadReasons(row);
@@ -14414,6 +14462,8 @@ function PersonalExecutionRow({ row, onPreview }: { row: PersonalGanttRow; onPre
           onCollapse={reasonLazy.reset}
         />
       </div>
+
+      <PersonalExecutionTimeline row={row} onPreview={onPreview} />
     </article>
   );
 }
