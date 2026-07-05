@@ -33,6 +33,7 @@ import {
   profileConfigurationWarnings,
   profileSetupPlan,
   profileSetupPlanForViewer,
+  pullRequestAttentionFlagsForRules,
   pullRequestWithPreservedInsight,
   testingIssueHandoffToCloseSamplesFromRows,
   testingIssueTransitionsFromQueueIssues,
@@ -1369,6 +1370,19 @@ describe("issue timeline backfill candidate selection", () => {
         lastTimelineSyncedAt: "2026-07-01T11:00:00Z"
       }
     ]);
+  });
+});
+
+describe("pull request rule inputs", () => {
+  test("exclude issue-testing-only attention flags from PR rule scans", () => {
+    expect(
+      pullRequestAttentionFlagsForRules([
+        "testing_stalled",
+        "ci_failed",
+        "testing_stalled",
+        "review_requested_no_response"
+      ])
+    ).toEqual(["ci_failed", "review_requested_no_response"]);
   });
 });
 

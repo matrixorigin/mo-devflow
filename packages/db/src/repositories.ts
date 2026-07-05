@@ -1372,8 +1372,7 @@ async function listOpenPullRequestRowsForRules(repoId: number): Promise<RowData[
               last_human_action_at, last_system_action_at, review_decision,
               merge_state_status, ci_state, latest_review_state,
               latest_review_submitted_at, latest_commit_at, detail_synced_at,
-              detail_error, testing_state, testing_testers_json, testing_signals_json,
-              testing_queue_age_hours, attention_flags_json, linked_issue_numbers_json,
+              detail_error, attention_flags_json, linked_issue_numbers_json,
               source_auth_type, source_user_id, visibility_class, is_complete,
               sync_error, last_synced_at
        FROM pull_requests
@@ -1396,6 +1395,10 @@ async function listOpenPullRequestRowsForRules(repoId: number): Promise<RowData[
   }
 
   return rows;
+}
+
+export function pullRequestAttentionFlagsForRules(flags: string[]): string[] {
+  return uniqueValues(flags.filter((flag) => flag !== "testing_stalled"));
 }
 
 export async function listCachedPullRequestsForRules(repoId: number): Promise<NormalizedPullRequest[]> {
@@ -1430,17 +1433,12 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
     latestCommitAt: fromSqlDate(row.latest_commit_at),
     detailSyncedAt: fromSqlDate(row.detail_synced_at),
     detailError: row.detail_error ? asString(row.detail_error) : null,
-    testingState: row.testing_state
-      ? (asString(row.testing_state) as NormalizedPullRequest["testingState"])
-      : "not_ready",
-    testingTesters: parseJsonArray(asString(row.testing_testers_json)),
-    testingSignals: parseJsonArray(asString(row.testing_signals_json)),
-    testingQueueAgeHours:
-      row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
-        ? null
-        : asNumber(row.testing_queue_age_hours),
+    testingState: "not_ready",
+    testingTesters: [],
+    testingSignals: [],
+    testingQueueAgeHours: null,
     workflowSkipped: false,
-    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    attentionFlags: pullRequestAttentionFlagsForRules(parseJsonArray(asString(row.attention_flags_json))),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),

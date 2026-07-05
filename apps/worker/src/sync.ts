@@ -237,7 +237,7 @@ export function prEvidence(flag: string, prNumber: number, isComplete: boolean):
   } else if (flag === "merge_conflict") {
     evidence = `PR #${prNumber} has a merge conflict.`;
   } else if (flag === "testing_stalled") {
-    evidence = `PR #${prNumber} is stalled in testing handoff.`;
+    evidence = `PR #${prNumber} is linked to an issue waiting in testing.`;
   } else {
     evidence = `PR #${prNumber} has no recent human action.`;
   }
