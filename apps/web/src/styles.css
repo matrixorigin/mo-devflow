@@ -3751,6 +3751,65 @@ button.webhook-path-metric:focus-visible {
   margin-bottom: 14px;
 }
 
+.write-audit-health {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #64748b;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1.1fr) repeat(2, minmax(180px, 0.95fr));
+  margin-bottom: 14px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.write-audit-health-good {
+  border-left-color: #16a34a;
+}
+
+.write-audit-health-attention {
+  border-left-color: #d97706;
+}
+
+.write-audit-health-critical {
+  border-left-color: #dc2626;
+}
+
+.write-audit-health-muted {
+  border-left-color: #94a3b8;
+}
+
+.write-audit-health-primary,
+.write-audit-health-detail {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.write-audit-health span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.write-audit-health strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.write-audit-health small {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .webhook-event-panel {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -10584,6 +10643,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .testing-turnover-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .write-audit-health {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .team-monitor-grid {

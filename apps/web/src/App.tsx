@@ -297,6 +297,16 @@ type DriftSignalFilter =
   | "notification_failed";
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
+type WriteAuditHealthTone = "good" | "attention" | "critical" | "muted";
+
+interface WriteAuditHealthSummary {
+  total: number;
+  attention: number;
+  latestAttention: string;
+  latestSuccess: string;
+  operationSummary: string;
+  tone: WriteAuditHealthTone;
+}
 
 const criticalIssueScopeFilters = [
   "all",
@@ -3784,6 +3794,67 @@ function writeAuditMatchesScope(action: WriteActionExecutionView, filter: WriteA
     );
   }
   return true;
+}
+
+function sortedWriteActions(actions: WriteActionExecutionView[]): WriteActionExecutionView[] {
+  return [...actions].sort(
+    (left, right) =>
+      Date.parse(right.finishedAt) - Date.parse(left.finishedAt) ||
+      Date.parse(right.startedAt) - Date.parse(left.startedAt) ||
+      right.id - left.id
+  );
+}
+
+function writeActionTargetLabel(action: WriteActionExecutionView): string {
+  if (action.objectType === "notification_probe") {
+    return writeActionObjectLabel(action.objectType);
+  }
+  return `${writeActionObjectLabel(action.objectType)} #${action.objectNumber}`;
+}
+
+function writeActionAuditLine(action: WriteActionExecutionView): string {
+  return `${labelText(action.actionKey)} on ${writeActionTargetLabel(action)} by ${action.githubLogin} at ${formatDate(
+    action.finishedAt
+  )}`;
+}
+
+export function writeAuditOperationSummary(actions: WriteActionExecutionView[]): string {
+  const operations = actions.flatMap((action) => action.executedOperations);
+  const labelAdds = operations.filter((operation) => operation.type === "add_label").length;
+  const labelRemovals = operations.filter((operation) => operation.type === "remove_label").length;
+  const comments = operations.filter((operation) => operation.type === "add_comment").length;
+  const noOperationRows = actions.filter((action) => action.executedOperations.length === 0).length;
+  const parts = [
+    labelAdds > 0 ? `${labelAdds} label add${labelAdds === 1 ? "" : "s"}` : null,
+    labelRemovals > 0 ? `${labelRemovals} label removal${labelRemovals === 1 ? "" : "s"}` : null,
+    comments > 0 ? `${comments} hidden comment${comments === 1 ? "" : "s"}` : null,
+    noOperationRows > 0 ? `${noOperationRows} no-op audit row${noOperationRows === 1 ? "" : "s"}` : null
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" | ") : "No operation details visible";
+}
+
+export function writeAuditHealthSummary(actions: WriteActionExecutionView[]): WriteAuditHealthSummary {
+  const sortedActions = sortedWriteActions(actions);
+  const attentionActions = sortedActions.filter(writeActionNeedsAttention);
+  const successAction = sortedActions.find((action) => action.status === "success") ?? null;
+  const criticalAttention = attentionActions.some(
+    (action) => action.status === "failed" || action.status === "token_unavailable"
+  );
+  return {
+    total: actions.length,
+    attention: attentionActions.length,
+    latestAttention:
+      attentionActions.length > 0 ? writeActionAuditLine(attentionActions[0]) : "No write action needs attention",
+    latestSuccess: successAction ? writeActionAuditLine(successAction) : "No successful write action visible",
+    operationSummary: writeAuditOperationSummary(actions),
+    tone: criticalAttention
+      ? "critical"
+      : attentionActions.length > 0
+        ? "attention"
+        : actions.length > 0
+          ? "good"
+          : "muted"
+  };
 }
 
 function prHasFailedCi(pr: PendingPrView): boolean {
@@ -19909,6 +19980,8 @@ function WriteAuditBoard({
   authenticated: boolean;
 }) {
   const filteredActions = actions.filter((action) => writeAuditMatchesScope(action, scopeFilter));
+  const auditHealth = writeAuditHealthSummary(actions);
+  const filteredAuditHealth = writeAuditHealthSummary(filteredActions);
   const attentionActions = actions.filter(writeActionNeedsAttention).length;
   const failedActions = actions.filter((action) => action.status === "failed").length;
   const stalePreviewActions = actions.filter((action) => action.status === "stale_preview").length;
@@ -19987,6 +20060,30 @@ function WriteAuditBoard({
           active={scopeFilter === "notification"}
           onClick={() => onScopeFilterChange("notification")}
         />
+      </div>
+
+      <div className={`write-audit-health write-audit-health-${auditHealth.tone}`} aria-label="Write audit health">
+        <div className="write-audit-health-primary">
+          <span>Audit health</span>
+          <strong>
+            {auditHealth.attention > 0
+              ? `${auditHealth.attention} write action${auditHealth.attention === 1 ? "" : "s"} need attention`
+              : auditHealth.total > 0
+                ? "All visible write actions succeeded"
+                : "No visible write action yet"}
+          </strong>
+          <small>{auditHealth.latestAttention}</small>
+        </div>
+        <div className="write-audit-health-detail">
+          <span>Last success</span>
+          <strong>{auditHealth.latestSuccess}</strong>
+          <small>Raw provider responses and comment bodies are not exposed in this dashboard.</small>
+        </div>
+        <div className="write-audit-health-detail">
+          <span>{writeAuditScopeLabel(scopeFilter)}</span>
+          <strong>{filteredActions.length} rows in current filter</strong>
+          <small>{filteredAuditHealth.operationSummary}</small>
+        </div>
       </div>
 
       {!authenticated ? (

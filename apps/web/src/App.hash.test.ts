@@ -67,6 +67,8 @@ import {
   violationSignalFilterFromHash,
   webhookScopeFilterFromHash,
   writeAuditScopeFilterFromHash,
+  writeAuditHealthSummary,
+  writeAuditOperationSummary,
   workflowFixActionForViolation,
   workflowPostWriteRefreshSummary,
   workflowViolationMatchesSignalFilter
@@ -266,6 +268,56 @@ describe("dashboard hash filters", () => {
     ).toBe("notifications");
     expect(dashboardHashForView("Webhooks", { webhookScopeFilter: "pending" })).toBe("webhooks");
     expect(dashboardHashForView("Audit", { writeAuditScopeFilter: "attention" })).toBe("audit");
+  });
+
+  it("summarizes write audit health without exposing comment bodies", () => {
+    const actions = [
+      writeAction({
+        id: 1,
+        status: "success",
+        actionKey: "move_to_deferred",
+        finishedAt: "2026-07-04T09:00:00.000Z",
+        executedOperations: [
+          { type: "remove_label", label: "needs-triage" },
+          { type: "add_label", label: "deferred" },
+          { type: "add_comment", body: "[comment body hidden from dashboard audit]" }
+        ]
+      }),
+      writeAction({
+        id: 2,
+        status: "failed",
+        actionKey: "add_deferred_explanation_comment",
+        finishedAt: "2026-07-04T10:00:00.000Z",
+        executedOperations: []
+      }),
+      writeAction({
+        id: 3,
+        status: "token_unavailable",
+        actionKey: "add_needs_triage",
+        finishedAt: "2026-07-04T11:00:00.000Z",
+        executedOperations: []
+      })
+    ] as any;
+
+    expect(writeAuditOperationSummary(actions)).toBe(
+      "1 label add | 1 label removal | 1 hidden comment | 2 no-op audit rows"
+    );
+    expect(writeAuditHealthSummary(actions)).toMatchObject({
+      total: 3,
+      attention: 2,
+      tone: "critical",
+      operationSummary: "1 label add | 1 label removal | 1 hidden comment | 2 no-op audit rows"
+    });
+    expect(writeAuditHealthSummary(actions).latestAttention).toContain("add needs triage");
+    expect(writeAuditHealthSummary(actions).latestSuccess).toContain("move to deferred");
+    expect(writeAuditHealthSummary([])).toMatchObject({
+      total: 0,
+      attention: 0,
+      latestAttention: "No write action needs attention",
+      latestSuccess: "No successful write action visible",
+      operationSummary: "No operation details visible",
+      tone: "muted"
+    });
   });
 
   it("round-trips issue testing queue filters through PR board links", () => {
@@ -1106,6 +1158,32 @@ function personalPr(input: {
     createdAt: input.createdAt,
     mergedAt: input.mergedAt
   } as any;
+}
+
+function writeAction(input: {
+  id: number;
+  status: string;
+  actionKey: string;
+  finishedAt: string;
+  executedOperations: Array<
+    { type: "add_label" | "remove_label"; label: string } | { type: "add_comment"; body: string }
+  >;
+}) {
+  return {
+    id: input.id,
+    previewId: `preview-${input.id}`,
+    githubLogin: "alice",
+    actionKey: input.actionKey,
+    objectType: "issue",
+    objectNumber: 42,
+    title: "issue",
+    htmlUrl: "https://github.com/example/repo/issues/42",
+    status: input.status,
+    executedOperations: input.executedOperations,
+    errorMessage: input.status === "success" ? null : "failed",
+    startedAt: "2026-07-04T08:00:00.000Z",
+    finishedAt: input.finishedAt
+  };
 }
 
 function metricPoint(input: {
