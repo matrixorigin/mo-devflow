@@ -7654,6 +7654,19 @@ button.testing-board-stat:focus-visible {
   white-space: nowrap;
 }
 
+.personal-flow-health-note {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 7px;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
 .personal-flow-efficiency-rows {
   border: 1px solid #eef2f7;
   border-radius: 8px;

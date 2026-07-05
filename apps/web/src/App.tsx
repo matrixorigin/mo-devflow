@@ -11410,6 +11410,7 @@ function PeoplePrFlowMatrix({
           >
             <strong>{personalPrThroughputPair(throughput)}</strong>
             <small>{personalPrPeriodThroughputDetail(row.personal, period)}</small>
+            <small>{personalPrPeriodRiskDetail(row.personal, period)}</small>
             <em>Open PR list</em>
           </button>
         );
@@ -13210,7 +13211,7 @@ function PersonQueueRhythmStrip({
           avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to issue testing{" "}
           {optionalHours(flow.averageActiveToTestingHours)}
         </small>
-        <small>{personalCriticalFlowGapSummary(flow)}</small>
+        <small>{personalCriticalFlowHealthText(flow)}</small>
       </button>
     </div>
   );
@@ -17658,6 +17659,7 @@ function WatchedPersonOperationsSummary({
                   {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg{" "}
                   {personalPrPeriodAverageDurationText(periodList)}
                 </small>
+                <small>{personalPrPeriodRiskDetail(person, row.period)}</small>
               </button>
             );
           })}
@@ -17676,7 +17678,7 @@ function WatchedPersonOperationsSummary({
               avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
               {optionalHours(flow.averageActiveToTestingHours)}
             </small>
-            <small>{personalCriticalFlowGapSummary(flow)}</small>
+            <small>{personalCriticalFlowHealthText(flow)}</small>
           </button>
         </div>
       </div>
@@ -18058,6 +18060,16 @@ export function personalPrPeriodThroughputDetail(person: PersonalActionView, per
   )}`;
 }
 
+export function personalPrPeriodRiskDetail(person: PersonalActionView, period: MetricPeriod): string {
+  const row =
+    personalPrThroughputRows(person).find((item) => item.period === period) ?? personalPrThroughputRow(period, null);
+  return `pending ${throughputCountText(row.pendingPrs)} | attention ${throughputCountText(
+    row.attentionPrs
+  )} | open age ${optionalHours(row.averagePendingPrAgeHours)} | test wait ${optionalHours(
+    row.averageTestingQueueAgeHours
+  )}`;
+}
+
 function prCountLabel(count: number): string {
   return `${count} ${count === 1 ? "PR" : "PRs"}`;
 }
@@ -18108,6 +18120,22 @@ export function personalCriticalFlowManagementDetail(flow: PersonalCriticalFlowE
   return `avg to PR ${optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing ${optionalHours(
     flow.averageActiveToTestingHours
   )} | ${personalCriticalFlowGapSummary(flow)}`;
+}
+
+export function personalCriticalFlowHealthText(flow: PersonalCriticalFlowEfficiency): string {
+  if (flow.activeIssues === 0) {
+    return "No active s-1/s0 issue";
+  }
+  const parts = [
+    flow.issuesWithoutPr > 0 ? `${flow.issuesWithoutPr} no linked PR` : null,
+    flow.issuesNotInTesting > 0 ? `${flow.issuesNotInTesting} not in issue testing` : null,
+    flow.slowEasyIssues > 0 ? `${flow.slowEasyIssues} slow ai-easy` : null,
+    flow.cachePendingIssues > 0 ? `${flow.cachePendingIssues} testing evidence pending` : null
+  ].filter((part): part is string => part !== null);
+  if (parts.length > 0) {
+    return `Needs attention: ${parts.join(" | ")}`;
+  }
+  return `Clear: ${flow.activeIssues} active issue${flow.activeIssues === 1 ? "" : "s"} linked and in issue testing`;
 }
 
 export function personalCriticalFlowGapSummary(flow: PersonalCriticalFlowEfficiency): string {
@@ -18293,13 +18321,8 @@ function PersonalPrThroughputPanel({
                 {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
               </strong>
               <small>{row.label} created / merged</small>
-              <em>
-                {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg PR time{" "}
-                {personalPrPeriodAverageDurationText(periodList)}
-              </em>
-              <em>
-                pending {row.pendingPrs ?? "-"} | avg open age {optionalHours(row.averagePendingPrAgeHours)}
-              </em>
+              <em>{personalPrPeriodThroughputDetail(person, row.period)}</em>
+              <em>{personalPrPeriodRiskDetail(person, row.period)}</em>
               {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
             </button>
           );
@@ -18422,6 +18445,7 @@ function PersonalPrThroughputPanel({
               onClick={() => onDrilldownChange(flow.issuesNotInTesting > 0 ? "active_not_testing" : "testing")}
             />
           </div>
+          <div className="personal-flow-health-note">{personalCriticalFlowHealthText(flow)}</div>
           {flow.rows.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue flow for this person" />
           ) : (

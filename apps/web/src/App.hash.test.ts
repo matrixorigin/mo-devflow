@@ -33,10 +33,12 @@ import {
   personalCriticalFlowEfficiency,
   personalCriticalFlowEfficiencyCompactSummary,
   personalCriticalFlowGapSummary,
+  personalCriticalFlowHealthText,
   personalCriticalFlowManagementDetail,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalPrPeriodAverageDurationText,
+  personalPrPeriodRiskDetail,
   personalPrPeriodThroughputDetail,
   personalPrListForScope,
   personalPrListTotalForScope,
@@ -659,6 +661,9 @@ describe("dashboard hash filters", () => {
     const person = {
       attentionPrs: [{ number: 99 }],
       pendingPrs: [{ number: 98 }],
+      analytics: [],
+      analyticsWeekly: [],
+      analyticsMonthly: [],
       prPeriodLists: [
         {
           period: "week",
@@ -689,6 +694,9 @@ describe("dashboard hash filters", () => {
     expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
     expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
     expect(personalPrPeriodThroughputDetail(person, "week")).toBe("3 PRs in list | avg 6.7d");
+    expect(personalPrPeriodRiskDetail(person, "week")).toBe(
+      "pending - | attention - | open age - | test wait -"
+    );
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
     expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
@@ -899,6 +907,21 @@ describe("dashboard hash filters", () => {
     expect(personalCriticalFlowManagementDetail(flow)).toBe(
       "avg to PR 18h | to issue testing 1.8d | 1 no PR | 1 not in issue testing"
     );
+    expect(personalCriticalFlowHealthText(flow)).toBe(
+      "Needs attention: 1 no linked PR | 1 not in issue testing"
+    );
+    expect(
+      personalCriticalFlowHealthText({
+        ...flow,
+        activeIssues: 1,
+        issuesWithPr: 1,
+        issuesWithoutPr: 0,
+        issuesInTesting: 1,
+        issuesNotInTesting: 0,
+        slowEasyIssues: 0,
+        cachePendingIssues: 0
+      })
+    ).toBe("Clear: 1 active issue linked and in issue testing");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
     expect(
       personalCurrentBlockerDetail({
@@ -965,7 +988,15 @@ describe("dashboard hash filters", () => {
         analytics: [metricPoint({ date: "2026-07-04", prsCreated: 3, prsMerged: 2 })],
         analyticsWeekly: [
           {
-            ...metricPoint({ date: "2026-07-05", prsCreated: 8, prsMerged: 6 }),
+            ...metricPoint({
+              date: "2026-07-05",
+              prsCreated: 8,
+              prsMerged: 6,
+              pendingPrs: 2,
+              attentionPrs: 1,
+              averagePendingPrAgeHours: 32,
+              averageTestingQueueAgeHours: 10
+            }),
             period: "week",
             periodStart: "2026-06-29",
             periodEnd: "2026-07-06",
@@ -1020,6 +1051,9 @@ describe("dashboard hash filters", () => {
     expect(personalPrThroughputPair(rows[0].periods.day)).toBe("3/2");
     expect(personalPrThroughputPair(rows[0].periods.week)).toBe("8/6");
     expect(personalPrPeriodThroughputDetail(rows[0].personal, "week")).toBe("1 PR in list | avg 1.0d");
+    expect(personalPrPeriodRiskDetail(rows[0].personal, "week")).toBe(
+      "pending 2 | attention 1 | open age 1.3d | test wait 10h"
+    );
     expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | test 1/1 (100%)");
   });
 });
@@ -1065,7 +1099,10 @@ function metricPoint(input: {
   date?: string;
   prsCreated?: number;
   prsMerged?: number;
+  pendingPrs?: number;
+  attentionPrs?: number;
   averagePendingPrAgeHours?: number | null;
+  averageTestingQueueAgeHours?: number | null;
 }) {
   return {
     date: input.date ?? "2026-07-04",
@@ -1083,15 +1120,15 @@ function metricPoint(input: {
     averageNeedsTriageIssueAgeHours: null,
     deferredIssues: 0,
     averageDeferredIssueAgeHours: null,
-    pendingPrs: 0,
+    pendingPrs: input.pendingPrs ?? 0,
     averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
-    attentionPrs: 0,
+    attentionPrs: input.attentionPrs ?? 0,
     ciFailedPrs: 0,
     requestedChangePrs: 0,
     reviewWaitingPrs: 0,
     mergeConflictPrs: 0,
     testingQueueIssues: 0,
-    averageTestingQueueAgeHours: null,
+    averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: "complete_cache",
     generatedAt: "2026-07-05T00:00:00Z"
   } as const;
