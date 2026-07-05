@@ -9107,6 +9107,7 @@ function PersonalRotationOverview({
   );
   const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
+  const [prPreview, setPrPreview] = useState<TeamWorkPreview | null>(null);
 
   return (
     <div className="personal-rotation-overview">
@@ -9264,7 +9265,12 @@ function PersonalRotationOverview({
               person.attentionPrs
                 .slice(0, 5)
                 .map((pr) => (
-                  <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
+                  <TeamPrRiskRow
+                    activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+                    pr={pr}
+                    key={pr.number}
+                    onPreview={setPrPreview}
+                  />
                 ))
             )}
           </div>
@@ -9293,7 +9299,12 @@ function PersonalRotationOverview({
                   <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
                 ))}
                 {testingPrRows.map((pr) => (
-                  <TeamPrRiskRow activeIssues={criticalIssuesByPr.get(pr.number) ?? []} pr={pr} key={pr.number} />
+                  <TeamPrRiskRow
+                    activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+                    pr={pr}
+                    key={pr.number}
+                    onPreview={setPrPreview}
+                  />
                 ))}
               </>
             )}
@@ -9302,6 +9313,7 @@ function PersonalRotationOverview({
       </div>
       <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
       <TestingIssuePreviewModal issue={testingPreviewIssue} onClose={() => setTestingPreviewIssue(null)} />
+      <TeamWorkPreviewModal preview={prPreview} onClose={() => setPrPreview(null)} />
     </div>
   );
 }
