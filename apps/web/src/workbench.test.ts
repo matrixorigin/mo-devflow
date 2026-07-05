@@ -917,6 +917,7 @@ describe("flow efficiency summary", () => {
       averageActiveIssueAgeHours: 12,
       needsTriageIssues: 3,
       deferredIssues: 1,
+      testingQueueIssues: 0,
       testingQueuePrs: 1,
       averageTestingQueueAgeHours: 30
     });
@@ -930,8 +931,26 @@ describe("flow efficiency summary", () => {
       testingIssues: [testingIssue({ queueAgeHours: 30 }), testingIssue({ queueAgeHours: 6 })]
     });
 
-    expect(summary.testingQueuePrs).toBe(2);
+    expect(summary.testingQueueIssues).toBe(2);
+    expect(summary.testingQueuePrs).toBe(0);
     expect(summary.averageTestingQueueAgeHours).toBe(18);
+  });
+
+  it("keeps issue testing queue counts separate from linked testing PR counts", () => {
+    const summary = flowEfficiencySummary({
+      points: [],
+      pendingPrs: [],
+      activeIssues: [],
+      testingIssues: [testingIssue({ queueAgeHours: 12 })],
+      testingPrs: [
+        pullRequest({ testingState: "testing", testingQueueAgeHours: 20 }),
+        pullRequest({ testingState: "testing", testingQueueAgeHours: 24 })
+      ]
+    });
+
+    expect(summary.testingQueueIssues).toBe(1);
+    expect(summary.testingQueuePrs).toBe(2);
+    expect(summary.averageTestingQueueAgeHours).toBe(12);
   });
 
   it("keeps active issue duration unknown when severity timeline is missing", () => {
@@ -964,6 +983,7 @@ describe("flow efficiency summary", () => {
       averageActiveIssueAgeHours: 96,
       needsTriageIssues: 0,
       deferredIssues: 0,
+      testingQueueIssues: 2,
       testingQueuePrs: 2,
       averageTestingQueueAgeHours: 28
     });
@@ -999,6 +1019,7 @@ describe("flow efficiency summary", () => {
       averageActiveIssueAgeHours: 8,
       needsTriageIssues: 5,
       deferredIssues: 2,
+      testingQueueIssues: 0,
       testingQueuePrs: 0,
       averageTestingQueueAgeHours: null
     });
@@ -1031,6 +1052,7 @@ describe("flow efficiency summary", () => {
         averageActiveIssueAgeHours: null,
         needsTriageIssues: 0,
         deferredIssues: 0,
+        testingQueueIssues: 0,
         testingQueuePrs: 0,
         averageTestingQueueAgeHours: null
       })

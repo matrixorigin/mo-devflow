@@ -2723,11 +2723,9 @@ function FlowEfficiencyStrip({
         />
         <FlowEfficiencyItem
           label="Issues in test"
-          value={String(summary.testingQueuePrs)}
-          detail={`avg wait ${optionalHours(summary.averageTestingQueueAgeHours)} | workflow violations ${
-            summary.workflowViolations
-          }`}
-          tone={summary.testingQueuePrs > 0 ? "attention" : "normal"}
+          value={String(summary.testingQueueIssues)}
+          detail={`avg wait ${optionalHours(summary.averageTestingQueueAgeHours)} | ${summary.testingQueuePrs} linked PRs`}
+          tone={summary.testingQueueIssues > 0 ? "attention" : summary.testingQueuePrs > 0 ? "normal" : "good"}
           actionLabel="Open testing"
           onClick={actions.testingQueue}
         />
@@ -2777,12 +2775,12 @@ function AnalyticsDecisionPanel({
     {
       key: "testing",
       label: "Issue testing",
-      value: summary.testingQueuePrs,
-      detail: `avg wait ${optionalHours(summary.averageTestingQueueAgeHours)}`,
+      value: summary.testingQueueIssues,
+      detail: `avg wait ${optionalHours(summary.averageTestingQueueAgeHours)} | ${summary.testingQueuePrs} PRs`,
       tone:
         summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
           ? "critical"
-          : summary.testingQueuePrs > 0
+          : summary.testingQueueIssues > 0
             ? "attention"
             : "good",
       onClick: actions.testingQueue
@@ -20576,7 +20574,8 @@ export default function App() {
         points: teamTrendPoints,
         pendingPrs: data.pendingPrs,
         activeIssues: data.criticalIssues,
-        testingQueuePrs: data.testing.queueIssues,
+        testingQueueIssues: data.testing.queueIssues,
+        testingQueuePrs: data.testing.queuePrs,
         averageTestingQueueAgeHours: data.testing.averageIssueQueueAgeHours,
         needsTriageIssues: teamTriage?.needsTriageIssues ?? 0,
         deferredIssues: teamTriage?.deferredIssues ?? 0

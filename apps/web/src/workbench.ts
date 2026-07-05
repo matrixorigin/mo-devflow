@@ -618,6 +618,7 @@ export interface FlowEfficiencySummary {
   averageActiveIssueAgeHours: number | null;
   needsTriageIssues: number;
   deferredIssues: number;
+  testingQueueIssues: number;
   testingQueuePrs: number;
   averageTestingQueueAgeHours: number | null;
 }
@@ -779,6 +780,7 @@ export function flowEfficiencySummary(input: {
   activeIssues: FlowEfficiencyIssue[];
   testingPrs?: Array<Pick<FlowEfficiencyPullRequest, "testingQueueAgeHours">>;
   testingIssues?: Array<{ queueAgeHours: number | null }>;
+  testingQueueIssues?: number;
   testingQueuePrs?: number;
   averageTestingQueueAgeHours?: number | null;
   needsTriageIssues?: number;
@@ -791,10 +793,11 @@ export function flowEfficiencySummary(input: {
     sumBy(input.points, (point) => point.issuesClosed) + sumBy(input.points, (point) => point.issuesDeferred);
   const testingPrs = input.testingPrs ?? input.pendingPrs.filter(isTestingQueuePullRequest);
   const testingIssues = input.testingIssues ?? [];
-  const testingWaits = [
-    ...testingPrs.map((pr) => pr.testingQueueAgeHours),
-    ...testingIssues.map((issue) => issue.queueAgeHours)
-  ].filter((age): age is number => age !== null);
+  const issueTestingWaits = testingIssues
+    .map((issue) => issue.queueAgeHours)
+    .filter((age): age is number => age !== null);
+  const prTestingWaits = testingPrs.map((pr) => pr.testingQueueAgeHours).filter((age): age is number => age !== null);
+  const testingWaits = issueTestingWaits.length > 0 ? issueTestingWaits : prTestingWaits;
 
   return {
     prsCreated,
@@ -817,7 +820,8 @@ export function flowEfficiencySummary(input: {
     averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.criticalAgeHours)),
     needsTriageIssues: input.needsTriageIssues ?? 0,
     deferredIssues: input.deferredIssues ?? 0,
-    testingQueuePrs: input.testingQueuePrs ?? testingPrs.length + testingIssues.length,
+    testingQueueIssues: input.testingQueueIssues ?? testingIssues.length,
+    testingQueuePrs: input.testingQueuePrs ?? testingPrs.length,
     averageTestingQueueAgeHours:
       input.averageTestingQueueAgeHours !== undefined ? input.averageTestingQueueAgeHours : average(testingWaits)
   };
@@ -868,14 +872,19 @@ export function flowEfficiencyDiagnostics(summary: FlowEfficiencySummary): FlowE
     });
   }
 
-  if (summary.testingQueuePrs > 0) {
+  if (summary.testingQueueIssues > 0 || summary.testingQueuePrs > 0) {
+    const issueQueueVisible = summary.testingQueueIssues > 0;
     diagnostics.push({
       key: "testing-queue",
       title:
         summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
-          ? `${summary.testingQueuePrs} issues are waiting in test`
-          : `${summary.testingQueuePrs} issues are in testing`,
-      detail: `avg wait ${diagnosticDuration(summary.averageTestingQueueAgeHours)}; check issue assignment and linked PR evidence`,
+          ? issueQueueVisible
+            ? `${summary.testingQueueIssues} issues are waiting in test`
+            : `${summary.testingQueuePrs} linked PRs are waiting on issue testing`
+          : issueQueueVisible
+            ? `${summary.testingQueueIssues} issues are in testing`
+            : `${summary.testingQueuePrs} linked PRs have issue testing context`,
+      detail: `avg wait ${diagnosticDuration(summary.averageTestingQueueAgeHours)}; ${summary.testingQueuePrs} linked PRs; check issue assignment and linked PR evidence`,
       target: "testing_queue",
       tone:
         summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
