@@ -8105,6 +8105,65 @@ function PrOpsTile({
   );
 }
 
+function PrActionQueue({
+  prs,
+  criticalIssuesByPr,
+  scopeFilter,
+  sort,
+  onPreview
+}: {
+  prs: PendingPrView[];
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>;
+  scopeFilter: PrScopeFilter;
+  sort: PrSort;
+  onPreview: (preview: TeamWorkPreview) => void;
+}) {
+  const pagedPrs = usePagedList(prs, 6, `${scopeFilter}:${sort}:${prs.map((pr) => pr.number).join(",")}`);
+
+  return (
+    <section className="pr-action-queue" aria-label="PR action queue">
+      <div className="pr-action-queue-heading">
+        <div>
+          <Text strong>PR Action Queue</Text>
+          <Text type="secondary">
+            Sorted {prSortLabel(sort)} view for {prScopeLabel(scopeFilter)}. Each row keeps PR blockers and linked issue
+            context together.
+          </Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <Tag>{prs.length} PRs</Tag>
+          {pagedPrs.visibleItems.length < prs.length ? (
+            <Tag>
+              {pagedPrs.startIndex + 1}-{pagedPrs.startIndex + pagedPrs.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
+      </div>
+      {pagedPrs.visibleItems.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PRs match this filter" />
+      ) : (
+        <div className="pr-action-queue-list">
+          {pagedPrs.visibleItems.map((pr) => (
+            <TeamPrRiskRow
+              activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+              key={pr.number}
+              pr={pr}
+              onPreview={onPreview}
+            />
+          ))}
+        </div>
+      )}
+      <CardListPagination
+        total={prs.length}
+        page={pagedPrs.page}
+        pageSize={pagedPrs.pageSize}
+        defaultPageSize={6}
+        onChange={pagedPrs.onPageChange}
+      />
+    </section>
+  );
+}
+
 function PrEvidenceRepairBanner({
   summary,
   scopeFilter,
@@ -17210,6 +17269,13 @@ export default function App() {
                         }
                       }}
                       onSortChange={setPrSort}
+                    />
+                    <PrActionQueue
+                      prs={filteredPendingPrs}
+                      criticalIssuesByPr={criticalIssuesByPr}
+                      scopeFilter={prScopeFilter}
+                      sort={prSort}
+                      onPreview={setWorkObjectPreview}
                     />
                     <details className="secondary-disclosure pr-filter-disclosure">
                       <summary>
