@@ -268,6 +268,7 @@ type TestingIssueQueueFilter = "all" | "stale" | "attention" | "unlinked" | "dat
 type PersonalDrilldownFilter =
   | "active_issues"
   | "active_no_pr"
+  | "active_not_testing"
   | "pr_attention"
   | "pending_pr"
   | "testing"
@@ -380,6 +381,7 @@ const peopleBoardSorts = [
 const personalDrilldownFilters = [
   "active_issues",
   "active_no_pr",
+  "active_not_testing",
   "pr_attention",
   "pending_pr",
   "testing",
@@ -3995,7 +3997,7 @@ function personalTestingStaleCount(person: PersonalActionView): number {
 }
 
 function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
-  if (filter === "active_issues" || filter === "active_no_pr") {
+  if (filter === "active_issues" || filter === "active_no_pr" || filter === "active_not_testing") {
     return "critical";
   }
   if (filter === "pr_attention") {
@@ -11328,7 +11330,7 @@ function PeoplePrFlowMatrix({
     onThroughputSelect(row.login, personalPrThroughputSelectionForPeriod(row.personal, period));
   };
   const openFlow = (row: PeoplePrFlowMatrixRow): void => {
-    onMetricSelect(row.login, row.flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing");
+    onMetricSelect(row.login, personalCriticalFlowDefaultTarget(row.flow));
   };
 
   const columns: ColumnsType<PeoplePrFlowMatrixRow> = [
@@ -11397,9 +11399,7 @@ function PeoplePrFlowMatrix({
         <button
           type="button"
           className={`people-matrix-flow ${
-            row.flow.issuesWithoutPr > 0 ||
-            row.flow.activeIssues > row.flow.issuesInTesting ||
-            row.flow.slowEasyIssues > 0
+            row.flow.issuesWithoutPr > 0 || row.flow.issuesNotInTesting > 0 || row.flow.slowEasyIssues > 0
               ? "people-matrix-flow-alert"
               : ""
           }`}
@@ -11411,6 +11411,7 @@ function PeoplePrFlowMatrix({
             to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to issue testing{" "}
             {optionalHours(row.flow.averageActiveToTestingHours)}
           </small>
+          <em>{personalCriticalFlowGapSummary(row.flow)}</em>
         </button>
       )
     }
@@ -13145,7 +13146,7 @@ function PersonQueueRhythmStrip({
         type="button"
         className={`person-queue-flow-card ${
           flow.activeIssues > flow.issuesWithPr ||
-          flow.activeIssues > flow.issuesInTesting ||
+          flow.issuesNotInTesting > 0 ||
           flow.cachePendingIssues > 0 ||
           flow.slowEasyIssues > 0
             ? "person-queue-flow-card-alert"
@@ -13159,6 +13160,7 @@ function PersonQueueRhythmStrip({
           avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to issue testing{" "}
           {optionalHours(flow.averageActiveToTestingHours)}
         </small>
+        <small>{personalCriticalFlowGapSummary(flow)}</small>
       </button>
     </div>
   );
@@ -16783,6 +16785,9 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
   if (filter === "active_no_pr") {
     return "Active Issues Without PR";
   }
+  if (filter === "active_not_testing") {
+    return "Active Issues Not In Issue Testing";
+  }
   if (filter === "pr_attention") {
     return "PR Attention";
   }
@@ -16805,7 +16810,7 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
 }
 
 function isPersonalActiveDrilldown(filter: PersonalDrilldownFilter): boolean {
-  return filter === "active_issues" || filter === "active_no_pr";
+  return filter === "active_issues" || filter === "active_no_pr" || filter === "active_not_testing";
 }
 
 function PersonalExecutionMap({
@@ -17097,6 +17102,9 @@ function PersonalDrilldownBoard({
   const title = personalDrilldownLabel(filter);
   const [testingIssueFilter, setTestingIssueFilter] = useState<TestingIssueQueueFilter>("all");
   const activeNoPrIssues = person.activeCriticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const activeNotTestingIssues = person.activeCriticalIssues.filter(
+    (issue) => !criticalIssueHasIssueTestingEvidence(issue)
+  );
 
   if (filter === "threads") {
     return (
@@ -17146,8 +17154,13 @@ function PersonalDrilldownBoard({
     );
   }
 
-  if (filter === "active_issues" || filter === "active_no_pr") {
-    const activeIssues = filter === "active_no_pr" ? activeNoPrIssues : person.activeCriticalIssues;
+  if (filter === "active_issues" || filter === "active_no_pr" || filter === "active_not_testing") {
+    const activeIssues =
+      filter === "active_no_pr"
+        ? activeNoPrIssues
+        : filter === "active_not_testing"
+          ? activeNotTestingIssues
+          : person.activeCriticalIssues;
     return (
       <section className="personal-filtered-board personal-filtered-board-critical">
         <div className="subsection-heading">
@@ -17169,11 +17182,26 @@ function PersonalDrilldownBoard({
             >
               {activeNoPrIssues.length} no PR
             </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activeNotTestingIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              } ${filter === "active_not_testing" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("active_not_testing")}
+            >
+              {activeNotTestingIssues.length} not in issue testing
+            </button>
           </Space>
         </div>
         <IssueCardList
           issues={activeIssues}
-          emptyText={filter === "active_no_pr" ? "No active issue without visible PR" : "No active s-1/s0 issues"}
+          emptyText={
+            filter === "active_no_pr"
+              ? "No active issue without visible PR"
+              : filter === "active_not_testing"
+                ? "No active issue outside issue testing"
+                : "No active s-1/s0 issues"
+          }
           onPreview={onIssuePreview}
         />
       </section>
@@ -17426,8 +17454,7 @@ function WatchedPersonOperationsSummary({
   const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
   const throughputRows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
-  const flowTarget: PersonalDrilldownFilter =
-    flow.issuesWithoutPr > 0 ? "active_no_pr" : flow.issuesInTesting > 0 ? "testing" : "active_issues";
+  const flowTarget = personalCriticalFlowDefaultTarget(flow);
   const blockerTarget: PersonalDrilldownFilter =
     person.attentionPrs.length > 0
       ? "pr_attention"
@@ -17587,9 +17614,11 @@ function WatchedPersonOperationsSummary({
           <button
             type="button"
             className={`person-ops-pr-period person-ops-pr-period-flow ${
-              flow.activeIssues > flow.issuesWithPr || flow.cachePendingIssues > 0 ? "person-ops-pr-period-alert" : ""
+              flow.issuesWithoutPr > 0 || flow.issuesNotInTesting > 0 || flow.cachePendingIssues > 0
+                ? "person-ops-pr-period-alert"
+                : ""
             }`}
-            onClick={() => onSelect(flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing")}
+            onClick={() => onSelect(flowTarget)}
           >
             <span>s-1/s0 → PR → Issue Testing</span>
             <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
@@ -17597,6 +17626,7 @@ function WatchedPersonOperationsSummary({
               avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
               {optionalHours(flow.averageActiveToTestingHours)}
             </small>
+            <small>{personalCriticalFlowGapSummary(flow)}</small>
           </button>
         </div>
       </div>
@@ -17893,6 +17923,7 @@ export interface PersonalCriticalFlowEfficiency {
   issuesWithPr: number;
   issuesWithoutPr: number;
   issuesInTesting: number;
+  issuesNotInTesting: number;
   linkedIssueRatePercent: number | null;
   testingIssueRatePercent: number | null;
   averageActiveIssueAgeHours: number | null;
@@ -17988,11 +18019,13 @@ export function personalCriticalFlowEfficiency(
   const activeIssues = rows.length;
   const issuesWithPr = rows.filter((row) => row.linkedPrs > 0).length;
   const issuesInTesting = rows.filter((row) => row.testingAfterActiveHours !== null || row.cachePending).length;
+  const issuesNotInTesting = activeIssues - issuesInTesting;
   return {
     activeIssues,
     issuesWithPr,
     issuesWithoutPr: activeIssues - issuesWithPr,
     issuesInTesting,
+    issuesNotInTesting,
     linkedIssueRatePercent: ratioPercentNumber(issuesWithPr, activeIssues),
     testingIssueRatePercent: ratioPercentNumber(issuesInTesting, activeIssues),
     averageActiveIssueAgeHours: averageNullable(rows.map((row) => row.activeAgeHours)),
@@ -18024,7 +18057,31 @@ export function personalCriticalFlowEfficiencyCompactSummary(flow: PersonalCriti
 export function personalCriticalFlowManagementDetail(flow: PersonalCriticalFlowEfficiency): string {
   return `avg to PR ${optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing ${optionalHours(
     flow.averageActiveToTestingHours
-  )} | ${flow.issuesWithoutPr} no PR`;
+  )} | ${personalCriticalFlowGapSummary(flow)}`;
+}
+
+export function personalCriticalFlowGapSummary(flow: PersonalCriticalFlowEfficiency): string {
+  const parts = [`${flow.issuesWithoutPr} no PR`, `${flow.issuesNotInTesting} not in issue testing`];
+  if (flow.slowEasyIssues > 0) {
+    parts.push(`${flow.slowEasyIssues} slow ai-easy`);
+  }
+  if (flow.cachePendingIssues > 0) {
+    parts.push(`${flow.cachePendingIssues} cache pending`);
+  }
+  return parts.join(" | ");
+}
+
+export function personalCriticalFlowDefaultTarget(flow: PersonalCriticalFlowEfficiency): PersonalDrilldownFilter {
+  if (flow.issuesWithoutPr > 0) {
+    return "active_no_pr";
+  }
+  if (flow.issuesNotInTesting > 0) {
+    return "active_not_testing";
+  }
+  if (flow.issuesInTesting > 0) {
+    return "testing";
+  }
+  return "active_issues";
 }
 
 export function personalCurrentBlockerDetail(person: PersonalActionView): string {
@@ -18052,9 +18109,7 @@ function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCr
             pr.testingQueueAgeHours === null ? null : Math.max(0, activeAgeHours - pr.testingQueueAgeHours)
           )
           .filter((value): value is number => value !== null && Number.isFinite(value));
-  const hasTestingState = issue.linkedPullRequests.some(
-    (pr) => pr.testingState !== "not_ready" || pr.testingQueueAgeHours !== null
-  );
+  const hasTestingState = criticalIssueHasIssueTestingEvidence(issue);
 
   return {
     issueNumber: issue.number,
@@ -18066,6 +18121,10 @@ function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCr
     testingAfterActiveHours: testingLeadTimes.length > 0 ? Math.min(...testingLeadTimes) : null,
     cachePending: hasTestingState && testingLeadTimes.length === 0
   };
+}
+
+function criticalIssueHasIssueTestingEvidence(issue: Pick<CriticalIssueView, "linkedPullRequests">): boolean {
+  return issue.linkedPullRequests.some((pr) => pr.testingState !== "not_ready" || pr.testingQueueAgeHours !== null);
 }
 
 function averageNullable(values: Array<number | null>): number | null {
@@ -18126,6 +18185,7 @@ function PersonalPrThroughputPanel({
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
+  const flowTarget = personalCriticalFlowDefaultTarget(flow);
   const flowRowLazy = useLazyVisibleCount(flow.rows.length, 5, `${person.login}:critical-flow`);
   const visibleFlowRows = flow.rows.slice(0, flowRowLazy.visibleCount);
   const issueByNumber = new Map(person.activeCriticalIssues.map((issue) => [issue.number, issue]));
@@ -18263,7 +18323,9 @@ function PersonalPrThroughputPanel({
           <div className="personal-throughput-card-heading">
             <div className="personal-flow-heading-copy">
               <Text strong>s-1/s0 → PR → Issue Testing</Text>
-              <Text type="secondary">{personalCriticalFlowEfficiencySummary(flow)}</Text>
+              <Text type="secondary">
+                {personalCriticalFlowEfficiencySummary(flow)} | {personalCriticalFlowGapSummary(flow)}
+              </Text>
             </div>
             <Space size={[4, 4]} wrap>
               {flow.slowEasyIssues > 0 ? <Tag color="red">{flow.slowEasyIssues} slow ai-easy</Tag> : null}
@@ -18280,12 +18342,10 @@ function PersonalPrThroughputPanel({
               onClick={() => onDrilldownChange("active_issues")}
             />
             <PersonalFlowEfficiencyMetric
-              label="Has linked PR"
-              value={flow.issuesWithPr}
-              detail={`${percentText(flow.linkedIssueRatePercent)} of active | ${flow.issuesWithoutPr} no PR`}
-              onClick={() =>
-                onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
-              }
+              label="No PR"
+              value={flow.issuesWithoutPr}
+              detail={`${flow.issuesWithPr}/${flow.activeIssues} linked | ${percentText(flow.linkedIssueRatePercent)}`}
+              onClick={() => onDrilldownChange(flow.issuesWithoutPr > 0 ? "active_no_pr" : "active_issues")}
             />
             <PersonalFlowEfficiencyMetric
               label="Issue testing"
@@ -18294,18 +18354,22 @@ function PersonalPrThroughputPanel({
               onClick={() => onDrilldownChange("testing")}
             />
             <PersonalFlowEfficiencyMetric
+              label="Not in issue testing"
+              value={flow.issuesNotInTesting}
+              detail={flow.slowEasyIssues > 0 ? `${flow.slowEasyIssues} slow ai-easy` : "active but not handed off"}
+              onClick={() => onDrilldownChange(flow.issuesNotInTesting > 0 ? "active_not_testing" : "active_issues")}
+            />
+            <PersonalFlowEfficiencyMetric
               label="s-1/s0 to PR"
               value={optionalHours(flow.averageActiveToFirstPrHours)}
               detail="avg from s-1/s0"
-              onClick={() =>
-                onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
-              }
+              onClick={() => onDrilldownChange(flowTarget)}
             />
             <PersonalFlowEfficiencyMetric
               label="s-1/s0 to issue testing"
               value={optionalHours(flow.averageActiveToTestingHours)}
               detail="avg from s-1/s0"
-              onClick={() => onDrilldownChange("testing")}
+              onClick={() => onDrilldownChange(flow.issuesNotInTesting > 0 ? "active_not_testing" : "testing")}
             />
           </div>
           {flow.rows.length === 0 ? (

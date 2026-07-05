@@ -29,8 +29,10 @@ import {
   pagedRangeLabel,
   personalActionQueueDisclosureSummary,
   personalCurrentBlockerDetail,
+  personalCriticalFlowDefaultTarget,
   personalCriticalFlowEfficiency,
   personalCriticalFlowEfficiencyCompactSummary,
+  personalCriticalFlowGapSummary,
   personalCriticalFlowManagementDetail,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
@@ -187,6 +189,15 @@ describe("dashboard hash filters", () => {
       })
     ).toBe("personal?person=alice&drilldown=active_no_pr");
     expect(personalDrilldownFilterFromHash("#personal?person=alice&drilldown=active_no_pr")).toBe("active_no_pr");
+    expect(
+      dashboardHashForView("Personal", {
+        personLogin: "alice",
+        personalDrilldownFilter: "active_not_testing"
+      })
+    ).toBe("personal?person=alice&drilldown=active_not_testing");
+    expect(personalDrilldownFilterFromHash("#personal?person=alice&drilldown=active_not_testing")).toBe(
+      "active_not_testing"
+    );
     expect(
       dashboardHashForView("Personal", {
         personLogin: "alice",
@@ -870,6 +881,7 @@ describe("dashboard hash filters", () => {
       issuesWithPr: 1,
       issuesWithoutPr: 1,
       issuesInTesting: 1,
+      issuesNotInTesting: 1,
       linkedIssueRatePercent: 50,
       testingIssueRatePercent: 50,
       averageActiveIssueAgeHours: 30,
@@ -879,7 +891,14 @@ describe("dashboard hash filters", () => {
     });
     expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
     expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | test 1/2 (50%)");
-    expect(personalCriticalFlowManagementDetail(flow)).toBe("avg to PR 18h | to issue testing 1.8d | 1 no PR");
+    expect(personalCriticalFlowGapSummary(flow)).toBe("1 no PR | 1 not in issue testing");
+    expect(personalCriticalFlowDefaultTarget(flow)).toBe("active_no_pr");
+    expect(personalCriticalFlowDefaultTarget({ ...flow, issuesWithoutPr: 0, issuesNotInTesting: 1 })).toBe(
+      "active_not_testing"
+    );
+    expect(personalCriticalFlowManagementDetail(flow)).toBe(
+      "avg to PR 18h | to issue testing 1.8d | 1 no PR | 1 not in issue testing"
+    );
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
     expect(
       personalCurrentBlockerDetail({

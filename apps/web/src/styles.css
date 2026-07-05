@@ -5578,6 +5578,7 @@ button.testing-board-stat:focus-visible {
 .people-matrix-person small,
 .people-matrix-period small,
 .people-matrix-period em,
+.people-matrix-flow em,
 .people-matrix-flow small,
 .people-matrix-split small {
   color: #4b5563;
@@ -5589,6 +5590,11 @@ button.testing-board-stat:focus-visible {
 
 .people-matrix-period em {
   color: #2563eb;
+  font-weight: 700;
+}
+
+.people-matrix-flow em {
+  color: #92400e;
   font-weight: 700;
 }
 
@@ -7570,7 +7576,7 @@ button.testing-board-stat:focus-visible {
 .personal-flow-efficiency-stats {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   min-width: 0;
 }
 
