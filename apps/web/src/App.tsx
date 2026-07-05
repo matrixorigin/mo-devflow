@@ -3943,15 +3943,15 @@ function TeamRotationOverview({
   };
   const criticalLanePage = usePagedList(
     criticalIssues,
-    6,
+    4,
     `${criticalScopeFilter}:${criticalAiFilter}:${criticalOwnerFilter}:${criticalIssueSort}:${criticalIssues
       .map((issue) => issue.number)
       .join(",")}`
   );
-  const prRiskLanePage = usePagedList(prRisks, 6, `${prSort}:${prRisks.map((pr) => pr.number).join(",")}`);
+  const prRiskLanePage = usePagedList(prRisks, 4, `${prSort}:${prRisks.map((pr) => pr.number).join(",")}`);
   const testingLanePage = usePagedList(
     testingIssues,
-    5,
+    4,
     `${data.testing.queueIssues}:${testingIssues.map((issue) => issue.number).join(",")}`
   );
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
@@ -4084,7 +4084,7 @@ function TeamRotationOverview({
             startIndex={criticalLanePage.startIndex}
             page={criticalLanePage.page}
             pageSize={criticalLanePage.pageSize}
-            defaultPageSize={6}
+            defaultPageSize={4}
             actionLabel="Open Issues"
             tone="critical"
             onAction={() => onOpenIssuesFilter({})}
@@ -4118,13 +4118,13 @@ function TeamRotationOverview({
       <div className="team-rotation-grid">
         <div className="team-rotation-main">
           <TeamRotationLane
-            title="PR Rotation Risks"
+            title="PRs Needing Attention"
             count={prRisks.length}
             visibleCount={prRiskLanePage.visibleItems.length}
             startIndex={prRiskLanePage.startIndex}
             page={prRiskLanePage.page}
             pageSize={prRiskLanePage.pageSize}
-            defaultPageSize={6}
+            defaultPageSize={4}
             actionLabel="Open PRs"
             tone="attention"
             onAction={() => onOpenPrsFilter("attention")}
@@ -4145,13 +4145,13 @@ function TeamRotationOverview({
             ))}
           </TeamRotationLane>
           <TeamRotationLane
-            title="Issues Waiting For Test"
+            title="Issues In Test"
             count={testingIssues.length}
             visibleCount={testingLanePage.visibleItems.length}
             startIndex={testingLanePage.startIndex}
             page={testingLanePage.page}
             pageSize={testingLanePage.pageSize}
-            defaultPageSize={5}
+            defaultPageSize={4}
             actionLabel="Open Testing"
             tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
             onAction={() => onOpenTestingIssueQueue("all")}
@@ -4251,35 +4251,35 @@ function TeamOperationsSummary({
         </div>
         <div className="team-ops-tiles">
           <TeamOpsSummaryTile
-            label="Active issues"
+            label="s-1 / s0"
             value={`${sMinusOneIssues}/${sZeroIssues}`}
             detail={`${data.counts.criticalIssues} s-1/s0 total`}
             tone={criticalTone}
             onClick={() => onOpenIssuesFilter({ scope: sMinusOneIssues > 0 ? "s-1" : "all" })}
           />
           <TeamOpsSummaryTile
-            label="No action 24h"
+            label="Idle s-1/s0"
             value={idleCriticalIssues.length}
             detail={`oldest ${optionalHours(maxCriticalActiveAge(idleCriticalIssues))}`}
             tone={idleCriticalIssues.length > 0 ? "critical" : "good"}
             onClick={() => onOpenIssuesFilter({ scope: "no_action_24h" })}
           />
           <TeamOpsSummaryTile
-            label="PR attention"
+            label="Blocked PRs"
             value={prRisks.length}
             detail={`oldest ${optionalHours(maxPendingPrAge(prRisks))}`}
             tone={prRisks.length > 0 ? "attention" : "good"}
             onClick={() => onOpenPrsFilter("attention")}
           />
           <TeamOpsSummaryTile
-            label="Issue testing"
+            label="In test"
             value={data.testing.queueIssues}
             detail={`${staleTestingIssues.length} waiting >24h`}
             tone={staleTestingIssues.length > 0 ? "attention" : data.testing.queueIssues > 0 ? "normal" : "good"}
             onClick={() => onOpenTestingIssueQueue(staleTestingIssues.length > 0 ? "stale" : "all")}
           />
           <TeamOpsSummaryTile
-            label="Triage"
+            label="Need triage"
             value={triageSnapshot.needsTriageIssues}
             detail={`${triageSnapshot.deferredIssues} deferred`}
             tone={triageTone}
@@ -4288,7 +4288,7 @@ function TeamOperationsSummary({
         </div>
       </div>
       <div className={`team-ops-next team-ops-next-${topAction?.tone ?? "good"}`}>
-        <span>Current blocker</span>
+        <span>Top blocker</span>
         {topAction ? (
           <button type="button" onClick={topAction.onClick}>
             <strong>{topAction.title}</strong>
@@ -4560,8 +4560,8 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
     <section className="team-command-board" aria-label="Team command queue">
       <div className="team-command-board-heading">
         <div>
-          <Text strong>Priority queue</Text>
-          <Text type="secondary">Manager action order. Click a row to open its filtered board.</Text>
+          <Text strong>Top Actions</Text>
+          <Text type="secondary">Highest-priority filtered boards.</Text>
         </div>
         <Tag>{actions.length} actions</Tag>
       </div>
@@ -4836,7 +4836,7 @@ function TeamCriticalFlowPanel({
   onOpenPrRisks: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
-  const pagedRows = usePagedList(rows, 5, rows.map((row) => row.id).join(":"));
+  const pagedRows = usePagedList(rows, 3, rows.map((row) => row.id).join(":"));
   const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
   const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
 
@@ -4844,8 +4844,8 @@ function TeamCriticalFlowPanel({
     <section className="team-critical-flow-panel" aria-label="Critical issue and PR flow">
       <div className="team-critical-flow-heading">
         <div>
-          <Title level={4}>Critical Issue / PR Flow</Title>
-          <Text type="secondary">Active s-1/s0 issues linked to execution PRs and current blockers.</Text>
+          <Title level={4}>Active s-1/s0 Flow</Title>
+          <Text type="secondary">Issue-linked execution PRs and current blockers.</Text>
         </div>
         <div className="team-critical-flow-tools">
           <div className="board-filter-group board-filter-group-inline team-critical-flow-ai">
@@ -4894,7 +4894,7 @@ function TeamCriticalFlowPanel({
         total={rows.length}
         page={pagedRows.page}
         pageSize={pagedRows.pageSize}
-        defaultPageSize={5}
+        defaultPageSize={3}
         onChange={pagedRows.onPageChange}
       />
     </section>
@@ -6220,12 +6220,12 @@ function TeamPeopleFocus({
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const summary = teamPeopleFocusSummary(people, personalViews);
-  const pagedPeople = usePagedList(people, 6, people.map((person) => person.login).join(":"));
+  const pagedPeople = usePagedList(people, 4, people.map((person) => person.login).join(":"));
 
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
-        <Text strong>People Focus</Text>
+        <Text strong>People To Watch</Text>
         <Space size={[4, 4]} wrap>
           <Tag>{observedMode ? "observed" : "watched"}</Tag>
           <Tag color={summary.activeIssuePeople > 0 ? "red" : "default"}>{summary.activeIssuePeople} issue</Tag>
@@ -6280,7 +6280,7 @@ function TeamPeopleFocus({
         total={people.length}
         page={pagedPeople.page}
         pageSize={pagedPeople.pageSize}
-        defaultPageSize={6}
+        defaultPageSize={4}
         onChange={pagedPeople.onPageChange}
       />
     </section>
@@ -6297,7 +6297,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
-        <Text strong>Data And Automation</Text>
+        <Text strong>Data Freshness</Text>
         <Tag color={data.sync.worker.status === "active" ? "green" : "orange"}>
           {labelText(data.sync.worker.status)}
         </Tag>
