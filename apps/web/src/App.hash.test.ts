@@ -17,6 +17,7 @@ import {
   personalFlowThreadsSummary,
   personalPrListForScope,
   personalPrListTotalForScope,
+  personalPrThroughputSelectionForPeriod,
   personalPrThroughputRows,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
@@ -340,6 +341,46 @@ describe("dashboard hash filters", () => {
     expect(personalPrListForScope(person, "merged_period", "week").map((pr) => pr.number)).toEqual([12]);
     expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
+  });
+
+  it("selects the period PR list that matches the stronger day, week, or month count", () => {
+    const person = {
+      attentionPrs: [],
+      pendingPrs: [],
+      prPeriodLists: [
+        {
+          period: "day",
+          label: "07-05",
+          periodStart: "2026-07-05",
+          periodEnd: "2026-07-06",
+          totalCreatedPrs: 2,
+          totalMergedPrs: 1,
+          createdPrs: [],
+          mergedPrs: [],
+          truncated: false
+        },
+        {
+          period: "month",
+          label: "Jul 2026",
+          periodStart: "2026-07-01",
+          periodEnd: "2026-08-01",
+          totalCreatedPrs: 3,
+          totalMergedPrs: 8,
+          createdPrs: [],
+          mergedPrs: [],
+          truncated: false
+        }
+      ]
+    } as any;
+
+    expect(personalPrThroughputSelectionForPeriod(person, "day")).toEqual({
+      period: "day",
+      scope: "created_period"
+    });
+    expect(personalPrThroughputSelectionForPeriod(person, "month")).toEqual({
+      period: "month",
+      scope: "merged_period"
+    });
   });
 
   it("derives active severity to PR and issue testing efficiency from cache timestamps", () => {

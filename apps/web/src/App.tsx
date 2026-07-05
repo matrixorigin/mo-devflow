@@ -16183,17 +16183,21 @@ function WatchedPersonOperationsSummary({
   person,
   signals,
   activeFilter,
-  onSelect
+  onSelect,
+  onThroughputSelect
 }: {
   person: PersonalActionView;
   signals: PersonalOperatingSignal[];
   activeFilter: PersonalDrilldownFilter;
   onSelect: (filter: PersonalDrilldownFilter) => void;
+  onThroughputSelect: (selection: PersonalPrThroughputSelection) => void;
 }) {
   const dailyPlan = personalDailyPlan(signals);
   const testingWork = personalTestingWorkCount(person);
   const staleTestingIssues = person.testingIssues.filter(isTestingIssueStale).length;
   const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
+  const throughputRows = personalPrThroughputRows(person);
+  const flow = personalCriticalFlowEfficiency(person);
 
   return (
     <section className="person-ops-summary" aria-label={`${person.login} queue summary`}>
@@ -16274,6 +16278,43 @@ function WatchedPersonOperationsSummary({
         />
       </div>
       <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
+      <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
+        <div className="person-ops-pr-rhythm-heading">
+          <span>PR rhythm</span>
+          <small>s-1/s0 -&gt; PR -&gt; issue testing</small>
+        </div>
+        <div className="person-ops-pr-periods">
+          {throughputRows.map((row) => (
+            <button
+              type="button"
+              className="person-ops-pr-period"
+              key={row.period}
+              onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, row.period))}
+            >
+              <span>{metricPeriodText(row.period)}</span>
+              <strong>
+                {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
+              </strong>
+              <small>
+                pending {row.pendingPrs ?? "-"} | avg age {optionalHours(row.averagePendingPrAgeHours)}
+              </small>
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`person-ops-pr-period person-ops-pr-period-flow ${
+              flow.activeIssues > flow.issuesWithPr || flow.cachePendingIssues > 0 ? "person-ops-pr-period-alert" : ""
+            }`}
+            onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, "day"))}
+          >
+            <span>Flow</span>
+            <strong>
+              {flow.issuesWithPr}/{flow.activeIssues}
+            </strong>
+            <small>to testing {optionalHours(flow.averageActiveToTestingHours)}</small>
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -16509,6 +16550,11 @@ function PersonalOperatingSignalStrip({
 
 export type PersonalPrListScope = "attention" | "pending" | "created_period" | "merged_period";
 
+export interface PersonalPrThroughputSelection {
+  scope: PersonalPrListScope;
+  period: MetricPeriod;
+}
+
 interface PersonalPrThroughputRow {
   period: MetricPeriod;
   label: string;
@@ -16627,38 +16673,65 @@ function averageNullable(values: Array<number | null>): number | null {
   return finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
 }
 
+export function personalPrThroughputSelectionForPeriod(
+  person: PersonalActionView,
+  period: MetricPeriod
+): PersonalPrThroughputSelection {
+  const periodList = personalPrPeriodListForPeriod(person, period);
+  return {
+    period,
+    scope: (periodList?.totalMergedPrs ?? 0) > (periodList?.totalCreatedPrs ?? 0) ? "merged_period" : "created_period"
+  };
+}
+
+function initialPersonalPrThroughputSelection(person: PersonalActionView): PersonalPrThroughputSelection {
+  const defaultPeriodList = personalPrPeriodListForPeriod(person, "day");
+  if (person.attentionPrs.length > 0) {
+    return { period: "day", scope: "attention" };
+  }
+  if (person.pendingPrs.length > 0) {
+    return { period: "day", scope: "pending" };
+  }
+  return {
+    period: "day",
+    scope:
+      (defaultPeriodList?.totalMergedPrs ?? 0) > (defaultPeriodList?.totalCreatedPrs ?? 0)
+        ? "merged_period"
+        : "created_period"
+  };
+}
+
 function PersonalPrThroughputPanel({
   person,
+  selection,
+  onSelectionChange,
   onDrilldownChange,
   onPullRequestPreview
 }: {
   person: PersonalActionView;
+  selection: PersonalPrThroughputSelection;
+  onSelectionChange: (selection: PersonalPrThroughputSelection) => void;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
-  const defaultPeriodList = personalPrPeriodListForPeriod(person, "day");
-  const [listScope, setListScope] = useState<PersonalPrListScope>(() =>
-    person.attentionPrs.length > 0
-      ? "attention"
-      : person.pendingPrs.length > 0
-        ? "pending"
-        : (defaultPeriodList?.totalMergedPrs ?? 0) > (defaultPeriodList?.totalCreatedPrs ?? 0)
-          ? "merged_period"
-          : "created_period"
-  );
-  const [listPeriod, setListPeriod] = useState<MetricPeriod>("day");
+  const listScope = selection.scope;
+  const listPeriod = selection.period;
   const selectedPeriodList = personalPrPeriodListForPeriod(person, listPeriod);
   const visiblePrs = personalPrListForScope(person, listScope, listPeriod);
   const visibleTotal = personalPrListTotalForScope(person, listScope, listPeriod);
   const periodListActive = listScope === "created_period" || listScope === "merged_period";
 
   return (
-    <section className="personal-throughput-panel" aria-label={`${person.login} PR throughput and active flow`}>
+    <section
+      className="personal-throughput-panel"
+      id="personal-pr-throughput-panel"
+      aria-label={`${person.login} PR throughput and active flow`}
+    >
       <div className="subsection-heading">
         <div>
-          <Title level={5}>PR Throughput</Title>
+          <Title level={5}>Day / Week / Month PRs</Title>
           <Text type="secondary">Day, week, month PR counts, visible PR list, and active issue flow.</Text>
         </div>
         <Space size={[4, 4]} wrap>
@@ -16682,13 +16755,7 @@ function PersonalPrThroughputPanel({
             className={`personal-throughput-period ${listPeriod === row.period && periodListActive ? "personal-throughput-period-active" : ""}`}
             key={row.period}
             onClick={() => {
-              const periodList = personalPrPeriodListForPeriod(person, row.period);
-              setListPeriod(row.period);
-              setListScope(
-                (periodList?.totalMergedPrs ?? 0) > (periodList?.totalCreatedPrs ?? 0)
-                  ? "merged_period"
-                  : "created_period"
-              );
+              onSelectionChange(personalPrThroughputSelectionForPeriod(person, row.period));
             }}
           >
             <span>{metricPeriodText(row.period)}</span>
@@ -16712,7 +16779,7 @@ function PersonalPrThroughputPanel({
             <Segmented
               size="small"
               value={listScope}
-              onChange={(value) => setListScope(value as PersonalPrListScope)}
+              onChange={(value) => onSelectionChange({ period: listPeriod, scope: value as PersonalPrListScope })}
               options={[
                 { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
                 { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
@@ -16726,7 +16793,7 @@ function PersonalPrThroughputPanel({
               <Segmented
                 size="small"
                 value={listPeriod}
-                onChange={(value) => setListPeriod(value as MetricPeriod)}
+                onChange={(value) => onSelectionChange({ period: value as MetricPeriod, scope: listScope })}
                 options={metricPeriodOptions.map((option) => {
                   const period = option.value as MetricPeriod;
                   const periodList = personalPrPeriodListForPeriod(person, period);
@@ -16900,6 +16967,9 @@ function SelectedPersonWorkbench({
   const activityItemById = new Map(activityItems.map((item) => [item.id, item]));
   const operatingSignals = personalOperatingSignals(person, activityItems);
   const [objectPreviewItem, setObjectPreviewItem] = useState<PersonalActivityItem | null>(null);
+  const [throughputSelection, setThroughputSelection] = useState<PersonalPrThroughputSelection>(() =>
+    initialPersonalPrThroughputSelection(person)
+  );
   const gantt = personalGanttChart(person);
   const flowSummary = flowEfficiencySummary({
     points: trendPoints,
@@ -16928,6 +16998,18 @@ function SelectedPersonWorkbench({
       setObjectPreviewItem(item);
     }
   };
+  const selectThroughput = (selection: PersonalPrThroughputSelection): void => {
+    setThroughputSelection(selection);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("personal-pr-throughput-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  };
+
+  useEffect(() => {
+    setThroughputSelection(initialPersonalPrThroughputSelection(person));
+  }, [person.login]);
 
   return (
     <div className="selected-person-workbench">
@@ -16936,13 +17018,16 @@ function SelectedPersonWorkbench({
         signals={operatingSignals}
         activeFilter={drilldownFilter}
         onSelect={onDrilldownChange}
+        onThroughputSelect={selectThroughput}
       />
-      <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />
       <PersonalPrThroughputPanel
         person={person}
+        selection={throughputSelection}
+        onSelectionChange={setThroughputSelection}
         onDrilldownChange={onDrilldownChange}
         onPullRequestPreview={previewPullRequest}
       />
+      <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />
       <details className="secondary-disclosure person-signal-disclosure">
         <summary>
           <span>Signal evidence</span>

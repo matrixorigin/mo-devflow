@@ -6264,6 +6264,98 @@ button.testing-board-stat:focus-visible {
   text-transform: uppercase;
 }
 
+.person-ops-pr-rhythm {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(160px, 0.22fr) minmax(0, 1fr);
+  min-width: 0;
+  padding: 10px;
+}
+
+.person-ops-pr-rhythm-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.person-ops-pr-rhythm-heading span {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.person-ops-pr-rhythm-heading small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.person-ops-pr-periods {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.person-ops-pr-period {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-height: 74px;
+  min-width: 0;
+  padding: 8px;
+  text-align: left;
+}
+
+.person-ops-pr-period:hover,
+.person-ops-pr-period:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.person-ops-pr-period span,
+.person-ops-pr-period small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-ops-pr-period strong {
+  color: #111827;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-ops-pr-period-flow {
+  border-left-color: #16a34a;
+}
+
+.person-ops-pr-period-alert {
+  border-left-color: #d97706;
+}
+
 .person-daily-plan-item strong {
   align-items: center;
   color: #111827;
@@ -9934,6 +10026,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .person-ops-pr-rhythm {
+    grid-template-columns: 1fr;
+  }
+
   .person-active-work-row {
     grid-template-columns: minmax(0, 1fr) minmax(190px, 0.42fr);
   }
@@ -10256,6 +10352,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .person-ops-pr-periods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .personal-flow-efficiency-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -10442,6 +10542,14 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .person-ops-tile {
+    min-height: 66px;
+  }
+
+  .person-ops-pr-periods {
+    grid-template-columns: 1fr;
+  }
+
+  .person-ops-pr-period {
     min-height: 66px;
   }
 
