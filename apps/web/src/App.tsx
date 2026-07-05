@@ -11891,6 +11891,77 @@ function sortPersonalActionItemsForDisplay(
   return items;
 }
 
+function PersonalActionSnapshot({
+  items,
+  counts,
+  activeDrilldownFilter,
+  onDrilldownChange,
+  onPreview
+}: {
+  items: PersonalActivityItem[];
+  counts: ReturnType<typeof personalActionQueueCounts>;
+  activeDrilldownFilter: PersonalDrilldownFilter;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
+  onPreview: (item: PersonalActivityItem) => void;
+}) {
+  const topItem = items[0] ?? null;
+
+  if (!topItem) {
+    return null;
+  }
+
+  const openQueueFilter = (filter: PersonalActionQueueFilter): void => {
+    onDrilldownChange(personalDrilldownForActionQueueFilter(filter));
+  };
+
+  return (
+    <section className="personal-action-snapshot" aria-label="Personal action snapshot">
+      <div className="subsection-heading subsection-heading-compact">
+        <div>
+          <Title level={5}>Action Snapshot</Title>
+          <Text type="secondary">Top next action and queue shortcuts from the current cached activity.</Text>
+        </div>
+        <Tag>{items.length} objects</Tag>
+      </div>
+      <ActionQueueFocusStrip item={topItem} onOpenBoard={onDrilldownChange} onPreview={onPreview} />
+      <div className="activity-summary-strip personal-action-snapshot-tiles" aria-label="Personal action shortcuts">
+        <ActivitySummaryTile
+          label="s-1/s0"
+          value={counts.critical}
+          detail="active issues"
+          tone="critical"
+          active={activeDrilldownFilter === "active_issues"}
+          onSelect={() => openQueueFilter("critical")}
+        />
+        <ActivitySummaryTile
+          label="Blocked PRs"
+          value={counts.pr_blockers}
+          detail="review/CI/merge/test"
+          tone={counts.pr_blockers > 0 ? "attention" : "normal"}
+          active={activeDrilldownFilter === "pr_attention"}
+          onSelect={() => openQueueFilter("pr_blockers")}
+        />
+        <ActivitySummaryTile
+          label="Issue testing"
+          value={counts.testing}
+          detail="handoff queue"
+          tone={counts.testing > 0 ? "normal" : "muted"}
+          active={activeDrilldownFilter === "testing"}
+          onSelect={() => openQueueFilter("testing")}
+        />
+        <ActivitySummaryTile
+          label="Missing links"
+          value={counts.needs_link}
+          detail="issue/PR relationship"
+          tone={counts.needs_link > 0 ? "attention" : "muted"}
+          active={activeDrilldownFilter === "threads"}
+          onSelect={() => openQueueFilter("needs_link")}
+        />
+      </div>
+    </section>
+  );
+}
+
 function PersonalActionQueue({
   items,
   activeDrilldownFilter,
@@ -15067,6 +15138,14 @@ function SelectedPersonWorkbench({
         onOpenActiveIssues={() => onDrilldownChange("active_issues")}
         onOpenPrAttention={() => onDrilldownChange("pr_attention")}
         onOpenThreads={() => onDrilldownChange("threads")}
+      />
+
+      <PersonalActionSnapshot
+        items={activityItems}
+        counts={activityCounts}
+        activeDrilldownFilter={drilldownFilter}
+        onDrilldownChange={onDrilldownChange}
+        onPreview={setObjectPreviewItem}
       />
 
       <PersonalDrilldownBoard

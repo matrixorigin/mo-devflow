@@ -6306,6 +6306,24 @@ button.testing-board-stat:focus-visible {
   margin-bottom: 10px;
 }
 
+.personal-action-snapshot {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.personal-action-snapshot .action-queue-focus-strip {
+  border-radius: 7px;
+}
+
+.personal-action-snapshot-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .activity-command-center {
   display: grid;
   gap: 12px;
@@ -9421,6 +9439,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .activity-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-action-snapshot-tiles {
     grid-template-columns: 1fr;
   }
 
