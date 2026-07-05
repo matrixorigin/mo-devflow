@@ -10535,11 +10535,39 @@ function personPrQueueDetail(person: PersonSummary, personal: PersonalActionView
   return `${prBlockerBreakdownText(personal.attentionPrs)} | ${oldestPersonalPrText(personal.pendingPrs)}`;
 }
 
+function personPrAttentionQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.attentionPrs} attention`;
+  }
+  return prBlockerBreakdownText(personal.attentionPrs);
+}
+
+function personPendingPrQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.pendingPrs} pending`;
+  }
+  return oldestPersonalPrText(personal.pendingPrs);
+}
+
 function personTriageQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
   if (!personal) {
     return `${person.needsTriageIssues} triage | ${person.deferredIssues} deferred`;
   }
   return `${oldestPersonalIssueText(personal.needsTriageIssues)} | ${personal.deferredIssues.length} deferred`;
+}
+
+function personNeedsTriageQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.needsTriageIssues} triage`;
+  }
+  return oldestPersonalIssueText(personal.needsTriageIssues);
+}
+
+function personDeferredQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
+  if (!personal) {
+    return `${person.deferredIssues} deferred`;
+  }
+  return `${personal.deferredIssues.length} outside active queue`;
 }
 
 function personTestingQueueDetail(personal: PersonalActionView | undefined): string {
@@ -10618,18 +10646,32 @@ function PersonWorkloadRow({
           onClick={() => openMetric("active_issues")}
         />
         <PersonQueueMetric
-          label="PR flow"
-          value={`${person.attentionPrs}/${person.pendingPrs}`}
-          detail={personPrQueueDetail(person, personal)}
-          tone={person.attentionPrs > 0 ? "attention" : person.pendingPrs > 0 ? "normal" : "good"}
-          onClick={() => openMetric(person.attentionPrs > 0 ? "pr_attention" : "pending_pr")}
+          label="PR attention"
+          value={person.attentionPrs}
+          detail={personPrAttentionQueueDetail(person, personal)}
+          tone={person.attentionPrs > 0 ? "attention" : "good"}
+          onClick={() => openMetric("pr_attention")}
         />
         <PersonQueueMetric
-          label="Triage"
-          value={`${person.needsTriageIssues}/${person.deferredIssues}`}
-          detail={personTriageQueueDetail(person, personal)}
-          tone={person.needsTriageIssues > 0 ? "attention" : person.deferredIssues > 0 ? "normal" : "good"}
-          onClick={() => openMetric(person.needsTriageIssues > 0 ? "triage" : "deferred")}
+          label="Pending PR"
+          value={person.pendingPrs}
+          detail={personPendingPrQueueDetail(person, personal)}
+          tone={person.pendingPrs > 0 ? "normal" : "good"}
+          onClick={() => openMetric("pending_pr")}
+        />
+        <PersonQueueMetric
+          label="Needs triage"
+          value={person.needsTriageIssues}
+          detail={personNeedsTriageQueueDetail(person, personal)}
+          tone={person.needsTriageIssues > 0 ? "attention" : "good"}
+          onClick={() => openMetric("triage")}
+        />
+        <PersonQueueMetric
+          label="Deferred"
+          value={person.deferredIssues}
+          detail={personDeferredQueueDetail(person, personal)}
+          tone={person.deferredIssues > 0 ? "normal" : "good"}
+          onClick={() => openMetric("deferred")}
         />
         <PersonQueueMetric
           label="Issue testing"
@@ -19424,49 +19466,55 @@ export default function App() {
                   scopeFilter={peopleScopeFilter}
                   onScopeFilterChange={changePeopleScopeFilter}
                 />
-                <PeopleFocusQueue
-                  people={filteredPeople}
-                  personalViews={data.personalViews}
-                  selectedLogin={selectedPersonalView?.login ?? null}
-                  scopeFilter={peopleScopeFilter}
-                  mode={peopleBoardUsesObserved ? "observed" : "watched"}
-                  onSelect={openPeopleBoardPerson}
-                  onMetricSelect={openPeopleBoardMetric}
-                />
-                <details className="secondary-disclosure people-roster-disclosure">
-                  <summary>
-                    <span>All people roster</span>
-                    <Space size={[4, 4]} wrap>
-                      <button
-                        type="button"
-                        className={`inline-filter-chip ${
-                          peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""
-                        }`}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          changePeopleScopeFilter("all");
-                        }}
-                      >
-                        {filteredPeople.length}/{peopleBoardCounts.all} shown
-                      </button>
-                      <span className="secondary-summary-note">
+                <section className="people-by-person-board" aria-label="By person workload">
+                  <div className="subsection-heading subsection-heading-compact">
+                    <div>
+                      <Title level={5}>By Person</Title>
+                      <Text type="secondary">
                         {peopleScopeLabel(peopleScopeFilter)} | sort {peopleSortLabel(peopleSort)}
-                      </span>
-                    </Space>
-                  </summary>
-                  <div className="secondary-disclosure-body">
-                    <PersonWorkloadBoard
-                      people={filteredPeople}
-                      personalViews={data.personalViews}
-                      selectedLogin={selectedPersonalView?.login ?? null}
-                      sort={peopleSort}
-                      onSelect={openPeopleBoardPerson}
-                      onMetricSelect={openPeopleBoardMetric}
-                      mode={peopleBoardUsesObserved ? "observed" : "watched"}
-                    />
+                      </Text>
+                    </div>
+                    <button
+                      type="button"
+                      className={`inline-filter-chip ${peopleScopeFilter === "all" ? "inline-filter-chip-active" : ""}`}
+                      onClick={() => changePeopleScopeFilter("all")}
+                    >
+                      {filteredPeople.length}/{peopleBoardCounts.all} shown
+                    </button>
                   </div>
-                </details>
+                  <PersonWorkloadBoard
+                    people={filteredPeople}
+                    personalViews={data.personalViews}
+                    selectedLogin={selectedPersonalView?.login ?? null}
+                    sort={peopleSort}
+                    onSelect={openPeopleBoardPerson}
+                    onMetricSelect={openPeopleBoardMetric}
+                    mode={peopleBoardUsesObserved ? "observed" : "watched"}
+                  />
+                </section>
+                {filteredPeople.length > 0 ? (
+                  <details className="secondary-disclosure people-roster-disclosure">
+                    <summary>
+                      <span>Priority people queue</span>
+                      <Space size={[4, 4]} wrap>
+                        <span className="secondary-summary-note">
+                          Top 5 by workload in {peopleScopeLabel(peopleScopeFilter)}
+                        </span>
+                      </Space>
+                    </summary>
+                    <div className="secondary-disclosure-body">
+                      <PeopleFocusQueue
+                        people={filteredPeople}
+                        personalViews={data.personalViews}
+                        selectedLogin={selectedPersonalView?.login ?? null}
+                        scopeFilter={peopleScopeFilter}
+                        mode={peopleBoardUsesObserved ? "observed" : "watched"}
+                        onSelect={openPeopleBoardPerson}
+                        onMetricSelect={openPeopleBoardMetric}
+                      />
+                    </div>
+                  </details>
+                ) : null}
               </section>
             ) : null}
           </>

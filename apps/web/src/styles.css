@@ -4534,6 +4534,16 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.people-by-person-board {
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
 .people-focus-queue {
   background: #ffffff;
   border: 1px solid #dbe3ee;
@@ -4794,7 +4804,7 @@ button.testing-board-stat:focus-visible {
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(190px, 0.7fr) minmax(210px, 0.76fr) minmax(460px, 1.65fr) auto;
+  grid-template-columns: minmax(190px, 0.62fr) minmax(210px, 0.7fr) minmax(620px, 1.9fr) auto;
   min-width: 0;
   padding: 10px;
 }
@@ -4891,7 +4901,7 @@ button.testing-board-stat:focus-visible {
 .person-queue-metrics {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   min-width: 0;
 }
 
