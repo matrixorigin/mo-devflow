@@ -134,6 +134,10 @@ import {
   personWorkloadStatus,
   personalIssueReasons,
   prAttentionReasons,
+  prHasNoVisibleIssue,
+  prHasVisibleIssueContext,
+  prIssueLinkEvidencePending,
+  prVisibleIssueNumbers,
   sortTestingIssuesForAction,
   teamCommandSignals,
   testingStateBusinessLabel,
@@ -1808,16 +1812,12 @@ function prHasConflict(pr: PendingPrView): boolean {
   return pr.mergeStateStatus === "dirty";
 }
 
-function prIssueRelationshipComplete(pr: PendingPrView): boolean {
-  return pr.isComplete && pr.detailSyncedAt !== null && pr.detailError === null;
+function prHasNoLinkedIssue(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): boolean {
+  return prHasNoVisibleIssue(pr, activeIssues);
 }
 
-function prHasNoLinkedIssue(pr: PendingPrView): boolean {
-  return pr.linkedIssueNumbers.length === 0 && prIssueRelationshipComplete(pr);
-}
-
-function prIssueLinkUnknown(pr: PendingPrView): boolean {
-  return pr.linkedIssueNumbers.length === 0 && !prIssueRelationshipComplete(pr);
+function prIssueLinkUnknown(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): boolean {
+  return prIssueLinkEvidencePending(pr, activeIssues);
 }
 
 function prEvidencePending(pr: PendingPrView): boolean {
@@ -1825,7 +1825,7 @@ function prEvidencePending(pr: PendingPrView): boolean {
 }
 
 function prHasActiveIssue(pr: PendingPrView, criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>): boolean {
-  return (criticalIssuesByPr.get(pr.number)?.length ?? 0) > 0;
+  return prHasVisibleIssueContext(pr, criticalIssuesByPr.get(pr.number) ?? []);
 }
 
 function prMatchesScope(
@@ -1858,10 +1858,10 @@ function prMatchesScope(
     return prHasConflict(pr);
   }
   if (scopeFilter === "no_issue") {
-    return prHasNoLinkedIssue(pr);
+    return prHasNoLinkedIssue(pr, criticalIssuesByPr.get(pr.number) ?? []);
   }
   if (scopeFilter === "issue_link_pending") {
-    return prIssueLinkUnknown(pr);
+    return prIssueLinkUnknown(pr, criticalIssuesByPr.get(pr.number) ?? []);
   }
   if (scopeFilter === "evidence_pending") {
     return prEvidencePending(pr);
@@ -2028,7 +2028,7 @@ function observedPersonPreview(data: DashboardSummary, login: string): ObservedP
     return null;
   }
 
-  const criticalIssuesByPr = criticalIssueContextsByPullRequest(data.criticalIssues);
+  const criticalIssuesByPr = criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs);
   const issues = sortCriticalIssuesForAction(data.criticalIssues.filter((issue) => issue.ownerLogin === login));
   const prs = sortPendingPrsForAction(
     data.pendingPrs.filter((pr) => pr.ownerLogin === login),
@@ -2202,8 +2202,8 @@ function TeamRotationOverview({
     filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
   );
   const criticalIssuesByPr = useMemo(
-    () => criticalIssueContextsByPullRequest(data.criticalIssues),
-    [data.criticalIssues]
+    () => criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs),
+    [data.criticalIssues, data.pendingPrs]
   );
   const prRisks = sortPendingPrsForAction(data.pendingPrs, criticalIssuesByPr);
   const criticalIssueOrder = new Map(criticalIssues.map((issue, index) => [issue.number, index]));
@@ -3570,7 +3570,7 @@ function TeamPrRiskRow({
           </div>
         ) : activeIssues.length === 0 ? (
           <div className="team-linked-row team-linked-row-missing">
-            {prIssueLinkUnknown(pr) ? "Issue link sync pending" : "Unlinked after sync"}
+            {prIssueLinkUnknown(pr, activeIssues) ? "Issue link sync pending" : "Unlinked after sync"}
           </div>
         ) : null}
       </div>
@@ -3747,7 +3747,8 @@ function TeamPullRequestPreviewModal({
   onClose: () => void;
 }) {
   const reasons = prAttentionReasons(pr);
-  const issueLinks = pr.linkedIssueNumbers.map((number) => ({
+  const visibleIssueNumbers = prVisibleIssueNumbers(pr, activeIssues);
+  const issueLinks = visibleIssueNumbers.map((number) => ({
     number,
     url: linkedObjectUrl(pr.htmlUrl, "issues", number)
   }));
@@ -3799,13 +3800,15 @@ function TeamPullRequestPreviewModal({
           </div>
           <div className="team-object-preview-metric">
             <span>Issue links</span>
-            <strong>{pr.linkedIssueNumbers.length}</strong>
+            <strong>{visibleIssueNumbers.length}</strong>
             <small>
-              {prIssueLinkUnknown(pr)
+              {prIssueLinkUnknown(pr, activeIssues)
                 ? "sync pending"
-                : pr.linkedIssueNumbers.length > 0
-                  ? "linked"
-                  : "none after sync"}
+                : visibleIssueNumbers.length > pr.linkedIssueNumbers.length
+                  ? "issue context"
+                  : visibleIssueNumbers.length > 0
+                    ? "linked"
+                    : "none after sync"}
             </small>
           </div>
         </div>
@@ -3863,7 +3866,9 @@ function TeamPullRequestPreviewModal({
             </Space>
           ) : (
             <Text type="secondary">
-              {prIssueLinkUnknown(pr) ? "Issue link sync is still pending." : "No linked issue found after sync."}
+              {prIssueLinkUnknown(pr, activeIssues)
+                ? "Issue link sync is still pending."
+                : "No linked issue found after sync."}
             </Text>
           )}
         </section>
@@ -3926,7 +3931,7 @@ function PrIssueContextCell({
         </Space>
       ) : activeIssues.length === 0 ? (
         <Space size={[4, 4]} wrap>
-          {prIssueLinkUnknown(pr) ? (
+          {prIssueLinkUnknown(pr, activeIssues) ? (
             <Tooltip title="PR detail or relationship sync has not completed. GitHub linked issues may still be missing from cache.">
               <Tag color="gold">issue link sync pending</Tag>
             </Tooltip>
@@ -4537,7 +4542,7 @@ function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueCont
     (isTestingStalePr(pr) ? 150 : 0) +
     (pr.testingQueueAgeHours !== null ? 80 : 0) +
     (pr.ageHours >= 24 ? 60 : 0) +
-    (prHasNoLinkedIssue(pr) ? 45 : 0) +
+    (prHasNoLinkedIssue(pr, activeIssues) ? 45 : 0) +
     (!pr.isComplete ? 30 : 0)
   );
 }
@@ -5743,8 +5748,10 @@ function PrBoardSummary({
   const ciFailedPrs = prs.filter(prHasFailedCi).length;
   const requestedChangePrs = prs.filter(prHasRequestChanges).length;
   const conflictPrs = prs.filter(prHasConflict).length;
-  const noIssuePrs = prs.filter(prHasNoLinkedIssue).length;
-  const issueLinkPendingPrs = prs.filter(prIssueLinkUnknown).length;
+  const noIssuePrs = prs.filter((pr) => prHasNoLinkedIssue(pr, criticalIssuesByPr.get(pr.number) ?? [])).length;
+  const issueLinkPendingPrs = prs.filter((pr) =>
+    prIssueLinkUnknown(pr, criticalIssuesByPr.get(pr.number) ?? [])
+  ).length;
   const evidencePendingPrs = prs.filter(prEvidencePending).length;
   const noActionPrs = prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length;
 
@@ -9572,8 +9579,8 @@ function PersonalRotationOverview({
   const focusRows = filteredRows.slice(0, 6);
   const primaryFocus = personalPrimaryFocus(person, chart, blockedPrItems.length, staleTestingWorkCount);
   const criticalIssuesByPr = useMemo(
-    () => criticalIssueContextsByPullRequest(person.activeCriticalIssues),
-    [person.activeCriticalIssues]
+    () => criticalIssueContextsByPullRequest(person.activeCriticalIssues, person.pendingPrs),
+    [person.activeCriticalIssues, person.pendingPrs]
   );
   const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
@@ -11001,7 +11008,9 @@ export default function App() {
   const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
   const criticalIssuesByPr = useMemo(
     () =>
-      data ? criticalIssueContextsByPullRequest(data.criticalIssues) : new Map<number, PrCriticalIssueContext[]>(),
+      data
+        ? criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs)
+        : new Map<number, PrCriticalIssueContext[]>(),
     [data]
   );
 

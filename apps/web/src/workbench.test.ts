@@ -36,6 +36,8 @@ import {
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
+  prHasNoVisibleIssue,
+  prIssueLinkEvidencePending,
   sortTestingIssuesForAction,
   sortPeopleByWorkload,
   teamCommandSignals,
@@ -443,6 +445,54 @@ describe("work item attention reasons", () => {
       "42:severity/s0:ai-heavy"
     ]);
     expect(contexts.get(101)?.map((issue) => issue.number)).toEqual([43]);
+  });
+
+  it("adds active issue context from PR-side linked issue numbers", () => {
+    const contexts = criticalIssueContextsByPullRequest(
+      [
+        criticalIssue({
+          number: 88,
+          severity: "severity/s0",
+          linkedPullRequests: []
+        })
+      ],
+      [
+        pullRequest({
+          number: 188,
+          linkedIssueNumbers: [88]
+        })
+      ]
+    );
+
+    expect(contexts.get(188)?.map((issue) => issue.number)).toEqual([88]);
+  });
+
+  it("does not treat a PR as unlinked when issue-side context is visible", () => {
+    const activeIssues = [
+      {
+        number: 88,
+        title: "active issue",
+        htmlUrl: "https://github.com/example/repo/issues/88",
+        severity: "severity/s0",
+        ownerLogin: "alice",
+        ownerScope: "watched" as const,
+        aiEffortLabel: "ai-easy",
+        criticalAgeHours: 12,
+        criticalAgeEvidence: "issue_timeline_event" as const,
+        blockerCount: 0,
+        isComplete: true
+      }
+    ];
+    const pr = pullRequest({
+      number: 188,
+      linkedIssueNumbers: [],
+      detailSyncedAt: "2026-07-04T00:00:00Z",
+      detailError: null,
+      isComplete: true
+    });
+
+    expect(prHasNoVisibleIssue(pr, activeIssues)).toBe(false);
+    expect(prIssueLinkEvidencePending(pr, activeIssues)).toBe(false);
   });
 });
 

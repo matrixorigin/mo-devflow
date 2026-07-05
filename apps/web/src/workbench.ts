@@ -387,7 +387,10 @@ export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
 
-export function criticalIssueContextsByPullRequest(issues: CriticalIssueView[]): Map<number, PrCriticalIssueContext[]> {
+export function criticalIssueContextsByPullRequest(
+  issues: CriticalIssueView[],
+  pullRequests: Array<Pick<PendingPrView, "number" | "linkedIssueNumbers">> = []
+): Map<number, PrCriticalIssueContext[]> {
   const byPullRequest = new Map<number, PrCriticalIssueContext[]>();
 
   for (const issue of issues) {
@@ -410,6 +413,17 @@ export function criticalIssueContextsByPullRequest(issues: CriticalIssueView[]):
       existing.push(context);
       byPullRequest.set(pr.number, existing);
     }
+
+    for (const pr of pullRequests) {
+      if (!pr.linkedIssueNumbers.includes(issue.number)) {
+        continue;
+      }
+      const existing = byPullRequest.get(pr.number) ?? [];
+      if (!existing.some((context) => context.number === issue.number)) {
+        existing.push(context);
+        byPullRequest.set(pr.number, existing);
+      }
+    }
   }
 
   for (const [prNumber, contexts] of byPullRequest.entries()) {
@@ -417,6 +431,40 @@ export function criticalIssueContextsByPullRequest(issues: CriticalIssueView[]):
   }
 
   return byPullRequest;
+}
+
+export function prVisibleIssueNumbers(
+  pr: Pick<PendingPrView, "linkedIssueNumbers">,
+  activeIssues: PrCriticalIssueContext[] = []
+): number[] {
+  return uniqueNumbers([...pr.linkedIssueNumbers, ...activeIssues.map((issue) => issue.number)]);
+}
+
+export function prIssueRelationshipComplete(
+  pr: Pick<PendingPrView, "isComplete" | "detailSyncedAt" | "detailError">
+): boolean {
+  return pr.isComplete && pr.detailSyncedAt !== null && pr.detailError === null;
+}
+
+export function prHasVisibleIssueContext(
+  pr: Pick<PendingPrView, "linkedIssueNumbers">,
+  activeIssues: PrCriticalIssueContext[] = []
+): boolean {
+  return prVisibleIssueNumbers(pr, activeIssues).length > 0;
+}
+
+export function prHasNoVisibleIssue(
+  pr: Pick<PendingPrView, "linkedIssueNumbers" | "isComplete" | "detailSyncedAt" | "detailError">,
+  activeIssues: PrCriticalIssueContext[] = []
+): boolean {
+  return !prHasVisibleIssueContext(pr, activeIssues) && prIssueRelationshipComplete(pr);
+}
+
+export function prIssueLinkEvidencePending(
+  pr: Pick<PendingPrView, "linkedIssueNumbers" | "isComplete" | "detailSyncedAt" | "detailError">,
+  activeIssues: PrCriticalIssueContext[] = []
+): boolean {
+  return !prHasVisibleIssueContext(pr, activeIssues) && !prIssueRelationshipComplete(pr);
 }
 
 export function flowEfficiencySummary(input: {
