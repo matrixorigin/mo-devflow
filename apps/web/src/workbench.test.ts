@@ -1016,6 +1016,7 @@ describe("personal activity feed", () => {
     const activeIssue = criticalIssue({
       number: 10,
       severity: "severity/s-1",
+      ownerReason: "linked_pr_author",
       linkedPullRequests: [
         {
           ...linkedPullRequest(),
@@ -1046,6 +1047,7 @@ describe("personal activity feed", () => {
       "issue:30:Needs triage"
     ]);
     expect(items[0]?.linkedPullRequestNumbers).toEqual([100]);
+    expect(items[0]).toMatchObject({ ownerLogin: "alice", ownerScope: "watched", ownerReason: "linked_pr_author" });
     expect(items[1]?.linkedIssueNumbers).toEqual([10]);
     expect(items[1]?.reasons).toContain("Changes requested");
     expect(items[1]?.reasons).toContain("CI failed");

@@ -847,6 +847,52 @@ function CriticalIssueOwnerTag({
   );
 }
 
+function PersonalActivityOwnerTag({
+  item
+}: {
+  item: Pick<PersonalActivityItem, "ownerLogin" | "ownerScope" | "ownerReason">;
+}) {
+  if (item.ownerScope) {
+    return (
+      <CriticalIssueOwnerTag
+        issue={{ ownerLogin: item.ownerLogin, ownerScope: item.ownerScope, ownerReason: item.ownerReason }}
+      />
+    );
+  }
+  return item.ownerLogin ? <Tag>{item.ownerLogin}</Tag> : null;
+}
+
+function PersonalActivityOwnerMeta({
+  item
+}: {
+  item: Pick<PersonalActivityItem, "ownerLogin" | "ownerScope" | "ownerReason">;
+}) {
+  if (!item.ownerLogin && !item.ownerScope) {
+    return null;
+  }
+  const ownerLabel = item.ownerLogin ?? "unowned";
+  const content = (
+    <span>
+      <UserRound size={13} aria-hidden="true" />
+      {ownerLabel}
+    </span>
+  );
+  if (!item.ownerScope) {
+    return content;
+  }
+  return (
+    <Tooltip
+      title={criticalIssueOwnerTooltip({
+        ownerLogin: item.ownerLogin,
+        ownerScope: item.ownerScope,
+        ownerReason: item.ownerReason
+      })}
+    >
+      {content}
+    </Tooltip>
+  );
+}
+
 function criticalIssueOwnerSummary(issue: Pick<CriticalIssueView, "ownerLogin" | "ownerReason">): string {
   const owner = issue.ownerLogin ?? "unowned";
   return issue.ownerLogin && issue.ownerReason
@@ -5786,6 +5832,8 @@ function teamPrNextAction(pr: PendingPrView): string {
     title: pr.title,
     htmlUrl: pr.htmlUrl,
     ownerLogin: pr.ownerLogin,
+    ownerScope: null,
+    ownerReason: null,
     phase: isTestingQueuePr(pr) ? "Linked issue test evidence" : "Pending PR",
     tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
     priority: 0,
@@ -10076,6 +10124,7 @@ function PersonalActionQueueItem({
                 {objectLabel}
               </WorkObjectLink>
               <Tag color={actionTone}>{item.phase}</Tag>
+              {item.ownerScope ? <PersonalActivityOwnerTag item={item} /> : null}
               {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
               {item.testingState && item.testingState !== "not_ready" ? (
                 <TestingStateTag state={item.testingState} />
@@ -10095,12 +10144,7 @@ function PersonalActionQueueItem({
             </a>
           </div>
           <div className="action-queue-object-meta">
-            {item.ownerLogin ? (
-              <span>
-                <UserRound size={13} aria-hidden="true" />
-                {item.ownerLogin}
-              </span>
-            ) : null}
+            {!item.ownerScope ? <PersonalActivityOwnerMeta item={item} /> : null}
             {item.lastHumanActionAt ? (
               <span>
                 <UserRound size={13} aria-hidden="true" />
@@ -10203,7 +10247,7 @@ function PersonalActivityPreviewModal({ item, onClose }: { item: PersonalActivit
           <Tag color={item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue"}>
             {item.phase}
           </Tag>
-          {item.ownerLogin ? <Tag>{item.ownerLogin}</Tag> : null}
+          <PersonalActivityOwnerTag item={item} />
           {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
           {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
           {item.testingState && item.testingState !== "not_ready" ? (

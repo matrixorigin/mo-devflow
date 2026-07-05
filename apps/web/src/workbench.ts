@@ -27,6 +27,8 @@ export interface PersonalActivityItem {
   title: string;
   htmlUrl: string;
   ownerLogin: string | null;
+  ownerScope: CriticalIssueView["ownerScope"] | null;
+  ownerReason: CriticalIssueView["ownerReason"] | null;
   phase: string;
   tone: PersonalActivityTone;
   priority: number;
@@ -2354,6 +2356,8 @@ function activityFromIssue(
     title: issue.title,
     htmlUrl: issue.htmlUrl,
     ownerLogin: criticalIssue ? issue.ownerLogin : null,
+    ownerScope: criticalIssue ? issue.ownerScope : null,
+    ownerReason: criticalIssue ? issue.ownerReason : null,
     phase,
     tone,
     priority,
@@ -2386,6 +2390,8 @@ function activityFromTestingIssue(issue: TestingIssueQueueView): PersonalActivit
     title: issue.title,
     htmlUrl: issue.htmlUrl,
     ownerLogin: issue.testers[0] ?? null,
+    ownerScope: null,
+    ownerReason: null,
     phase: "Issue in test",
     tone: testingIssueGanttTone(issue) === "critical" ? "critical" : "attention",
     priority: testingIssuePriority(issue),
@@ -2422,6 +2428,8 @@ function activityFromPullRequest(
     title: pr.title,
     htmlUrl: pr.htmlUrl,
     ownerLogin: pr.ownerLogin,
+    ownerScope: null,
+    ownerReason: null,
     phase,
     tone,
     priority,
