@@ -8698,15 +8698,39 @@ function ObservedPersonDetailPanels({
   prTitle: string;
   prs: PendingPrView[];
 }) {
+  const [preview, setPreview] = useState<TeamWorkPreview | null>(null);
+  const activeIssuesByPr = useMemo(() => criticalIssueContextsByPullRequest(issues, prs), [issues, prs]);
+
   return (
-    <div className="observed-person-columns">
-      <ObservedPersonIssuePanel title={issueTitle} issues={issues} />
-      <ObservedPersonPrPanel title={prTitle} prs={prs} />
-    </div>
+    <>
+      <div className="observed-person-columns">
+        <ObservedPersonIssuePanel
+          title={issueTitle}
+          issues={issues}
+          onPreview={(issue) => setPreview({ objectType: "issue", issue })}
+        />
+        <ObservedPersonPrPanel
+          title={prTitle}
+          prs={prs}
+          onPreview={(pr) =>
+            setPreview({ objectType: "pull_request", pr, activeIssues: activeIssuesByPr.get(pr.number) ?? [] })
+          }
+        />
+      </div>
+      <TeamWorkPreviewModal preview={preview} onClose={() => setPreview(null)} />
+    </>
   );
 }
 
-function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: CriticalIssueView[] }) {
+function ObservedPersonIssuePanel({
+  title,
+  issues,
+  onPreview
+}: {
+  title: string;
+  issues: CriticalIssueView[];
+  onPreview: (issue: CriticalIssueView) => void;
+}) {
   const pagedIssues = usePagedList(issues, 6, issues.map((issue) => issue.number).join(","));
 
   return (
@@ -8727,11 +8751,11 @@ function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: Cr
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible active issue owned by this login" />
         ) : (
           pagedIssues.visibleItems.map((issue) => (
-            <a className="observed-person-row" href={issue.htmlUrl} target="_blank" rel="noreferrer" key={issue.number}>
+            <article className="observed-person-row" key={issue.number}>
               <span className="observed-person-row-main">
-                <span>
+                <a className="observed-person-row-link" href={issue.htmlUrl} target="_blank" rel="noreferrer">
                   #{issue.number} {issue.title}
-                </span>
+                </a>
                 <small>
                   {issue.criticalAgeHours === null
                     ? "severity start unknown"
@@ -8743,9 +8767,19 @@ function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: Cr
                 <Tag color={issue.isComplete ? "green" : "orange"}>
                   {issue.isComplete ? "complete cache" : "incomplete cache"}
                 </Tag>
+                <Tooltip title={`Preview issue ${issue.number}`}>
+                  <Button
+                    aria-label={`Preview issue ${issue.number}`}
+                    className="observed-person-row-action"
+                    icon={<Eye size={14} />}
+                    size="small"
+                    type="text"
+                    onClick={() => onPreview(issue)}
+                  />
+                </Tooltip>
                 <ExternalLink size={13} aria-hidden="true" />
               </span>
-            </a>
+            </article>
           ))
         )}
       </div>
@@ -8760,7 +8794,15 @@ function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: Cr
   );
 }
 
-function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrView[] }) {
+function ObservedPersonPrPanel({
+  title,
+  prs,
+  onPreview
+}: {
+  title: string;
+  prs: PendingPrView[];
+  onPreview: (pr: PendingPrView) => void;
+}) {
   const pagedPrs = usePagedList(prs, 6, `${title}:${prs.map((pr) => pr.number).join(",")}`);
 
   return (
@@ -8783,11 +8825,11 @@ function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrVi
           pagedPrs.visibleItems.map((pr) => {
             const reasons = prAttentionReasons(pr);
             return (
-              <a className="observed-person-row" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
+              <article className="observed-person-row" key={pr.number}>
                 <span className="observed-person-row-main">
-                  <span>
+                  <a className="observed-person-row-link" href={pr.htmlUrl} target="_blank" rel="noreferrer">
                     #{pr.number} {pr.title}
-                  </span>
+                  </a>
                   <small>
                     {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
                   </small>
@@ -8809,9 +8851,19 @@ function ObservedPersonPrPanel({ title, prs }: { title: string; prs: PendingPrVi
                       {pr.isComplete ? "unlinked" : "link sync pending"}
                     </Tag>
                   )}
+                  <Tooltip title={`Preview PR ${pr.number}`}>
+                    <Button
+                      aria-label={`Preview PR ${pr.number}`}
+                      className="observed-person-row-action"
+                      icon={<Eye size={14} />}
+                      size="small"
+                      type="text"
+                      onClick={() => onPreview(pr)}
+                    />
+                  </Tooltip>
                   <ExternalLink size={13} aria-hidden="true" />
                 </span>
-              </a>
+              </article>
             );
           })
         )}

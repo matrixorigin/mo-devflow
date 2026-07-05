@@ -4087,12 +4087,18 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
-.observed-person-row-main span {
+.observed-person-row-link {
   color: #111827;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.observed-person-row-link:hover {
+  color: #0f5bb5;
+  text-decoration: underline;
 }
 
 .observed-person-row-main small {
@@ -4107,6 +4113,10 @@ button.testing-board-stat:focus-visible {
   gap: 4px;
   justify-content: flex-end;
   max-width: 260px;
+}
+
+.observed-person-row-action {
+  color: #2563eb;
 }
 
 .selected-person-workbench {
