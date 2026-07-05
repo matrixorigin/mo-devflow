@@ -22,6 +22,7 @@ import {
   personalCriticalFlowEfficiency,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
+  personalPrPeriodAverageDurationText,
   personalPrListForScope,
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
@@ -31,6 +32,7 @@ import {
   personalPrThroughputRows,
   personalPrVisibleUniqueTotalForPeriod,
   personalDrilldownFilterFromHash,
+  prLifecycleDurationText,
   prBoardTabFromHash,
   prRotationTableSummary,
   prScopeHelp,
@@ -505,7 +507,7 @@ describe("dashboard hash filters", () => {
           totalMergedPrs: 2,
           createdPrs: [
             { number: 10, createdAt: "2026-06-30T09:00:00.000Z", mergedAt: "2026-07-03T10:00:00.000Z" },
-            { number: 11, createdAt: "2026-07-01T09:00:00.000Z", mergedAt: null }
+            { number: 11, ageHours: 48, createdAt: "2026-07-01T09:00:00.000Z", mergedAt: null, state: "open" }
           ],
           mergedPrs: [
             { number: 12, createdAt: "2026-06-20T09:00:00.000Z", mergedAt: "2026-07-05T10:00:00.000Z" },
@@ -523,8 +525,11 @@ describe("dashboard hash filters", () => {
     expect(personalPrListTotalForScope(person, "created_period", "week")).toBe(3);
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
     expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
+    expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
+    expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
+    expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
     expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
-      "3 unique PRs | 3 created | 2 merged | 5 activity events"
+      "3 unique PRs | 3 created | 2 merged | 5 activity events | avg PR time 6.7d"
     );
   });
 

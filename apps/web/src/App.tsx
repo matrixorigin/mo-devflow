@@ -896,6 +896,18 @@ function optionalHours(value: number | null): string {
   return value === null ? "-" : hours(value);
 }
 
+function hoursBetweenIso(startIso: string | null, endIso: string | null): number | null {
+  if (!startIso || !endIso) {
+    return null;
+  }
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return null;
+  }
+  return (end - start) / (60 * 60 * 1000);
+}
+
 function hoursSince(value: string | null, nowIso: string): number | null {
   if (!value || !nowIso) {
     return null;
@@ -12581,9 +12593,12 @@ function PersonQueueRhythmStrip({
             key={row.period}
             onClick={() => openThroughput(row.period)}
           >
-            <span>{metricPeriodShortText(row.period)}</span>
+            <span>{metricPeriodShortText(row.period)} created/merged</span>
             <strong>{personalPrThroughputPair(row)}</strong>
-            <small>avg {optionalHours(row.averagePendingPrAgeHours)}</small>
+            <small>
+              {personalPrVisibleUniqueTotalForPeriod(person, row.period)} PRs | avg time{" "}
+              {personalPrPeriodAverageDurationText(personalPrPeriodListForPeriod(person, row.period))}
+            </small>
           </button>
         ))}
       </div>
@@ -13460,7 +13475,7 @@ function PullRequestWorkCard({
           PR #{pr.number}
         </WorkObjectLink>
         <Space size={[4, 4]} wrap>
-          <Tag>{hours(pr.ageHours)}</Tag>
+          <Tag>{prLifecycleDurationText(pr)}</Tag>
           {onPreview ? (
             <Tooltip title={`Preview PR ${pr.number}`}>
               <Button
@@ -17507,8 +17522,11 @@ function PersonalPrThroughputPanel({
               </strong>
               <small>{row.label} created / merged</small>
               <em>
-                {periodPrVisibleUniqueTotal(periodList)} PRs in list | pending {row.pendingPrs ?? "-"} | avg age{" "}
-                {optionalHours(row.averagePendingPrAgeHours)}
+                {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg PR time{" "}
+                {personalPrPeriodAverageDurationText(periodList)}
+              </em>
+              <em>
+                pending {row.pendingPrs ?? "-"} | avg open age {optionalHours(row.averagePendingPrAgeHours)}
               </em>
               {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
             </button>
@@ -17600,7 +17618,7 @@ function PersonalPrThroughputPanel({
               onClick={() => onDrilldownChange("active_issues")}
             />
             <PersonalFlowEfficiencyMetric
-              label="Linked PR"
+              label="Has linked PR"
               value={flow.issuesWithPr}
               detail={`${percentText(flow.linkedIssueRatePercent)} of active | ${flow.issuesWithoutPr} no PR`}
               onClick={() =>
@@ -17608,23 +17626,23 @@ function PersonalPrThroughputPanel({
               }
             />
             <PersonalFlowEfficiencyMetric
-              label="In testing"
+              label="Issue testing"
               value={flow.issuesInTesting}
               detail={`${percentText(flow.testingIssueRatePercent)} of active`}
               onClick={() => onDrilldownChange("testing")}
             />
             <PersonalFlowEfficiencyMetric
-              label="To first PR"
+              label="Severity to PR"
               value={optionalHours(flow.averageActiveToFirstPrHours)}
-              detail="avg from severity"
+              detail="avg from s-1/s0"
               onClick={() =>
                 onDrilldownChange(flow.activeIssues > flow.issuesWithPr ? "active_no_pr" : "active_issues")
               }
             />
             <PersonalFlowEfficiencyMetric
-              label="To testing"
+              label="Severity to test"
               value={optionalHours(flow.averageActiveToTestingHours)}
-              detail="avg from severity"
+              detail="avg from s-1/s0"
               onClick={() => onDrilldownChange("testing")}
             />
           </div>
@@ -17661,11 +17679,11 @@ function PersonalPrThroughputPanel({
                   </span>
                   <span>
                     <strong>{optionalHours(row.firstPrAfterActiveHours)}</strong>
-                    <small>to first PR</small>
+                    <small>to PR</small>
                   </span>
                   <span>
                     <strong>{row.cachePending ? "cache" : optionalHours(row.testingAfterActiveHours)}</strong>
-                    <small>to testing</small>
+                    <small>to issue test</small>
                   </span>
                 </button>
               ))}
@@ -17826,7 +17844,9 @@ export function personalPrPeriodActivitySummary(periodList: PersonalPrPeriodList
   }
   return `${periodPrVisibleUniqueTotal(periodList)} unique PRs | ${periodList.totalCreatedPrs} created | ${
     periodList.totalMergedPrs
-  } merged | ${periodPrActivityEventTotal(periodList)} activity events`;
+  } merged | ${periodPrActivityEventTotal(periodList)} activity events | avg PR time ${personalPrPeriodAverageDurationText(
+    periodList
+  )}`;
 }
 
 function personalPrPeriodActivityPrs(periodList: PersonalPrPeriodListView | null): PersonalPullRequestView[] {
@@ -17840,6 +17860,39 @@ function personalPrPeriodActivityPrs(periodList: PersonalPrPeriodListView | null
   return [...byNumber.values()].sort(
     (left, right) => personalPrPeriodActivityTime(right, periodList) - personalPrPeriodActivityTime(left, periodList)
   );
+}
+
+export function prLifecycleDurationHours(
+  pr: Pick<PersonalPullRequestView, "ageHours" | "createdAt" | "mergedAt" | "state">
+): number | null {
+  if (pr.mergedAt) {
+    return hoursBetweenIso(pr.createdAt, pr.mergedAt);
+  }
+  return Number.isFinite(pr.ageHours) ? pr.ageHours : null;
+}
+
+export function prLifecycleDurationText(
+  pr: Pick<PersonalPullRequestView, "ageHours" | "createdAt" | "mergedAt" | "state">
+): string {
+  const duration = prLifecycleDurationHours(pr);
+  if (duration === null) {
+    return pr.mergedAt ? "merge time unknown" : "age unknown";
+  }
+  if (pr.mergedAt) {
+    return `merged in ${hours(duration)}`;
+  }
+  if (pr.state === "closed") {
+    return `closed age ${hours(duration)}`;
+  }
+  return `open ${hours(duration)}`;
+}
+
+export function personalPrPeriodAverageDurationHours(periodList: PersonalPrPeriodListView | null): number | null {
+  return averageNullable(personalPrPeriodActivityPrs(periodList).map(prLifecycleDurationHours));
+}
+
+export function personalPrPeriodAverageDurationText(periodList: PersonalPrPeriodListView | null): string {
+  return optionalHours(personalPrPeriodAverageDurationHours(periodList));
 }
 
 function personalPrSortActivityTime(pr: PersonalPullRequestView, periodList: PersonalPrPeriodListView | null): number {

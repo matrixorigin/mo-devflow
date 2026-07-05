@@ -7256,6 +7256,10 @@ button.testing-board-stat:focus-visible {
   line-height: 1.1;
 }
 
+.personal-throughput-period em {
+  white-space: normal;
+}
+
 .personal-throughput-period .ant-tag {
   justify-self: start;
   margin-inline-end: 0;
