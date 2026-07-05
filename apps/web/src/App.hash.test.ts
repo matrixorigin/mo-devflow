@@ -5,6 +5,7 @@ import {
   criticalIssueScopeFilterFromHash,
   criticalIssueSortFromHash,
   dashboardHashForView,
+  dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
   peopleScopeFilterFromHash,
   peopleSortFromHash,
@@ -132,5 +133,11 @@ describe("dashboard hash filters", () => {
   it("preserves unknown sync cursor formats", () => {
     expect(syncHealthCursorText("opaque-cursor")).toBe("opaque-cursor");
     expect(syncHealthCursorText(null)).toBeNull();
+  });
+
+  it("labels fast refresh watch mode separately from normal auto refresh", () => {
+    expect(dashboardRefreshModeText(false, false)).toBe("auto 30s");
+    expect(dashboardRefreshModeText(false, true)).toBe("watch 3s");
+    expect(dashboardRefreshModeText(true, true)).toBe("refreshing");
   });
 });

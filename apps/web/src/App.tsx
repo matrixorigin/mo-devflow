@@ -188,6 +188,16 @@ const dashboardRefreshWatchPollMs = 3_000;
 const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
 const tablePageSizeOptions = [8, 10, 20, 50, 100];
 
+export function dashboardRefreshModeText(refreshing: boolean, refreshWatchActive: boolean): string {
+  if (refreshing) {
+    return "refreshing";
+  }
+  if (refreshWatchActive) {
+    return `watch ${Math.round(dashboardRefreshWatchPollMs / 1000)}s`;
+  }
+  return `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`;
+}
+
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
 interface DashboardReadModelMeta {
@@ -7346,6 +7356,7 @@ function FreshnessStatusBar({
   webhookReadiness,
   readModel,
   refreshing,
+  refreshWatchActive,
   autoRefreshError,
   lastLoadedAt,
   expanded,
@@ -7359,6 +7370,7 @@ function FreshnessStatusBar({
   webhookReadiness: WebhookReadinessSummary;
   readModel: DashboardReadModelMeta | null;
   refreshing: boolean;
+  refreshWatchActive: boolean;
   autoRefreshError: string | null;
   lastLoadedAt: string | null;
   expanded: boolean;
@@ -7368,6 +7380,7 @@ function FreshnessStatusBar({
   onOpenWebhooks: () => void;
 }) {
   const problemLayers = sync.health.filter((item) => item.status !== "success" || item.skipped);
+  const refreshModeText = dashboardRefreshModeText(refreshing, refreshWatchActive);
 
   return (
     <section className={`freshness-bar ${expanded ? "freshness-bar-expanded" : "freshness-bar-compact"}`}>
@@ -7420,7 +7433,7 @@ function FreshnessStatusBar({
             </button>
           ) : null}
           <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
-            {refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}
+            {refreshModeText}
           </Tag>
         </Space>
         <Button
@@ -7464,7 +7477,7 @@ function FreshnessStatusBar({
               className={`freshness-path-card freshness-path-${refreshing ? "normal" : autoRefreshError ? "attention" : "good"}`}
             >
               <span>Browser view</span>
-              <strong>{refreshing ? "refreshing" : `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`}</strong>
+              <strong>{refreshModeText}</strong>
               <small>{autoRefreshError ? autoRefreshError : `loaded ${formatDate(lastLoadedAt)}`}</small>
             </div>
             <button
@@ -17592,6 +17605,7 @@ export default function App() {
                 webhookReadiness={summarizeWebhookReadiness(data)}
                 readModel={dashboardReadModel}
                 refreshing={refreshing}
+                refreshWatchActive={refreshWatchUntil !== null}
                 autoRefreshError={autoRefreshError}
                 lastLoadedAt={lastDashboardLoadedAt}
                 expanded={freshnessExpanded}
