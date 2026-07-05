@@ -1056,6 +1056,38 @@ describe("personal activity feed", () => {
     expect(items[1]?.linkedIssueNumbers).toEqual([10]);
     expect(items[1]?.reasons).toContain("Changes requested");
     expect(items[1]?.reasons).toContain("CI failed");
+    expect(items[1]?.reasons).toContain("Also pending PR");
+  });
+
+  it("deduplicates repeated PR queue entries while preserving lower-priority phase evidence", () => {
+    const pr = pullRequest({
+      number: 20,
+      attentionFlags: ["ci_failed"],
+      ciState: "failure",
+      testingState: "testing",
+      testingQueueAgeHours: 30,
+      linkedIssueNumbers: [10],
+      createdAt: "2026-07-04T00:00:00Z"
+    });
+    const items = personalActivityItems(
+      personalView({
+        attentionPrs: [pr],
+        testingPrs: [pr],
+        pendingPrs: [pr],
+        prsCreatedYesterday: [pr]
+      })
+    );
+
+    expect(items.map((item) => `${item.id}:${item.phase}`)).toEqual(["pull_request:20:PR attention"]);
+    expect(items[0]?.reasons).toEqual([
+      "CI failed",
+      "Linked issue test wait visible",
+      "Also linked issue test evidence",
+      "Also pending PR",
+      "Also created yesterday"
+    ]);
+    expect(items[0]?.testingQueueAgeHours).toBe(30);
+    expect(personalActivityNextAction(items[0]!)).toBe("Fix failing CI");
   });
 
   it("uses s-1/s0 activation duration for active critical issues", () => {
@@ -1132,7 +1164,7 @@ describe("personal activity feed", () => {
     ]);
     expect(items.find((item) => item.id === "pull_request:21")).toMatchObject({
       phase: "Linked issue test evidence",
-      reasons: ["Linked issue test wait visible"]
+      reasons: ["Linked issue test wait visible", "Also pending PR"]
     });
     expect(personalActivityNextAction(items.find((item) => item.id === "pull_request:21")!)).toBe(
       "Check linked issue test status"

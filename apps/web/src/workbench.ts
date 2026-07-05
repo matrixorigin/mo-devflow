@@ -2020,12 +2020,15 @@ function clamp(value: number, min: number, max: number): number {
 
 export function personalActivityItems(person: PersonalActionView): PersonalActivityItem[] {
   const items: PersonalActivityItem[] = [];
-  const seen = new Set<string>();
+  const itemIndexById = new Map<string, number>();
   const add = (item: PersonalActivityItem): void => {
-    if (seen.has(item.id)) {
+    const existingIndex = itemIndexById.get(item.id);
+    if (existingIndex !== undefined) {
+      const existing = items[existingIndex];
+      items[existingIndex] = mergePersonalActivityItem(existing, item);
       return;
     }
-    seen.add(item.id);
+    itemIndexById.set(item.id, items.length);
     items.push(item);
   };
 
@@ -2073,6 +2076,24 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
     }
     return left.number - right.number;
   });
+}
+
+function mergePersonalActivityItem(existing: PersonalActivityItem, duplicate: PersonalActivityItem): PersonalActivityItem {
+  return {
+    ...existing,
+    ageHours: Math.max(existing.ageHours, duplicate.ageHours),
+    linkedIssueNumbers: uniqueNumbers([...existing.linkedIssueNumbers, ...duplicate.linkedIssueNumbers]),
+    linkedPullRequestNumbers: uniqueNumbers([
+      ...existing.linkedPullRequestNumbers,
+      ...duplicate.linkedPullRequestNumbers
+    ]),
+    reasons: uniqueStrings([...existing.reasons, ...duplicate.reasons, duplicatePhaseReason(duplicate.phase)]),
+    isComplete: existing.isComplete && duplicate.isComplete
+  };
+}
+
+function duplicatePhaseReason(phase: string): string {
+  return `Also ${phase.charAt(0).toLowerCase()}${phase.slice(1)}`;
 }
 
 export function personalActivityHasBlockingSignal(item: PersonalActivityItem): boolean {
