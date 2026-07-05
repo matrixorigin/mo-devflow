@@ -1429,11 +1429,13 @@ function SessionModelPanel({
   authenticatedUser,
   teamSignIn,
   serviceReadTokenConfigured,
+  githubOAuthConfigured,
   compact = false
 }: {
   authenticatedUser: NonNullable<SessionView["user"]> | null;
   teamSignIn: SessionView["teamSignIn"];
   serviceReadTokenConfigured: boolean;
+  githubOAuthConfigured: boolean;
   compact?: boolean;
 }) {
   return (
@@ -1442,7 +1444,7 @@ function SessionModelPanel({
         <ServerCog size={16} aria-hidden="true" />
         <div>
           <Text strong>How access works</Text>
-          <Text type="secondary">One deployment, many personal browser sessions.</Text>
+          <Text type="secondary">Observer, GitHub sign-in, and personal write token are separate.</Text>
         </div>
       </div>
       <div className="session-model-grid">
@@ -1453,8 +1455,14 @@ function SessionModelPanel({
         </div>
         <div>
           <span>GitHub sign-in</span>
-          <strong>{authenticatedUser ? authenticatedUser.githubLogin : "per user"}</strong>
-          <small>OAuth creates only this browser session for the validated GitHub ID.</small>
+          <strong>
+            {authenticatedUser ? authenticatedUser.githubLogin : githubOAuthConfigured ? "ready" : "setup required"}
+          </strong>
+          <small>
+            {githubOAuthConfigured
+              ? "OAuth creates only this browser session for the validated GitHub ID."
+              : "Set GitHub OAuth env vars before team members can sign in."}
+          </small>
         </div>
         <div>
           <span>Service source</span>
@@ -1463,6 +1471,9 @@ function SessionModelPanel({
         </div>
       </div>
       <div className="session-model-foot">
+        <Tag color={githubOAuthConfigured ? "green" : "orange"}>
+          OAuth {githubOAuthConfigured ? "ready" : "setup required"}
+        </Tag>
         <Tag color={teamSignIn.activeBrowserSessions > 0 ? "blue" : "default"}>
           {teamSignIn.activeBrowserSessions} active browser sessions
         </Tag>
@@ -1487,8 +1498,8 @@ function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
 } {
   if (!user) {
     return {
-      label: "not signed in",
-      detail: "Connect a personal token in this browser before confirmed writes."
+      label: "sign in first",
+      detail: "GitHub OAuth creates the browser session. A personal token is connected afterward for confirmed writes."
     };
   }
   if (!hasSavedPersonalToken(user)) {
@@ -1505,14 +1516,14 @@ function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
 
 function personalTokenActionLabel(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Connect personal token";
+    return "Sign in with GitHub";
   }
   return hasSavedPersonalToken(user) ? "Update saved token" : "Reconnect personal token";
 }
 
 function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Connect Personal GitHub Token";
+    return "Sign In Required";
   }
   return hasSavedPersonalToken(user)
     ? `Update saved GitHub token for ${user.githubLogin}`
@@ -1521,14 +1532,14 @@ function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string 
 
 function tokenModalOkText(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Connect token";
+    return "Sign in first";
   }
   return hasSavedPersonalToken(user) ? "Update token" : "Reconnect token";
 }
 
 function teamSignInActivityText(teamSignIn: SessionView["teamSignIn"]): string {
   if (teamSignIn.connectedUsers === 0) {
-    return "No teammate has signed in with a GitHub token on this deployment yet.";
+    return "No teammate has signed in with GitHub OAuth on this deployment yet.";
   }
   return `Last team sign-in activity ${formatDate(teamSignIn.lastSeenAt)}.`;
 }
@@ -1659,8 +1670,17 @@ function AccountControl({
         authenticatedUser={authenticatedUser}
         teamSignIn={teamSignIn}
         serviceReadTokenConfigured={serviceReadTokenConfigured}
+        githubOAuthConfigured={githubOAuthConfigured}
         compact
       />
+      {!authenticatedUser && !githubOAuthConfigured ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="GitHub OAuth setup required"
+          description="Set MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID and MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET on the API server. Until then, everyone stays in read-only observer mode."
+        />
+      ) : null}
       <div className="account-team-panel account-team-summary">
         <div className="account-team-heading">
           <Text strong>Team sign-ins</Text>
@@ -1712,7 +1732,7 @@ function AccountControl({
           title={
             githubOAuthConfigured
               ? "Sign in with GitHub. Personal token connection is a separate step for confirmed write actions."
-              : "GitHub OAuth sign-in is not configured on the API server."
+              : "GitHub OAuth is not configured. Set the API OAuth client ID and secret before sign-in is available."
           }
         >
           <Button
@@ -4539,8 +4559,8 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
     <section className="team-command-board" aria-label="Team command queue">
       <div className="team-command-board-heading">
         <div>
-          <Text strong>Management actions</Text>
-          <Text type="secondary">Highest-ranked blockers first. Each row opens the filtered board.</Text>
+          <Text strong>Priority queue</Text>
+          <Text type="secondary">Start at #1. Click a row to open its filtered board.</Text>
         </div>
         <Tag>{actions.length} actions</Tag>
       </div>
@@ -6798,7 +6818,7 @@ function HealthBoard({
           type="info"
           showIcon
           title="Observer mode"
-          description="Cached data remains visible. Queueing repair, webhook retry, and worker refresh actions requires sign-in with a personal token and a CSRF-protected session."
+          description="Cached data remains visible. Queueing repair, webhook retry, and worker refresh actions requires GitHub sign-in. Confirmed GitHub writes may also require a connected personal token."
           action={
             <Button size="small" onClick={onConnectToken}>
               Sign in
@@ -7868,7 +7888,7 @@ function CacheRepairPlan({
           </Text>
         ))}
         {!authenticated ? (
-          <Text type="secondary">Manual repair queueing requires sign-in with a personal token.</Text>
+          <Text type="secondary">Manual repair queueing requires GitHub sign-in.</Text>
         ) : null}
       </div>
     </div>
@@ -20459,6 +20479,7 @@ export default function App() {
               }
             }
             serviceReadTokenConfigured={serviceReadTokenConfigured}
+            githubOAuthConfigured={session?.githubOAuthConfigured ?? false}
           />
           {session?.connectedUsers?.length ? (
             <ConnectedUsersPanel
@@ -20515,7 +20536,7 @@ export default function App() {
               title={
                 authenticatedUser
                   ? "Reconnect a personal token with repo or public_repo scope plus triage, write, maintain, or admin repository permission."
-                  : "Sign-in token needs repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+                  : "Sign in with GitHub first. Personal token connection is only available after login."
               }
               showIcon
             />
@@ -20573,7 +20594,7 @@ export default function App() {
             <Alert
               type="info"
               title="Observer mode"
-              description="You can inspect cached data without signing in. Queueing worker refresh jobs requires sign-in with a personal token."
+              description="You can inspect cached data without signing in. Queueing worker refresh jobs requires GitHub sign-in."
               action={
                 <Button size="small" onClick={openTokenReconnect}>
                   Sign in
