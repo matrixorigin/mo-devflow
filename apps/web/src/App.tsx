@@ -3734,7 +3734,7 @@ function TeamOperationsSummary({
         </div>
       </div>
       <div className={`team-ops-next team-ops-next-${topAction?.tone ?? "good"}`}>
-        <span>First action</span>
+        <span>Current blocker</span>
         {topAction ? (
           <button type="button" onClick={topAction.onClick}>
             <strong>{topAction.title}</strong>
@@ -8178,7 +8178,7 @@ function PrOperationsSummary({
       </div>
       <div className="pr-ops-side">
         <div className={`pr-ops-next pr-ops-next-${firstAction.scope === "all" ? "good" : "attention"}`}>
-          <span>First action</span>
+          <span>Open PR board</span>
           <button type="button" onClick={() => onScopeFilterChange(firstAction.scope)}>
             <strong>{firstAction.title}</strong>
             <small>{firstAction.detail}</small>
@@ -9921,7 +9921,7 @@ function PersonWorkloadRow({
         className={`person-queue-next person-queue-next-${focus.tone}`}
         onClick={() => openMetric(focus.metric)}
       >
-        <span>First action</span>
+        <span>Open person board</span>
         <strong>{focus.title}</strong>
         <small>{focus.detail}</small>
       </button>
@@ -13815,7 +13815,7 @@ function ObservedPersonOperationsSummary({
         />
       </div>
       <div className="person-ops-first person-ops-first-observed">
-        <span>First action</span>
+        <span>Open view</span>
         <button type="button" onClick={() => onFocusChange(topFilter)}>
           <strong>{observedPersonFirstActionLabel(topFilter)}</strong>
           <small>{observedPersonFirstActionDetail(preview, topFilter)}</small>
@@ -13836,7 +13836,7 @@ function PersonOpsFirstAction({
   if (!signal) {
     return (
       <div className="person-ops-first person-ops-first-good">
-        <span>First action</span>
+        <span>No current blocker</span>
         <div>
           <strong>No urgent blocker in cached data</strong>
           <small>Review trend and routine PR movement.</small>
@@ -13847,7 +13847,7 @@ function PersonOpsFirstAction({
 
   return (
     <div className={`person-ops-first person-ops-first-${signal.tone}`}>
-      <span>First action</span>
+      <span>Current blocker</span>
       <button type="button" onClick={() => onSelect(signal.target)}>
         <strong>{signal.label}</strong>
         <small>{signal.detail}</small>
