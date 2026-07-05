@@ -2232,6 +2232,16 @@ export function workflowFixActionForViolation(violation: WorkflowViolationView):
   return null;
 }
 
+function aiEffortUpdateMenuItems(signal: AiDriftSignalView): MenuProps["items"] {
+  const currentLabel = effectiveAiEffortLabel(signal.aiEffortLabel);
+  return aiEffortUpdateTargetLabels
+    .filter((label) => label !== currentLabel)
+    .map((label) => ({
+      key: label,
+      label
+    }));
+}
+
 function testingStateColor(state: TestingFlowState): string {
   if (state === "test_changes_requested") {
     return "red";
@@ -3382,6 +3392,7 @@ function FlowEfficiencyItem({
 }
 
 const defaultCriticalIssueAiLabels = ["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"];
+const aiEffortUpdateTargetLabels = defaultCriticalIssueAiLabels.filter((label) => label !== "ai-easy");
 
 function criticalIssueAiOptions(issues: CriticalIssueView[]): Array<{ label: string; value: string }> {
   const labels = new Set(defaultCriticalIssueAiLabels);
@@ -3783,7 +3794,8 @@ function writeAuditMatchesScope(action: WriteActionExecutionView, filter: WriteA
     return (
       action.actionKey === "add_needs_triage" ||
       action.actionKey === "move_to_deferred" ||
-      action.actionKey === "add_deferred_explanation_comment"
+      action.actionKey === "add_deferred_explanation_comment" ||
+      action.actionKey === "update_ai_effort_label"
     );
   }
   if (filter === "notification") {
@@ -11545,7 +11557,7 @@ function PeoplePrFlowMatrix({
         <div>
           <Title level={5}>By Person: PRs and Flow</Title>
           <Text type="secondary">
-            Day/week/month PR counts open the PR list; flow shows s-1/s0 to linked PR and issue testing.
+            Today, this week, and this month open PR lists; flow shows s-1/s0 to linked PR and issue testing.
           </Text>
         </div>
         <Tag>
@@ -17715,8 +17727,8 @@ function WatchedPersonOperationsSummary({
       <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
       <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
         <div className="person-ops-pr-rhythm-heading">
-          <span>PRs day / week / month</span>
-          <small>created / merged counts, PR list, avg duration, and s-1/s0 flow</small>
+          <span>PRs today / this week / this month</span>
+          <small>current calendar periods, created / merged counts, PR list, avg duration, and s-1/s0 flow</small>
         </div>
         <div className="person-ops-pr-periods">
           {throughputRows.map((row) => {
@@ -18370,9 +18382,10 @@ function PersonalPrThroughputPanel({
     >
       <div className="subsection-heading">
         <div>
-          <Title level={5}>Personal PRs: Day / Week / Month</Title>
+          <Title level={5}>Personal PRs: Today / This Week / This Month</Title>
           <Text type="secondary">
-            Click a period to inspect this person's PR list, lifecycle duration, age, and blockers.
+            Current calendar periods in the repo timezone. Click a period for this person's PR list, duration, age,
+            and blockers.
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
@@ -21205,6 +21218,38 @@ export default function App() {
     }
   }
 
+  async function previewAiEffortLabelUpdate(signal: AiDriftSignalView, targetAiEffortLabel: string) {
+    const loadingKey = `ai:${signal.objectType}-${signal.objectNumber}-${signal.ruleKey}-${targetAiEffortLabel}`;
+    setPreviewLoadingKey(loadingKey);
+    setPreviewError(null);
+    setWorkflowPreview(null);
+    setWorkflowExecution(null);
+    setPreviewModalOpen(true);
+    try {
+      const response = await fetch("/api/actions/workflow-fix/preview", {
+        method: "POST",
+        headers: jsonHeadersWithCsrf(),
+        credentials: "same-origin",
+        body: JSON.stringify({
+          actionKey: "update_ai_effort_label",
+          objectType: signal.objectType,
+          objectNumber: signal.objectNumber,
+          ruleKey: signal.ruleKey,
+          targetAiEffortLabel
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setWorkflowPreview((await response.json()) as WorkflowFixPreview);
+    } catch (err) {
+      setPreviewError(displayError(err));
+      void loadSession();
+    } finally {
+      setPreviewLoadingKey(null);
+    }
+  }
+
   async function confirmWorkflowFix() {
     if (!workflowPreview) {
       return;
@@ -21803,6 +21848,46 @@ export default function App() {
           )
       },
       {
+        title: "Update label",
+        width: 156,
+        render: (_, signal) => {
+          const issueLabelCapability = session?.user?.writeCapabilities.issueLabels ?? null;
+          const tokenServerReady = session?.tokenEncryptionConfigured !== false;
+          const canPreview = tokenServerReady && issueLabelCapability?.enabled === true;
+          const tooltip = !session?.authenticated
+            ? "Sign in with GitHub, then connect a personal token to update AI labels"
+            : !tokenServerReady
+              ? tokenEncryptionSetupHint
+              : issueLabelCapability?.enabled
+                ? "Preview an AI effort label update"
+                : (issueLabelCapability?.message ?? "Reconnect a personal token before workflow fixes are enabled");
+          const loadingPrefix = `ai:${signal.objectType}-${signal.objectNumber}-${signal.ruleKey}-`;
+          return (
+            <Tooltip title={tooltip}>
+              <span>
+                <Dropdown
+                  disabled={!session?.authenticated || !canPreview}
+                  menu={{
+                    items: aiEffortUpdateMenuItems(signal),
+                    onClick: ({ key }) => void previewAiEffortLabelUpdate(signal, String(key))
+                  }}
+                >
+                  <Button
+                    aria-label={`Preview AI label update for ${signal.objectType} ${signal.objectNumber}`}
+                    disabled={!session?.authenticated || !canPreview}
+                    icon={<ClipboardCheck size={15} />}
+                    loading={Boolean(previewLoadingKey?.startsWith(loadingPrefix))}
+                    size="small"
+                  >
+                    Mark as
+                  </Button>
+                </Dropdown>
+              </span>
+            </Tooltip>
+          );
+        }
+      },
+      {
         title: "Notification",
         width: 220,
         render: (_, signal) => <NotificationTraceTag notification={signal.notification} />
@@ -21833,7 +21918,7 @@ export default function App() {
         render: (value) => <Text ellipsis={{ tooltip: value }}>{value}</Text>
       }
     ],
-    []
+    [previewLoadingKey, session]
   );
 
   const notificationColumns: ColumnsType<NotificationDeliveryView> = useMemo(
@@ -23972,7 +24057,9 @@ export default function App() {
         </Space>
       </Modal>
       <Modal
-        title="Workflow Fix Preview"
+        title={
+          workflowPreview?.actionKey === "update_ai_effort_label" ? "AI Label Write Preview" : "Workflow Fix Preview"
+        }
         open={previewModalOpen}
         okText={
           workflowPreview &&
@@ -24009,7 +24096,7 @@ export default function App() {
         {previewError ? (
           <Alert
             type="error"
-            title="Workflow preview failed"
+            title="Write preview failed"
             description={<ActionErrorDescription context="workflow" message={previewError} />}
             showIcon
           />

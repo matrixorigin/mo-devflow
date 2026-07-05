@@ -244,6 +244,9 @@ export async function applyWorkflowFixPreview(input: {
   profile: RepoProfile;
   preview: WorkflowFixPreview;
 }): Promise<GitHubWorkflowFixApplyResult> {
+  if (input.preview.actionKey === "update_ai_effort_label") {
+    return applyUpdateAiEffortLabelWorkflowFix(input);
+  }
   if (input.preview.objectType !== "issue") {
     throw new Error("Only issue workflow fixes can be executed.");
   }
@@ -257,6 +260,106 @@ export async function applyWorkflowFixPreview(input: {
     return applyDeferredExplanationCommentWorkflowFix(input);
   }
   throw new Error("Unsupported workflow fix action.");
+}
+
+async function applyUpdateAiEffortLabelWorkflowFix(input: {
+  token: string;
+  profile: RepoProfile;
+  preview: WorkflowFixPreview;
+}): Promise<GitHubWorkflowFixApplyResult> {
+  if (!["issue", "pull_request"].includes(input.preview.objectType)) {
+    throw new Error("AI effort label updates apply only to issues and PRs.");
+  }
+  if (!["ai_easy_critical_too_old", "ai_easy_pr_has_blockers"].includes(input.preview.ruleKey)) {
+    throw new Error("Only active AI drift signals can update AI effort labels.");
+  }
+  const unsupportedOperation = input.preview.operations.find(
+    (operation) => !["remove_label", "add_label"].includes(operation.type)
+  );
+  if (unsupportedOperation) {
+    throw new Error(`Unsupported workflow fix operation: ${unsupportedOperation.type}`);
+  }
+  const labelOperations = input.preview.operations.filter(
+    (operation): operation is Extract<WorkflowFixOperation, { type: "add_label" | "remove_label" }> =>
+      operation.type === "add_label" || operation.type === "remove_label"
+  );
+  const invalidLabelOperation = labelOperations.find((operation) => !input.profile.labels.aiEffort.includes(operation.label));
+  if (invalidLabelOperation) {
+    throw new Error(`Unsupported AI effort label: ${invalidLabelOperation.label}`);
+  }
+
+  const freshState = await fetchIssueFreshState({
+    token: input.token,
+    profile: input.profile,
+    issueNumber: input.preview.objectNumber
+  });
+  const beforeState = stateSnapshotFromFreshIssueWithProfile(input.profile, freshState);
+  const staleBaselineReason = previewBaselineStaleReason(input.preview, freshState);
+  if (staleBaselineReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleBaselineReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
+
+  const octokit = createUserGitHubClient(input.token);
+  const appliedOperations: WorkflowFixOperation[] = [];
+  const responses: unknown[] = [];
+  let rateLimitRemaining = freshState.rateLimitRemaining;
+  let labels = [...freshState.labels];
+
+  for (const operation of labelOperations) {
+    if (operation.type === "remove_label") {
+      if (!labels.includes(operation.label)) {
+        continue;
+      }
+      const response = await octokit.rest.issues.removeLabel({
+        owner: input.profile.repo.owner,
+        repo: input.profile.repo.name,
+        issue_number: input.preview.objectNumber,
+        name: operation.label
+      });
+      rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+      labels = labels.filter((label) => label !== operation.label);
+      appliedOperations.push(operation);
+      responses.push({ type: operation.type, status: response.status, label: operation.label });
+      continue;
+    }
+
+    if (labels.includes(operation.label)) {
+      continue;
+    }
+    const response = await octokit.rest.issues.addLabels({
+      owner: input.profile.repo.owner,
+      repo: input.profile.repo.name,
+      issue_number: input.preview.objectNumber,
+      labels: [operation.label]
+    });
+    rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+    const responseLabels = response.data.map((label) => label.name).filter((label): label is string => Boolean(label));
+    labels = responseLabels.length > 0 ? responseLabels : appendUnique(labels, [operation.label]);
+    appliedOperations.push(operation);
+    responses.push({ type: operation.type, status: response.status, labels: [operation.label] });
+  }
+
+  return {
+    freshState,
+    appliedOperations,
+    beforeState,
+    afterState: {
+      ...stateSnapshotFromFreshIssueWithProfile(input.profile, {
+        ...freshState,
+        labels
+      }),
+      updatedAt: null
+    },
+    response: { operations: responses },
+    rateLimitRemaining
+  };
 }
 
 async function applyAddNeedsTriageWorkflowFix(input: {
@@ -565,6 +668,17 @@ function stateSnapshotFromFreshIssue(freshState: GitHubIssueFreshState): Workflo
     severity: null,
     aiEffortLabel: null,
     updatedAt: freshState.updatedAt
+  };
+}
+
+function stateSnapshotFromFreshIssueWithProfile(
+  profile: RepoProfile,
+  freshState: GitHubIssueFreshState
+): WorkflowFixStateSnapshot {
+  return {
+    ...stateSnapshotFromFreshIssue(freshState),
+    severity: profile.labels.active.find((label) => freshState.labels.includes(label)) ?? null,
+    aiEffortLabel: profile.labels.aiEffort.find((label) => freshState.labels.includes(label)) ?? null
   };
 }
 

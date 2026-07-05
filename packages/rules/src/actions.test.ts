@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import type { NormalizedIssue, RepoProfile, WorkflowViolationView } from "@mo-devflow/shared";
+import type { AiDriftSignalView, NormalizedIssue, RepoProfile, WorkflowViolationView } from "@mo-devflow/shared";
 import { emptyNotificationTrace } from "@mo-devflow/shared";
-import { buildWorkflowFixPreview } from "./actions";
+import { buildAiEffortLabelPreview, buildWorkflowFixPreview } from "./actions";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -85,6 +85,26 @@ const violation: WorkflowViolationView = {
   evidenceSummary: "Open bug issue #42 has no needs-triage label.",
   suggestedAction: "Add needs-triage or move it to an explicit lifecycle state.",
   fixable: true,
+  firstDetectedAt: "2026-07-03T00:00:00.000Z",
+  lastDetectedAt: "2026-07-03T00:00:00.000Z",
+  notification: emptyNotificationTrace()
+};
+
+const driftSignal: AiDriftSignalView = {
+  sourceId: 9,
+  objectType: "issue",
+  objectNumber: 42,
+  title: "panic on insert",
+  htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+  ruleKey: "ai_easy_critical_too_old",
+  severity: "warning",
+  ownerLogin: "alice",
+  aiEffortLabel: "ai-easy",
+  expectedHours: 168,
+  actualHours: 192,
+  evidenceSummary: "Active s-1/s0 issue #42 is labeled ai-easy and has waited too long.",
+  suggestedAction: "Re-evaluate the AI effort label.",
+  sourceCompleteness: "complete_cache",
   firstDetectedAt: "2026-07-03T00:00:00.000Z",
   lastDetectedAt: "2026-07-03T00:00:00.000Z",
   notification: emptyNotificationTrace()
@@ -329,5 +349,73 @@ describe("workflow fix previews", () => {
 
     expect(preview.operations).toEqual([]);
     expect(preview.blockedReason).toBe("This action only applies to bug issues missing needs-triage.");
+  });
+
+  test("previews replacing an AI effort label from an active drift signal", () => {
+    const preview = buildAiEffortLabelPreview({
+      profile,
+      signal: driftSignal,
+      currentState: {
+        state: "open",
+        labels: ["kind/bug", "severity/s0", "ai-easy"],
+        updatedAt: "2026-07-03T00:01:00.000Z"
+      },
+      targetLabel: "ai-manual",
+      previewId: "preview-ai-1",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(preview.actionKey).toBe("update_ai_effort_label");
+    expect(preview.objectType).toBe("issue");
+    expect(preview.operations).toEqual([
+      { type: "remove_label", label: "ai-easy" },
+      { type: "add_label", label: "ai-manual" }
+    ]);
+    expect(preview.currentState.aiEffortLabel).toBe("ai-easy");
+    expect(preview.proposedState.labels).toEqual(["kind/bug", "severity/s0", "ai-manual"]);
+    expect(preview.proposedState.aiEffortLabel).toBe("ai-manual");
+    expect(preview.blockedReason).toBeNull();
+  });
+
+  test("previews adding an AI effort label when the signal defaulted missing labels to ai-easy", () => {
+    const preview = buildAiEffortLabelPreview({
+      profile,
+      signal: { ...driftSignal, aiEffortLabel: null, sourceCompleteness: "partial_cache" },
+      currentState: {
+        state: "open",
+        labels: ["kind/bug", "severity/s0"],
+        updatedAt: "2026-07-03T00:01:00.000Z"
+      },
+      targetLabel: "ai-heavy",
+      previewId: "preview-ai-2",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(preview.operations).toEqual([{ type: "add_label", label: "ai-heavy" }]);
+    expect(preview.proposedState.labels).toEqual(["kind/bug", "severity/s0", "ai-heavy"]);
+    expect(preview.warnings).toContain(
+      "AI drift evidence is partial; the write preview used fresh GitHub labels before proposing changes."
+    );
+  });
+
+  test("blocks an AI effort label preview when the target label is already present", () => {
+    const preview = buildAiEffortLabelPreview({
+      profile,
+      signal: driftSignal,
+      currentState: {
+        state: "open",
+        labels: ["kind/bug", "severity/s0", "ai-manual"],
+        updatedAt: "2026-07-03T00:01:00.000Z"
+      },
+      targetLabel: "ai-manual",
+      previewId: "preview-ai-3",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(preview.operations).toEqual([]);
+    expect(preview.blockedReason).toBe("Issue already has ai-manual.");
   });
 });

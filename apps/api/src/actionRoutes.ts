@@ -5,6 +5,7 @@ import { loadRepoProfile } from "@mo-devflow/config";
 import {
   claimWorkflowFixPreviewForUser,
   enqueueJobsNow,
+  getActiveAiDriftSignal,
   getActiveGitHubTokenForUser,
   getActiveWorkflowViolation,
   getCachedIssueByNumber,
@@ -17,7 +18,7 @@ import {
   upsertRepoProfile
 } from "@mo-devflow/db";
 import { applyWorkflowFixPreview, fetchIssueFreshState, fetchIssueWritePermission } from "@mo-devflow/github";
-import { buildWorkflowFixPreview } from "@mo-devflow/rules";
+import { buildAiEffortLabelPreview, buildWorkflowFixPreview } from "@mo-devflow/rules";
 import { buildGitHubWriteCapabilities } from "@mo-devflow/shared";
 import type {
   WorkflowFixExecutionResult,
@@ -33,10 +34,16 @@ import { githubTokenFailureForWorkflowRead } from "./githubTokenFailures";
 import { workflowWriteRefreshJobs } from "./refreshJobs";
 
 const workflowFixPreviewSchema = z.object({
-  actionKey: z.enum(["add_needs_triage", "move_to_deferred", "add_deferred_explanation_comment"]),
-  objectType: z.literal("issue"),
+  actionKey: z.enum([
+    "add_needs_triage",
+    "move_to_deferred",
+    "add_deferred_explanation_comment",
+    "update_ai_effort_label"
+  ]),
+  objectType: z.enum(["issue", "pull_request"]),
   objectNumber: z.number().int().positive(),
-  ruleKey: z.string().min(1).max(128)
+  ruleKey: z.string().min(1).max(128),
+  targetAiEffortLabel: z.string().min(1).max(128).optional()
 });
 
 const workflowFixConfirmSchema = z.object({
@@ -138,6 +145,148 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
 
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const viewer = { authenticated: true, userId: session.userId };
+
+    if (parsed.data.actionKey === "update_ai_effort_label") {
+      const targetAiEffortLabel = parsed.data.targetAiEffortLabel ?? "ai-manual";
+      if (!profile.labels.aiEffort.includes(targetAiEffortLabel)) {
+        return reply.status(422).send({
+          error: "invalid_ai_effort_label",
+          message: `Target AI effort label ${targetAiEffortLabel} is not configured for this repository.`
+        });
+      }
+
+      const signal = await getActiveAiDriftSignal({
+        repoId,
+        objectType: parsed.data.objectType,
+        objectNumber: parsed.data.objectNumber,
+        ruleKey: parsed.data.ruleKey,
+        profile,
+        viewer
+      });
+      if (!signal) {
+        return reply.status(404).send({
+          error: "ai_drift_signal_not_found",
+          message: "No active AI drift signal exists for the requested object."
+        });
+      }
+
+      const storedToken = await getActiveGitHubTokenForUser(session.userId);
+      let encryptionConfig;
+      try {
+        encryptionConfig = tokenEncryptionConfigFromEnv();
+      } catch {
+        encryptionConfig = null;
+      }
+      if (!storedToken || !encryptionConfig) {
+        return reply.status(403).send({
+          error: "write_capability_unavailable",
+          message: "A usable GitHub token is not available for this session."
+        });
+      }
+
+      let token: string;
+      try {
+        token = decryptSecretWithConfig(
+          {
+            ciphertext: storedToken.encryptedToken,
+            iv: storedToken.tokenIv,
+            authTag: storedToken.tokenAuthTag,
+            keyVersion: storedToken.keyVersion
+          },
+          encryptionConfig
+        );
+      } catch {
+        return reply.status(403).send({
+          error: "write_capability_unavailable",
+          message: "Stored GitHub token could not be decrypted. Reconnect the token before previewing workflow fixes."
+        });
+      }
+
+      try {
+        const issueWritePermission = await fetchIssueWritePermission({ token, profile });
+        if (!issueWritePermission.allowed) {
+          return reply.status(403).send({
+            error: "write_permission_unavailable",
+            message: issueWritePermission.message,
+            permission: issueWritePermission.permission
+          });
+        }
+      } catch (error) {
+        const failure = githubTokenFailureForWorkflowRead(error);
+        if (failure) {
+          if (failure.shouldRevokeToken) {
+            await revokeGitHubTokenForUser(session.userId);
+          }
+          return reply.status(failure.statusCode).send({
+            error: failure.error,
+            message: failure.message
+          });
+        }
+        app.log.error({ error, repoKey: profile.key }, "AI effort label permission check failed");
+        return reply.status(502).send({
+          error: "github_permission_check_failed",
+          message: "GitHub repository permission check failed. Try again after GitHub connectivity recovers."
+        });
+      }
+
+      let freshState: Awaited<ReturnType<typeof fetchIssueFreshState>>;
+      try {
+        freshState = await fetchIssueFreshState({
+          token,
+          profile,
+          issueNumber: parsed.data.objectNumber
+        });
+      } catch (error) {
+        const failure = githubTokenFailureForWorkflowRead(error);
+        if (failure) {
+          if (failure.shouldRevokeToken) {
+            await revokeGitHubTokenForUser(session.userId);
+          }
+          return reply.status(failure.statusCode).send({
+            error: failure.error,
+            message: failure.message
+          });
+        }
+        app.log.error({ error, objectNumber: parsed.data.objectNumber }, "AI effort label fresh state check failed");
+        return reply.status(502).send({
+          error: "github_fresh_check_failed",
+          message: "GitHub fresh state check failed. Try again after GitHub connectivity recovers."
+        });
+      }
+
+      const createdAt = new Date();
+      const expiresAt = new Date(createdAt.getTime() + previewTtlMinutesFromEnv() * 60_000);
+      const preview = buildAiEffortLabelPreview({
+        profile,
+        signal,
+        currentState: {
+          state: freshState.state,
+          labels: freshState.labels,
+          updatedAt: freshState.updatedAt
+        },
+        targetLabel: targetAiEffortLabel,
+        previewId: randomUUID(),
+        createdAt: createdAt.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        stateSource: "github"
+      });
+
+      await recordWorkflowFixPreview({
+        repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        preview
+      });
+      return preview;
+    }
+
+    if (parsed.data.objectType !== "issue") {
+      return reply.status(422).send({
+        error: "invalid_workflow_fix_preview_input",
+        message: "Only AI effort label updates can target pull requests."
+      });
+    }
+
     const violation = await getActiveWorkflowViolation({
       repoId,
       objectType: parsed.data.objectType,

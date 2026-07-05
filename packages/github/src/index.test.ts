@@ -152,6 +152,30 @@ const deferredExplanationPreview: WorkflowFixPreview = {
   operations: [{ type: "add_comment", body: deferredComment }]
 };
 
+const aiEffortPreview: WorkflowFixPreview = {
+  ...preview,
+  previewId: "ef1b1017-1197-4f1a-a835-0a87e0224197",
+  actionKey: "update_ai_effort_label",
+  objectType: "pull_request",
+  objectNumber: 43,
+  ruleKey: "ai_easy_pr_has_blockers",
+  title: "fix flaky insert",
+  htmlUrl: "https://github.com/matrixorigin/matrixone/pull/43",
+  reason: "PR #43 is labeled ai-easy and has blocker attention flags: ci_failed.",
+  currentState: {
+    ...stateSnapshot(["kind/bug", "ai-easy"]),
+    aiEffortLabel: "ai-easy"
+  },
+  proposedState: {
+    ...stateSnapshot(["kind/bug", "ai-manual"]),
+    aiEffortLabel: "ai-manual"
+  },
+  operations: [
+    { type: "remove_label", label: "ai-easy" },
+    { type: "add_label", label: "ai-manual" }
+  ]
+};
+
 function stateSnapshot(
   labels: string[],
   source: WorkflowFixStateSnapshot["source"] = "github"
@@ -428,6 +452,53 @@ describe("workflow fix execution", () => {
     });
 
     expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
+    expect(result.appliedOperations).toEqual([]);
+    expect(result.response).toEqual({ skipped: "issue_labels_changed" });
+  });
+
+  test("updates AI effort labels on a PR through the issue labels API", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "ai-easy"]));
+    octokitMocks.issuesAddLabels.mockResolvedValue({
+      status: 200,
+      data: [{ name: "kind/bug" }, { name: "ai-manual" }],
+      headers: { "x-ratelimit-remaining": "94" }
+    });
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: aiEffortPreview
+    });
+
+    expect(octokitMocks.issuesRemoveLabel).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 43,
+      name: "ai-easy"
+    });
+    expect(octokitMocks.issuesAddLabels).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 43,
+      labels: ["ai-manual"]
+    });
+    expect(result.appliedOperations).toEqual(aiEffortPreview.operations);
+    expect(result.beforeState.aiEffortLabel).toBe("ai-easy");
+    expect(result.afterState.aiEffortLabel).toBe("ai-manual");
+    expect(result.afterState.labels).toEqual(["kind/bug", "ai-manual"]);
+  });
+
+  test("does not update AI effort labels when the fresh label baseline changed", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "ai-heavy"]));
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: aiEffortPreview
+    });
+
+    expect(octokitMocks.issuesRemoveLabel).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
     expect(result.response).toEqual({ skipped: "issue_labels_changed" });
   });

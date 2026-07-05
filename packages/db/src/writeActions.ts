@@ -1,4 +1,5 @@
 import type {
+  AiDriftSignalView,
   NormalizedIssue,
   RepoProfile,
   WorkflowFixExecutionResult,
@@ -152,6 +153,78 @@ export async function getActiveWorkflowViolation(input: {
     evidenceSummary: asString(row.evidence_summary),
     suggestedAction: asString(row.suggested_action),
     fixable: asNumber(row.fixable) === 1,
+    firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
+    lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
+    notification: emptyNotificationTrace()
+  };
+}
+
+export async function getActiveAiDriftSignal(input: {
+  repoId: number;
+  objectType: string;
+  objectNumber: number;
+  ruleKey: string;
+  profile: RepoProfile;
+  viewer: DashboardViewer;
+}): Promise<AiDriftSignalView | null> {
+  const issueVisibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("p", input.profile, input.viewer);
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT id, object_type, object_number, title, html_url, rule_key, severity,
+            owner_login, ai_effort_label, expected_hours, actual_hours,
+            evidence_summary, suggested_action, source_completeness,
+            first_detected_at, last_detected_at
+     FROM ai_drift_signals
+     WHERE repo_id = ?
+       AND object_type = ?
+       AND object_number = ?
+       AND rule_key = ?
+       AND resolved_at IS NULL
+       AND (
+         (object_type = 'issue' AND EXISTS (
+           SELECT 1 FROM issues i
+           WHERE i.repo_id = ai_drift_signals.repo_id
+             AND i.number = ai_drift_signals.object_number
+             AND ${issueVisibility.sql}
+         ))
+         OR
+         (object_type = 'pull_request' AND EXISTS (
+           SELECT 1 FROM pull_requests p
+           WHERE p.repo_id = ai_drift_signals.repo_id
+             AND p.number = ai_drift_signals.object_number
+             AND ${pullRequestVisibility.sql}
+         ))
+       )
+     LIMIT 1`,
+    [
+      input.repoId,
+      input.objectType,
+      input.objectNumber,
+      input.ruleKey,
+      ...issueVisibility.params,
+      ...pullRequestVisibility.params
+    ]
+  );
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    sourceId: asNumber(row.id),
+    objectType: asString(row.object_type) as AiDriftSignalView["objectType"],
+    objectNumber: asNumber(row.object_number),
+    title: asString(row.title),
+    htmlUrl: asString(row.html_url),
+    ruleKey: asString(row.rule_key),
+    severity: asString(row.severity) as AiDriftSignalView["severity"],
+    ownerLogin: row.owner_login ? asString(row.owner_login) : null,
+    aiEffortLabel: row.ai_effort_label ? asString(row.ai_effort_label) : null,
+    expectedHours:
+      row.expected_hours === null || row.expected_hours === undefined ? null : asNumber(row.expected_hours),
+    actualHours: row.actual_hours === null || row.actual_hours === undefined ? null : asNumber(row.actual_hours),
+    evidenceSummary: asString(row.evidence_summary),
+    suggestedAction: asString(row.suggested_action),
+    sourceCompleteness: asString(row.source_completeness) as AiDriftSignalView["sourceCompleteness"],
     firstDetectedAt: fromSqlDate(row.first_detected_at) ?? new Date().toISOString(),
     lastDetectedAt: fromSqlDate(row.last_detected_at) ?? new Date().toISOString(),
     notification: emptyNotificationTrace()

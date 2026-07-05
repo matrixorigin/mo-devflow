@@ -1,4 +1,5 @@
 import type {
+  AiDriftSignalView,
   NormalizedIssue,
   RepoProfile,
   WorkflowFixActionKey,
@@ -14,6 +15,21 @@ export interface BuildWorkflowFixPreviewInput {
   issue: NormalizedIssue;
   violation: WorkflowViolationView;
   actionKey: WorkflowFixActionKey;
+  previewId: string;
+  createdAt: string;
+  expiresAt: string;
+  stateSource?: WorkflowFixStateSource;
+}
+
+export interface BuildAiEffortLabelPreviewInput {
+  profile: RepoProfile;
+  signal: AiDriftSignalView;
+  currentState: {
+    state: "open" | "closed";
+    labels: string[];
+    updatedAt: string | null;
+  };
+  targetLabel: string;
   previewId: string;
   createdAt: string;
   expiresAt: string;
@@ -68,6 +84,77 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
     title: input.issue.title,
     htmlUrl: input.issue.htmlUrl,
     reason: input.violation.evidenceSummary,
+    currentState,
+    proposedState,
+    operations,
+    warnings,
+    blockedReason,
+    createdAt: input.createdAt,
+    expiresAt: input.expiresAt
+  };
+}
+
+export function buildAiEffortLabelPreview(input: BuildAiEffortLabelPreviewInput): WorkflowFixPreview {
+  const currentState: WorkflowFixStateSnapshot = {
+    source: input.stateSource ?? "github",
+    state: input.currentState.state,
+    labels: [...input.currentState.labels],
+    assignees: [],
+    lifecycleState: null,
+    severity: severityFromLabels(input.profile, input.currentState.labels),
+    aiEffortLabel: explicitAiEffortLabel(input.profile, input.currentState.labels),
+    updatedAt: input.currentState.updatedAt
+  };
+  let proposedState: WorkflowFixStateSnapshot = {
+    ...currentState,
+    labels: [...currentState.labels],
+    assignees: [...currentState.assignees]
+  };
+  let blockedReason: string | null = null;
+  const warnings: string[] = [];
+  const operations: WorkflowFixOperation[] = [];
+
+  if (!input.profile.labels.aiEffort.includes(input.targetLabel)) {
+    blockedReason = `Target label ${input.targetLabel} is not configured as an AI effort label.`;
+  } else if (input.currentState.state !== "open") {
+    blockedReason = `${input.signal.objectType === "pull_request" ? "PR" : "Issue"} is no longer open on GitHub.`;
+  } else {
+    const existingAiLabels = input.currentState.labels.filter((label) => input.profile.labels.aiEffort.includes(label));
+    operations.push(
+      ...existingAiLabels
+        .filter((label) => label !== input.targetLabel)
+        .map((label) => ({ type: "remove_label" as const, label }))
+    );
+    if (!existingAiLabels.includes(input.targetLabel)) {
+      operations.push({ type: "add_label", label: input.targetLabel });
+    }
+    if (operations.length === 0) {
+      blockedReason = `${input.signal.objectType === "pull_request" ? "PR" : "Issue"} already has ${input.targetLabel}.`;
+    }
+    proposedState = {
+      ...proposedState,
+      labels: appendUnique(
+        proposedState.labels.filter((label) => !input.profile.labels.aiEffort.includes(label)),
+        input.targetLabel
+      ),
+      aiEffortLabel: input.targetLabel
+    };
+  }
+
+  if (input.signal.sourceCompleteness === "partial_cache") {
+    warnings.push("AI drift evidence is partial; the write preview used fresh GitHub labels before proposing changes.");
+  }
+
+  return {
+    previewId: input.previewId,
+    actionKey: "update_ai_effort_label",
+    repoKey: input.profile.key,
+    objectType: input.signal.objectType,
+    objectNumber: input.signal.objectNumber,
+    ruleKey: input.signal.ruleKey,
+    title: input.signal.title,
+    htmlUrl: input.signal.htmlUrl,
+    reason: input.signal.evidenceSummary,
     currentState,
     proposedState,
     operations,
@@ -244,4 +331,12 @@ function isDeferredExplanationComment(body: string): boolean {
 
 function appendUnique(values: string[], value: string): string[] {
   return values.includes(value) ? values : [...values, value];
+}
+
+function explicitAiEffortLabel(profile: RepoProfile, labels: string[]): string | null {
+  return profile.labels.aiEffort.find((label) => labels.includes(label)) ?? null;
+}
+
+function severityFromLabels(profile: RepoProfile, labels: string[]): string | null {
+  return profile.labels.active.find((label) => labels.includes(label)) ?? null;
 }

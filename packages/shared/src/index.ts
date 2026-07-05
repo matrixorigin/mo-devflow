@@ -591,7 +591,11 @@ export interface WorkflowViolationView extends WorkflowViolation {
   notification: NotificationTraceView;
 }
 
-export type WorkflowFixActionKey = "add_needs_triage" | "move_to_deferred" | "add_deferred_explanation_comment";
+export type WorkflowFixActionKey =
+  | "add_needs_triage"
+  | "move_to_deferred"
+  | "add_deferred_explanation_comment"
+  | "update_ai_effort_label";
 
 export type WorkflowFixOperation =
   | {

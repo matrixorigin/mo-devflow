@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getWorkflowFixPreviewForUser: vi.fn(),
   markWorkflowFixPreviewStatus: vi.fn(),
   recordWorkflowFixExecution: vi.fn(),
+  getActiveAiDriftSignal: vi.fn(),
   getActiveGitHubTokenForUser: vi.fn(),
   getActiveWorkflowViolation: vi.fn(),
   getCachedIssueByNumber: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("./authRoutes", () => ({
 vi.mock("@mo-devflow/db", () => ({
   claimWorkflowFixPreviewForUser: mocks.claimWorkflowFixPreviewForUser,
   enqueueJobsNow: mocks.enqueueJobsNow,
+  getActiveAiDriftSignal: mocks.getActiveAiDriftSignal,
   getActiveGitHubTokenForUser: mocks.getActiveGitHubTokenForUser,
   getActiveWorkflowViolation: mocks.getActiveWorkflowViolation,
   getCachedIssueByNumber: mocks.getCachedIssueByNumber,
@@ -508,6 +510,118 @@ describe("action routes", () => {
         issueNumber: 42
       });
       expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("previews updating an AI effort label from an active drift signal", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveAiDriftSignal.mockResolvedValue({
+      sourceId: 12,
+      objectType: "pull_request",
+      objectNumber: 43,
+      title: "fix flaky insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/pull/43",
+      ruleKey: "ai_easy_pr_has_blockers",
+      severity: "warning",
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      expectedHours: 168,
+      actualHours: 36,
+      evidenceSummary: "PR #43 is labeled ai-easy and has blocker attention flags: ci_failed.",
+      suggestedAction: "Re-evaluate the AI effort label.",
+      sourceCompleteness: "complete_cache",
+      firstDetectedAt: "2026-07-04T00:00:00.000Z",
+      lastDetectedAt: "2026-07-04T00:00:00.000Z"
+    });
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.fetchIssueFreshState.mockResolvedValue({
+      state: "open",
+      labels: ["kind/bug", "ai-easy"],
+      updatedAt: "2026-07-04T00:00:00.000Z",
+      rateLimitRemaining: 99
+    });
+
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
+        payload: {
+          actionKey: "update_ai_effort_label",
+          objectType: "pull_request",
+          objectNumber: 43,
+          ruleKey: "ai_easy_pr_has_blockers",
+          targetAiEffortLabel: "ai-manual"
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        actionKey: "update_ai_effort_label",
+        ruleKey: "ai_easy_pr_has_blockers",
+        objectType: "pull_request",
+        objectNumber: 43,
+        operations: [
+          { type: "remove_label", label: "ai-easy" },
+          { type: "add_label", label: "ai-manual" }
+        ],
+        blockedReason: null
+      });
+      expect(mocks.getActiveWorkflowViolation).not.toHaveBeenCalled();
+      expect(mocks.getCachedIssueByNumber).not.toHaveBeenCalled();
+      expect(mocks.fetchIssueFreshState).toHaveBeenCalledWith({
+        token: "test-user-token",
+        profile: writeBackProfile,
+        issueNumber: 43
+      });
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects AI effort label preview when the drift signal is no longer active", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveAiDriftSignal.mockResolvedValue(null);
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
+        payload: {
+          actionKey: "update_ai_effort_label",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "ai_easy_critical_too_old",
+          targetAiEffortLabel: "ai-heavy"
+        }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        error: "ai_drift_signal_not_found",
+        message: "No active AI drift signal exists for the requested object."
+      });
+      expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(mocks.fetchIssueFreshState).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
