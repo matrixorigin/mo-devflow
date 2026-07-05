@@ -277,6 +277,78 @@ body {
   line-height: 1.45;
 }
 
+.session-model-panel {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  width: 100%;
+}
+
+.session-model-panel-compact {
+  padding: 10px;
+}
+
+.session-model-heading {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.session-model-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-model-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.session-model-grid > div {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.session-model-grid span,
+.session-model-grid small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.session-model-grid strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.session-model-foot {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-model-foot .ant-tag {
+  margin-inline-end: 0;
+}
+
 .account-team-panel {
   background: #f8fafc;
   border: 1px solid #e5e7eb;
@@ -7757,6 +7829,7 @@ button.flow-diagnostic-card:focus-visible {
   .flow-efficiency-strip,
   .trend-evidence-strip,
   .account-session-facts,
+  .session-model-grid,
   .account-team-summary-grid,
   .token-session-facts,
   .flow-chart-grid {

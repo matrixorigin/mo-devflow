@@ -86,6 +86,7 @@ import {
   LogOut,
   RefreshCcw,
   RefreshCw,
+  ServerCog,
   ShieldAlert,
   TimerReset,
   Trash2,
@@ -1022,10 +1023,63 @@ function TokenCapabilityPanel({ capability }: { capability: GitHubWriteCapabilit
   );
 }
 
+function SessionModelPanel({
+  authenticatedUser,
+  teamSignIn,
+  serviceReadTokenConfigured,
+  compact = false
+}: {
+  authenticatedUser: NonNullable<SessionView["user"]> | null;
+  teamSignIn: SessionView["teamSignIn"];
+  serviceReadTokenConfigured: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`session-model-panel${compact ? " session-model-panel-compact" : ""}`}>
+      <div className="session-model-heading">
+        <ServerCog size={16} aria-hidden="true" />
+        <div>
+          <Text strong>How access works</Text>
+          <Text type="secondary">One deployment, many personal browser sessions.</Text>
+        </div>
+      </div>
+      <div className="session-model-grid">
+        <div>
+          <span>Observer</span>
+          <strong>read-only</strong>
+          <small>Anonymous users inspect cached data only.</small>
+        </div>
+        <div>
+          <span>Personal sign-in</span>
+          <strong>{authenticatedUser ? authenticatedUser.githubLogin : "per user"}</strong>
+          <small>Token is validated by GitHub ID and signs in only this browser.</small>
+        </div>
+        <div>
+          <span>Service source</span>
+          <strong>{serviceReadTokenConfigured ? "configured" : "not configured"}</strong>
+          <small>Server polling/backfill uses deployment config, not a leader session.</small>
+        </div>
+      </div>
+      <div className="session-model-foot">
+        <Tag color={teamSignIn.activeBrowserSessions > 0 ? "blue" : "default"}>
+          {teamSignIn.activeBrowserSessions} active browser sessions
+        </Tag>
+        <Tag color={teamSignIn.tokenConnectedUsers > 0 ? "green" : "default"}>
+          {teamSignIn.tokenConnectedUsers} saved personal tokens
+        </Tag>
+        <Tag color={serviceReadTokenConfigured ? "green" : "orange"}>
+          service read token {serviceReadTokenConfigured ? "ready" : "missing"}
+        </Tag>
+      </div>
+    </div>
+  );
+}
+
 function AccountControl({
   authenticatedUser,
   connectedUsers,
   teamSignIn,
+  serviceReadTokenConfigured,
   capability,
   tokenEncryptionUnavailable,
   onConnectToken,
@@ -1034,6 +1088,7 @@ function AccountControl({
   authenticatedUser: NonNullable<SessionView["user"]> | null;
   connectedUsers: SessionView["connectedUsers"];
   teamSignIn: SessionView["teamSignIn"];
+  serviceReadTokenConfigured: boolean;
   capability: GitHubWriteCapability | null;
   tokenEncryptionUnavailable: boolean;
   onConnectToken: () => void;
@@ -1081,6 +1136,12 @@ function AccountControl({
           ? "Multiple teammates can use this deployment at the same time. The submitted token is validated by GitHub, keyed by that GitHub ID, and this browser receives its own session cookie. Another browser or machine signs in again to create its own session for the same GitHub user."
           : "Anonymous users only observe cached data. Each teammate signs in with a personal GitHub token in their own browser session when they need manual repair or confirmed GitHub writes."}
       </Text>
+      <SessionModelPanel
+        authenticatedUser={authenticatedUser}
+        teamSignIn={teamSignIn}
+        serviceReadTokenConfigured={serviceReadTokenConfigured}
+        compact
+      />
       <div className="account-team-panel account-team-summary">
         <div className="account-team-heading">
           <Text strong>Team sign-ins</Text>
@@ -1137,12 +1198,6 @@ function AccountControl({
           </div>
         </div>
       ) : null}
-      <Alert
-        type="info"
-        title="Service read token is deployment config"
-        description="Repository-wide polling, webhook repair, and cache backfill use the configured read token on the server. A leader's personal sign-in token is not the shared source token."
-        showIcon
-      />
       {capability ? <TokenCapabilityPanel capability={capability} /> : null}
       <Space size={[8, 8]} wrap>
         <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={onConnectToken}>
@@ -15645,6 +15700,7 @@ export default function App() {
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
   const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
+  const serviceReadTokenConfigured = data?.profileConfiguration.githubServiceTokenConfigured ?? false;
   const systemViewMenuItems: MenuProps["items"] = systemViewOptions.map((option) => ({
     key: option,
     label: option
@@ -15699,6 +15755,7 @@ export default function App() {
                 lastSeenAt: null
               }
             }
+            serviceReadTokenConfigured={serviceReadTokenConfigured}
             capability={headerIssueLabelCapability ?? null}
             tokenEncryptionUnavailable={tokenEncryptionUnavailable}
             onConnectToken={openTokenReconnect}
@@ -16983,11 +17040,17 @@ export default function App() {
             }
             showIcon
           />
-          <Alert
-            type="info"
-            title="Service read token is server-side configuration."
-            description="This personal sign-in does not become the team's source token. It validates a GitHub identity, saves that user's token for confirmed actions, and creates a session only for this browser."
-            showIcon
+          <SessionModelPanel
+            authenticatedUser={authenticatedUser}
+            teamSignIn={
+              session?.teamSignIn ?? {
+                connectedUsers: 0,
+                tokenConnectedUsers: 0,
+                activeBrowserSessions: 0,
+                lastSeenAt: null
+              }
+            }
+            serviceReadTokenConfigured={serviceReadTokenConfigured}
           />
           {authenticatedUser ? (
             <div className="token-session-panel">
