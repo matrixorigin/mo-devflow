@@ -3483,6 +3483,10 @@ function personCardFocus(person: PersonSummary, personal: PersonalActionView | u
   };
 }
 
+function personBoardDailyPlan(personal: PersonalActionView | undefined): PersonalDailyPlanItem[] {
+  return personal ? personalDailyPlan(personalOperatingSignals(personal)) : [];
+}
+
 function observedPersonPreview(data: DashboardSummary, login: string): ObservedPersonPreview | null {
   const summary = observedPeopleFromDashboard({
     criticalIssues: data.criticalIssues,
@@ -9016,6 +9020,7 @@ function PeopleFocusQueue({
           const personal = personalByLogin.get(person.login);
           const status = personWorkloadStatus(person);
           const focus = personCardFocus(person, personal);
+          const dailyPlan = personBoardDailyPlan(personal);
           const testingWork = personal ? personalTestingWorkCount(personal) : 0;
           const staleTesting = personal ? personalTestingStaleCount(personal) : 0;
           const openMetric = (metric: PersonalDrilldownFilter): void => {
@@ -9052,15 +9057,7 @@ function PeopleFocusQueue({
                 </span>
               </button>
 
-              <button
-                type="button"
-                className={`people-focus-action people-focus-action-${focus.tone}`}
-                onClick={() => openMetric(focus.metric)}
-              >
-                <span>Open person</span>
-                <strong>{focus.title}</strong>
-                <small>{focus.detail}</small>
-              </button>
+              <PersonBoardDailyPlanStrip items={dailyPlan} fallback={focus} onSelect={openMetric} />
 
               <div className="people-focus-metrics" aria-label={`${person.login} focus metrics`}>
                 <PersonQueueMetric
@@ -9097,6 +9094,58 @@ function PeopleFocusQueue({
         })}
       </div>
     </section>
+  );
+}
+
+function PersonBoardDailyPlanStrip({
+  items,
+  fallback,
+  onSelect
+}: {
+  items: PersonalDailyPlanItem[];
+  fallback: PersonCardFocus;
+  onSelect: (metric: PersonalDrilldownFilter) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="person-board-plan person-board-plan-empty" aria-label="Personal action order">
+        <span>Today's order</span>
+        <button
+          type="button"
+          className={`person-board-plan-item person-board-plan-item-${fallback.tone}`}
+          onClick={() => onSelect(fallback.metric)}
+        >
+          <em>{fallback.metric === "threads" ? "Open" : "Do now"}</em>
+          <strong>
+            <span>{fallback.title}</span>
+          </strong>
+          <small>{fallback.detail}</small>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="person-board-plan" aria-label="Personal action order">
+      <span>Today's order</span>
+      <div className="person-board-plan-list">
+        {items.map((item) => (
+          <button
+            type="button"
+            className={`person-board-plan-item person-board-plan-item-${item.tone}`}
+            key={item.key}
+            onClick={() => onSelect(item.target)}
+          >
+            <em>{item.stage}</em>
+            <strong>
+              <span>{item.label}</span>
+              <b>{item.value}</b>
+            </strong>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -10315,6 +10364,7 @@ function PersonWorkloadBoard({
           const status = personWorkloadStatus(person);
           const reasons = personPrimaryReasons(person, testingWork);
           const focus = personCardFocus(person, personal);
+          const dailyPlan = personBoardDailyPlan(personal);
           const selected = selectedLogin === person.login;
           const openMetric = (metric: PersonalDrilldownFilter) => {
             if (onMetricSelect) {
@@ -10348,16 +10398,7 @@ function PersonWorkloadBoard({
                   </span>
                 </span>
               </button>
-              <button
-                type="button"
-                className={`person-next-action person-next-action-${focus.tone}`}
-                onClick={() => openMetric(focus.metric)}
-                aria-label={`Open ${person.login} ${focus.title}`}
-              >
-                <span>Next action</span>
-                <strong>{focus.title}</strong>
-                <small>{focus.detail}</small>
-              </button>
+              <PersonBoardDailyPlanStrip items={dailyPlan} fallback={focus} onSelect={openMetric} />
               <span className="person-stat-grid">
                 <button
                   type="button"
@@ -10485,6 +10526,7 @@ function PersonWorkloadRow({
   const staleTesting = personal ? personalTestingStaleCount(personal) : 0;
   const status = personWorkloadStatus(person);
   const focus = personCardFocus(person, personal);
+  const dailyPlan = personBoardDailyPlan(personal);
   const reasons = personPrimaryReasons(person, testingWork);
   const openMetric = (metric: PersonalDrilldownFilter) => {
     if (onMetricSelect) {
@@ -10518,15 +10560,7 @@ function PersonWorkloadRow({
         <PersonReasonStrip reasons={reasons} resetKey={`row:${person.login}:${reasons.join("|")}`} />
       </div>
 
-      <button
-        type="button"
-        className={`person-queue-next person-queue-next-${focus.tone}`}
-        onClick={() => openMetric(focus.metric)}
-      >
-        <span>Open {personalDrilldownLabel(focus.metric)}</span>
-        <strong>{focus.title}</strong>
-        <small>{focus.detail}</small>
-      </button>
+      <PersonBoardDailyPlanStrip items={dailyPlan} fallback={focus} onSelect={openMetric} />
 
       <div className="person-queue-metrics" aria-label={`${person.login} work queues`}>
         <PersonQueueMetric
