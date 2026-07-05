@@ -22,6 +22,7 @@ import {
   flowThreadStatusCounts,
   observedPeopleFromDashboard,
   observedOwnerThreads,
+  peopleAttentionQueue,
   peopleBoardScopeCounts,
   peopleScopeFilters,
   notificationDeliveryScopeCounts,
@@ -193,6 +194,36 @@ describe("person workload summaries", () => {
       "dave",
       "erin",
       "frank"
+    ]);
+  });
+
+  it("builds a manager attention queue with personal drilldown targets and summary fallback", () => {
+    const blockedPr = pullRequest({ number: 30, attentionFlags: ["ci_failed"], ageHours: 40 });
+    const people = [
+      personSummary({ login: "alice", activeCriticalIssues: 1 }),
+      personSummary({ login: "bob", attentionPrs: 1, pendingPrs: 1 }),
+      personSummary({ login: "carol", pendingPrs: 3 }),
+      personSummary({ login: "dave", needsTriageIssues: 2 })
+    ];
+    const personalViews = [
+      personalView({
+        login: "alice",
+        activeCriticalIssues: [criticalIssue({ number: 10, criticalAgeHours: 48, linkedPullRequests: [] })]
+      }),
+      personalView({
+        login: "bob",
+        pendingPrs: [blockedPr],
+        attentionPrs: [blockedPr]
+      })
+    ];
+
+    expect(
+      peopleAttentionQueue(people, personalViews, 4).map((item) => `${item.login}:${item.label}:${item.target}`)
+    ).toEqual([
+      "alice:Active issues:active_issues",
+      "bob:PR blockers:pr_attention",
+      "dave:Triage:triage",
+      "carol:Pending PRs:pending_pr"
     ]);
   });
 

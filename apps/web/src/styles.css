@@ -5606,6 +5606,127 @@ button.testing-board-stat:focus-visible {
   border-left-color: #16a34a;
 }
 
+.people-attention-queue {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.people-attention-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.people-attention-heading span {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.people-attention-heading small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.people-attention-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.people-attention-item {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.2fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.people-attention-item-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.people-attention-item-attention {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.people-attention-person,
+.people-attention-reason {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.people-attention-person {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.people-attention-person strong,
+.people-attention-reason span,
+.people-attention-reason small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-attention-person strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.people-attention-reason {
+  display: grid;
+  gap: 2px;
+}
+
+.people-attention-reason span,
+.people-attention-reason small {
+  color: #4b5563;
+  font-size: 11px;
+}
+
+.people-attention-reason strong {
+  color: #111827;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.people-attention-person:hover strong,
+.people-attention-person:focus-visible strong,
+.people-attention-reason:hover span,
+.people-attention-reason:focus-visible span {
+  color: #2563eb;
+}
+
+.people-attention-person:focus-visible,
+.people-attention-reason:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .people-pr-flow-matrix {
   background: #ffffff;
   border: 1px solid #cbd5e1;
@@ -10743,6 +10864,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .people-attention-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .people-focus-metrics {
     grid-column: 1 / -1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -10910,6 +11035,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .people-risk-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .people-attention-list {
+    grid-template-columns: 1fr;
   }
 
   .team-ops-tile {
@@ -11550,6 +11679,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .people-risk-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .people-attention-item {
     grid-template-columns: 1fr;
   }
 

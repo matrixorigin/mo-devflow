@@ -103,6 +103,19 @@ export interface TeamPeopleFocusSummary {
   testingPeople: number;
   triagePeople: number;
 }
+
+export type PeopleAttentionQueueTone = "critical" | "attention" | "normal";
+
+export interface PeopleAttentionQueueItem {
+  login: string;
+  label: string;
+  value: number;
+  detail: string;
+  target: PersonalOperatingSignalTarget;
+  tone: PeopleAttentionQueueTone;
+  priority: number;
+}
+
 export interface TeamTriageSnapshot {
   needsTriageIssues: number;
   deferredIssues: number;
@@ -1580,6 +1593,89 @@ export function teamPeopleFocusSummary(
     testingPeople: people.filter((person) => testingCountForPerson(person.login, personalByLogin) > 0).length,
     triagePeople: people.filter((person) => person.needsTriageIssues > 0).length
   };
+}
+
+function peopleAttentionTone(tone: PersonalOperatingSignalTone): PeopleAttentionQueueTone {
+  return tone === "critical" || tone === "attention" ? tone : "normal";
+}
+
+function peopleSummaryAttentionItem(person: PersonSummary): PeopleAttentionQueueItem | null {
+  if (person.activeCriticalIssues > 0) {
+    return {
+      login: person.login,
+      label: "Active issues",
+      value: person.activeCriticalIssues,
+      detail: `${person.attentionPrs} PR attention | ${person.pendingPrs} pending PRs`,
+      target: "active_issues",
+      tone: "critical",
+      priority: 1_000 + person.activeCriticalIssues
+    };
+  }
+  if (person.attentionPrs > 0) {
+    return {
+      login: person.login,
+      label: "PR attention",
+      value: person.attentionPrs,
+      detail: `${person.pendingPrs} pending PRs`,
+      target: "pr_attention",
+      tone: "attention",
+      priority: 850 + person.attentionPrs
+    };
+  }
+  if (person.needsTriageIssues > 0) {
+    return {
+      login: person.login,
+      label: "Triage",
+      value: person.needsTriageIssues,
+      detail: `${person.deferredIssues} deferred`,
+      target: "triage",
+      tone: "attention",
+      priority: 620 + person.needsTriageIssues
+    };
+  }
+  if (person.pendingPrs > 0) {
+    return {
+      login: person.login,
+      label: "Pending PRs",
+      value: person.pendingPrs,
+      detail: "no PR blocker visible in summary",
+      target: "pending_pr",
+      tone: "normal",
+      priority: 300 + person.pendingPrs
+    };
+  }
+  return null;
+}
+
+export function peopleAttentionQueue(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  limit = 3
+): PeopleAttentionQueueItem[] {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return people
+    .map((person) => {
+      const personal = personalByLogin.get(person.login);
+      if (!personal) {
+        return peopleSummaryAttentionItem(person);
+      }
+      const [primary] = personalDailyPlan(personalOperatingSignals(personal), 1);
+      if (!primary || primary.value <= 0) {
+        return peopleSummaryAttentionItem(person);
+      }
+      return {
+        login: person.login,
+        label: primary.label,
+        value: primary.value,
+        detail: primary.detail,
+        target: primary.target,
+        tone: peopleAttentionTone(primary.tone),
+        priority: primary.priority
+      };
+    })
+    .filter((item): item is PeopleAttentionQueueItem => item !== null)
+    .sort((left, right) => right.priority - left.priority || left.login.localeCompare(right.login))
+    .slice(0, Math.max(0, limit));
 }
 
 export function observedPeopleFromDashboard(input: {

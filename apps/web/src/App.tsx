@@ -128,6 +128,7 @@ import {
   flowEfficiencySummary,
   observedPeopleFromDashboard,
   observedOwnerThreads,
+  peopleAttentionQueue,
   notificationDeliveryMatchesScope,
   notificationDeliveryScopeCounts,
   peopleBoardScopeCounts,
@@ -177,6 +178,7 @@ import {
   type CriticalOwnerFlowSummary,
   type ObservedOwnerThread,
   type NotificationDeliveryScopeFilter,
+  type PeopleAttentionQueueItem,
   type PersonalActionQueueFilter,
   type PersonalActivityItem,
   type PersonalFlowThreadFilter,
@@ -11111,7 +11113,9 @@ function PeopleBoardSummary({
   scopeFilter,
   sort,
   onScopeFilterChange,
-  onRiskSelect
+  onRiskSelect,
+  onPersonSelect,
+  onMetricSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
@@ -11120,9 +11124,12 @@ function PeopleBoardSummary({
   sort: PeopleBoardSort;
   onScopeFilterChange: (value: PeopleScopeFilter) => void;
   onRiskSelect: (scope: PeopleScopeFilter, sort: PeopleBoardSort) => void;
+  onPersonSelect: (login: string) => void;
+  onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
 }) {
   const counts = peopleBoardScopeCounts(people, personalViews);
   const risks = peopleRiskSummary(people, personalViews);
+  const attentionQueue = peopleAttentionQueue(people, personalViews, 3);
 
   return (
     <section className="people-board-summary-stack" aria-label="People summary">
@@ -11185,6 +11192,11 @@ function PeopleBoardSummary({
         />
       </div>
       <PeopleRiskSummaryStrip risks={risks} scopeFilter={scopeFilter} sort={sort} onRiskSelect={onRiskSelect} />
+      <PeopleAttentionQueueStrip
+        items={attentionQueue}
+        onPersonSelect={onPersonSelect}
+        onMetricSelect={onMetricSelect}
+      />
     </section>
   );
 }
@@ -11308,6 +11320,50 @@ function PeopleRiskButton({
       <strong>{value}</strong>
       <small>{detail}</small>
     </button>
+  );
+}
+
+function PeopleAttentionQueueStrip({
+  items,
+  onPersonSelect,
+  onMetricSelect
+}: {
+  items: PeopleAttentionQueueItem[];
+  onPersonSelect: (login: string) => void;
+  onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="people-attention-queue" aria-label="People needing manager attention">
+      <div className="people-attention-heading">
+        <span>Needs attention</span>
+        <small>{items.length} people</small>
+      </div>
+      <div className="people-attention-list">
+        {items.map((item) => (
+          <article className={`people-attention-item people-attention-item-${item.tone}`} key={item.login}>
+            <button type="button" className="people-attention-person" onClick={() => onPersonSelect(item.login)}>
+              <span className="person-avatar" aria-hidden="true">
+                {item.login.slice(0, 1).toUpperCase()}
+              </span>
+              <strong>{item.login}</strong>
+            </button>
+            <button
+              type="button"
+              className="people-attention-reason"
+              onClick={() => onMetricSelect(item.login, item.target)}
+            >
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <small>{item.detail}</small>
+            </button>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -23864,6 +23920,8 @@ export default function App() {
                   sort={peopleSort}
                   onScopeFilterChange={changePeopleScopeFilter}
                   onRiskSelect={changePeopleScopeAndSort}
+                  onPersonSelect={openPeopleBoardPerson}
+                  onMetricSelect={openPeopleBoardMetric}
                 />
                 {!peopleBoardUsesObserved && filteredPeople.length > 0 ? (
                   <PeoplePrFlowMatrix
