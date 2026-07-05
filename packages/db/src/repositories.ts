@@ -3492,6 +3492,14 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
               MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
        FROM github_webhook_deliveries WHERE repo_id = ?
        UNION ALL
+       SELECT 'jobs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(updated_at) AS max_event_at, MAX(next_run_at) AS max_aux_at
+       FROM jobs
+       UNION ALL
+       SELECT 'worker_heartbeats' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
+              MAX(heartbeat_at) AS max_event_at, MAX(updated_at) AS max_aux_at
+       FROM worker_heartbeats
+       UNION ALL
        SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
        FROM write_action_executions WHERE repo_id = ?
