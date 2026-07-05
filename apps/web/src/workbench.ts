@@ -98,6 +98,7 @@ export type TeamOperatingSignalKey = "issue_flow" | "pr_flow" | "testing_flow" |
 export type TeamOperatingSignalTone = "critical" | "attention" | "good";
 export type TeamOperatingSignalTarget =
   | "critical_issues"
+  | "critical_no_action"
   | "critical_without_pr"
   | "pr_attention"
   | "all_prs"
@@ -1274,6 +1275,18 @@ function teamPrBlockerDetail(snapshot: TeamPrBlockerSnapshot): string {
   return parts.length === 0 ? "no blockers" : parts.slice(0, 3).join(" | ");
 }
 
+function criticalIssueNoHumanAction(issue: Pick<CriticalIssueView, "lastHumanActionAt">, nowIso: string): boolean {
+  if (!issue.lastHumanActionAt) {
+    return false;
+  }
+  const timestamp = Date.parse(issue.lastHumanActionAt);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(timestamp) || !Number.isFinite(now)) {
+    return false;
+  }
+  return now - timestamp >= 24 * 60 * 60 * 1000;
+}
+
 function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
   return profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
 }
@@ -1310,6 +1323,9 @@ export function teamOperatingSignals(input: {
   const staleActiveIssues = data.criticalIssues.filter(
     (issue) => issue.criticalAgeHours !== null && issue.criticalAgeHours >= 72
   );
+  const idleActiveIssues = data.criticalIssues.filter((issue) =>
+    criticalIssueNoHumanAction(issue, data.sync.generatedAt)
+  );
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
   const triageHeavy = triage.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
   const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
@@ -1345,23 +1361,25 @@ export function teamOperatingSignals(input: {
       key: "issue_flow",
       label: "Issue flow",
       value: data.counts.criticalIssues,
-      detail: `${staleActiveIssues.length} >3d | ${issuesWithoutPr.length} no PR | ${
+      detail: `${idleActiveIssues.length} idle | ${staleActiveIssues.length} >3d | ${issuesWithoutPr.length} no PR | ${
         triage.needsTriageIssues
       } triage | avg ${diagnosticDuration(flowSummary?.averageActiveIssueAgeHours ?? null)}`,
       tone:
-        sMinusOneIssues > 0 || staleActiveIssues.length > 0 || issuesWithoutPr.length > 0
+        sMinusOneIssues > 0 || idleActiveIssues.length > 0 || staleActiveIssues.length > 0 || issuesWithoutPr.length > 0
           ? "critical"
           : triageHeavy || data.counts.criticalIssues > 0 || triage.needsTriageIssues > 0
             ? "attention"
             : "good",
       target:
-        issuesWithoutPr.length > 0
-          ? "critical_without_pr"
-          : data.counts.criticalIssues > 0
-            ? "critical_issues"
-            : triage.needsTriageIssues > 0
-              ? "triage"
-              : "critical_issues"
+        idleActiveIssues.length > 0
+          ? "critical_no_action"
+          : issuesWithoutPr.length > 0
+            ? "critical_without_pr"
+            : data.counts.criticalIssues > 0
+              ? "critical_issues"
+              : triage.needsTriageIssues > 0
+                ? "triage"
+                : "critical_issues"
     },
     {
       key: "pr_flow",

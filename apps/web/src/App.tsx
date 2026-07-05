@@ -193,7 +193,16 @@ interface DashboardReadModelMeta {
 
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter =
-  "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "unowned" | "non_watched" | "timeline_missing" | "skipped";
+  | "all"
+  | "s-1"
+  | "s0"
+  | "no_action_24h"
+  | "no_pr"
+  | "owner_gap"
+  | "unowned"
+  | "non_watched"
+  | "timeline_missing"
+  | "skipped";
 type CriticalIssueAiFilter = "all" | string;
 type CriticalIssueOwnerFilter = "all" | "unowned" | `owner:${string}`;
 type CriticalIssueSort = "risk" | "active_age" | "last_action" | "number";
@@ -420,6 +429,22 @@ function hours(value: number): string {
 
 function optionalHours(value: number | null): string {
   return value === null ? "-" : hours(value);
+}
+
+function hoursSince(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
+}
+
+function criticalIssueNoHumanAction(issue: Pick<CriticalIssueView, "lastHumanActionAt">): boolean {
+  const idleHours = hoursSince(issue.lastHumanActionAt);
+  return idleHours !== null && idleHours >= 24;
 }
 
 function useLazyVisibleCount(total: number, initialLimit?: number, resetKey: string | number = "") {
@@ -2206,6 +2231,9 @@ function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: Critic
   if (scopeFilter === "s0") {
     return issue.severity === "severity/s0";
   }
+  if (scopeFilter === "no_action_24h") {
+    return criticalIssueNoHumanAction(issue);
+  }
   if (scopeFilter === "no_pr") {
     return issue.linkedPullRequests.length === 0;
   }
@@ -2247,6 +2275,9 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   }
   if (filter === "s0") {
     return "s0";
+  }
+  if (filter === "no_action_24h") {
+    return "no action 24h";
   }
   if (filter === "no_pr") {
     return "no linked PR";
@@ -2849,6 +2880,7 @@ function CriticalIssueFilterBar({
             { label: "All", value: "all" },
             { label: "s-1", value: "s-1" },
             { label: "s0", value: "s0" },
+            { label: "No action", value: "no_action_24h" },
             { label: "No PR", value: "no_pr" },
             { label: "Owner gap", value: "owner_gap" },
             { label: "Unowned", value: "unowned" },
@@ -3376,6 +3408,7 @@ function teamCommandActions({
 }): TeamCommandAction[] {
   const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const idleActiveIssues = data.criticalIssues.filter(criticalIssueNoHumanAction);
   const staleActiveIssues = data.criticalIssues.filter(
     (issue) => issue.criticalAgeHours !== null && issue.criticalAgeHours >= 72
   );
@@ -3400,6 +3433,17 @@ function teamCommandActions({
       onClick: () => onOpenIssuesFilter({ scope: "s-1" })
     });
   }
+  if (idleActiveIssues.length > 0) {
+    actions.push({
+      key: "idle-active-issues",
+      title: `${idleActiveIssues.length} active s-1/s0 issues have no human action in 24h`,
+      detail: `oldest active ${optionalHours(maxCriticalActiveAge(idleActiveIssues))}; ask owner for update or unblock linked PR`,
+      tone: "critical",
+      actionLabel: "Open idle",
+      priority: 960,
+      onClick: () => onOpenIssuesFilter({ scope: "no_action_24h" })
+    });
+  }
   if (issuesWithoutPr.length > 0) {
     actions.push({
       key: "issue-pr-gap",
@@ -3419,7 +3463,7 @@ function teamCommandActions({
       tone: "critical",
       actionLabel: "Open active",
       priority: 920,
-      onClick: () => onOpenIssuesFilter({})
+      onClick: () => onOpenIssuesFilter({ scope: "all" })
     });
   }
   if (blockerPrs.length > 0) {
@@ -3621,6 +3665,10 @@ function openTeamOperatingSignal(
 ): void {
   if (signal.target === "critical_without_pr") {
     onOpenIssuesFilter({ scope: "no_pr" });
+    return;
+  }
+  if (signal.target === "critical_no_action") {
+    onOpenIssuesFilter({ scope: "no_action_24h" });
     return;
   }
   if (signal.target === "critical_issues") {
@@ -5668,10 +5716,17 @@ function HealthFact({ label, value }: { label: string; value: string }) {
 }
 
 function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { title: string; detail: string } {
+  const idleActiveIssues = data.criticalIssues.filter(criticalIssueNoHumanAction);
   if (sMinusOneIssues > 0) {
     return {
       title: `${sMinusOneIssues} active s-1 issues are the first queue.`,
       detail: `${data.counts.criticalIssues} active s-1/s0 total; ${data.counts.attentionPrs} PRs also need attention.`
+    };
+  }
+  if (idleActiveIssues.length > 0) {
+    return {
+      title: `${idleActiveIssues.length} active s-1/s0 issues need an owner update.`,
+      detail: "Last cached human issue action is older than 24h; open the no-action issue filter."
     };
   }
   if (data.testing.staleQueueIssues > 0) {
@@ -6797,6 +6852,17 @@ function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
   if (issue.workflowSkipped) {
     tags.push({ key: "skip", label: "skip automation", color: "default", tooltip: workflowSkipTooltip() });
   }
+  if (criticalIssueNoHumanAction(issue)) {
+    tags.push({
+      key: "no-action",
+      label: "no human action 24h",
+      color: issue.lastHumanActionEvidence === "complete_cache" ? "red" : "gold",
+      tooltip:
+        issue.lastHumanActionEvidence === "complete_cache"
+          ? `No cached human issue action since ${formatDate(issue.lastHumanActionAt)}.`
+          : `No cached human issue action since ${formatDate(issue.lastHumanActionAt)}; comment evidence is still partial.`
+    });
+  }
   if (issue.linkedPullRequests.length === 0) {
     tags.push({ key: "no-pr", label: "no linked PR", color: "orange" });
   }
@@ -6840,6 +6906,7 @@ function criticalIssueRiskScore(issue: CriticalIssueView): number {
     (issue.ownerScope === "unowned" ? 260 : 0) +
     (issue.ownerScope === "non_watched" ? 120 : 0) +
     (issue.workflowSkipped ? 40 : 0) +
+    (criticalIssueNoHumanAction(issue) ? 180 : 0) +
     (issue.linkedPullRequests.length === 0 ? 120 : 0) +
     (issue.criticalAgeEvidence === "missing_timeline" ? 60 : 0) +
     (!issue.isComplete ? 30 : 0) +
@@ -6889,6 +6956,9 @@ function criticalIssueNextAction(issue: CriticalIssueView): string {
   }
   if (issue.linkedPullRequests.length === 0) {
     return "Link execution PR";
+  }
+  if (criticalIssueNoHumanAction(issue)) {
+    return "Post owner update";
   }
   if (issue.blockers.some((blocker) => blocker.relatedPrNumber !== null && blocker.severity !== "info")) {
     return "Unblock linked PR";
@@ -6945,6 +7015,7 @@ function CriticalIssueBoard({
   const missingTimeline = ownerFilteredIssues.filter(
     (issue) => issue.criticalAgeEvidence === "missing_timeline"
   ).length;
+  const noHumanAction = ownerFilteredIssues.filter(criticalIssueNoHumanAction).length;
   const noLinkedPr = ownerFilteredIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
   const ownerGaps = ownerFilteredIssues.filter((issue) => issue.ownerScope !== "watched").length;
   const unownedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "unowned").length;
@@ -6989,6 +7060,13 @@ function CriticalIssueBoard({
           tone="attention"
           active={scopeFilter === "s0"}
           onClick={() => onScopeFilterChange("s0")}
+        />
+        <CriticalBoardStat
+          label="no action 24h"
+          value={noHumanAction}
+          tone={noHumanAction > 0 ? "critical" : "good"}
+          active={scopeFilter === "no_action_24h"}
+          onClick={() => onScopeFilterChange("no_action_24h")}
         />
         <CriticalBoardStat
           label="no linked PR"

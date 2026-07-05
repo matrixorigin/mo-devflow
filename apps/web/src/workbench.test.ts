@@ -329,6 +329,7 @@ describe("team operating signals", () => {
         lastReceivedAt: "2026-07-04T01:00:00.000Z"
       }),
       sync: {
+        generatedAt: "2026-07-04T00:00:00Z",
         staleObjects: 3,
         partialObjects: 2,
         worker: {
@@ -349,8 +350,9 @@ describe("team operating signals", () => {
     expect(signals.find((signal) => signal.key === "issue_flow")).toMatchObject({
       value: 2,
       tone: "critical",
-      target: "critical_without_pr"
+      target: "critical_no_action"
     });
+    expect(signals.find((signal) => signal.key === "issue_flow")?.detail).toContain("2 idle");
     expect(signals.find((signal) => signal.key === "issue_flow")?.detail).toContain("1 no PR");
     expect(signals.find((signal) => signal.key === "pr_flow")).toMatchObject({
       value: 1,
@@ -384,6 +386,7 @@ describe("team operating signals", () => {
           severity: "severity/s0",
           ageHours: 240,
           criticalAgeHours: null,
+          lastHumanActionAt: "2026-07-03T12:30:00Z",
           linkedPullRequests: [linkedPullRequest()]
         })
       ],
@@ -400,6 +403,7 @@ describe("team operating signals", () => {
       profileWarnings: [],
       webhooks: webhooks({ processedDeliveries: 1, lastReceivedAt: "2026-07-04T01:00:00.000Z" }),
       sync: {
+        generatedAt: "2026-07-04T00:00:00Z",
         staleObjects: 0,
         partialObjects: 0,
         worker: {
@@ -414,7 +418,7 @@ describe("team operating signals", () => {
     }).find((item) => item.key === "issue_flow");
 
     expect(signal).toMatchObject({
-      detail: "0 >3d | 0 no PR | 0 triage | avg unknown",
+      detail: "0 idle | 0 >3d | 0 no PR | 0 triage | avg unknown",
       tone: "attention"
     });
   });
