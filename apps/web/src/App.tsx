@@ -2269,34 +2269,6 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   return "all active";
 }
 
-function criticalOverflowLabel(filter: CriticalIssueScopeFilter): string {
-  if (filter === "s-1") {
-    return "s-1 issues";
-  }
-  if (filter === "s0") {
-    return "s0 issues";
-  }
-  if (filter === "no_pr") {
-    return "issues without linked PRs";
-  }
-  if (filter === "owner_gap") {
-    return "owner-gap issues";
-  }
-  if (filter === "unowned") {
-    return "unowned issues";
-  }
-  if (filter === "non_watched") {
-    return "non-watched-owner issues";
-  }
-  if (filter === "timeline_missing") {
-    return "issues missing timeline evidence";
-  }
-  if (filter === "skipped") {
-    return "issues skipped by automation";
-  }
-  return "active issues";
-}
-
 function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "active_issue") {
     return "linked to active s-1/s0";
@@ -3149,13 +3121,19 @@ function TeamRotationOverview({
     onOpenPrsFilter,
     onOpenPeopleFilter
   });
-  const criticalLaneLazy = useLazyVisibleCount(
-    criticalIssues.length,
+  const criticalLanePage = usePagedList(
+    criticalIssues,
     6,
-    `${criticalScopeFilter}:${criticalAiFilter}:${criticalOwnerFilter}:${criticalIssueSort}`
+    `${criticalScopeFilter}:${criticalAiFilter}:${criticalOwnerFilter}:${criticalIssueSort}:${criticalIssues
+      .map((issue) => issue.number)
+      .join(",")}`
   );
-  const prRiskLaneLazy = useLazyVisibleCount(prRisks.length, 6, prSort);
-  const testingLaneLazy = useLazyVisibleCount(testingIssues.length, 5, data.testing.queueIssues);
+  const prRiskLanePage = usePagedList(prRisks, 6, `${prSort}:${prRisks.map((pr) => pr.number).join(",")}`);
+  const testingLanePage = usePagedList(
+    testingIssues,
+    5,
+    `${data.testing.queueIssues}:${testingIssues.map((issue) => issue.number).join(",")}`
+  );
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
 
@@ -3232,13 +3210,15 @@ function TeamRotationOverview({
               criticalOwnerFilter
             )}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
             count={criticalIssues.length}
-            visibleCount={criticalLaneLazy.visibleCount}
-            overflowLabel={criticalOverflowLabel(criticalScopeFilter)}
+            visibleCount={criticalLanePage.visibleItems.length}
+            startIndex={criticalLanePage.startIndex}
+            page={criticalLanePage.page}
+            pageSize={criticalLanePage.pageSize}
+            defaultPageSize={6}
             actionLabel="Open Issues"
             tone="critical"
             onAction={() => onOpenIssuesFilter({})}
-            onShowMore={criticalLaneLazy.hiddenCount > 0 ? criticalLaneLazy.showMore : undefined}
-            onCollapse={criticalLaneLazy.canCollapse ? criticalLaneLazy.reset : undefined}
+            onPageChange={criticalLanePage.onPageChange}
             controls={
               <CriticalIssueFilterBar
                 issues={data.criticalIssues}
@@ -3253,27 +3233,29 @@ function TeamRotationOverview({
               />
             }
           >
-            {criticalIssues.slice(0, criticalLaneLazy.visibleCount).map((issue) => (
+            {criticalLanePage.visibleItems.map((issue) => (
               <TeamCriticalIssueRow issue={issue} key={issue.number} onPreview={setWorkPreview} />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
             title="PR Rotation Risks"
-            count={data.counts.attentionPrs}
-            visibleCount={prRiskLaneLazy.visibleCount}
-            overflowLabel="PRs needing attention"
+            count={prRisks.length}
+            visibleCount={prRiskLanePage.visibleItems.length}
+            startIndex={prRiskLanePage.startIndex}
+            page={prRiskLanePage.page}
+            pageSize={prRiskLanePage.pageSize}
+            defaultPageSize={6}
             actionLabel="Open PRs"
             tone="attention"
             onAction={() => onOpenPrsFilter("attention")}
-            onShowMore={prRiskLaneLazy.hiddenCount > 0 ? prRiskLaneLazy.showMore : undefined}
-            onCollapse={prRiskLaneLazy.canCollapse ? prRiskLaneLazy.reset : undefined}
+            onPageChange={prRiskLanePage.onPageChange}
             controls={
               <div className="board-filter-bar team-sort-filter-bar" aria-label="PR rotation sort">
                 <PrSortControl sort={prSort} onSortChange={onPrSortChange} />
               </div>
             }
           >
-            {prRisks.slice(0, prRiskLaneLazy.visibleCount).map((pr) => (
+            {prRiskLanePage.visibleItems.map((pr) => (
               <TeamPrRiskRow
                 activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
                 pr={pr}
@@ -3284,16 +3266,18 @@ function TeamRotationOverview({
           </TeamRotationLane>
           <TeamRotationLane
             title="Issues Waiting For Test"
-            count={data.testing.queueIssues}
-            visibleCount={testingLaneLazy.visibleCount}
-            overflowLabel="issues in test"
+            count={testingIssues.length}
+            visibleCount={testingLanePage.visibleItems.length}
+            startIndex={testingLanePage.startIndex}
+            page={testingLanePage.page}
+            pageSize={testingLanePage.pageSize}
+            defaultPageSize={5}
             actionLabel="Open Testing"
             tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
             onAction={() => onOpenPrsFilter("testing")}
-            onShowMore={testingLaneLazy.hiddenCount > 0 ? testingLaneLazy.showMore : undefined}
-            onCollapse={testingLaneLazy.canCollapse ? testingLaneLazy.reset : undefined}
+            onPageChange={testingLanePage.onPageChange}
           >
-            {testingIssues.slice(0, testingLaneLazy.visibleCount).map((issue) => (
+            {testingLanePage.visibleItems.map((issue) => (
               <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
             ))}
           </TeamRotationLane>
@@ -4141,28 +4125,32 @@ function TeamRotationLane({
   title,
   count,
   visibleCount,
-  overflowLabel,
+  startIndex,
+  page,
+  pageSize,
+  defaultPageSize,
   actionLabel,
   tone,
   onAction,
-  onShowMore,
-  onCollapse,
+  onPageChange,
   children,
   controls
 }: {
   title: string;
   count: number;
   visibleCount?: number;
-  overflowLabel?: string;
+  startIndex: number;
+  page: number;
+  pageSize: number;
+  defaultPageSize: number;
   actionLabel: string;
   tone: "critical" | "attention";
   onAction: () => void;
-  onShowMore?: () => void;
-  onCollapse?: () => void;
+  onPageChange: (page: number, pageSize: number) => void;
   children: ReactNode;
   controls?: ReactNode;
 }) {
-  const hiddenCount = Math.max(0, count - (visibleCount ?? count));
+  const shownCount = visibleCount ?? count;
 
   return (
     <section className={`team-rotation-lane team-rotation-lane-${tone}`}>
@@ -4173,6 +4161,11 @@ function TeamRotationLane({
             <button type="button" className={`team-lane-count team-lane-count-${tone}`} onClick={onAction}>
               {count}
             </button>
+            {shownCount < count ? (
+              <Tag>
+                {startIndex + 1}-{startIndex + shownCount}
+              </Tag>
+            ) : null}
           </Space>
           {controls}
         </div>
@@ -4181,15 +4174,12 @@ function TeamRotationLane({
         </Button>
       </div>
       <div className="team-rotation-list">{children}</div>
-      <LazyListToggle
-        hiddenCount={hiddenCount}
-        revealCount={hiddenCount}
-        canCollapse={Boolean(onCollapse)}
-        itemLabel={overflowLabel ?? "items"}
-        className="team-rotation-more"
-        collapsedLabel={`Show compact ${overflowLabel ?? "items"}`}
-        onShowMore={onShowMore ?? onAction}
-        onCollapse={onCollapse}
+      <CardListPagination
+        total={count}
+        page={page}
+        pageSize={pageSize}
+        defaultPageSize={defaultPageSize}
+        onChange={onPageChange}
       />
     </section>
   );
@@ -10681,8 +10671,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const visibleSignals = reasons.slice(0, 4);
   const hiddenSignalCount = Math.max(0, reasons.length - visibleSignals.length);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const prLazy = useLazyVisibleCount(row.prs.length, 6, row.id);
-  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
+  const prPage = usePagedList(row.prs, 6, row.id);
   const issueNodeLabel =
     row.issue.number !== null
       ? `Issue #${row.issue.number}`
@@ -10692,9 +10681,8 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const prNodeLabel = row.prs.length === 0 ? "No visible PR" : `${row.prs.length} visible PRs`;
   const visibleTopologyPrs = row.prs.slice(0, 4);
   const hiddenTopologyPrCount = Math.max(0, row.prs.length - visibleTopologyPrs.length);
-  const showMorePrs = (): void => {
+  const openPrDetails = (): void => {
     setDetailsOpen(true);
-    prLazy.showMore();
   };
 
   return (
@@ -10780,13 +10768,11 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                   #{pr.number}
                 </a>
               ))}
-              <LazyListToggle
-                hiddenCount={hiddenTopologyPrCount}
-                revealCount={hiddenTopologyPrCount}
-                canCollapse={false}
-                itemLabel="PRs"
-                className="linked-overflow-button"
-                onShowMore={showMorePrs}
+              <LinkedOverflowButton
+                ariaLabel={`Show ${row.title} PR details with ${hiddenTopologyPrCount} more PRs`}
+                count={hiddenTopologyPrCount}
+                label="more PRs"
+                onClick={openPrDetails}
               />
             </span>
           ) : null}
@@ -10866,18 +10852,15 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
               <div className="flow-pr-empty">No linked PR visible</div>
             ) : (
               <>
-                {visiblePrs.map((pr) => (
+                {prPage.visibleItems.map((pr) => (
                   <FlowPrRow pr={pr} key={pr.number} />
                 ))}
-                <LazyListToggle
-                  hiddenCount={prLazy.hiddenCount}
-                  revealCount={prLazy.revealCount}
-                  canCollapse={prLazy.canCollapse}
-                  itemLabel="PRs"
-                  className="flow-pr-more"
-                  collapsedLabel="Show compact PR list"
-                  onShowMore={showMorePrs}
-                  onCollapse={prLazy.reset}
+                <CardListPagination
+                  total={row.prs.length}
+                  page={prPage.page}
+                  pageSize={prPage.pageSize}
+                  defaultPageSize={6}
+                  onChange={prPage.onPageChange}
                 />
               </>
             )}
@@ -11064,8 +11047,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
 }
 
 function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
-  const prLazy = useLazyVisibleCount(row.prs.length, 4, row.id);
-  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
+  const prPage = usePagedList(row.prs, 4, row.id);
   const issueLabel = row.issue.number === null ? "PR group" : `Issue #${row.issue.number}`;
   const issueDuration = row.issue.durationHours === null ? "unknown duration" : hours(row.issue.durationHours);
   const issueBarText =
@@ -11103,23 +11085,20 @@ function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
           )}
         </div>
       </div>
-      {visiblePrs.length === 0 ? (
+      {prPage.visibleItems.length === 0 ? (
         <div className="flow-timeline-row">
           <span className="flow-timeline-label">PR</span>
           <div className="flow-timeline-empty">No execution PR linked in cache</div>
         </div>
       ) : (
-        visiblePrs.map((pr) => <FlowTimelinePrRow pr={pr} key={pr.number} />)
+        prPage.visibleItems.map((pr) => <FlowTimelinePrRow pr={pr} key={pr.number} />)
       )}
-      <LazyListToggle
-        hiddenCount={prLazy.hiddenCount}
-        revealCount={prLazy.revealCount}
-        canCollapse={prLazy.canCollapse}
-        itemLabel="PRs"
-        className="flow-timeline-overflow"
-        collapsedLabel="Show compact timeline"
-        onShowMore={prLazy.showMore}
-        onCollapse={prLazy.reset}
+      <CardListPagination
+        total={row.prs.length}
+        page={prPage.page}
+        pageSize={prPage.pageSize}
+        defaultPageSize={4}
+        onChange={prPage.onPageChange}
       />
     </div>
   );
