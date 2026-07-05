@@ -2858,6 +2858,221 @@ button.team-status-row:focus-visible {
   min-width: 0;
 }
 
+.pr-ops-summary {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.34fr);
+  min-width: 0;
+  padding: 10px;
+}
+
+.pr-ops-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pr-ops-focus {
+  align-items: start;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #111827;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.pr-ops-focus > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pr-ops-focus span {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pr-ops-tiles {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.pr-ops-tile {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-height: 80px;
+  min-width: 0;
+  padding: 8px;
+  text-align: left;
+}
+
+.pr-ops-tile:hover,
+.pr-ops-tile:focus-visible {
+  background: #f8fbff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.pr-ops-tile-active {
+  box-shadow: inset 0 0 0 1px #111827;
+}
+
+.pr-ops-tile span,
+.pr-ops-tile small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-ops-tile strong {
+  color: #111827;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-ops-tile-critical {
+  border-left-color: #dc2626;
+}
+
+.pr-ops-tile-attention {
+  border-left-color: #d97706;
+}
+
+.pr-ops-tile-normal {
+  border-left-color: #2563eb;
+}
+
+.pr-ops-tile-good {
+  border-left-color: #16a34a;
+}
+
+.pr-ops-side {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pr-ops-next,
+.pr-ops-sort {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.pr-ops-sort {
+  border-left-color: #2563eb;
+}
+
+.pr-ops-sort .board-filter-group {
+  align-items: stretch;
+  display: grid;
+  gap: 6px;
+}
+
+.pr-ops-sort .ant-segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.pr-ops-next > span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.pr-ops-next button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.pr-ops-next button:hover strong,
+.pr-ops-next button:focus-visible strong {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.pr-ops-next button:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 3px;
+}
+
+.pr-ops-next strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.pr-ops-next small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pr-ops-next em {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.pr-ops-next-attention {
+  border-left-color: #d97706;
+}
+
+.pr-ops-next-good {
+  border-left-color: #16a34a;
+}
+
+.pr-filter-disclosure {
+  margin-bottom: 0;
+}
+
 .pr-evidence-repair-banner .ant-alert-description {
   width: 100%;
 }
@@ -7213,6 +7428,14 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .pr-ops-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .pr-ops-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .team-critical-flow-row {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
   }
@@ -7557,6 +7780,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .pr-ops-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .action-queue-toolbar {
     align-items: flex-start;
     flex-direction: column;
@@ -7633,6 +7860,14 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .person-ops-tile {
+    min-height: 66px;
+  }
+
+  .pr-ops-tiles {
+    grid-template-columns: 1fr;
+  }
+
+  .pr-ops-tile {
     min-height: 66px;
   }
 

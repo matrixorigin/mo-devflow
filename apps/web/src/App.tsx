@@ -2326,7 +2326,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "CI failed";
   }
   if (filter === "request_changes") {
-    return "request changes";
+    return "requested changes";
   }
   if (filter === "conflict") {
     return "conflict";
@@ -2983,7 +2983,7 @@ function PrFilterBar({
             { label: "Linked issue wait", value: "stale_testing" },
             { label: "Issue test evidence gap", value: "testing_evidence_gap" },
             { label: "CI failed", value: "ci_failed" },
-            { label: "Request change", value: "request_changes" },
+            { label: "Requested changes", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
             { label: "No visible issue after sync", value: "no_issue" },
             { label: "Issue link syncing", value: "issue_link_pending" },
@@ -7558,7 +7558,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("ci_failed")}
       />
       <CriticalBoardStat
-        label="request changes"
+        label="requested changes"
         value={requestedChangePrs}
         tone={requestedChangePrs > 0 ? "critical" : "good"}
         active={scopeFilter === "request_changes"}
@@ -7600,6 +7600,256 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("no_action_24h")}
       />
     </div>
+  );
+}
+
+interface PrOperationsSummaryCounts {
+  activeIssuePrs: number;
+  attentionPrs: number;
+  noActionPrs: number;
+  ciFailedPrs: number;
+  requestedChangePrs: number;
+  conflictPrs: number;
+  evidenceGapPrs: number;
+  issueLinkPendingPrs: number;
+}
+
+function prOperationsSummaryCounts(
+  prs: PendingPrView[],
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>
+): PrOperationsSummaryCounts {
+  return {
+    activeIssuePrs: prs.filter((pr) => prHasActiveIssue(pr, criticalIssuesByPr)).length,
+    attentionPrs: prs.filter((pr) => pr.attentionFlags.length > 0).length,
+    noActionPrs: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length,
+    ciFailedPrs: prs.filter(prHasFailedCi).length,
+    requestedChangePrs: prs.filter(prHasRequestChanges).length,
+    conflictPrs: prs.filter(prHasConflict).length,
+    evidenceGapPrs: prs.filter(prEvidencePending).length,
+    issueLinkPendingPrs: prs.filter((pr) => prIssueLinkUnknown(pr, criticalIssuesByPr.get(pr.number) ?? [])).length
+  };
+}
+
+function prScopeOldestAge(
+  prs: PendingPrView[],
+  scope: PrScopeFilter,
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>
+): number | null {
+  return maxPendingPrAge(filterPendingPrs(prs, scope, criticalIssuesByPr));
+}
+
+function prSortLabel(sort: PrSort): string {
+  if (sort === "age") {
+    return "PR age";
+  }
+  if (sort === "last_action") {
+    return "last action";
+  }
+  if (sort === "testing_wait") {
+    return "issue test wait";
+  }
+  if (sort === "number") {
+    return "PR number";
+  }
+  return "risk";
+}
+
+function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
+  scope: PrScopeFilter;
+  title: string;
+  detail: string;
+} {
+  if (counts.activeIssuePrs > 0) {
+    return {
+      scope: "active_issue",
+      title: "Drive PRs linked to active issues",
+      detail: `${counts.activeIssuePrs} PRs are attached to active s-1/s0 work.`
+    };
+  }
+  if (counts.requestedChangePrs > 0) {
+    return {
+      scope: "request_changes",
+      title: "Resolve requested changes",
+      detail: `${counts.requestedChangePrs} PRs cannot move until review feedback is handled.`
+    };
+  }
+  if (counts.ciFailedPrs > 0) {
+    return {
+      scope: "ci_failed",
+      title: "Fix failed CI",
+      detail: `${counts.ciFailedPrs} PRs have failing or errored checks.`
+    };
+  }
+  if (counts.conflictPrs > 0) {
+    return {
+      scope: "conflict",
+      title: "Resolve merge conflicts",
+      detail: `${counts.conflictPrs} PRs are blocked by merge state.`
+    };
+  }
+  if (counts.noActionPrs > 0) {
+    return {
+      scope: "no_action_24h",
+      title: "Ask owners for PR updates",
+      detail: `${counts.noActionPrs} PRs have no cached human action in 24h.`
+    };
+  }
+  if (counts.evidenceGapPrs > 0 || counts.issueLinkPendingPrs > 0) {
+    return {
+      scope: counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending",
+      title: "Repair PR cache evidence",
+      detail: `${counts.evidenceGapPrs + counts.issueLinkPendingPrs} PRs need detail or issue-link evidence.`
+    };
+  }
+  return {
+    scope: "all",
+    title: "Review pending PR flow",
+    detail: "No blocker class dominates the cached PR queue."
+  };
+}
+
+function PrOperationsSummary({
+  prs,
+  filteredPrs,
+  criticalIssuesByPr,
+  scopeFilter,
+  sort,
+  onScopeFilterChange,
+  onSortChange
+}: {
+  prs: PendingPrView[];
+  filteredPrs: PendingPrView[];
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>;
+  scopeFilter: PrScopeFilter;
+  sort: PrSort;
+  onScopeFilterChange: (value: PrScopeFilter) => void;
+  onSortChange: (value: PrSort) => void;
+}) {
+  const counts = prOperationsSummaryCounts(prs, criticalIssuesByPr);
+  const firstAction = prOperationsFirstAction(counts);
+
+  return (
+    <section className="pr-ops-summary" aria-label="PR rotation summary">
+      <div className="pr-ops-main">
+        <div className="pr-ops-focus">
+          <GitPullRequest size={18} aria-hidden="true" />
+          <div>
+            <Text strong>{filteredPrs.length} PRs shown</Text>
+            <span>
+              {prScopeLabel(scopeFilter)} | sorted by {prSortLabel(sort)}
+            </span>
+          </div>
+        </div>
+        <div className="pr-ops-tiles">
+          <PrOpsTile
+            label="Pending PR"
+            value={prs.length}
+            detail={`oldest ${optionalHours(maxPendingPrAge(prs))}`}
+            tone={prs.length > 0 ? "normal" : "good"}
+            active={scopeFilter === "all"}
+            onClick={() => onScopeFilterChange("all")}
+          />
+          <PrOpsTile
+            label="Attention"
+            value={counts.attentionPrs}
+            detail={`oldest ${optionalHours(prScopeOldestAge(prs, "attention", criticalIssuesByPr))}`}
+            tone={counts.attentionPrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "attention"}
+            onClick={() => onScopeFilterChange("attention")}
+          />
+          <PrOpsTile
+            label="No action 24h"
+            value={counts.noActionPrs}
+            detail={`oldest ${optionalHours(prScopeOldestAge(prs, "no_action_24h", criticalIssuesByPr))}`}
+            tone={counts.noActionPrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "no_action_24h"}
+            onClick={() => onScopeFilterChange("no_action_24h")}
+          />
+          <PrOpsTile
+            label="Active issue PR"
+            value={counts.activeIssuePrs}
+            detail="linked to s-1/s0"
+            tone={counts.activeIssuePrs > 0 ? "critical" : "good"}
+            active={scopeFilter === "active_issue"}
+            onClick={() => onScopeFilterChange("active_issue")}
+          />
+          <PrOpsTile
+            label="CI failed"
+            value={counts.ciFailedPrs}
+            detail="failed checks"
+            tone={counts.ciFailedPrs > 0 ? "critical" : "good"}
+            active={scopeFilter === "ci_failed"}
+            onClick={() => onScopeFilterChange("ci_failed")}
+          />
+          <PrOpsTile
+            label="Requested changes"
+            value={counts.requestedChangePrs}
+            detail="review feedback"
+            tone={counts.requestedChangePrs > 0 ? "critical" : "good"}
+            active={scopeFilter === "request_changes"}
+            onClick={() => onScopeFilterChange("request_changes")}
+          />
+          <PrOpsTile
+            label="Conflict"
+            value={counts.conflictPrs}
+            detail="merge blocked"
+            tone={counts.conflictPrs > 0 ? "critical" : "good"}
+            active={scopeFilter === "conflict"}
+            onClick={() => onScopeFilterChange("conflict")}
+          />
+          <PrOpsTile
+            label="Evidence gaps"
+            value={counts.evidenceGapPrs + counts.issueLinkPendingPrs}
+            detail={`${counts.issueLinkPendingPrs} issue links`}
+            tone={counts.evidenceGapPrs + counts.issueLinkPendingPrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "evidence_pending" || scopeFilter === "issue_link_pending"}
+            onClick={() => onScopeFilterChange(counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending")}
+          />
+        </div>
+      </div>
+      <div className="pr-ops-side">
+        <div className={`pr-ops-next pr-ops-next-${firstAction.scope === "all" ? "good" : "attention"}`}>
+          <span>First action</span>
+          <button type="button" onClick={() => onScopeFilterChange(firstAction.scope)}>
+            <strong>{firstAction.title}</strong>
+            <small>{firstAction.detail}</small>
+            <em>Open {prScopeLabel(firstAction.scope)}</em>
+          </button>
+        </div>
+        <div className="pr-ops-sort">
+          <PrSortControl sort={sort} onSortChange={onSortChange} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PrOpsTile({
+  label,
+  value,
+  detail,
+  tone,
+  active,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`pr-ops-tile pr-ops-tile-${tone} ${active ? "pr-ops-tile-active" : ""}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
@@ -16082,7 +16332,10 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <PrFilterBar
+                    <PrOperationsSummary
+                      prs={data.pendingPrs}
+                      filteredPrs={filteredPendingPrs}
+                      criticalIssuesByPr={criticalIssuesByPr}
                       scopeFilter={prScopeFilter}
                       sort={prSort}
                       onScopeFilterChange={(scope) => {
@@ -16093,18 +16346,40 @@ export default function App() {
                       }}
                       onSortChange={setPrSort}
                     />
-                    <PrBoardSummary
-                      prs={data.pendingPrs}
-                      filteredPrs={filteredPendingPrs}
-                      criticalIssuesByPr={criticalIssuesByPr}
-                      scopeFilter={prScopeFilter}
-                      onScopeFilterChange={(scope) => {
-                        setPrScopeFilter(scope);
-                        if (isTestingPrScope(scope)) {
-                          setPrBoardTab("testing");
-                        }
-                      }}
-                    />
+                    <details className="secondary-disclosure pr-filter-disclosure">
+                      <summary>
+                        <span>Filters and evidence counts</span>
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{prScopeLabel(prScopeFilter)}</Tag>
+                          <Tag>sort {prSortLabel(prSort)}</Tag>
+                        </Space>
+                      </summary>
+                      <div className="secondary-disclosure-body">
+                        <PrFilterBar
+                          scopeFilter={prScopeFilter}
+                          sort={prSort}
+                          onScopeFilterChange={(scope) => {
+                            setPrScopeFilter(scope);
+                            if (isTestingPrScope(scope)) {
+                              setPrBoardTab("testing");
+                            }
+                          }}
+                          onSortChange={setPrSort}
+                        />
+                        <PrBoardSummary
+                          prs={data.pendingPrs}
+                          filteredPrs={filteredPendingPrs}
+                          criticalIssuesByPr={criticalIssuesByPr}
+                          scopeFilter={prScopeFilter}
+                          onScopeFilterChange={(scope) => {
+                            setPrScopeFilter(scope);
+                            if (isTestingPrScope(scope)) {
+                              setPrBoardTab("testing");
+                            }
+                          }}
+                        />
+                      </div>
+                    </details>
                     <Table
                       rowKey="number"
                       size="middle"
