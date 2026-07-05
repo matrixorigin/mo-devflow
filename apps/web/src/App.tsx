@@ -304,6 +304,12 @@ type DashboardSourceTarget =
   { sourceType: "workflow_violation"; sourceId: number } | { sourceType: "ai_drift_signal"; sourceId: number };
 
 const signalTargetPageSize = 8;
+const prRotationTableDefaultPageSize = 10;
+const prTestingTableDefaultPageSize = 8;
+
+function maxTablePage(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
 
 function positiveHashNumberParam(params: URLSearchParams, key: string): number | null {
   const raw = params.get(key)?.trim();
@@ -3957,6 +3963,8 @@ function TeamCriticalIssueRow({
 }) {
   const riskTags = criticalIssueRiskTags(issue);
   const linkedPrs = issue.linkedPullRequests.slice(0, 4);
+  const visibleRiskTags = riskTags.slice(0, 4);
+  const hiddenRiskTagCount = Math.max(0, riskTags.length - visibleRiskTags.length);
   return (
     <article className="team-work-row">
       <div className="team-work-object">
@@ -3982,11 +3990,19 @@ function TeamCriticalIssueRow({
         <div className="team-work-tags">
           <Tag color={ownerScopeColor(issue.ownerScope)}>{issue.ownerLogin ?? "unowned"}</Tag>
           <Tag color="blue">{effectiveAiEffortLabel(issue.aiEffortLabel)}</Tag>
-          {riskTags.slice(0, 4).map((tag) => (
+          {visibleRiskTags.map((tag) => (
             <Tooltip title={tag.tooltip} key={tag.key}>
               <Tag color={tag.color}>{tag.label}</Tag>
             </Tooltip>
           ))}
+          {hiddenRiskTagCount > 0 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview issue ${issue.number} with ${hiddenRiskTagCount} more risk signals`}
+              count={hiddenRiskTagCount}
+              label="more risks"
+              onClick={() => onPreview({ objectType: "issue", issue })}
+            />
+          ) : null}
         </div>
         {linkedPrs.length > 0 ? (
           <div className="team-linked-row">
@@ -4031,6 +4047,7 @@ function TeamPrRiskRow({
 }) {
   const reasons = prAttentionReasons(pr);
   const visibleReasons = reasons.slice(0, 4);
+  const hiddenReasonCount = Math.max(0, reasons.length - visibleReasons.length);
   const activeIssueNumbers = new Set(activeIssues.map((issue) => issue.number));
   const activeIssueLazy = useLazyVisibleCount(activeIssues.length, 3, pr.number);
   const visibleActiveIssues = activeIssues.slice(0, activeIssueLazy.visibleCount);
@@ -4090,6 +4107,14 @@ function TeamPrRiskRow({
               {reason}
             </Tag>
           ))}
+          {hiddenReasonCount > 0 && onPreview ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview PR ${pr.number} with ${hiddenReasonCount} more attention signals`}
+              count={hiddenReasonCount}
+              label="more signals"
+              onClick={() => onPreview({ objectType: "pull_request", pr, activeIssues })}
+            />
+          ) : null}
         </div>
         {activeIssues.length > 0 ? (
           <div className="team-linked-row team-critical-context-row">
@@ -4160,6 +4185,9 @@ function LinkedOverflowButton({
   label?: string;
   onClick: () => void;
 }) {
+  if (count <= 0) {
+    return null;
+  }
   return (
     <button type="button" className="linked-overflow-button" aria-label={ariaLabel} onClick={onClick}>
       +{count} {label}
@@ -4284,15 +4312,16 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
                   </Space>
                 </a>
               ))}
-              {hiddenLinkedPrCount > 0 ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
-                  View all +{hiddenLinkedPrCount} more PRs
-                </button>
-              ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
-                  Show compact PR list
-                </button>
-              ) : null}
+              <LazyListToggle
+                hiddenCount={hiddenLinkedPrCount}
+                revealCount={hiddenLinkedPrCount}
+                canCollapse={issue.linkedPullRequests.length > 8 && linkedPrsExpanded}
+                itemLabel="PRs"
+                className="team-object-preview-more"
+                collapsedLabel="Show compact PR list"
+                onShowMore={() => setLinkedPrsExpanded(true)}
+                onCollapse={() => setLinkedPrsExpanded(false)}
+              />
             </div>
           ) : (
             <Text type="secondary">No linked PR is visible in cache.</Text>
@@ -4527,6 +4556,10 @@ function TeamTestingIssueRow({
 }) {
   const linkedPrs = issue.linkedPullRequests.slice(0, 4);
   const blockerCount = testingIssueLinkedBlockerCount(issue);
+  const visibleTesters = issue.testers.slice(0, 4);
+  const hiddenTesterCount = Math.max(0, issue.testers.length - visibleTesters.length);
+  const visibleTestingSignals = issue.testingSignals.slice(0, 3);
+  const hiddenTestingSignalCount = Math.max(0, issue.testingSignals.length - visibleTestingSignals.length);
 
   return (
     <article className="team-work-row">
@@ -4554,14 +4587,30 @@ function TeamTestingIssueRow({
           {issue.title}
         </a>
         <div className="team-work-tags">
-          {issue.testers.slice(0, 4).map((tester) => (
+          {visibleTesters.map((tester) => (
             <Tag key={tester}>{tester}</Tag>
           ))}
-          {issue.testingSignals.slice(0, 3).map((signal) => (
+          {hiddenTesterCount > 0 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview issue ${issue.number} with ${hiddenTesterCount} more testers`}
+              count={hiddenTesterCount}
+              label="more testers"
+              onClick={() => onPreview(issue)}
+            />
+          ) : null}
+          {visibleTestingSignals.map((signal) => (
             <Tooltip title={testingSignalBusinessLabel(signal)} key={signal}>
               <Tag color={testingSignalTagColor(signal)}>{testingSignalTagLabel(signal)}</Tag>
             </Tooltip>
           ))}
+          {hiddenTestingSignalCount > 0 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview issue ${issue.number} with ${hiddenTestingSignalCount} more handoff signals`}
+              count={hiddenTestingSignalCount}
+              label="more signals"
+              onClick={() => onPreview(issue)}
+            />
+          ) : null}
           {issue.testers.length === 0 && issue.testingSignals.length === 0 ? (
             <Tag color="gold">handoff evidence pending</Tag>
           ) : null}
@@ -6136,7 +6185,7 @@ function CacheEvidenceBanner({
                     ))}
                     {hiddenImpactItems > 0 ? (
                       <button type="button" className="evidence-impact-more" onClick={() => onExpandedChange(true)}>
-                        View all +{hiddenImpactItems} more
+                        +{hiddenImpactItems} more board impacts
                       </button>
                     ) : null}
                   </div>
@@ -7670,15 +7719,16 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
                   </Space>
                 </a>
               ))}
-              {hiddenLinkedPrCount > 0 ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(true)}>
-                  View all +{hiddenLinkedPrCount} more PRs
-                </button>
-              ) : issue.linkedPullRequests.length > 8 && linkedPrsExpanded ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setLinkedPrsExpanded(false)}>
-                  Show compact PR list
-                </button>
-              ) : null}
+              <LazyListToggle
+                hiddenCount={hiddenLinkedPrCount}
+                revealCount={hiddenLinkedPrCount}
+                canCollapse={issue.linkedPullRequests.length > 8 && linkedPrsExpanded}
+                itemLabel="PRs"
+                className="team-object-preview-more"
+                collapsedLabel="Show compact PR list"
+                onShowMore={() => setLinkedPrsExpanded(true)}
+                onCollapse={() => setLinkedPrsExpanded(false)}
+              />
             </div>
           ) : (
             <Text type="secondary">No linked PR is visible in cache.</Text>
@@ -9504,9 +9554,12 @@ function PersonalActionQueueItem({
               </Tag>
             ))}
             {hiddenReasonCount > 0 ? (
-              <button type="button" className="linked-overflow-button" onClick={() => onPreview(item)}>
-                View all +{hiddenReasonCount} more signals
-              </button>
+              <LinkedOverflowButton
+                ariaLabel={`Preview ${objectLabel} with ${hiddenReasonCount} more signals`}
+                count={hiddenReasonCount}
+                label="more signals"
+                onClick={() => onPreview(item)}
+              />
             ) : null}
             {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
             {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
@@ -10072,11 +10125,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                   #{link.number}
                 </a>
               ))}
-              {linkedIssueUrls.length > 3 ? (
-                <button type="button" onClick={() => onPreview(row)} aria-label="Preview all linked issues">
-                  View all +{linkedIssueUrls.length - 3}
-                </button>
-              ) : null}
+              <LinkedOverflowButton
+                ariaLabel={`Preview ${row.title} with ${linkedIssueUrls.length - 3} more linked issues`}
+                count={Math.max(0, linkedIssueUrls.length - 3)}
+                label="more issues"
+                onClick={() => onPreview(row)}
+              />
             </span>
           ) : null}
           {visibleTopologyPrs.length > 0 ? (
@@ -10140,9 +10194,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
             </Tag>
           ))}
           {hiddenSignalCount > 0 ? (
-            <button type="button" className="linked-overflow-button" onClick={() => onPreview(row)}>
-              View all +{hiddenSignalCount} more signals
-            </button>
+            <LinkedOverflowButton
+              ariaLabel={`Preview ${row.title} with ${hiddenSignalCount} more signals`}
+              count={hiddenSignalCount}
+              label="more signals"
+              onClick={() => onPreview(row)}
+            />
           ) : null}
         </div>
         {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
@@ -10336,15 +10393,16 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                   </Space>
                 </a>
               ))}
-              {hiddenPreviewPrCount > 0 ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(true)}>
-                  View all +{hiddenPreviewPrCount} more PRs
-                </button>
-              ) : row.prs.length > 10 && previewPrsExpanded ? (
-                <button type="button" className="team-object-preview-more" onClick={() => setPreviewPrsExpanded(false)}>
-                  Show compact PR list
-                </button>
-              ) : null}
+              <LazyListToggle
+                hiddenCount={hiddenPreviewPrCount}
+                revealCount={hiddenPreviewPrCount}
+                canCollapse={row.prs.length > 10 && previewPrsExpanded}
+                itemLabel="PRs"
+                className="team-object-preview-more"
+                collapsedLabel="Show compact PR list"
+                onShowMore={() => setPreviewPrsExpanded(true)}
+                onCollapse={() => setPreviewPrsExpanded(false)}
+              />
             </div>
           )}
         </section>
@@ -11093,6 +11151,8 @@ function PersonalRotationThreadRow({
   const nextAction = flowThreadNextAction(row);
   const warnings = flowThreadDurationWarnings(row);
   const reasons = flowThreadReasons(row);
+  const visibleReasons = reasons.slice(0, 4);
+  const hiddenReasonCount = Math.max(0, reasons.length - visibleReasons.length);
 
   return (
     <article className={`personal-thread-row personal-thread-${row.tone}`}>
@@ -11124,11 +11184,19 @@ function PersonalRotationThreadRow({
               {warning}
             </Tag>
           ))}
-          {reasons.slice(0, 4).map((reason) => (
+          {visibleReasons.map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
               {reason}
             </Tag>
           ))}
+          {hiddenReasonCount > 0 ? (
+            <LinkedOverflowButton
+              ariaLabel={`Preview ${row.title} with ${hiddenReasonCount} more signals`}
+              count={hiddenReasonCount}
+              label="more signals"
+              onClick={() => onPreview(row)}
+            />
+          ) : null}
           {row.prs.length > 0 ? <Tag>{row.prs.length} PR</Tag> : null}
           {row.prs.some((pr) => pr.isShared) ? <Tag color="purple">shared PR</Tag> : null}
         </div>
@@ -12276,6 +12344,10 @@ export default function App() {
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
   const [prSort, setPrSort] = useState<PrSort>("risk");
   const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
+  const [prRotationTablePage, setPrRotationTablePage] = useState(1);
+  const [prRotationTablePageSize, setPrRotationTablePageSize] = useState(prRotationTableDefaultPageSize);
+  const [prTestingTablePage, setPrTestingTablePage] = useState(1);
+  const [prTestingTablePageSize, setPrTestingTablePageSize] = useState(prTestingTableDefaultPageSize);
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>("workload");
@@ -13769,7 +13841,7 @@ export default function App() {
                     className="linked-overflow-button"
                     aria-label={`View ${hiddenOperations.length} more operations`}
                   >
-                    View all +{hiddenOperations.length} more
+                    +{hiddenOperations.length} more operations
                   </button>
                 </Popover>
               ) : null}
@@ -13904,7 +13976,7 @@ export default function App() {
                       className="linked-overflow-button"
                       aria-label={`View ${hiddenSignals.length} more handoff signals`}
                     >
-                      View all +{hiddenSignals.length} more
+                      +{hiddenSignals.length} more handoff signals
                     </button>
                   </Popover>
                 ) : null}
@@ -13968,6 +14040,25 @@ export default function App() {
         criticalIssuesByPr
       )
     : [];
+
+  useEffect(() => {
+    setPrRotationTablePage(1);
+  }, [prScopeFilter, prSort]);
+
+  useEffect(() => {
+    setPrTestingTablePage(1);
+  }, [testingPrTableScope, prSort]);
+
+  useEffect(() => {
+    setPrRotationTablePage((page) => Math.min(page, maxTablePage(filteredPendingPrs.length, prRotationTablePageSize)));
+  }, [filteredPendingPrs.length, prRotationTablePageSize]);
+
+  useEffect(() => {
+    setPrTestingTablePage((page) =>
+      Math.min(page, maxTablePage(testingPendingPrsForTable.length, prTestingTablePageSize))
+    );
+  }, [testingPendingPrsForTable.length, prTestingTablePageSize]);
+
   const prEvidenceRepairSummary = data ? prEvidenceGapSummary(data.pendingPrs, criticalIssuesByPr) : null;
   const filteredCriticalIssuesForTable = data
     ? sortCriticalIssuesForDisplay(
@@ -14756,7 +14847,13 @@ export default function App() {
                         columns={prColumns}
                         dataSource={testingPendingPrsForTable}
                         scroll={{ x: 1832 }}
-                        pagination={tablePagination(testingPendingPrsForTable.length, 8)}
+                        pagination={tablePagination(testingPendingPrsForTable.length, prTestingTablePageSize, {
+                          current: prTestingTablePage,
+                          onChange: (page, pageSize) => {
+                            setPrTestingTablePage(page);
+                            setPrTestingTablePageSize(pageSize);
+                          }
+                        })}
                         locale={{ emptyText: <Empty description="No issue testing PRs in cache" /> }}
                       />
                     </div>
@@ -14824,7 +14921,13 @@ export default function App() {
                       columns={prColumns}
                       dataSource={filteredPendingPrs}
                       scroll={{ x: 1832 }}
-                      pagination={tablePagination(filteredPendingPrs.length, 10)}
+                      pagination={tablePagination(filteredPendingPrs.length, prRotationTablePageSize, {
+                        current: prRotationTablePage,
+                        onChange: (page, pageSize) => {
+                          setPrRotationTablePage(page);
+                          setPrRotationTablePageSize(pageSize);
+                        }
+                      })}
                       locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
                     />
                   </>

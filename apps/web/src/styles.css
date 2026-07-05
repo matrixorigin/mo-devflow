@@ -2143,19 +2143,27 @@ button.team-monitor-tile:hover,
 }
 
 .team-object-preview-more {
+  align-items: center;
   appearance: none;
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
   color: #1d4ed8;
   cursor: pointer;
+  display: flex;
   font: inherit;
   font-size: 12px;
   font-weight: 650;
+  gap: 6px;
+  justify-content: center;
   line-height: 1.2;
   padding: 9px 10px;
   text-align: center;
   width: 100%;
+}
+
+.team-object-preview-more .list-toggle-action {
+  margin-left: 0;
 }
 
 .team-object-preview-more:hover,
