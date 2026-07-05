@@ -20694,7 +20694,7 @@ function WebhookReadinessPanel({ readiness }: { readiness: WebhookReadinessSumma
   );
 }
 
-function webhookReadinessModeLabel(mode: WebhookReadinessSummary["mode"]): string {
+export function webhookReadinessModeLabel(mode: WebhookReadinessSummary["mode"]): string {
   if (mode === "polling_only") {
     return "polling only";
   }
@@ -20706,6 +20706,9 @@ function webhookReadinessModeLabel(mode: WebhookReadinessSummary["mode"]): strin
   }
   if (mode === "queued") {
     return "queued";
+  }
+  if (mode === "stale_processing") {
+    return "stale processing";
   }
   if (mode === "failed") {
     return "failed";

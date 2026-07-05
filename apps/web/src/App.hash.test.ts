@@ -83,6 +83,7 @@ import {
   testingIssueTesterFilterFromHash,
   violationSignalFilterFromHash,
   webhookScopeFilterFromHash,
+  webhookReadinessModeLabel,
   writeAuditScopeFilterFromHash,
   writeAuditHealthSummary,
   writeAuditOperationSummary,
@@ -634,6 +635,12 @@ describe("dashboard hash filters", () => {
   it("labels lazy list expansion as an explicit clickable reveal action", () => {
     expect(lazyListToggleShowAllText(32, "s0 issues")).toBe("Show all 32 hidden s0 issues");
     expect(lazyListToggleShowAllText(4, "PRs")).toBe("Show all 4 hidden PRs");
+  });
+
+  it("labels webhook readiness states without hiding stale processing as receiving", () => {
+    expect(webhookReadinessModeLabel("stale_processing")).toBe("stale processing");
+    expect(webhookReadinessModeLabel("receiving")).toBe("receiving");
+    expect(webhookReadinessModeLabel("connected_waiting_for_activity")).toBe("connected");
   });
 
   it("labels the deployment service read token separately from personal sign-in", () => {
