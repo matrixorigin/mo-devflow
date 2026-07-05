@@ -7222,6 +7222,28 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.personal-throughput-card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.personal-pr-sort-control {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.personal-pr-sort-control .ant-typography {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .personal-throughput-note {
   font-size: 12px;
   line-height: 1.35;

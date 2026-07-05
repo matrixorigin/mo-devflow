@@ -23,6 +23,7 @@ import {
   personalFlowThreadsSummary,
   personalPrListForScope,
   personalPrListTotalForScope,
+  personalPrSortLabel,
   personalPrThroughputSummary,
   personalPrThroughputSelectionForPeriod,
   personalPrThroughputRows,
@@ -34,6 +35,7 @@ import {
   prScopeLabel,
   prSortFromHash,
   serviceReadTokenStatusText,
+  sortPersonalPrList,
   syncHealthCursorText,
   testingIssueQueueFilterFromHash,
   testingIssueTesterFilterFromHash,
@@ -561,6 +563,47 @@ describe("dashboard hash filters", () => {
     });
   });
 
+  it("sorts personal PR lists by activity, age, and risk", () => {
+    const periodList = {
+      period: "week",
+      label: "06-29-07-05",
+      periodStart: "2026-06-29",
+      periodEnd: "2026-07-06",
+      totalCreatedPrs: 3,
+      totalMergedPrs: 1,
+      createdPrs: [],
+      mergedPrs: [],
+      truncated: false
+    } as any;
+    const prs = [
+      personalPr({
+        number: 10,
+        ageHours: 8,
+        createdAt: "2026-07-01T09:00:00.000Z",
+        mergedAt: null
+      }),
+      personalPr({
+        number: 11,
+        ageHours: 72,
+        createdAt: "2026-06-20T09:00:00.000Z",
+        mergedAt: "2026-07-05T09:00:00.000Z"
+      }),
+      personalPr({
+        number: 12,
+        ageHours: 24,
+        createdAt: "2026-07-04T09:00:00.000Z",
+        mergedAt: null,
+        ciState: "failure"
+      })
+    ];
+
+    expect(sortPersonalPrList(prs, "activity", periodList).map((pr) => pr.number)).toEqual([11, 12, 10]);
+    expect(sortPersonalPrList(prs, "age", periodList).map((pr) => pr.number)).toEqual([11, 12, 10]);
+    expect(sortPersonalPrList(prs, "risk", periodList).map((pr) => pr.number)).toEqual([12, 11, 10]);
+    expect(personalPrSortLabel("activity")).toBe("recent activity");
+    expect(personalPrSortLabel("last_action")).toBe("last action");
+  });
+
   it("derives active severity to PR and issue testing efficiency from cache timestamps", () => {
     const flow = personalCriticalFlowEfficiency({
       activeCriticalIssues: [
@@ -598,6 +641,43 @@ describe("dashboard hash filters", () => {
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
   });
 });
+
+function personalPr(input: {
+  number: number;
+  ageHours: number;
+  createdAt: string;
+  mergedAt: string | null;
+  ciState?: string | null;
+}) {
+  return {
+    number: input.number,
+    title: `PR ${input.number}`,
+    htmlUrl: `https://github.com/matrixorigin/matrixone/pull/${input.number}`,
+    ownerLogin: "alice",
+    draft: false,
+    ageHours: input.ageHours,
+    lastHumanActionAt: "2026-06-01T00:00:00.000Z",
+    reviewDecision: null,
+    mergeStateStatus: null,
+    ciState: input.ciState ?? null,
+    latestReviewState: null,
+    latestReviewSubmittedAt: null,
+    latestCommitAt: null,
+    detailSyncedAt: "2026-07-05T00:00:00.000Z",
+    detailError: null,
+    testingState: "not_ready",
+    testingTesters: [],
+    testingSignals: [],
+    testingQueueAgeHours: null,
+    workflowSkipped: false,
+    attentionFlags: [],
+    linkedIssueNumbers: [],
+    isComplete: true,
+    state: input.mergedAt ? "closed" : "open",
+    createdAt: input.createdAt,
+    mergedAt: input.mergedAt
+  } as any;
+}
 
 function metricPoint(input: {
   date?: string;

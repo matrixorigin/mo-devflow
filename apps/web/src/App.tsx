@@ -17086,6 +17086,7 @@ function PersonalOperatingSignalStrip({
 }
 
 export type PersonalPrListScope = "attention" | "pending" | "period_all" | "created_period" | "merged_period";
+export type PersonalPrSort = "activity" | PrSort;
 
 export interface PersonalPrThroughputSelection {
   scope: PersonalPrListScope;
@@ -17265,14 +17266,18 @@ function initialPersonalPrThroughputSelection(person: PersonalActionView): Perso
 function PersonalPrThroughputPanel({
   person,
   selection,
+  sort,
   onSelectionChange,
+  onSortChange,
   onDrilldownChange,
   onIssuePreview,
   onPullRequestPreview
 }: {
   person: PersonalActionView;
   selection: PersonalPrThroughputSelection;
+  sort: PersonalPrSort;
   onSelectionChange: (selection: PersonalPrThroughputSelection) => void;
+  onSortChange: (sort: PersonalPrSort) => void;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
   onIssuePreview: (issue: CriticalIssueView) => void;
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
@@ -17286,6 +17291,7 @@ function PersonalPrThroughputPanel({
   const listPeriod = selection.period;
   const selectedPeriodList = personalPrPeriodListForPeriod(person, listPeriod);
   const visiblePrs = personalPrListForScope(person, listScope, listPeriod);
+  const sortedVisiblePrs = sortPersonalPrList(visiblePrs, sort, selectedPeriodList);
   const visibleTotal = personalPrListTotalForScope(person, listScope, listPeriod);
   const periodListActive =
     listScope === "period_all" || listScope === "created_period" || listScope === "merged_period";
@@ -17344,21 +17350,24 @@ function PersonalPrThroughputPanel({
         <div className="personal-pr-list-card">
           <div className="personal-throughput-card-heading">
             <Text strong>PR List And Duration</Text>
-            <Segmented
-              size="small"
-              value={listScope}
-              onChange={(value) => onSelectionChange({ period: listPeriod, scope: value as PersonalPrListScope })}
-              options={[
-                { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
-                { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
-                {
-                  label: `Activity ${periodPrActivityTotal(selectedPeriodList)}`,
-                  value: "period_all"
-                },
-                { label: `Created ${selectedPeriodList?.totalCreatedPrs ?? 0}`, value: "created_period" },
-                { label: `Merged ${selectedPeriodList?.totalMergedPrs ?? 0}`, value: "merged_period" }
-              ]}
-            />
+            <div className="personal-throughput-card-actions">
+              <Segmented
+                size="small"
+                value={listScope}
+                onChange={(value) => onSelectionChange({ period: listPeriod, scope: value as PersonalPrListScope })}
+                options={[
+                  { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
+                  { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
+                  {
+                    label: `Activity ${periodPrActivityTotal(selectedPeriodList)}`,
+                    value: "period_all"
+                  },
+                  { label: `Created ${selectedPeriodList?.totalCreatedPrs ?? 0}`, value: "created_period" },
+                  { label: `Merged ${selectedPeriodList?.totalMergedPrs ?? 0}`, value: "merged_period" }
+                ]}
+              />
+              <PersonalPrSortControl sort={sort} onSortChange={onSortChange} />
+            </div>
           </div>
           {periodListActive ? (
             <div className="personal-throughput-period-controls">
@@ -17378,18 +17387,20 @@ function PersonalPrThroughputPanel({
               <span className="personal-throughput-list-meta">
                 <Tag>{selectedPeriodList?.label ?? metricPeriodText(listPeriod)}</Tag>
                 <Text type="secondary">
-                  showing {visiblePrs.length}/{visibleTotal} {visibleTotalLabel}
+                  showing {sortedVisiblePrs.length}/{visibleTotal} {visibleTotalLabel} | sorted by{" "}
+                  {personalPrSortLabel(sort)}
                 </Text>
                 {selectedPeriodList?.truncated ? <Tag color="gold">capped</Tag> : null}
               </span>
             </div>
           ) : (
             <Text type="secondary" className="personal-throughput-note">
-              showing {visiblePrs.length}/{visibleTotal} {visibleTotalLabel} by current cache state
+              showing {sortedVisiblePrs.length}/{visibleTotal} {visibleTotalLabel} by current cache state | sorted by{" "}
+              {personalPrSortLabel(sort)}
             </Text>
           )}
           <PullRequestCardList
-            prs={visiblePrs}
+            prs={sortedVisiblePrs}
             emptyText="No PRs in this visible list"
             emphasized={listScope === "attention"}
             initialLimit={5}
@@ -17478,6 +17489,33 @@ function PersonalPrThroughputPanel({
   );
 }
 
+function PersonalPrSortControl({
+  sort,
+  onSortChange
+}: {
+  sort: PersonalPrSort;
+  onSortChange: (sort: PersonalPrSort) => void;
+}) {
+  return (
+    <div className="personal-pr-sort-control">
+      <Text type="secondary">Sort</Text>
+      <Segmented
+        size="small"
+        value={sort}
+        onChange={(value) => onSortChange(value as PersonalPrSort)}
+        options={[
+          { label: "Activity", value: "activity" },
+          { label: "Risk", value: "risk" },
+          { label: "PR age", value: "age" },
+          { label: "Last action", value: "last_action" },
+          { label: "Test wait", value: "testing_wait" },
+          { label: "PR #", value: "number" }
+        ]}
+      />
+    </div>
+  );
+}
+
 export function personalPrPeriodListForPeriod(
   person: PersonalActionView,
   period: MetricPeriod
@@ -17524,6 +17562,54 @@ export function personalPrListTotalForScope(
   return scope === "created_period" ? (periodList?.totalCreatedPrs ?? 0) : (periodList?.totalMergedPrs ?? 0);
 }
 
+export function personalPrSortLabel(sort: PersonalPrSort): string {
+  if (sort === "activity") {
+    return "recent activity";
+  }
+  return prSortLabel(sort);
+}
+
+export function sortPersonalPrList(
+  prs: PersonalPullRequestView[],
+  sort: PersonalPrSort,
+  periodList: PersonalPrPeriodListView | null
+): PersonalPullRequestView[] {
+  if (sort === "activity") {
+    return [...prs].sort(
+      (left, right) =>
+        personalPrSortActivityTime(right, periodList) - personalPrSortActivityTime(left, periodList) ||
+        right.number - left.number
+    );
+  }
+  if (sort === "risk") {
+    return [...prs].sort((left, right) => {
+      const riskDelta = pendingPrRiskScore(right) - pendingPrRiskScore(left);
+      if (riskDelta !== 0) {
+        return riskDelta;
+      }
+      return right.ageHours - left.ageHours || right.number - left.number;
+    });
+  }
+  if (sort === "last_action") {
+    return [...prs].sort(
+      (left, right) =>
+        sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt) || right.number - left.number
+    );
+  }
+  if (sort === "testing_wait") {
+    return [...prs].sort(
+      (left, right) =>
+        (right.testingQueueAgeHours ?? -1) - (left.testingQueueAgeHours ?? -1) ||
+        right.ageHours - left.ageHours ||
+        right.number - left.number
+    );
+  }
+  if (sort === "number") {
+    return [...prs].sort((left, right) => right.number - left.number);
+  }
+  return [...prs].sort((left, right) => right.ageHours - left.ageHours || right.number - left.number);
+}
+
 function periodPrActivityTotal(periodList: PersonalPrPeriodListView | null): number {
   return (periodList?.totalCreatedPrs ?? 0) + (periodList?.totalMergedPrs ?? 0);
 }
@@ -17538,6 +17624,18 @@ function personalPrPeriodActivityPrs(periodList: PersonalPrPeriodListView | null
   }
   return [...byNumber.values()].sort(
     (left, right) => personalPrPeriodActivityTime(right, periodList) - personalPrPeriodActivityTime(left, periodList)
+  );
+}
+
+function personalPrSortActivityTime(pr: PersonalPullRequestView, periodList: PersonalPrPeriodListView | null): number {
+  const periodActivityTime = periodList ? personalPrPeriodActivityTime(pr, periodList) : 0;
+  return Math.max(
+    periodActivityTime,
+    sortableTime(pr.lastHumanActionAt),
+    sortableTime(pr.latestCommitAt),
+    sortableTime(pr.latestReviewSubmittedAt),
+    sortableTime(pr.mergedAt),
+    sortableTime(pr.createdAt)
   );
 }
 
@@ -17601,6 +17699,7 @@ function SelectedPersonWorkbench({
   const [throughputSelection, setThroughputSelection] = useState<PersonalPrThroughputSelection>(() =>
     initialPersonalPrThroughputSelection(person)
   );
+  const [personalPrSort, setPersonalPrSort] = useState<PersonalPrSort>("activity");
   const gantt = personalGanttChart(person);
   const flowSummary = flowEfficiencySummary({
     points: trendPoints,
@@ -17631,6 +17730,7 @@ function SelectedPersonWorkbench({
   };
   const selectThroughput = (selection: PersonalPrThroughputSelection): void => {
     setThroughputSelection(selection);
+    setPersonalPrSort("activity");
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
         document.getElementById("personal-pr-throughput-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -17661,7 +17761,9 @@ function SelectedPersonWorkbench({
       <PersonalPrThroughputPanel
         person={person}
         selection={throughputSelection}
+        sort={personalPrSort}
         onSelectionChange={setThroughputSelection}
+        onSortChange={setPersonalPrSort}
         onDrilldownChange={onDrilldownChange}
         onIssuePreview={previewIssue}
         onPullRequestPreview={previewPullRequest}
