@@ -27,7 +27,8 @@ import {
   prSortFromHash,
   serviceReadTokenStatusText,
   syncHealthCursorText,
-  testingIssueQueueFilterFromHash
+  testingIssueQueueFilterFromHash,
+  testingIssueTesterFilterFromHash
 } from "./App";
 
 describe("dashboard hash filters", () => {
@@ -75,17 +76,26 @@ describe("dashboard hash filters", () => {
     const hash = dashboardHashForView("PRs", {
       prScopeFilter: "testing",
       prBoardTab: "testing",
-      testingIssueQueueFilter: "stale"
+      testingIssueQueueFilter: "stale",
+      testingIssueTesterFilter: "qa user"
     });
 
-    expect(hash).toBe("prs?scope=testing&tab=testing&test=stale");
+    expect(hash).toBe("prs?scope=testing&tab=testing&test=stale&tester=qa+user");
     expect(prScopeFilterFromHash(`#${hash}`)).toBe("testing");
     expect(prBoardTabFromHash(`#${hash}`)).toBe("testing");
     expect(testingIssueQueueFilterFromHash(`#${hash}`)).toBe("stale");
+    expect(testingIssueTesterFilterFromHash(`#${hash}`)).toBe("qa user");
     expect(prBoardTabFromHash("#prs?test=data_gap")).toBe("testing");
+    expect(prBoardTabFromHash("#prs?tester=qa-user")).toBe("testing");
     expect(testingIssueQueueFilterFromHash("#prs?scope=stale_testing")).toBe("stale");
     expect(testingIssueQueueFilterFromHash("#prs?scope=testing_evidence_gap")).toBe("data_gap");
-    expect(dashboardHashForView("PRs", { prBoardTab: "rotation", testingIssueQueueFilter: "stale" })).toBe("prs");
+    expect(
+      dashboardHashForView("PRs", {
+        prBoardTab: "rotation",
+        testingIssueQueueFilter: "stale",
+        testingIssueTesterFilter: "qa user"
+      })
+    ).toBe("prs");
   });
 
   it("falls back from invalid filter params instead of preserving broken links", () => {
