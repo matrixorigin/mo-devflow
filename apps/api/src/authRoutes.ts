@@ -4,6 +4,7 @@ import { loadRepoProfile } from "@mo-devflow/config";
 import {
   createUserSession,
   getActiveSession,
+  revokeGitHubTokenForUser,
   revokeSession,
   toAuthenticatedUserView,
   upsertGitHubTokenBinding,
@@ -242,6 +243,35 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         { writeBackEnabled: profile.access.writeBackEnabled }
       ),
       tokenEncryptionConfigured: true
+    } satisfies SessionView;
+  });
+
+  app.delete("/api/session/github-token", async (request, reply) => {
+    const session = await getSessionRecordFromRequest(request, reply);
+    if (!session) {
+      return reply.status(401).send({
+        error: "login_required",
+        message: "Sign in before removing a saved GitHub token."
+      });
+    }
+    if (!hasValidCsrfToken(request)) {
+      return sendCsrfRequired(reply);
+    }
+
+    await revokeGitHubTokenForUser(session.userId);
+    const profile = loadRepoProfile();
+    return {
+      authenticated: true,
+      user: toAuthenticatedUserView(
+        {
+          ...session,
+          tokenScopes: [],
+          tokenRepoPermission: "none",
+          tokenLastValidatedAt: null
+        },
+        { writeBackEnabled: profile.access.writeBackEnabled }
+      ),
+      tokenEncryptionConfigured: isTokenEncryptionConfigured()
     } satisfies SessionView;
   });
 

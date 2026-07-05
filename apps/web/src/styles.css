@@ -5582,6 +5582,60 @@ button.flow-diagnostic-card:focus-visible {
   width: 100%;
 }
 
+.token-session-panel {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.token-session-heading {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.token-session-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.token-session-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.token-session-facts > div {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.token-session-facts span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.token-session-facts strong {
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .token-capability-panel {
   max-width: min(460px, calc(100vw - 64px));
   width: 100%;
@@ -5897,6 +5951,7 @@ button.flow-diagnostic-card:focus-visible {
   .work-lane-grid-priority,
   .work-lane-grid-secondary,
   .flow-efficiency-strip,
+  .token-session-facts,
   .flow-chart-grid {
     grid-template-columns: 1fr;
   }

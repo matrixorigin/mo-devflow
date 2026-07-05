@@ -84,6 +84,7 @@ import {
   RefreshCw,
   ShieldAlert,
   TimerReset,
+  Trash2,
   UserRound
 } from "lucide-react";
 import {
@@ -10946,6 +10947,7 @@ export default function App() {
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenRevoking, setTokenRevoking] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [tokenRetryUntil, setTokenRetryUntil] = useState<number | null>(null);
   const [tokenRetryRemainingSeconds, setTokenRetryRemainingSeconds] = useState<number | null>(null);
@@ -11119,6 +11121,40 @@ export default function App() {
     setTokenError(null);
     setTokenInput("");
     setTokenModalOpen(true);
+  }
+
+  async function removeConnectedGitHubToken() {
+    setTokenRevoking(true);
+    setTokenError(null);
+    try {
+      const response = await fetch("/api/session/github-token", {
+        method: "DELETE",
+        headers: csrfHeaders(),
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        throw new Error(await responseError(response));
+      }
+      setSession((await response.json()) as SessionView);
+      setTokenInput("");
+      setTokenModalOpen(false);
+    } catch (err) {
+      setTokenError(displayError(err));
+    } finally {
+      setTokenRevoking(false);
+    }
+  }
+
+  function confirmRemoveConnectedToken(githubLogin: string) {
+    Modal.confirm({
+      title: `Remove saved GitHub token for ${githubLogin}?`,
+      content:
+        "This keeps the current browser signed in, but disables GitHub writes until this user connects a token again.",
+      okText: "Remove token",
+      okButtonProps: { danger: true },
+      cancelText: "Keep token",
+      onOk: () => removeConnectedGitHubToken()
+    });
   }
 
   async function disconnectSession() {
@@ -12514,7 +12550,12 @@ export default function App() {
               <Avatar size={28} src={authenticatedUser.avatarUrl}>
                 {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
               </Avatar>
-              <Tag>{authenticatedUser.githubLogin}</Tag>
+              <Tooltip
+                title={`This browser session is connected as ${authenticatedUser.githubLogin}. GitHub writes use this identity.`}
+              >
+                <Tag>{authenticatedUser.githubLogin}</Tag>
+              </Tooltip>
+              <Tag color="blue">this browser</Tag>
               <Tooltip title={<TokenCapabilityPanel capability={headerIssueLabelCapability} />}>
                 <Tag color={capabilityStatusColor(headerIssueLabelCapability.status)}>
                   {headerIssueLabelCapability.enabled ? "write ready" : labelText(headerIssueLabelCapability.status)}
@@ -13629,6 +13670,42 @@ export default function App() {
             description="Write actions run as the currently connected GitHub user; anonymous viewers stay read-only."
             showIcon
           />
+          {authenticatedUser ? (
+            <div className="token-session-panel">
+              <div className="token-session-heading">
+                <Avatar size={32} src={authenticatedUser.avatarUrl}>
+                  {authenticatedUser.githubLogin.slice(0, 1).toUpperCase()}
+                </Avatar>
+                <div>
+                  <Text strong>{authenticatedUser.githubLogin}</Text>
+                  <Text type="secondary">Current browser session</Text>
+                </div>
+              </div>
+              <div className="token-session-facts">
+                <div>
+                  <span>Repo permission</span>
+                  <strong>{labelText(authenticatedUser.tokenRepoPermission)}</strong>
+                </div>
+                <div>
+                  <span>Token checked</span>
+                  <strong>{formatDate(authenticatedUser.tokenLastValidatedAt)}</strong>
+                </div>
+                <div>
+                  <span>Session expires</span>
+                  <strong>{formatDate(authenticatedUser.sessionExpiresAt)}</strong>
+                </div>
+              </div>
+              <Button
+                danger
+                icon={<Trash2 size={14} />}
+                disabled={!authenticatedUser.tokenLastValidatedAt || tokenRevoking}
+                loading={tokenRevoking}
+                onClick={() => confirmRemoveConnectedToken(authenticatedUser.githubLogin)}
+              >
+                Remove saved token
+              </Button>
+            </div>
+          ) : null}
           {authenticatedUser && headerIssueLabelCapability ? (
             <TokenCapabilityPanel capability={headerIssueLabelCapability} />
           ) : (

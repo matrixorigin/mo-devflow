@@ -49,6 +49,8 @@ They can:
 
 Key rule: all writes must use the user's own GitHub token. The platform should not perform write operations through a shared service account unless explicitly introduced later.
 
+A single deployment should support many team members connecting independently. Token binding is determined by the validated GitHub identity, not by a manually selected person. The current browser session decides which GitHub user is acting. Signing out clears only that browser session; removing a saved token revokes the stored token for that GitHub user and disables writes until they reconnect.
+
 ### 2.3 Maintainer / Team Lead
 
 Maintainers need an overall view of workflow health:
@@ -599,6 +601,12 @@ The product should validate token capability before offering a write action. If 
 Logged-in browser write operations must also prove that the request originated from the active product session, not only from a browser that happens to carry the session cookie.
 
 Token connection should resist repeated invalid submissions. When a user or script exceeds the configured token-binding attempt window, the UI should receive a clear retry-later response instead of repeatedly calling GitHub.
+
+Users should be able to distinguish three account actions:
+
+- Connect or reconnect the current GitHub user's token.
+- Remove the current GitHub user's saved token while keeping the browser session signed in.
+- Sign out of the current browser session without deleting the saved token.
 
 Before a write, the product must show:
 

@@ -7,6 +7,7 @@ import { sessionCookieName } from "./sessionCookie";
 
 const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
+  revokeGitHubTokenForUser: vi.fn(),
   revokeSession: vi.fn(),
   createUserSession: vi.fn(),
   toAuthenticatedUserView: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@mo-devflow/config", () => ({
 vi.mock("@mo-devflow/db", () => ({
   createUserSession: mocks.createUserSession,
   getActiveSession: mocks.getActiveSession,
+  revokeGitHubTokenForUser: mocks.revokeGitHubTokenForUser,
   revokeSession: mocks.revokeSession,
   toAuthenticatedUserView: mocks.toAuthenticatedUserView,
   upsertGitHubTokenBinding: mocks.upsertGitHubTokenBinding
@@ -238,6 +240,61 @@ describe("auth routes", () => {
       );
       expect(cookies.some((cookie) => cookie.startsWith(`${csrfCookieName}=`) && cookie.includes("Max-Age=0"))).toBe(
         true
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects saved token removal without a valid CSRF token", async () => {
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "DELETE",
+        url: "/api/session/github-token",
+        headers: { cookie: `${sessionCookieName}=session-value` }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({
+        error: "csrf_required",
+        message: "Refresh the session and retry the request."
+      });
+      expect(mocks.revokeGitHubTokenForUser).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("removes only the current user's saved GitHub token without signing out", async () => {
+    const token = "d".repeat(43);
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "DELETE",
+        url: "/api/session/github-token",
+        headers: {
+          cookie: `${sessionCookieName}=session-value; ${csrfCookieName}=${token}`,
+          [csrfHeaderName]: token
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ authenticated: true });
+      expect(mocks.revokeGitHubTokenForUser).toHaveBeenCalledWith(1);
+      expect(mocks.toAuthenticatedUserView).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 1,
+          githubLogin: "alice",
+          tokenScopes: [],
+          tokenRepoPermission: "none",
+          tokenLastValidatedAt: null
+        }),
+        { writeBackEnabled: true }
       );
     } finally {
       await app.close();

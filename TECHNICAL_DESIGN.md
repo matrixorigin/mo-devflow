@@ -298,6 +298,8 @@ Logged-in users bind their own GitHub token. The token is used for:
 - Private or higher-rate reads allowed by that token.
 - Confirmed writes to GitHub.
 
+Token binding is per GitHub user, not per deployment. The API validates the submitted token with GitHub, upserts `app_users` by GitHub ID, stores one active encrypted token row per user in `user_github_tokens`, and creates a browser session in `user_sessions`. Multiple team members can therefore use the same service concurrently from different browsers or browser profiles. The frontend must present the current browser session as the active actor for writes.
+
 Token requirements:
 
 - Store encrypted at rest.
@@ -313,6 +315,12 @@ Token requirements:
 - Store only the minimum metadata needed for UX: GitHub login, token last validated time, and visible scopes or capability checks.
 - Keep encryption keys in environment or secret management, not in the database.
 - Support encryption key rotation later by storing key version metadata with encrypted tokens.
+
+Session and token lifecycle:
+
+- `POST /api/session/github-token` validates and stores the current user's token, then creates a session cookie and CSRF cookie.
+- `DELETE /api/session/github-token` requires an authenticated session plus CSRF and revokes only the current user's saved token. The browser remains signed in, but write capabilities become unavailable until reconnect.
+- `DELETE /api/session` requires CSRF and revokes only the current browser session. It does not delete the user's saved GitHub token.
 
 ## 10. Write Operations
 
