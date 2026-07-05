@@ -26,7 +26,7 @@ import {
   notificationRecipient,
   notificationRecipientScope
 } from "./notifications";
-import type { DailyDigestPersonMetrics } from "./notifications";
+import type { DailyDigestPersonMetrics, DailyDigestTeamMetrics } from "./notifications";
 
 const profile: RepoProfile = {
   key: "matrixorigin/matrixone",
@@ -84,6 +84,29 @@ function personDigestMetrics(input: Partial<DailyDigestPersonMetrics> & { login:
     averageNeedsTriageIssueAgeHours: input.averageNeedsTriageIssueAgeHours ?? null,
     deferredIssues: input.deferredIssues ?? 0,
     averageDeferredIssueAgeHours: input.averageDeferredIssueAgeHours ?? null,
+    pendingPrs: input.pendingPrs ?? 0,
+    averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
+    attentionPrs: input.attentionPrs ?? 0,
+    ciFailedPrs: input.ciFailedPrs ?? 0,
+    requestedChangePrs: input.requestedChangePrs ?? 0,
+    reviewWaitingPrs: input.reviewWaitingPrs ?? 0,
+    mergeConflictPrs: input.mergeConflictPrs ?? 0,
+    testingQueueIssues: input.testingQueueIssues ?? 0,
+    averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
+    sourceCompleteness: input.sourceCompleteness ?? "complete_cache"
+  };
+}
+
+function teamDigestMetrics(input: Partial<DailyDigestTeamMetrics> = {}): DailyDigestTeamMetrics {
+  return {
+    prsCreated: input.prsCreated ?? 0,
+    prsMerged: input.prsMerged ?? 0,
+    issuesOpened: input.issuesOpened ?? 0,
+    issuesClosed: input.issuesClosed ?? 0,
+    issuesDeferred: input.issuesDeferred ?? 0,
+    workflowViolationsDetected: input.workflowViolationsDetected ?? 0,
+    activeCriticalIssues: input.activeCriticalIssues ?? 0,
+    averageActiveCriticalIssueAgeHours: input.averageActiveCriticalIssueAgeHours ?? null,
     pendingPrs: input.pendingPrs ?? 0,
     averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
     attentionPrs: input.attentionPrs ?? 0,
@@ -162,15 +185,24 @@ describe("daily digest notification candidates", () => {
     const candidate = buildDailyDigestNotificationCandidate({
       profile,
       metricDate: "2026-07-03",
-      team: {
+      team: teamDigestMetrics({
         prsCreated: 5,
         prsMerged: 3,
         issuesOpened: 2,
         issuesClosed: 1,
         issuesDeferred: 1,
         workflowViolationsDetected: 4,
+        activeCriticalIssues: 3,
+        averageActiveCriticalIssueAgeHours: 48,
+        pendingPrs: 6,
+        averagePendingPrAgeHours: 30,
+        attentionPrs: 2,
+        ciFailedPrs: 1,
+        requestedChangePrs: 1,
+        testingQueueIssues: 1,
+        averageTestingQueueAgeHours: 18,
         sourceCompleteness: "partial_cache"
-      },
+      }),
       people: [
         personDigestMetrics({
           login: "alice",
@@ -203,6 +235,9 @@ describe("daily digest notification candidates", () => {
     });
     expect(candidate.evidenceSummary).toContain(
       "Team: 5 PRs created, 3 merged, 2 issues opened, 1 closed, 1 deferred."
+    );
+    expect(candidate.evidenceSummary).toContain(
+      "Flow snapshot: 3 active s-1/s0 (avg 48h), 6 pending PRs (2 attention, avg 30h)"
     );
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 4.");
     expect(candidate.evidenceSummary).toContain("alice: 1 active s-1/s0 (avg 30h), 2 pending PRs");
@@ -269,15 +304,17 @@ describe("daily digest notification candidates", () => {
     const candidates = buildDailyDigestNotificationCandidates({
       profile,
       metricDate: "2026-07-03",
-      team: {
+      team: teamDigestMetrics({
         prsCreated: 5,
         prsMerged: 3,
         issuesOpened: 2,
         issuesClosed: 1,
         issuesDeferred: 1,
         workflowViolationsDetected: 4,
+        pendingPrs: 3,
+        averagePendingPrAgeHours: 16,
         sourceCompleteness: "partial_cache"
-      },
+      }),
       people: [
         personDigestMetrics({ login: "bob" }),
         personDigestMetrics({ login: "alice", pendingPrs: 2 }),
@@ -298,17 +335,36 @@ describe("daily digest notification candidates", () => {
     const candidate = buildWeeklyDigestNotificationCandidate({
       profile,
       period: { start: "2026-06-22", end: "2026-06-29", label: "2026-06-22 to 2026-06-28" },
-      team: {
+      team: teamDigestMetrics({
         prsCreated: 25,
         prsMerged: 18,
         issuesOpened: 12,
         issuesClosed: 8,
         issuesDeferred: 3,
         workflowViolationsDetected: 9,
+        activeCriticalIssues: 14,
+        averageActiveCriticalIssueAgeHours: 52,
+        pendingPrs: 30,
+        averagePendingPrAgeHours: 28,
+        attentionPrs: 6,
+        ciFailedPrs: 2,
+        requestedChangePrs: 3,
+        reviewWaitingPrs: 4,
+        mergeConflictPrs: 1,
+        testingQueueIssues: 5,
+        averageTestingQueueAgeHours: 20,
         sourceCompleteness: "partial_cache"
-      },
+      }),
       people: [
-        personDigestMetrics({ login: "alice", prsCreated: 8, prsMerged: 5, workflowViolationsDetected: 4 }),
+        personDigestMetrics({
+          login: "alice",
+          prsCreated: 8,
+          prsMerged: 5,
+          workflowViolationsDetected: 4,
+          pendingPrs: 10,
+          attentionPrs: 2,
+          averagePendingPrAgeHours: 30
+        }),
         personDigestMetrics({ login: "bob", prsCreated: 2, prsMerged: 7, workflowViolationsDetected: 1 })
       ],
       generatedAt: "2026-07-04T01:00:00.000Z"
@@ -329,8 +385,14 @@ describe("daily digest notification candidates", () => {
     expect(candidate.evidenceSummary).toContain(
       "Team: 25 PRs created, 18 merged, 12 issues opened, 8 closed, 3 deferred."
     );
+    expect(candidate.evidenceSummary).toContain(
+      "Flow period: 14 active s-1/s0 daily observations (avg 52h), 30 pending PR daily observations"
+    );
+    expect(candidate.evidenceSummary).toContain("blockers ci:2 changes:3 review:4 conflict:1.");
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 9.");
-    expect(candidate.evidenceSummary).toContain("alice: 8 created, 5 merged, 4 violations");
+    expect(candidate.evidenceSummary).toContain(
+      "alice: 8 created, 5 merged, 10 pending PR observations (2 attention, avg 30h), 4 violations"
+    );
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
   });
 
@@ -338,15 +400,26 @@ describe("daily digest notification candidates", () => {
     const candidate = buildMonthlyDigestNotificationCandidate({
       profile,
       period: { start: "2026-06-01", end: "2026-07-01", label: "2026-06" },
-      team: {
+      team: teamDigestMetrics({
         prsCreated: 100,
         prsMerged: 82,
         issuesOpened: 44,
         issuesClosed: 39,
         issuesDeferred: 12,
         workflowViolationsDetected: 21,
+        activeCriticalIssues: 60,
+        averageActiveCriticalIssueAgeHours: 74,
+        pendingPrs: 120,
+        averagePendingPrAgeHours: 36,
+        attentionPrs: 25,
+        ciFailedPrs: 8,
+        requestedChangePrs: 9,
+        reviewWaitingPrs: 12,
+        mergeConflictPrs: 4,
+        testingQueueIssues: 18,
+        averageTestingQueueAgeHours: 26,
         sourceCompleteness: "partial_cache"
-      },
+      }),
       people: [
         personDigestMetrics({ login: "alice", prsCreated: 22, prsMerged: 18, workflowViolationsDetected: 10 }),
         personDigestMetrics({ login: "bob", prsCreated: 17, prsMerged: 20, workflowViolationsDetected: 3 })
@@ -369,8 +442,14 @@ describe("daily digest notification candidates", () => {
     expect(candidate.evidenceSummary).toContain(
       "Team: 100 PRs created, 82 merged, 44 issues opened, 39 closed, 12 deferred."
     );
+    expect(candidate.evidenceSummary).toContain(
+      "Flow period: 60 active s-1/s0 daily observations (avg 74h), 120 pending PR daily observations"
+    );
+    expect(candidate.evidenceSummary).toContain("18 testing daily observations (avg 26h)");
     expect(candidate.evidenceSummary).toContain("Workflow violations detected: 21.");
-    expect(candidate.evidenceSummary).toContain("alice: 22 created, 18 merged, 10 violations");
+    expect(candidate.evidenceSummary).toContain(
+      "alice: 22 created, 18 merged, 0 pending PR observations (0 attention, avg n/a), 10 violations"
+    );
     expect(candidate.evidenceSummary).toContain("Cache completeness: partial_cache.");
   });
 });

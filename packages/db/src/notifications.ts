@@ -453,17 +453,72 @@ function emptyDigestTeamMetrics(): DailyDigestTeamMetrics {
     issuesClosed: 0,
     issuesDeferred: 0,
     workflowViolationsDetected: 0,
+    activeCriticalIssues: 0,
+    averageActiveCriticalIssueAgeHours: null,
+    pendingPrs: 0,
+    averagePendingPrAgeHours: null,
+    attentionPrs: 0,
+    ciFailedPrs: 0,
+    requestedChangePrs: 0,
+    reviewWaitingPrs: 0,
+    mergeConflictPrs: 0,
+    testingQueueIssues: 0,
+    averageTestingQueueAgeHours: null,
     sourceCompleteness: "complete_cache"
   };
 }
 
+function combinedWeightedAverage(
+  currentAverage: number | null,
+  currentWeight: number,
+  nextAverage: number | null,
+  nextWeight: number
+): number | null {
+  if (nextAverage === null || nextWeight <= 0) {
+    return currentAverage;
+  }
+  if (currentAverage === null || currentWeight <= 0) {
+    return nextAverage;
+  }
+  return (currentAverage * currentWeight + nextAverage * nextWeight) / (currentWeight + nextWeight);
+}
+
 function addDigestMetrics(target: DailyDigestTeamMetrics, row: RowData): void {
+  const activeCriticalIssues = asNumber(row.active_critical_issues);
+  const pendingPrs = asNumber(row.pending_prs);
+  const testingQueueIssues = asNumber(row.testing_queue_issues);
+  target.averageActiveCriticalIssueAgeHours = combinedWeightedAverage(
+    target.averageActiveCriticalIssueAgeHours,
+    target.activeCriticalIssues,
+    asNullableNumber(row.avg_active_critical_issue_age_hours),
+    activeCriticalIssues
+  );
+  target.averagePendingPrAgeHours = combinedWeightedAverage(
+    target.averagePendingPrAgeHours,
+    target.pendingPrs,
+    asNullableNumber(row.avg_pending_pr_age_hours),
+    pendingPrs
+  );
+  target.averageTestingQueueAgeHours = combinedWeightedAverage(
+    target.averageTestingQueueAgeHours,
+    target.testingQueueIssues,
+    asNullableNumber(row.avg_testing_queue_age_hours),
+    testingQueueIssues
+  );
   target.prsCreated += asNumber(row.prs_created);
   target.prsMerged += asNumber(row.prs_merged);
   target.issuesOpened += asNumber(row.issues_opened);
   target.issuesClosed += asNumber(row.issues_closed);
   target.issuesDeferred += asNumber(row.issues_deferred);
   target.workflowViolationsDetected += asNumber(row.workflow_violations_detected);
+  target.activeCriticalIssues += activeCriticalIssues;
+  target.pendingPrs += pendingPrs;
+  target.attentionPrs += asNumber(row.attention_prs);
+  target.ciFailedPrs += asNumber(row.ci_failed_prs);
+  target.requestedChangePrs += asNumber(row.requested_change_prs);
+  target.reviewWaitingPrs += asNumber(row.review_waiting_prs);
+  target.mergeConflictPrs += asNumber(row.merge_conflict_prs);
+  target.testingQueueIssues += testingQueueIssues;
   if (metricSourceCompleteness(row.source_completeness) === "partial_cache") {
     target.sourceCompleteness = "partial_cache";
   }
@@ -553,6 +608,17 @@ export interface DailyDigestTeamMetrics {
   issuesClosed: number;
   issuesDeferred: number;
   workflowViolationsDetected: number;
+  activeCriticalIssues: number;
+  averageActiveCriticalIssueAgeHours: number | null;
+  pendingPrs: number;
+  averagePendingPrAgeHours: number | null;
+  attentionPrs: number;
+  ciFailedPrs: number;
+  requestedChangePrs: number;
+  reviewWaitingPrs: number;
+  mergeConflictPrs: number;
+  testingQueueIssues: number;
+  averageTestingQueueAgeHours: number | null;
   sourceCompleteness: MetricSourceCompleteness;
 }
 
@@ -647,6 +713,29 @@ function digestPersonFromMetricRow(row: RowData): DailyDigestPersonMetrics {
   };
 }
 
+function digestTeamFromMetricRow(row: RowData): DailyDigestTeamMetrics {
+  return {
+    prsCreated: asNumber(row.prs_created),
+    prsMerged: asNumber(row.prs_merged),
+    issuesOpened: asNumber(row.issues_opened),
+    issuesClosed: asNumber(row.issues_closed),
+    issuesDeferred: asNumber(row.issues_deferred),
+    workflowViolationsDetected: asNumber(row.workflow_violations_detected),
+    activeCriticalIssues: asNumber(row.active_critical_issues),
+    averageActiveCriticalIssueAgeHours: asNullableNumber(row.avg_active_critical_issue_age_hours),
+    pendingPrs: asNumber(row.pending_prs),
+    averagePendingPrAgeHours: asNullableNumber(row.avg_pending_pr_age_hours),
+    attentionPrs: asNumber(row.attention_prs),
+    ciFailedPrs: asNumber(row.ci_failed_prs),
+    requestedChangePrs: asNumber(row.requested_change_prs),
+    reviewWaitingPrs: asNumber(row.review_waiting_prs),
+    mergeConflictPrs: asNumber(row.merge_conflict_prs),
+    testingQueueIssues: asNumber(row.testing_queue_issues),
+    averageTestingQueueAgeHours: asNullableNumber(row.avg_testing_queue_age_hours),
+    sourceCompleteness: metricSourceCompleteness(row.source_completeness)
+  };
+}
+
 export function dailyWatchedUserDigestHasSignal(person: DailyDigestPersonMetrics): boolean {
   return (
     person.prsCreated > 0 ||
@@ -683,7 +772,24 @@ function digestPersonSummary(person: DailyDigestPersonMetrics): string {
 function digestPersonThroughputSummary(person: DailyDigestPersonMetrics): string {
   return (
     `${person.login}: ${person.prsCreated} created, ${person.prsMerged} merged, ` +
-    `${person.workflowViolationsDetected} violations`
+    `${person.pendingPrs} pending PR observations (${person.attentionPrs} attention, avg ${hoursText(
+      person.averagePendingPrAgeHours
+    )}), ${person.workflowViolationsDetected} violations`
+  );
+}
+
+function digestTeamFlowSummary(team: DailyDigestTeamMetrics, includeFlowSnapshot: boolean): string {
+  const activeLabel = includeFlowSnapshot ? "active s-1/s0" : "active s-1/s0 daily observations";
+  const pendingLabel = includeFlowSnapshot ? "pending PRs" : "pending PR daily observations";
+  const testingLabel = includeFlowSnapshot ? "in testing" : "testing daily observations";
+  return (
+    `Flow ${includeFlowSnapshot ? "snapshot" : "period"}: ${team.activeCriticalIssues} ${activeLabel} ` +
+    `(avg ${hoursText(team.averageActiveCriticalIssueAgeHours)}), ` +
+    `${team.pendingPrs} ${pendingLabel} (${team.attentionPrs} attention, avg ${hoursText(
+      team.averagePendingPrAgeHours
+    )}), ${team.testingQueueIssues} ${testingLabel} (avg ${hoursText(team.averageTestingQueueAgeHours)}), ` +
+    `blockers ci:${team.ciFailedPrs} changes:${team.requestedChangePrs} review:${team.reviewWaitingPrs} ` +
+    `conflict:${team.mergeConflictPrs}.`
   );
 }
 
@@ -702,6 +808,7 @@ function digestEvidenceSummary(
   return (
     `Team: ${team.prsCreated} PRs created, ${team.prsMerged} merged, ` +
     `${team.issuesOpened} issues opened, ${team.issuesClosed} closed, ${team.issuesDeferred} deferred.\n` +
+    `${digestTeamFlowSummary(team, options.includeFlowSnapshot)}\n` +
     `Workflow violations detected: ${team.workflowViolationsDetected}.` +
     peopleSummary +
     `\nCache completeness: ${team.sourceCompleteness}.`
@@ -924,17 +1031,7 @@ async function getDailyDigestCandidates(
   return buildDailyDigestNotificationCandidates({
     profile,
     metricDate,
-    team: teamRow
-      ? {
-          prsCreated: asNumber(teamRow.prs_created),
-          prsMerged: asNumber(teamRow.prs_merged),
-          issuesOpened: asNumber(teamRow.issues_opened),
-          issuesClosed: asNumber(teamRow.issues_closed),
-          issuesDeferred: asNumber(teamRow.issues_deferred),
-          workflowViolationsDetected: asNumber(teamRow.workflow_violations_detected),
-          sourceCompleteness: metricSourceCompleteness(teamRow.source_completeness)
-        }
-      : null,
+    team: teamRow ? digestTeamFromMetricRow(teamRow) : null,
     people,
     generatedAt,
     limit
@@ -977,19 +1074,40 @@ async function getPeriodDigestMetrics(
       continue;
     }
     const person = peopleByLogin.get(login) ?? emptyDigestPersonMetrics(login);
+    const activeCriticalIssues = asNumber(row.active_critical_issues);
+    const pendingPrs = asNumber(row.pending_prs);
+    const testingQueueIssues = asNumber(row.testing_queue_issues);
+    person.averageActiveCriticalIssueAgeHours = combinedWeightedAverage(
+      person.averageActiveCriticalIssueAgeHours,
+      person.activeCriticalIssues,
+      asNullableNumber(row.avg_active_critical_issue_age_hours),
+      activeCriticalIssues
+    );
+    person.averagePendingPrAgeHours = combinedWeightedAverage(
+      person.averagePendingPrAgeHours,
+      person.pendingPrs,
+      asNullableNumber(row.avg_pending_pr_age_hours),
+      pendingPrs
+    );
+    person.averageTestingQueueAgeHours = combinedWeightedAverage(
+      person.averageTestingQueueAgeHours,
+      person.testingQueueIssues,
+      asNullableNumber(row.avg_testing_queue_age_hours),
+      testingQueueIssues
+    );
     person.prsCreated += asNumber(row.prs_created);
     person.prsMerged += asNumber(row.prs_merged);
     person.workflowViolationsDetected += asNumber(row.workflow_violations_detected);
-    person.activeCriticalIssues += asNumber(row.active_critical_issues);
+    person.activeCriticalIssues += activeCriticalIssues;
     person.needsTriageIssues += asNumber(row.needs_triage_issues);
     person.deferredIssues += asNumber(row.deferred_issues);
-    person.pendingPrs += asNumber(row.pending_prs);
+    person.pendingPrs += pendingPrs;
     person.attentionPrs += asNumber(row.attention_prs);
     person.ciFailedPrs += asNumber(row.ci_failed_prs);
     person.requestedChangePrs += asNumber(row.requested_change_prs);
     person.reviewWaitingPrs += asNumber(row.review_waiting_prs);
     person.mergeConflictPrs += asNumber(row.merge_conflict_prs);
-    person.testingQueueIssues += asNumber(row.testing_queue_issues);
+    person.testingQueueIssues += testingQueueIssues;
     if (metricSourceCompleteness(row.source_completeness) === "partial_cache") {
       person.sourceCompleteness = "partial_cache";
     }
