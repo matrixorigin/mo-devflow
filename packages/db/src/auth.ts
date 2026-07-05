@@ -1,4 +1,4 @@
-import type { AuthenticatedUserView, GitHubRepoPermission } from "@mo-devflow/shared";
+import type { AuthenticatedUserView, ConnectedGitHubUserView, GitHubRepoPermission } from "@mo-devflow/shared";
 import { buildGitHubWriteCapabilities, parseJsonArray } from "@mo-devflow/shared";
 import type { RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
@@ -147,6 +147,51 @@ export async function upsertGitHubTokenBinding(input: GitHubTokenBindingRecord):
   }
 
   return userId;
+}
+
+export async function listConnectedGitHubUsers(input: {
+  currentUserId: number;
+  limit?: number;
+}): Promise<ConnectedGitHubUserView[]> {
+  const limit = Math.max(1, Math.min(100, input.limit ?? 24));
+  const [rows] = await getPool().execute<RowData[]>(
+    `SELECT
+       u.id AS user_id,
+       u.github_id,
+       u.github_login,
+       u.avatar_url,
+       t.repo_permission,
+       t.last_validated_at,
+       COALESCE(s.active_session_count, 0) AS active_session_count,
+       s.last_seen_at
+     FROM app_users u
+     LEFT JOIN user_github_tokens t ON t.user_id = u.id AND t.revoked_at IS NULL
+     LEFT JOIN (
+       SELECT user_id, COUNT(*) AS active_session_count, MAX(last_seen_at) AS last_seen_at
+       FROM user_sessions
+       WHERE revoked_at IS NULL
+         AND expires_at > UTC_TIMESTAMP()
+       GROUP BY user_id
+     ) s ON s.user_id = u.id
+     ORDER BY COALESCE(s.last_seen_at, t.last_validated_at, u.updated_at) DESC, u.github_login ASC
+     LIMIT ?`,
+    [limit]
+  );
+
+  return rows.map((row) => {
+    const tokenLastValidatedAt = fromSqlDate(row.last_validated_at);
+    return {
+      githubLogin: asString(row.github_login),
+      githubId: asString(row.github_id),
+      avatarUrl: row.avatar_url ? asString(row.avatar_url) : null,
+      tokenConnected: tokenLastValidatedAt !== null,
+      tokenRepoPermission: (asString(row.repo_permission) || "none") as GitHubRepoPermission,
+      tokenLastValidatedAt,
+      activeSessionCount: asNumber(row.active_session_count),
+      lastSeenAt: fromSqlDate(row.last_seen_at),
+      isCurrentUser: asNumber(row.user_id) === input.currentUserId
+    };
+  });
 }
 
 export async function createUserSession(input: {

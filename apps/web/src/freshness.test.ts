@@ -235,6 +235,7 @@ function anonymousSession(input: Partial<SessionView> = {}): SessionView {
   return {
     authenticated: false,
     user: null,
+    connectedUsers: [],
     tokenEncryptionConfigured: true,
     ...input
   };
@@ -243,6 +244,7 @@ function anonymousSession(input: Partial<SessionView> = {}): SessionView {
 function authenticatedSession(input: Partial<SessionView["user"]> = {}): SessionView {
   return {
     authenticated: true,
+    connectedUsers: [],
     tokenEncryptionConfigured: true,
     user: {
       githubLogin: "alice",

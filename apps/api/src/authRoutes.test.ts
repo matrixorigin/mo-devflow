@@ -7,6 +7,7 @@ import { sessionCookieName } from "./sessionCookie";
 
 const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
+  listConnectedGitHubUsers: vi.fn(),
   revokeGitHubTokenForUser: vi.fn(),
   revokeSession: vi.fn(),
   createUserSession: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@mo-devflow/config", () => ({
 vi.mock("@mo-devflow/db", () => ({
   createUserSession: mocks.createUserSession,
   getActiveSession: mocks.getActiveSession,
+  listConnectedGitHubUsers: mocks.listConnectedGitHubUsers,
   revokeGitHubTokenForUser: mocks.revokeGitHubTokenForUser,
   revokeSession: mocks.revokeSession,
   toAuthenticatedUserView: mocks.toAuthenticatedUserView,
@@ -102,6 +104,19 @@ describe("auth routes", () => {
       retryAfterSeconds: null
     });
     mocks.upsertGitHubTokenBinding.mockResolvedValue(1);
+    mocks.listConnectedGitHubUsers.mockResolvedValue([
+      {
+        githubLogin: "alice",
+        githubId: "1001",
+        avatarUrl: null,
+        tokenConnected: true,
+        tokenRepoPermission: "write",
+        tokenLastValidatedAt: "2026-07-04T00:00:00.000Z",
+        activeSessionCount: 1,
+        lastSeenAt: "2026-07-04T01:00:00.000Z",
+        isCurrentUser: true
+      }
+    ]);
     mocks.toAuthenticatedUserView.mockReturnValue({
       githubLogin: "alice",
       githubId: "1001",
@@ -151,7 +166,17 @@ describe("auth routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ authenticated: true });
+      expect(response.json()).toMatchObject({
+        authenticated: true,
+        connectedUsers: [
+          expect.objectContaining({
+            githubLogin: "alice",
+            activeSessionCount: 1,
+            isCurrentUser: true
+          })
+        ]
+      });
+      expect(mocks.listConnectedGitHubUsers).toHaveBeenCalledWith({ currentUserId: 1 });
       const csrfCookie = setCookieHeaders(response).find((cookie) => cookie.startsWith(`${csrfCookieName}=`));
       expect(csrfCookie).toContain("SameSite=Lax");
       expect(csrfCookie).not.toContain("HttpOnly");
@@ -176,6 +201,7 @@ describe("auth routes", () => {
       expect(response.json()).toEqual({
         authenticated: false,
         user: null,
+        connectedUsers: [],
         tokenEncryptionConfigured: false
       });
       const cookies = setCookieHeaders(response);
@@ -231,6 +257,7 @@ describe("auth routes", () => {
       expect(response.json()).toEqual({
         authenticated: false,
         user: null,
+        connectedUsers: [],
         tokenEncryptionConfigured: false
       });
       expect(mocks.revokeSession).toHaveBeenCalledTimes(1);

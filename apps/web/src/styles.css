@@ -256,6 +256,54 @@ body {
   line-height: 1.45;
 }
 
+.account-team-panel {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.account-team-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.account-team-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.account-team-user {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.account-team-user > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-team-user .ant-typography {
+  margin-bottom: 0;
+}
+
 .content {
   width: min(1480px, calc(100vw - 32px));
   margin: 0 auto;

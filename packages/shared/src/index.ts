@@ -878,9 +878,22 @@ export interface AuthenticatedUserView {
   writeCapabilities: GitHubWriteCapabilities;
 }
 
+export interface ConnectedGitHubUserView {
+  githubLogin: string;
+  githubId: string;
+  avatarUrl: string | null;
+  tokenConnected: boolean;
+  tokenRepoPermission: GitHubRepoPermission;
+  tokenLastValidatedAt: string | null;
+  activeSessionCount: number;
+  lastSeenAt: string | null;
+  isCurrentUser: boolean;
+}
+
 export interface SessionView {
   authenticated: boolean;
   user: AuthenticatedUserView | null;
+  connectedUsers: ConnectedGitHubUserView[];
   tokenEncryptionConfigured: boolean;
 }
 

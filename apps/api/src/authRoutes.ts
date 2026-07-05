@@ -4,6 +4,7 @@ import { loadRepoProfile } from "@mo-devflow/config";
 import {
   createUserSession,
   getActiveSession,
+  listConnectedGitHubUsers,
   revokeGitHubTokenForUser,
   revokeSession,
   toAuthenticatedUserView,
@@ -46,6 +47,7 @@ function anonymousSession(): SessionView {
   return {
     authenticated: false,
     user: null,
+    connectedUsers: [],
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
 }
@@ -70,9 +72,11 @@ async function sessionFromRequest(request: FastifyRequest, reply?: FastifyReply)
     );
   }
   const profile = loadRepoProfile();
+  const connectedUsers = await listConnectedGitHubUsers({ currentUserId: session.userId });
   return {
     authenticated: true,
     user: toAuthenticatedUserView(session, { writeBackEnabled: profile.access.writeBackEnabled }),
+    connectedUsers,
     tokenEncryptionConfigured: isTokenEncryptionConfigured()
   };
 }
@@ -222,6 +226,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       sessionHash: hashSessionToken(sessionToken),
       expiresAt: expiresAt.toISOString()
     });
+    const connectedUsers = await listConnectedGitHubUsers({ currentUserId: userId });
     const secureCookie = cookieSecureFromEnv();
     reply.header("set-cookie", [
       buildSessionCookie(sessionToken, expiresAt, secureCookie),
@@ -242,6 +247,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         },
         { writeBackEnabled: profile.access.writeBackEnabled }
       ),
+      connectedUsers,
       tokenEncryptionConfigured: true
     } satisfies SessionView;
   });
@@ -260,6 +266,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
     await revokeGitHubTokenForUser(session.userId);
     const profile = loadRepoProfile();
+    const connectedUsers = await listConnectedGitHubUsers({ currentUserId: session.userId });
     return {
       authenticated: true,
       user: toAuthenticatedUserView(
@@ -271,6 +278,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         },
         { writeBackEnabled: profile.access.writeBackEnabled }
       ),
+      connectedUsers,
       tokenEncryptionConfigured: isTokenEncryptionConfigured()
     } satisfies SessionView;
   });

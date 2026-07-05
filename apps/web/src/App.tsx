@@ -672,6 +672,7 @@ function TokenCapabilityPanel({ capability }: { capability: GitHubWriteCapabilit
 
 function AccountControl({
   authenticatedUser,
+  connectedUsers,
   capability,
   tokenEncryptionUnavailable,
   headerWriteBackDisabled,
@@ -679,6 +680,7 @@ function AccountControl({
   onSignOut
 }: {
   authenticatedUser: NonNullable<SessionView["user"]> | null;
+  connectedUsers: SessionView["connectedUsers"];
   capability: GitHubWriteCapability | null;
   tokenEncryptionUnavailable: boolean;
   headerWriteBackDisabled: boolean;
@@ -727,6 +729,37 @@ function AccountControl({
           ? "Multiple teammates can use this deployment at the same time. The submitted token is validated by GitHub, keyed by that GitHub ID, and this browser receives its own session cookie. Another browser or machine connects again to create its own session for the same GitHub user."
           : "Anonymous users only observe cached data. Each teammate connects a personal GitHub token in their own browser session when they need manual repair or confirmed GitHub writes."}
       </Text>
+      {authenticatedUser && connectedUsers.length > 0 ? (
+        <div className="account-team-panel">
+          <div className="account-team-heading">
+            <Text strong>Team Connect</Text>
+            <Tag>same deployment</Tag>
+          </div>
+          <div className="account-team-list">
+            {connectedUsers.map((user) => (
+              <div className="account-team-user" key={user.githubId}>
+                <Avatar size={28} src={user.avatarUrl}>
+                  {user.githubLogin.slice(0, 1).toUpperCase()}
+                </Avatar>
+                <div>
+                  <Space size={4} wrap>
+                    <Text strong>{user.githubLogin}</Text>
+                    {user.isCurrentUser ? <Tag color="blue">you</Tag> : null}
+                    <Tag color={user.tokenConnected ? repoPermissionColor(user.tokenRepoPermission) : "default"}>
+                      {user.tokenConnected ? `repo: ${user.tokenRepoPermission}` : "token removed"}
+                    </Tag>
+                  </Space>
+                  <Text type="secondary">
+                    {`${user.activeSessionCount} active browser session${user.activeSessionCount === 1 ? "" : "s"} | last seen ${formatDate(
+                      user.lastSeenAt ?? user.tokenLastValidatedAt
+                    )}`}
+                  </Text>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <Alert
         type="info"
         title="Service read token is deployment config"
@@ -11158,6 +11191,7 @@ export default function App() {
       setSession({
         authenticated: false,
         user: null,
+        connectedUsers: [],
         tokenEncryptionConfigured: false
       });
       setTokenError(displayError(err));
@@ -12625,6 +12659,7 @@ export default function App() {
           </nav>
           <AccountControl
             authenticatedUser={authenticatedUser}
+            connectedUsers={session?.connectedUsers ?? []}
             capability={headerIssueLabelCapability ?? null}
             tokenEncryptionUnavailable={tokenEncryptionUnavailable}
             headerWriteBackDisabled={headerWriteBackDisabled}
