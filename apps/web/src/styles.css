@@ -1889,6 +1889,62 @@ button.team-monitor-tile:hover,
   font-size: 12px;
 }
 
+.team-person-focus {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  color: #374151;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-top: 5px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.team-person-focus-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.team-person-focus-attention {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.team-person-focus-clear {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  border-left-color: #16a34a;
+}
+
+.team-person-focus > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.team-person-focus strong,
+.team-person-focus small {
+  line-height: 1.2;
+  min-width: 0;
+  white-space: normal;
+}
+
+.team-person-focus strong {
+  color: #111827;
+  font-size: 12px;
+}
+
+.team-person-focus small {
+  color: #4b5563;
+  font-size: 11px;
+}
+
 .team-status-row {
   appearance: none;
   background: #ffffff;

@@ -40,6 +40,7 @@ import {
   prIssueLinkEvidencePending,
   sortTestingIssuesForAction,
   sortPeopleByWorkload,
+  teamPeopleFocusSummary,
   teamCommandSignals,
   testingStateBusinessLabel,
   testingStateHelpText
@@ -190,6 +191,29 @@ describe("person workload summaries", () => {
     expect(filterPeopleByScope(people, personalViews, "testing").map((person) => person.login)).toEqual([
       "testing-owner"
     ]);
+  });
+
+  it("summarizes people focus by issue, PR, testing, and triage responsibility", () => {
+    const people: PersonSummary[] = [
+      personSummary({ login: "issue-owner", activeCriticalIssues: 2, attentionPrs: 1 }),
+      personSummary({ login: "pr-owner", attentionPrs: 3, pendingPrs: 3 }),
+      personSummary({ login: "tester" }),
+      personSummary({ login: "triage-owner", needsTriageIssues: 4 })
+    ];
+    const personalViews = [
+      personalView({
+        login: "tester",
+        testingIssues: [testingIssue({ number: 90 })]
+      })
+    ];
+
+    expect(teamPeopleFocusSummary(people, personalViews)).toEqual({
+      people: 4,
+      activeIssuePeople: 1,
+      prAttentionPeople: 2,
+      testingPeople: 1,
+      triagePeople: 1
+    });
   });
 });
 
@@ -730,7 +754,7 @@ describe("personal activity feed", () => {
 
     expect(item?.durationKind).toBe("critical_active");
     expect(item?.durationHours).toBe(18);
-    expect(personalDurationText(item!)).toBe("s0/s-1 18h");
+    expect(personalDurationText(item!)).toBe("s-1/s0 18h");
   });
 
   it("filters action queue metrics to the corresponding objects", () => {

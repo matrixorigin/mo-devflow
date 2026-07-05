@@ -64,6 +64,13 @@ export const peopleScopeFilters: PeopleScopeFilter[] = [
 ];
 
 export type PeopleBoardScopeCounts = Record<PeopleScopeFilter, number>;
+export interface TeamPeopleFocusSummary {
+  people: number;
+  activeIssuePeople: number;
+  prAttentionPeople: number;
+  testingPeople: number;
+  triagePeople: number;
+}
 export type TeamCommandSignalTarget = "violations" | "drift" | "notifications";
 export type TeamCommandSignalTone = "critical" | "attention" | "normal";
 export type NotificationDeliveryScopeFilter = "all" | "attention" | "failed" | "ack_pending" | "digest";
@@ -773,6 +780,20 @@ export function peopleBoardScopeCounts(
         : people.filter((person) => peopleScopeMatchesPerson(person, personalByLogin, scopeFilter)).length;
     return counts;
   }, {} as PeopleBoardScopeCounts);
+}
+
+export function teamPeopleFocusSummary(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[]
+): TeamPeopleFocusSummary {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return {
+    people: people.length,
+    activeIssuePeople: people.filter((person) => person.activeCriticalIssues > 0).length,
+    prAttentionPeople: people.filter((person) => person.attentionPrs > 0).length,
+    testingPeople: people.filter((person) => testingCountForPerson(person.login, personalByLogin) > 0).length,
+    triagePeople: people.filter((person) => person.needsTriageIssues > 0).length
+  };
 }
 
 export function observedPeopleFromDashboard(input: {
@@ -1705,10 +1726,10 @@ export function personalDurationText(input: {
   durationKind: PersonalDurationKind;
 }): string {
   if (input.durationHours === null) {
-    return input.durationKind === "critical_active" ? "s0/s-1 unknown" : "unknown";
+    return input.durationKind === "critical_active" ? "s-1/s0 unknown" : "unknown";
   }
   if (input.durationKind === "critical_active") {
-    return `s0/s-1 ${durationHoursText(input.durationHours)}`;
+    return `s-1/s0 ${durationHoursText(input.durationHours)}`;
   }
   if (input.durationKind === "pr_age") {
     return `PR ${durationHoursText(input.durationHours)}`;

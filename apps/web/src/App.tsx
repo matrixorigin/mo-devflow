@@ -140,6 +140,7 @@ import {
   prVisibleIssueNumbers,
   sortTestingIssuesForAction,
   teamCommandSignals,
+  teamPeopleFocusSummary,
   testingStateBusinessLabel,
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
@@ -2475,6 +2476,7 @@ function teamCommandActions({
   const triageSnapshot = teamTriageSnapshot(data);
   const triageHeavy = triageSnapshot.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
   const criticalPeople = peopleFocus.filter((person) => person.activeCriticalIssues > 0 || person.attentionPrs > 0);
+  const peopleFocusSummary = teamPeopleFocusSummary(peopleFocus, data.personalViews);
   const actions: TeamCommandAction[] = [];
 
   if (sMinusOneIssues > 0) {
@@ -2547,7 +2549,7 @@ function teamCommandActions({
     actions.push({
       key: "people-focus",
       title: `${criticalPeople.length} people carry active risk`,
-      detail: "open People to compare owner load and drill into personal workbench",
+      detail: `${peopleFocusSummary.activeIssuePeople} with s-1/s0 | ${peopleFocusSummary.prAttentionPeople} with PR attention | ${peopleFocusSummary.testingPeople} with issue testing`,
       tone: "normal",
       actionLabel: "Open people",
       priority: 760,
@@ -4050,11 +4052,20 @@ function TeamPeopleFocus({
   observedMode: boolean;
   onPersonSelect: (login: string) => void;
 }) {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const summary = teamPeopleFocusSummary(people, personalViews);
+
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
         <Text strong>People Focus</Text>
-        <Tag>{observedMode ? "observed" : "watched"}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{observedMode ? "observed" : "watched"}</Tag>
+          <Tag color={summary.activeIssuePeople > 0 ? "red" : "default"}>{summary.activeIssuePeople} issue</Tag>
+          <Tag color={summary.prAttentionPeople > 0 ? "orange" : "default"}>{summary.prAttentionPeople} PR</Tag>
+          <Tag color={summary.testingPeople > 0 ? "blue" : "default"}>{summary.testingPeople} test</Tag>
+          <Tag color={summary.triagePeople > 0 ? "gold" : "default"}>{summary.triagePeople} triage</Tag>
+        </Space>
       </div>
       <div className="team-people-list">
         {people.length === 0 ? (
@@ -4063,28 +4074,39 @@ function TeamPeopleFocus({
             description={observedMode ? "No active owners observed" : "No watched people with active risk"}
           />
         ) : (
-          people.map((person) => (
-            <button
-              type="button"
-              className="team-person-row"
-              onClick={() => onPersonSelect(person.login)}
-              key={person.login}
-            >
-              <span className="person-avatar" aria-hidden="true">
-                {person.login.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="team-person-main">
-                <strong>{person.login}</strong>
-                <small>
-                  {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention |{" "}
-                  {testingCountForPerson(person.login, personalViews)} issue testing
-                </small>
-                {observedMode ? (
-                  <small>Visible cache owner; configure watched users for full personal view</small>
-                ) : null}
-              </span>
-            </button>
-          ))
+          people.map((person) => {
+            const testingWork = testingCountForPerson(person.login, personalViews);
+            const focus = personCardFocus(person, personalByLogin.get(person.login));
+            return (
+              <button
+                type="button"
+                className="team-person-row"
+                onClick={() => onPersonSelect(person.login)}
+                key={person.login}
+              >
+                <span className="person-avatar" aria-hidden="true">
+                  {person.login.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="team-person-main">
+                  <strong>{person.login}</strong>
+                  <small>
+                    {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention | {testingWork} issue
+                    testing
+                  </small>
+                  <span className={`team-person-focus team-person-focus-${focus.tone}`}>
+                    <TimerReset size={13} aria-hidden="true" />
+                    <span>
+                      <strong>{focus.title}</strong>
+                      <small>{focus.detail}</small>
+                    </span>
+                  </span>
+                  {observedMode ? (
+                    <small>Visible cache owner; configure watched users for full personal view</small>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })
         )}
       </div>
     </section>
@@ -8027,6 +8049,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
     items.filter((item) => item.tone !== "critical" && item.tone !== "attention"),
     queueSort
   );
+  const issueItems = items.filter((item) => item.objectType === "issue");
   const prItems = items.filter((item) => item.objectType === "pull_request");
   const testingItems = items.filter(
     (item) => item.durationKind === "testing_queue" || item.testingQueueAgeHours !== null
@@ -8044,13 +8067,13 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
         <ActivitySummaryTile
           label="All"
           value={counts.all}
-          detail="full queue"
+          detail="all work"
           tone="normal"
           active={queueFilter === "all"}
           onSelect={() => setQueueFilter("all")}
         />
         <ActivitySummaryTile
-          label="S0/S-1"
+          label="s-1/s0"
           value={criticalItems.length}
           detail={criticalActivitySummary(criticalItems)}
           tone="critical"
@@ -8058,9 +8081,31 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("critical")}
         />
         <ActivitySummaryTile
+          label="Issues"
+          value={issueItems.length}
+          detail={`${personIssueAttentionCount(issueItems)} attention`}
+          tone={
+            issueItems.some((item) => item.tone === "critical")
+              ? "critical"
+              : issueItems.some((item) => item.tone === "attention")
+                ? "attention"
+                : "normal"
+          }
+          active={queueFilter === "issues"}
+          onSelect={() => setQueueFilter("issues")}
+        />
+        <ActivitySummaryTile
+          label="PRs"
+          value={prItems.length}
+          detail={`${blockedPrItems.length} blocked`}
+          tone={blockedPrItems.length > 0 ? "attention" : "normal"}
+          active={queueFilter === "prs"}
+          onSelect={() => setQueueFilter("prs")}
+        />
+        <ActivitySummaryTile
           label="Blocked PRs"
           value={blockedPrItems.length}
-          detail={`${attentionItems.length} attention`}
+          detail="CI/review/merge/test"
           tone="attention"
           active={queueFilter === "pr_blockers"}
           onSelect={() => setQueueFilter("pr_blockers")}
@@ -8238,6 +8283,10 @@ function actionQueueToneForItems(items: PersonalActivityItem[]): "critical" | "a
   return "normal";
 }
 
+function personIssueAttentionCount(items: PersonalActivityItem[]): number {
+  return items.filter((item) => item.tone === "critical" || item.tone === "attention").length;
+}
+
 function actionQueueFilterLabel(filter: PersonalActionQueueFilter): string {
   if (filter === "critical") {
     return "Critical now";
@@ -8326,7 +8375,7 @@ function ActionQueueSection({
       ) : null}
       {hiddenCount > 0 ? (
         <button type="button" className="action-queue-more" onClick={() => setExpanded(true)}>
-          {hiddenCount} more {title.toLowerCase()} objects. Show all
+          {hiddenCount} more {title.toLowerCase()} items. Show all
         </button>
       ) : hasOverflow && expanded ? (
         <button type="button" className="action-queue-more action-queue-more-muted" onClick={() => setExpanded(false)}>
@@ -8837,7 +8886,7 @@ function personalFlowThreadFilterLabel(filter: PersonalFlowThreadFilter): string
 
 function flowIssueDurationLabel(kind: PersonalGanttRow["issue"]["durationKind"]): string {
   if (kind === "critical_active") {
-    return "s0/s-1";
+    return "s-1/s0";
   }
   if (kind === "testing_queue") {
     return "test wait";
@@ -9361,7 +9410,7 @@ function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
   const issueDuration = row.issue.durationHours === null ? "unknown duration" : hours(row.issue.durationHours);
   const issueBarText =
     row.issue.durationKind === "critical_active"
-      ? `s0/s-1 ${issueDuration}`
+      ? `s-1/s0 ${issueDuration}`
       : row.issue.durationKind === "testing_queue"
         ? `test ${issueDuration}`
         : issueDuration;
@@ -11760,7 +11809,7 @@ export default function App() {
         )
       },
       {
-        title: "s0/s-1 Duration",
+        title: "s-1/s0 Duration",
         dataIndex: "criticalAgeHours",
         width: 140,
         render: (value, issue) => (
