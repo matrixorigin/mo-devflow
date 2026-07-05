@@ -10,6 +10,7 @@ import {
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
+  notificationDeliveryScopeFilterFromHash,
   peopleScopeFilterFromHash,
   peopleSortLabel,
   peopleSortFromHash,
@@ -33,6 +34,8 @@ import {
   testingIssueQueueFilterFromHash,
   testingIssueTesterFilterFromHash,
   violationSignalFilterFromHash,
+  webhookScopeFilterFromHash,
+  writeAuditScopeFilterFromHash,
   workflowViolationMatchesSignalFilter
 } from "./App";
 
@@ -112,6 +115,32 @@ describe("dashboard hash filters", () => {
     expect(driftSignalFilterFromHash("#drift?source_id=42&signal=notification_failed")).toBe("all");
   });
 
+  it("round-trips operational board filters for notifications, webhooks, and audit", () => {
+    const notificationHash = dashboardHashForView("Notifications", {
+      notificationDeliveryScopeFilter: "failed"
+    });
+    const webhookHash = dashboardHashForView("Webhooks", {
+      webhookScopeFilter: "duplicates"
+    });
+    const auditHash = dashboardHashForView("Audit", {
+      writeAuditScopeFilter: "token_unavailable"
+    });
+
+    expect(notificationHash).toBe("notifications?scope=failed");
+    expect(webhookHash).toBe("webhooks?scope=duplicates");
+    expect(auditHash).toBe("audit?scope=token_unavailable");
+    expect(notificationDeliveryScopeFilterFromHash(`#${notificationHash}`)).toBe("failed");
+    expect(webhookScopeFilterFromHash(`#${webhookHash}`)).toBe("duplicates");
+    expect(writeAuditScopeFilterFromHash(`#${auditHash}`)).toBe("token_unavailable");
+    expect(
+      dashboardHashForView("Notifications", {
+        notificationDeliveryScopeFilter: "attention"
+      })
+    ).toBe("notifications");
+    expect(dashboardHashForView("Webhooks", { webhookScopeFilter: "pending" })).toBe("webhooks");
+    expect(dashboardHashForView("Audit", { writeAuditScopeFilter: "attention" })).toBe("audit");
+  });
+
   it("round-trips issue testing queue filters through PR board links", () => {
     const hash = dashboardHashForView("PRs", {
       prScopeFilter: "testing",
@@ -146,6 +175,9 @@ describe("dashboard hash filters", () => {
     expect(prBoardTabFromHash(hash)).toBe("rotation");
     expect(testingIssueQueueFilterFromHash(hash)).toBe("all");
     expect(criticalIssueOwnerFilterFromHash("#issues?owner=owner%3A")).toBe("all");
+    expect(notificationDeliveryScopeFilterFromHash("#notifications?scope=bad")).toBe("attention");
+    expect(webhookScopeFilterFromHash("#webhooks?scope=bad")).toBe("pending");
+    expect(writeAuditScopeFilterFromHash("#audit?scope=bad")).toBe("attention");
   });
 
   it("routes capped read models to the most relevant board drilldown", () => {

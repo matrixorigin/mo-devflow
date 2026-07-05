@@ -376,6 +376,32 @@ const personalDrilldownFilters = [
   "yesterday_pr",
   "threads"
 ] satisfies PersonalDrilldownFilter[];
+const webhookDeliveryScopeFilters = [
+  "all",
+  "pending",
+  "failed",
+  "processed",
+  "ignored",
+  "connectivity_probe",
+  "duplicates"
+] satisfies WebhookDeliveryScopeFilter[];
+const notificationDeliveryScopeFilters = [
+  "all",
+  "attention",
+  "failed",
+  "ack_pending",
+  "digest"
+] satisfies NotificationDeliveryScopeFilter[];
+const writeAuditScopeFilters = [
+  "all",
+  "attention",
+  "failed",
+  "stale_preview",
+  "token_unavailable",
+  "success",
+  "workflow_fix",
+  "notification"
+] satisfies WriteAuditScopeFilter[];
 
 interface DashboardHashOptions {
   personLogin?: string | null;
@@ -393,6 +419,9 @@ interface DashboardHashOptions {
   peopleScopeFilter?: PeopleScopeFilter;
   peopleSort?: PeopleBoardSort;
   personalDrilldownFilter?: PersonalDrilldownFilter;
+  webhookScopeFilter?: WebhookDeliveryScopeFilter;
+  notificationDeliveryScopeFilter?: NotificationDeliveryScopeFilter;
+  writeAuditScopeFilter?: WriteAuditScopeFilter;
 }
 
 export interface DashboardViewLimitTarget {
@@ -570,6 +599,18 @@ export function driftSignalFilterFromHash(hash: string): DriftSignalFilter {
   return hashEnumParam(hash, "signal", driftSignalFilters, "all");
 }
 
+export function webhookScopeFilterFromHash(hash: string): WebhookDeliveryScopeFilter {
+  return hashEnumParam(hash, "scope", webhookDeliveryScopeFilters, "pending");
+}
+
+export function notificationDeliveryScopeFilterFromHash(hash: string): NotificationDeliveryScopeFilter {
+  return hashEnumParam(hash, "scope", notificationDeliveryScopeFilters, "attention");
+}
+
+export function writeAuditScopeFilterFromHash(hash: string): WriteAuditScopeFilter {
+  return hashEnumParam(hash, "scope", writeAuditScopeFilters, "attention");
+}
+
 type DashboardObjectTarget =
   { objectType: "issue"; objectNumber: number } | { objectType: "pull_request"; objectNumber: number };
 
@@ -670,6 +711,15 @@ export function dashboardHashForView(view: DashboardView, options: DashboardHash
   }
   if (view === "Drift") {
     setHashParamIfChanged(params, "signal", options.driftSignalFilter, "all");
+  }
+  if (view === "Notifications") {
+    setHashParamIfChanged(params, "scope", options.notificationDeliveryScopeFilter, "attention");
+  }
+  if (view === "Webhooks") {
+    setHashParamIfChanged(params, "scope", options.webhookScopeFilter, "pending");
+  }
+  if (view === "Audit") {
+    setHashParamIfChanged(params, "scope", options.writeAuditScopeFilter, "attention");
   }
   const query = params.toString();
   return query ? `${base}?${query}` : base;
@@ -18480,10 +18530,14 @@ export default function App() {
     peopleScopeFilterFromHash(initialHash())
   );
   const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>(() => peopleSortFromHash(initialHash()));
-  const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("pending");
+  const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>(() =>
+    webhookScopeFilterFromHash(initialHash())
+  );
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
-    useState<NotificationDeliveryScopeFilter>("attention");
-  const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");
+    useState<NotificationDeliveryScopeFilter>(() => notificationDeliveryScopeFilterFromHash(initialHash()));
+  const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>(() =>
+    writeAuditScopeFilterFromHash(initialHash())
+  );
   const [violationSignalFilter, setViolationSignalFilter] = useState<WorkflowSignalFilter>(() =>
     violationSignalFilterFromHash(initialHash())
   );
@@ -18873,6 +18927,9 @@ export default function App() {
       peopleScopeFilter,
       peopleSort,
       personalDrilldownFilter,
+      webhookScopeFilter,
+      notificationDeliveryScopeFilter,
+      writeAuditScopeFilter,
       ...overrides
     };
     if (overrides.personLogin === undefined) {
@@ -19210,6 +19267,27 @@ export default function App() {
     }
   }
 
+  function changeNotificationDeliveryScopeFilter(value: NotificationDeliveryScopeFilter) {
+    setNotificationDeliveryScopeFilter(value);
+    if (view === "Notifications") {
+      replaceDashboardHash("Notifications", selectedPerson, { notificationDeliveryScopeFilter: value });
+    }
+  }
+
+  function changeWebhookScopeFilter(value: WebhookDeliveryScopeFilter) {
+    setWebhookScopeFilter(value);
+    if (view === "Webhooks") {
+      replaceDashboardHash("Webhooks", selectedPerson, { webhookScopeFilter: value });
+    }
+  }
+
+  function changeWriteAuditScopeFilter(value: WriteAuditScopeFilter) {
+    setWriteAuditScopeFilter(value);
+    if (view === "Audit") {
+      replaceDashboardHash("Audit", selectedPerson, { writeAuditScopeFilter: value });
+    }
+  }
+
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
     if (layers) {
       setManualRefreshLayers(layers);
@@ -19528,6 +19606,9 @@ export default function App() {
       setPeopleScopeFilter(peopleScopeFilterFromHash(nextHash));
       setPeopleSort(peopleSortFromHash(nextHash));
       setPersonalDrilldownFilter(personalDrilldownFilterFromHash(nextHash));
+      setNotificationDeliveryScopeFilter(notificationDeliveryScopeFilterFromHash(nextHash));
+      setWebhookScopeFilter(webhookScopeFilterFromHash(nextHash));
+      setWriteAuditScopeFilter(writeAuditScopeFilterFromHash(nextHash));
       if (nextView === "Personal") {
         setSelectedPerson(selectedPersonFromHash(nextHash));
       }
@@ -21161,35 +21242,35 @@ export default function App() {
                       value={notificationDeliveryCounts.attention}
                       tone={notificationDeliveryCounts.attention > 0 ? "attention" : "good"}
                       active={notificationDeliveryScopeFilter === "attention"}
-                      onClick={() => setNotificationDeliveryScopeFilter("attention")}
+                      onClick={() => changeNotificationDeliveryScopeFilter("attention")}
                     />
                     <CriticalBoardStat
                       label="failed"
                       value={notificationDeliveryCounts.failed}
                       tone={notificationDeliveryCounts.failed > 0 ? "critical" : "good"}
                       active={notificationDeliveryScopeFilter === "failed"}
-                      onClick={() => setNotificationDeliveryScopeFilter("failed")}
+                      onClick={() => changeNotificationDeliveryScopeFilter("failed")}
                     />
                     <CriticalBoardStat
                       label="ack pending"
                       value={notificationDeliveryCounts.ack_pending}
                       tone={notificationDeliveryCounts.ack_pending > 0 ? "attention" : "good"}
                       active={notificationDeliveryScopeFilter === "ack_pending"}
-                      onClick={() => setNotificationDeliveryScopeFilter("ack_pending")}
+                      onClick={() => changeNotificationDeliveryScopeFilter("ack_pending")}
                     />
                     <CriticalBoardStat
                       label="digests"
                       value={notificationDeliveryCounts.digest}
                       tone="muted"
                       active={notificationDeliveryScopeFilter === "digest"}
-                      onClick={() => setNotificationDeliveryScopeFilter("digest")}
+                      onClick={() => changeNotificationDeliveryScopeFilter("digest")}
                     />
                     <CriticalBoardStat
                       label="all"
                       value={notificationDeliveryCounts.all}
                       tone="muted"
                       active={notificationDeliveryScopeFilter === "all"}
-                      onClick={() => setNotificationDeliveryScopeFilter("all")}
+                      onClick={() => changeNotificationDeliveryScopeFilter("all")}
                     />
                   </div>
                 ) : null}
@@ -21215,7 +21296,7 @@ export default function App() {
               <WebhookIngestionBoard
                 data={data}
                 scopeFilter={webhookScopeFilter}
-                onScopeFilterChange={setWebhookScopeFilter}
+                onScopeFilterChange={changeWebhookScopeFilter}
                 authenticated={Boolean(session?.authenticated)}
                 retrySaving={webhookRetrySaving}
                 onRetryFailed={() => void retryFailedWebhooks()}
@@ -21228,7 +21309,7 @@ export default function App() {
                 actions={data.writeActions}
                 columns={writeActionColumns}
                 scopeFilter={writeAuditScopeFilter}
-                onScopeFilterChange={setWriteAuditScopeFilter}
+                onScopeFilterChange={changeWriteAuditScopeFilter}
                 authenticated={Boolean(session?.authenticated)}
               />
             ) : null}
