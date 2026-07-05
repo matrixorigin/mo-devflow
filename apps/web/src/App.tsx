@@ -11129,9 +11129,9 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           onSelect={() => setQueueFilter("testing")}
         />
         <ActivitySummaryTile
-          label="Link gaps"
+          label="Missing links"
           value={counts.needs_link}
-          detail="issue-PR gaps"
+          detail="missing issue/PR links"
           tone={counts.needs_link > 0 ? "attention" : "muted"}
           active={queueFilter === "needs_link"}
           onSelect={() => setQueueFilter("needs_link")}
@@ -11217,7 +11217,7 @@ function ActionQueueFocusStrip({
   const linkCount = item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length;
   const linkSummary =
     linkCount === 0
-      ? "No visible link"
+      ? "No issue/PR link visible"
       : `${item.linkedIssueNumbers.length} issue / ${item.linkedPullRequestNumbers.length} PR`;
   const lastAction = item.lastHumanActionAt ? formatDate(item.lastHumanActionAt) : "no human action";
 
@@ -11314,7 +11314,7 @@ function actionQueueFilterLabel(filter: PersonalActionQueueFilter): string {
     return "PR rotation";
   }
   if (filter === "needs_link") {
-    return "Needs link";
+    return "Missing links";
   }
   return "All activity";
 }
@@ -11530,7 +11530,7 @@ function PersonalActionQueueItem({
           <span className="action-queue-fact">
             <strong>
               {item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length === 0
-                ? "No visible link"
+                ? "No issue/PR link visible"
                 : `${item.linkedIssueNumbers.length} issue / ${item.linkedPullRequestNumbers.length} PR`}
             </strong>
             <small>{primarySignal}</small>
@@ -12655,8 +12655,7 @@ function PersonalRotationOverview({
   drilldownFilter: PersonalDrilldownFilter;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
 }) {
-  const criticalItems = activityItems.filter((item) => item.tone === "critical");
-  const attentionItems = activityItems.filter((item) => item.tone === "attention");
+  const criticalActiveItems = activityItems.filter((item) => item.durationKind === "critical_active");
   const blockedPrItems = activityItems.filter(
     (item) => item.objectType === "pull_request" && personalActivityHasBlockingSignal(item)
   );
@@ -12703,12 +12702,12 @@ function PersonalRotationOverview({
           <Space size={[6, 6]} wrap>
             <button
               type="button"
-              className={`inline-filter-chip ${criticalItems.length > 0 ? "inline-filter-chip-red" : ""} ${
-                drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""
-              }`}
+              className={`inline-filter-chip ${
+                person.activeCriticalIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
               onClick={() => onDrilldownChange("active_issues")}
             >
-              {criticalItems.length} active s-1/s0
+              {person.activeCriticalIssues.length} active s-1/s0
             </button>
             <button
               type="button"
@@ -12721,12 +12720,12 @@ function PersonalRotationOverview({
             </button>
             <button
               type="button"
-              className={`inline-filter-chip ${attentionItems.length > 0 ? "" : "inline-filter-chip-muted"} ${
+              className={`inline-filter-chip ${blockedPrItems.length > 0 ? "" : "inline-filter-chip-muted"} ${
                 drilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""
               }`}
               onClick={() => onDrilldownChange("pr_attention")}
             >
-              {attentionItems.length} attention
+              {blockedPrItems.length} PR blockers
             </button>
             <button
               type="button"
@@ -12736,6 +12735,19 @@ function PersonalRotationOverview({
               onClick={() => onDrilldownChange("pending_pr")}
             >
               {person.pendingPrs.length} pending PR
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                staleTestingWorkCount > 0
+                  ? "inline-filter-chip-red"
+                  : testingWorkCount > 0
+                    ? ""
+                    : "inline-filter-chip-muted"
+              } ${drilldownFilter === "testing" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("testing")}
+            >
+              {testingWorkCount} issue testing
             </button>
             <button
               type="button"
@@ -12773,7 +12785,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="Active issues"
             value={person.activeCriticalIssues.length}
-            detail={activeIssueHealthText(person, criticalItems)}
+            detail={activeIssueHealthText(person, criticalActiveItems)}
             tone={person.activeCriticalIssues.length > 0 ? "critical" : "good"}
             onClick={() => onDrilldownChange("active_issues")}
           />
@@ -13496,8 +13508,11 @@ function WatchedPersonOperationsSummary({
         <PersonOpsTile
           label="Issue testing"
           value={testingWork}
-          detail={`${staleTestingIssues} waiting >24h`}
-          tone={staleTestingIssues > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+          detail={`${staleTestingIssues} waiting >24h | ${person.testingPrs.length} linked PRs | ${oldestPersonalTestingText(
+            [],
+            person.testingIssues
+          )}`}
+          tone={staleTestingIssues > 0 ? "critical" : testingWork > 0 ? "normal" : "good"}
           active={activeFilter === "testing"}
           onClick={() => onSelect("testing")}
         />
