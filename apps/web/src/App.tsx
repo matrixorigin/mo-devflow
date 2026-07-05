@@ -11515,7 +11515,7 @@ function PeoplePrFlowMatrix({
       )
     },
     {
-      title: "s-1/s0 → PR → Issue Testing",
+      title: "s-1/s0 Start → PR → Issue Testing",
       width: 260,
       render: (_, row) => (
         <button
@@ -11530,7 +11530,7 @@ function PeoplePrFlowMatrix({
         >
           <strong>{personalCriticalFlowEfficiencyCompactSummary(row.flow)}</strong>
           <small>
-            to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to issue testing{" "}
+            from active to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to issue testing{" "}
             {optionalHours(row.flow.averageActiveToTestingHours)}
           </small>
           <em>{personalCriticalFlowGapSummary(row.flow)}</em>
@@ -13283,10 +13283,10 @@ function PersonQueueRhythmStrip({
         }`}
         onClick={() => onOpenMetric("active_issues")}
       >
-        <span>s-1/s0 → PR → Issue Testing</span>
+        <span>s-1/s0 Start → PR → Issue Testing</span>
         <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
         <small>
-          avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to issue testing{" "}
+          from active to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
           {optionalHours(flow.averageActiveToTestingHours)}
         </small>
         <small>{personalCriticalFlowHealthText(flow)}</small>
@@ -17750,10 +17750,10 @@ function WatchedPersonOperationsSummary({
             }`}
             onClick={() => onSelect(flowTarget)}
           >
-            <span>s-1/s0 → PR → Issue Testing</span>
+            <span>s-1/s0 Start → PR → Issue Testing</span>
             <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
             <small>
-              avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
+              from active to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing{" "}
               {optionalHours(flow.averageActiveToTestingHours)}
             </small>
             <small>{personalCriticalFlowHealthText(flow)}</small>
@@ -18086,21 +18086,27 @@ function latestTrendMetricPoint(points: TrendMetricPoint[]): TrendMetricPoint | 
 }
 
 export function personalPrThroughputRows(
-  person: Pick<PersonalActionView, "analytics" | "analyticsWeekly" | "analyticsMonthly">
+  person: Pick<PersonalActionView, "analytics" | "analyticsWeekly" | "analyticsMonthly"> &
+    Partial<Pick<PersonalActionView, "prPeriodLists">>
 ): PersonalPrThroughputRow[] {
   return [
-    personalPrThroughputRow("day", latestTrendMetricPoint(person.analytics)),
-    personalPrThroughputRow("week", latestTrendMetricPoint(person.analyticsWeekly)),
-    personalPrThroughputRow("month", latestTrendMetricPoint(person.analyticsMonthly))
+    personalPrThroughputRow("day", latestTrendMetricPoint(person.analytics), person.prPeriodLists),
+    personalPrThroughputRow("week", latestTrendMetricPoint(person.analyticsWeekly), person.prPeriodLists),
+    personalPrThroughputRow("month", latestTrendMetricPoint(person.analyticsMonthly), person.prPeriodLists)
   ];
 }
 
-function personalPrThroughputRow(period: MetricPeriod, point: TrendMetricPoint | null): PersonalPrThroughputRow {
+function personalPrThroughputRow(
+  period: MetricPeriod,
+  point: TrendMetricPoint | null,
+  periodLists?: PersonalPrPeriodListView[]
+): PersonalPrThroughputRow {
+  const periodList = periodLists?.find((list) => list.period === period);
   return {
     period,
-    label: point ? trendPointLabel(point) : metricPeriodText(period),
-    prsCreated: point?.prsCreated ?? null,
-    prsMerged: point?.prsMerged ?? null,
+    label: periodList?.label ?? (point ? trendPointLabel(point) : metricPeriodText(period)),
+    prsCreated: periodList?.totalCreatedPrs ?? point?.prsCreated ?? null,
+    prsMerged: periodList?.totalMergedPrs ?? point?.prsMerged ?? null,
     pendingPrs: point?.pendingPrs ?? null,
     attentionPrs: point?.attentionPrs ?? null,
     averagePendingPrAgeHours: point?.averagePendingPrAgeHours ?? null,
@@ -18195,7 +18201,7 @@ export function personalCriticalFlowEfficiencyCompactSummary(flow: PersonalCriti
 }
 
 export function personalCriticalFlowManagementDetail(flow: PersonalCriticalFlowEfficiency): string {
-  return `avg to PR ${optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing ${optionalHours(
+  return `from active to PR ${optionalHours(flow.averageActiveToFirstPrHours)} | to issue testing ${optionalHours(
     flow.averageActiveToTestingHours
   )} | ${personalCriticalFlowGapSummary(flow)}`;
 }
@@ -18364,8 +18370,10 @@ function PersonalPrThroughputPanel({
     >
       <div className="subsection-heading">
         <div>
-          <Title level={5}>PRs By Day / Week / Month</Title>
-          <Text type="secondary">Click a period to inspect the PR list, duration, age, and blockers.</Text>
+          <Title level={5}>Personal PRs: Day / Week / Month</Title>
+          <Text type="secondary">
+            Click a period to inspect this person's PR list, lifecycle duration, age, and blockers.
+          </Text>
         </div>
         <Space size={[4, 4]} wrap>
           <button type="button" className="inline-filter-chip" onClick={() => onDrilldownChange("pending_pr")}>
@@ -18473,7 +18481,7 @@ function PersonalPrThroughputPanel({
         <div className="personal-flow-efficiency-card">
           <div className="personal-throughput-card-heading">
             <div className="personal-flow-heading-copy">
-              <Text strong>s-1/s0 → PR → Issue Testing</Text>
+              <Text strong>s-1/s0 Start → PR → Issue Testing</Text>
               <Text type="secondary">
                 {personalCriticalFlowEfficiencySummary(flow)} | {personalCriticalFlowGapSummary(flow)}
               </Text>
@@ -18513,13 +18521,13 @@ function PersonalPrThroughputPanel({
             <PersonalFlowEfficiencyMetric
               label="s-1/s0 to PR"
               value={optionalHours(flow.averageActiveToFirstPrHours)}
-              detail="avg from s-1/s0"
+              detail="avg from active start"
               onClick={() => onDrilldownChange(flowTarget)}
             />
             <PersonalFlowEfficiencyMetric
               label="s-1/s0 to issue testing"
               value={optionalHours(flow.averageActiveToTestingHours)}
-              detail="avg from s-1/s0"
+              detail="avg from active start"
               onClick={() => onDrilldownChange(flow.issuesNotInTesting > 0 ? "active_not_testing" : "testing")}
             />
           </div>

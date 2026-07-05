@@ -710,6 +710,52 @@ describe("dashboard hash filters", () => {
     expect(personalPrThroughputSummary(rows)).toBe("D 3/2 | W 9/7 | M 24/20");
   });
 
+  it("uses visible period list totals for personal PR throughput cards", () => {
+    const rows = personalPrThroughputRows({
+      analytics: [
+        metricPoint({ date: "2026-07-04", prsCreated: 1, prsMerged: 1, averagePendingPrAgeHours: 18 })
+      ],
+      analyticsWeekly: [
+        {
+          ...metricPoint({ date: "2026-07-05", prsCreated: 2, prsMerged: 2 }),
+          period: "week",
+          periodStart: "2026-06-29",
+          periodEnd: "2026-07-05",
+          label: "Jun 29-Jul 5"
+        }
+      ],
+      analyticsMonthly: [],
+      prPeriodLists: [
+        {
+          period: "day",
+          label: "07-04",
+          periodStart: "2026-07-04",
+          periodEnd: "2026-07-05",
+          totalCreatedPrs: 4,
+          totalMergedPrs: 3,
+          createdPrs: [],
+          mergedPrs: [],
+          truncated: false
+        },
+        {
+          period: "week",
+          label: "Jun 29-Jul 5",
+          periodStart: "2026-06-29",
+          periodEnd: "2026-07-06",
+          totalCreatedPrs: 8,
+          totalMergedPrs: 6,
+          createdPrs: [],
+          mergedPrs: [],
+          truncated: false
+        }
+      ]
+    });
+
+    expect(personalPrThroughputPair(rows[0])).toBe("4/3");
+    expect(personalPrThroughputPair(rows[1])).toBe("8/6");
+    expect(rows[0]?.averagePendingPrAgeHours).toBe(18);
+  });
+
   it("maps personal day/week/month PR totals to period, created, and merged lists", () => {
     const person = {
       attentionPrs: [{ number: 99 }],
@@ -970,7 +1016,7 @@ describe("dashboard hash filters", () => {
       "active_not_testing"
     );
     expect(personalCriticalFlowManagementDetail(flow)).toBe(
-      "avg to PR 18h | to issue testing 1.8d | 1 no PR | 1 not in issue testing"
+      "from active to PR 18h | to issue testing 1.8d | 1 no PR | 1 not in issue testing"
     );
     expect(personalCriticalFlowHealthText(flow)).toBe(
       "Needs attention: 1 no linked PR | 1 not in issue testing"
@@ -1005,7 +1051,7 @@ describe("dashboard hash filters", () => {
     ).toBe("1 CI | 1 issue testing >24h");
   });
 
-  it("builds the people PR and flow matrix from watched personal analytics", () => {
+  it("builds the people PR and flow matrix from watched personal period lists", () => {
     const people = [
       {
         login: "alice",
@@ -1114,7 +1160,7 @@ describe("dashboard hash filters", () => {
 
     expect(rows.map((row) => row.login)).toEqual(["alice", "bob"]);
     expect(personalPrThroughputPair(rows[0].periods.day)).toBe("3/2");
-    expect(personalPrThroughputPair(rows[0].periods.week)).toBe("8/6");
+    expect(personalPrThroughputPair(rows[0].periods.week)).toBe("1/1");
     expect(personalPrPeriodThroughputDetail(rows[0].personal, "week")).toBe("1 PR in list | avg 1.0d");
     expect(personalPrPeriodRiskDetail(rows[0].personal, "week")).toBe(
       "pending 2 | attention 1 | open age 1.3d | test wait 10h"
