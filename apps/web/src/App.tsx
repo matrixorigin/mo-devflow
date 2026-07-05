@@ -3182,9 +3182,15 @@ function ProductionReadinessStrip({
   onNavigate: (view: DashboardView) => void;
   onConnectToken: () => void;
 }) {
-  const visibleGates = compact
-    ? [...summary.blockers, ...summary.waiting, ...summary.gates.filter((gate) => gate.status === "ready")].slice(0, 5)
+  const gateCandidates = compact
+    ? [...summary.blockers, ...summary.waiting, ...summary.gates.filter((gate) => gate.status === "ready")]
     : summary.gates;
+  const lazy = useLazyVisibleCount(
+    gateCandidates.length,
+    compact ? 5 : undefined,
+    gateCandidates.map((gate) => gate.key).join(":")
+  );
+  const visibleGates = gateCandidates.slice(0, lazy.visibleCount);
 
   return (
     <section
@@ -3216,6 +3222,23 @@ function ProductionReadinessStrip({
           />
         ))}
       </div>
+      {compact && lazy.hiddenCount > 0 ? (
+        <button type="button" className="production-readiness-more" onClick={lazy.showMore}>
+          <span>
+            +{lazy.revealCount} more readiness gates ({lazy.hiddenCount} hidden)
+          </span>
+          <strong>Show more</strong>
+        </button>
+      ) : compact && lazy.canCollapse ? (
+        <button
+          type="button"
+          className="production-readiness-more production-readiness-more-muted"
+          onClick={lazy.reset}
+        >
+          <span>{gateCandidates.length} readiness gates are visible</span>
+          <strong>Show compact list</strong>
+        </button>
+      ) : null}
       {!compact && summary.nextActions.length > 0 ? (
         <div className="production-readiness-actions">
           {summary.nextActions.map((action) => (

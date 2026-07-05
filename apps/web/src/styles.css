@@ -1323,6 +1323,43 @@ body {
   border-left-color: #16a34a;
 }
 
+.production-readiness-more {
+  align-items: center;
+  appearance: none;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  justify-content: center;
+  line-height: 1.2;
+  min-height: 34px;
+  padding: 8px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.production-readiness-more strong {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.production-readiness-more:hover,
+.production-readiness-more:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  outline: none;
+}
+
+.production-readiness-more-muted {
+  background: #ffffff;
+  color: #6b7280;
+}
+
 .production-readiness-actions {
   display: flex;
   flex-wrap: wrap;
