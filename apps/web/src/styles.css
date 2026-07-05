@@ -2571,6 +2571,24 @@ button.team-status-row:focus-visible {
   min-width: 0;
 }
 
+.pr-evidence-repair-banner .ant-alert-description {
+  width: 100%;
+}
+
+.pr-evidence-repair-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pr-evidence-repair-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
 .pr-diagnostic-disclosure {
   margin-bottom: 0;
 }
