@@ -54,6 +54,7 @@ import type {
   SessionView,
   TestingFlowState,
   TestingIssueQueueView,
+  VisibilityClass,
   WriteActionExecutionView,
   WorkflowFixActionKey,
   WorkflowFixExecutionResult,
@@ -1521,6 +1522,67 @@ function workflowSkipTooltip(): string {
 
 function labelText(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+export function dashboardVisibilityClassLabel(value: VisibilityClass): string {
+  if (value === "anonymous_readable") {
+    return "anonymous-readable";
+  }
+  if (value === "logged_in_readable") {
+    return "logged-in-readable";
+  }
+  if (value === "token_owner_only") {
+    return "current user's token-only";
+  }
+  return "admin-only";
+}
+
+function dashboardVisibilityScopeText(scope: DashboardSummary["visibility"]["scope"]): string {
+  return scope === "anonymous" ? "anonymous cache" : "logged-in cache";
+}
+
+function objectCountLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function dashboardVisibilityChipLabel(visibility: DashboardSummary["visibility"]): string {
+  const scope = dashboardVisibilityScopeText(visibility.scope);
+  if (visibility.hiddenObjects > 0) {
+    return `scope: ${scope} · ${visibility.hiddenObjects} hidden`;
+  }
+  return `scope: ${scope}`;
+}
+
+export function dashboardVisibilityTitle(visibility: DashboardSummary["visibility"]): string {
+  const visibleClasses = visibility.visibleClasses.map(dashboardVisibilityClassLabel).join(", ");
+  const hidden =
+    visibility.hiddenObjects > 0
+      ? `${objectCountLabel(visibility.hiddenObjects, "cached object")} hidden (${objectCountLabel(
+          visibility.hiddenIssues,
+          "issue"
+        )}, ${objectCountLabel(visibility.hiddenPullRequests, "PR")}).`
+      : "No cached issue or PR objects are hidden from this view.";
+  return `${dashboardVisibilityScopeText(visibility.scope)} view. Visible classes: ${visibleClasses || "none"}. ${hidden}${
+    visibility.note ? ` ${visibility.note}` : ""
+  }`;
+}
+
+function dashboardVisibilityPathValue(visibility: DashboardSummary["visibility"]): string {
+  if (visibility.hiddenObjects > 0) {
+    return `${visibility.hiddenObjects} hidden`;
+  }
+  return dashboardVisibilityScopeText(visibility.scope);
+}
+
+export function dashboardVisibilityPathDetail(visibility: DashboardSummary["visibility"]): string {
+  const visibleClasses = visibility.visibleClasses.map(dashboardVisibilityClassLabel).join(", ");
+  if (visibility.hiddenObjects > 0) {
+    return `${objectCountLabel(visibility.hiddenIssues, "issue")} / ${objectCountLabel(
+      visibility.hiddenPullRequests,
+      "PR"
+    )} hidden; visible: ${visibleClasses}`;
+  }
+  return `visible: ${visibleClasses || "none"}`;
 }
 
 function retryDelayText(seconds: number): string {
@@ -8796,6 +8858,7 @@ function CacheRepairPlan({
 function FreshnessStatusBar({
   freshness,
   sync,
+  visibility,
   webhookReadiness,
   readModel,
   refreshing,
@@ -8806,10 +8869,12 @@ function FreshnessStatusBar({
   onExpandedChange,
   onOpenViewLimit,
   onOpenHealth,
+  onOpenVisibility,
   onOpenWebhooks
 }: {
   freshness: FreshnessSummary;
   sync: DashboardSummary["sync"];
+  visibility: DashboardSummary["visibility"];
   webhookReadiness: WebhookReadinessSummary;
   readModel: DashboardReadModelMeta | null;
   refreshing: boolean;
@@ -8820,6 +8885,7 @@ function FreshnessStatusBar({
   onExpandedChange: (expanded: boolean) => void;
   onOpenViewLimit: (limit: DashboardViewLimit) => void;
   onOpenHealth: () => void;
+  onOpenVisibility: () => void;
   onOpenWebhooks: () => void;
 }) {
   const problemLayers = sync.health.filter((item) => item.status !== "success" || item.skipped);
@@ -8839,6 +8905,16 @@ function FreshnessStatusBar({
             </Tooltip>
           ) : null}
           <Tag>generated {formatDate(sync.generatedAt)}</Tag>
+          <button
+            type="button"
+            className={`freshness-chip ${
+              visibility.hiddenObjects > 0 ? "freshness-chip-attention" : "freshness-chip-good"
+            }`}
+            title={dashboardVisibilityTitle(visibility)}
+            onClick={onOpenVisibility}
+          >
+            {dashboardVisibilityChipLabel(visibility)}
+          </button>
           <button
             type="button"
             className={`freshness-chip freshness-chip-${freshnessWorkerChipTone(sync.worker)}`}
@@ -8913,6 +8989,16 @@ function FreshnessStatusBar({
               <span>GitHub changes</span>
               <strong>{webhookStatusChipLabel(webhookReadiness).replace("updates: ", "").replace("hook: ", "")}</strong>
               <small>{webhookReadiness.description}</small>
+            </button>
+            <button
+              type="button"
+              className={`freshness-path-card freshness-path-${visibility.hiddenObjects > 0 ? "attention" : "good"}`}
+              onClick={onOpenVisibility}
+              title={dashboardVisibilityTitle(visibility)}
+            >
+              <span>Access scope</span>
+              <strong>{dashboardVisibilityPathValue(visibility)}</strong>
+              <small>{dashboardVisibilityPathDetail(visibility)}</small>
             </button>
             <button
               type="button"
@@ -20124,6 +20210,14 @@ export default function App() {
     selectView("Drift");
   }
 
+  function openDashboardVisibilityScope() {
+    setFreshnessExpanded(true);
+    if (data?.visibility.hiddenObjects) {
+      setCacheEvidenceExpanded(true);
+    }
+    selectView("Health");
+  }
+
   function openPeopleWithFilter(scope: PeopleScopeFilter) {
     setPeopleScopeFilter(scope);
     selectView("People", selectedPerson, { peopleScopeFilter: scope });
@@ -21891,6 +21985,7 @@ export default function App() {
               <FreshnessStatusBar
                 freshness={freshness}
                 sync={data.sync}
+                visibility={data.visibility}
                 webhookReadiness={summarizeWebhookReadiness(data)}
                 readModel={dashboardReadModel}
                 refreshing={refreshing}
@@ -21901,6 +21996,7 @@ export default function App() {
                 onExpandedChange={setFreshnessExpanded}
                 onOpenViewLimit={openDashboardViewLimit}
                 onOpenHealth={() => selectView("Health")}
+                onOpenVisibility={openDashboardVisibilityScope}
                 onOpenWebhooks={() => selectView("Webhooks")}
               />
             ) : null}

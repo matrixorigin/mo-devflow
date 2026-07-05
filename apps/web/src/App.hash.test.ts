@@ -9,6 +9,10 @@ import {
   analyticsPeriodFromHash,
   dashboardHashForView,
   dashboardRefreshModeText,
+  dashboardVisibilityChipLabel,
+  dashboardVisibilityClassLabel,
+  dashboardVisibilityPathDetail,
+  dashboardVisibilityTitle,
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
   manualRefreshPresetLayers,
@@ -55,6 +59,34 @@ import {
 } from "./App";
 
 describe("dashboard hash filters", () => {
+  it("summarizes dashboard visibility scope for the persistent status chip", () => {
+    const anonymousVisibility = {
+      scope: "anonymous",
+      visibleClasses: ["anonymous_readable"],
+      hiddenIssues: 0,
+      hiddenPullRequests: 0,
+      hiddenObjects: 0,
+      note: null
+    } as any;
+    const loggedInVisibility = {
+      scope: "logged_in",
+      visibleClasses: ["anonymous_readable", "logged_in_readable", "token_owner_only"],
+      hiddenIssues: 2,
+      hiddenPullRequests: 1,
+      hiddenObjects: 3,
+      note: "3 cached GitHub objects are hidden from this view."
+    } as any;
+
+    expect(dashboardVisibilityChipLabel(anonymousVisibility)).toBe("scope: anonymous cache");
+    expect(dashboardVisibilityTitle(anonymousVisibility)).toContain("anonymous-readable");
+    expect(dashboardVisibilityTitle(anonymousVisibility)).toContain("No cached issue or PR objects are hidden");
+    expect(dashboardVisibilityChipLabel(loggedInVisibility)).toBe("scope: logged-in cache · 3 hidden");
+    expect(dashboardVisibilityPathDetail(loggedInVisibility)).toBe(
+      "2 issues / 1 PR hidden; visible: anonymous-readable, logged-in-readable, current user's token-only"
+    );
+    expect(dashboardVisibilityClassLabel("admin_only")).toBe("admin-only");
+  });
+
   it("round-trips issue board filters for shareable drilldown links", () => {
     const hash = dashboardHashForView("Issues", {
       criticalIssueAiFilter: "ai-manual",
