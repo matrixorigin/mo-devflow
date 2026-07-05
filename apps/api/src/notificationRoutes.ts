@@ -145,6 +145,14 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
       });
     }
 
+    if (retryRequest.outcome === "source_resolved") {
+      return reply.status(409).send({
+        error: "notification_source_resolved",
+        message: "The underlying notification source is no longer active; refresh the dashboard instead of retrying.",
+        deliveryStatus: retryRequest.deliveryStatus
+      });
+    }
+
     try {
       const requestedAt = new Date().toISOString();
       const queuedJobs = await enqueueJobsNow([

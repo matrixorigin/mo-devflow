@@ -1092,6 +1092,11 @@ export type NotificationRetryRequestResult =
       deliveryStatus: NotificationStatus;
     }
   | {
+      outcome: "source_resolved";
+      deliveryId: number;
+      deliveryStatus: NotificationStatus;
+    }
+  | {
       outcome: "not_found";
     };
 
@@ -1103,9 +1108,11 @@ export async function requestNotificationDeliveryRetry(input: {
   viewer: DashboardViewer;
 }): Promise<NotificationRetryRequestResult> {
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
+  const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
        ${notificationDeliveryRetryColumns},
+       CASE WHEN ${activeSourceWhere} THEN 1 ELSE 0 END AS source_active,
        (
          SELECT nd.id
          FROM notification_deliveries nd
@@ -1131,6 +1138,13 @@ export async function requestNotificationDeliveryRetry(input: {
   }
 
   const deliveryStatus = asString(delivery.latest_status) as NotificationStatus;
+  if (asNumber(delivery.source_active) !== 1) {
+    return {
+      outcome: "source_resolved",
+      deliveryId: asNumber(delivery.id),
+      deliveryStatus
+    };
+  }
   if (asNumber(delivery.latest_id) !== asNumber(delivery.id) || !notificationStatusAllowsRetry(deliveryStatus)) {
     return {
       outcome: "not_retryable",
