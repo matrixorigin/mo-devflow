@@ -10154,6 +10154,143 @@ function activityReasonColor(reason: string): string {
   return "orange";
 }
 
+function personalQuickChipClass({
+  active,
+  count,
+  critical = false
+}: {
+  active: boolean;
+  count: number;
+  critical?: boolean;
+}): string {
+  return `inline-filter-chip ${critical && count > 0 ? "inline-filter-chip-red" : ""} ${
+    count > 0 ? "" : "inline-filter-chip-muted"
+  } ${active ? "inline-filter-chip-active" : ""}`;
+}
+
+function PersonalWorkbenchQuickFilters({
+  observedPreview,
+  person,
+  activeFilter,
+  onSelect
+}: {
+  observedPreview: ObservedPersonPreview | null;
+  person: PersonalActionView | null;
+  activeFilter: PersonalDrilldownFilter;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  const activeIssues = person?.summary.activeCriticalIssues ?? observedPreview?.summary.activeCriticalIssues ?? 0;
+  const attentionPrs = person?.summary.attentionPrs ?? observedPreview?.summary.attentionPrs ?? 0;
+  const pendingPrs = person?.summary.pendingPrs ?? observedPreview?.summary.pendingPrs ?? 0;
+
+  if (!person) {
+    const threads = observedPreview?.threads.length ?? 0;
+    return (
+      <Space size={[6, 6]} wrap>
+        <button
+          type="button"
+          className={personalQuickChipClass({
+            active: activeFilter === "active_issues",
+            count: activeIssues,
+            critical: true
+          })}
+          onClick={() => onSelect("active_issues")}
+        >
+          {activeIssues} s-1/s0
+        </button>
+        <button
+          type="button"
+          className={personalQuickChipClass({ active: activeFilter === "pending_pr", count: pendingPrs })}
+          onClick={() => onSelect("pending_pr")}
+        >
+          {pendingPrs} pending PR
+        </button>
+        <button
+          type="button"
+          className={personalQuickChipClass({ active: activeFilter === "pr_attention", count: attentionPrs })}
+          onClick={() => onSelect("pr_attention")}
+        >
+          {attentionPrs} PR attention
+        </button>
+        <button
+          type="button"
+          className={personalQuickChipClass({ active: activeFilter === "threads", count: threads })}
+          onClick={() => onSelect("threads")}
+        >
+          {threads} threads
+        </button>
+      </Space>
+    );
+  }
+
+  const testingWork = personalTestingWorkCount(person);
+  const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
+
+  return (
+    <Space size={[6, 6]} wrap>
+      <button
+        type="button"
+        className={personalQuickChipClass({
+          active: activeFilter === "active_issues",
+          count: activeIssues,
+          critical: true
+        })}
+        onClick={() => onSelect("active_issues")}
+      >
+        {activeIssues} s-1/s0
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({
+          active: activeFilter === "triage",
+          count: person.summary.needsTriageIssues
+        })}
+        onClick={() => onSelect("triage")}
+      >
+        {person.summary.needsTriageIssues} needs triage
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({
+          active: activeFilter === "deferred",
+          count: person.summary.deferredIssues
+        })}
+        onClick={() => onSelect("deferred")}
+      >
+        {person.summary.deferredIssues} deferred
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({ active: activeFilter === "pending_pr", count: pendingPrs })}
+        onClick={() => onSelect("pending_pr")}
+      >
+        {pendingPrs} pending PR
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({ active: activeFilter === "pr_attention", count: attentionPrs })}
+        onClick={() => onSelect("pr_attention")}
+      >
+        {attentionPrs} PR attention
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({ active: activeFilter === "testing", count: testingWork })}
+        onClick={() => onSelect("testing")}
+      >
+        {testingWork} testing
+      </button>
+      <button
+        type="button"
+        className={personalQuickChipClass({ active: activeFilter === "yesterday_pr", count: yesterdayPrs })}
+        onClick={() => onSelect("yesterday_pr")}
+      >
+        {yesterdayPrs} PR yday
+      </button>
+    </Space>
+  );
+}
+
 function PersonalRotationOverview({
   person,
   chart,
@@ -14210,70 +14347,18 @@ export default function App() {
                       <Text type="secondary">Observed owner preview from visible cache</Text>
                     ) : null}
                   </div>
-                  <Space size={[6, 6]} wrap>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        (selectedPersonalView?.summary.activeCriticalIssues ??
-                        selectedObservedPersonPreview?.summary.activeCriticalIssues)
-                          ? "inline-filter-chip-red"
-                          : "inline-filter-chip-muted"
-                      } ${personalDrilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() =>
-                        selectedPersonalView
-                          ? setPersonalDrilldownFilter("active_issues")
-                          : selectedObservedPersonPreview
-                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "active_issues")
-                            : setPersonalDrilldownFilter("active_issues")
-                      }
-                    >
-                      {selectedPersonalView?.summary.activeCriticalIssues ??
-                        selectedObservedPersonPreview?.summary.activeCriticalIssues ??
-                        0}{" "}
-                      s-1/s0
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        (selectedPersonalView?.summary.attentionPrs ??
-                        selectedObservedPersonPreview?.summary.attentionPrs)
-                          ? ""
-                          : "inline-filter-chip-muted"
-                      } ${personalDrilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""}`}
-                      onClick={() =>
-                        selectedPersonalView
-                          ? setPersonalDrilldownFilter("pr_attention")
-                          : selectedObservedPersonPreview
-                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "pr_attention")
-                            : setPersonalDrilldownFilter("pr_attention")
-                      }
-                    >
-                      {selectedPersonalView?.summary.attentionPrs ??
-                        selectedObservedPersonPreview?.summary.attentionPrs ??
-                        0}{" "}
-                      PR attention
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-filter-chip ${
-                        personalDrilldownFilter === (selectedPersonalView ? "testing" : "threads")
-                          ? "inline-filter-chip-active"
-                          : ""
-                      }`}
-                      onClick={() =>
-                        selectedPersonalView
-                          ? setPersonalDrilldownFilter("testing")
-                          : selectedObservedPersonPreview
-                            ? openObservedPersonalMetric(selectedObservedPersonPreview.login, "threads")
-                            : setPersonalDrilldownFilter("testing")
-                      }
-                    >
-                      {selectedPersonalView
-                        ? personalTestingWorkCount(selectedPersonalView)
-                        : (selectedObservedPersonPreview?.threads.length ?? 0)}{" "}
-                      {selectedPersonalView ? "testing" : "threads"}
-                    </button>
-                  </Space>
+                  <PersonalWorkbenchQuickFilters
+                    person={selectedPersonalView}
+                    observedPreview={selectedObservedPersonPreview}
+                    activeFilter={personalDrilldownFilter}
+                    onSelect={(filter) =>
+                      selectedPersonalView
+                        ? setPersonalDrilldownFilter(filter)
+                        : selectedObservedPersonPreview
+                          ? openObservedPersonalMetric(selectedObservedPersonPreview.login, filter)
+                          : setPersonalDrilldownFilter(filter)
+                    }
+                  />
                 </div>
                 {!data.personalViews.length && observedPeople.length > 0 ? (
                   <>
