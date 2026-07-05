@@ -21,6 +21,7 @@ import {
   driftSignalFilterFromHash,
   filterManualRefreshLayersForQuota,
   initialPersonalPrThroughputSelection,
+  lazyListToggleShowAllText,
   manualRefreshLayerBlockedByQuota,
   manualRefreshPresetLayers,
   manualRefreshPresetLayersForQuota,
@@ -630,6 +631,11 @@ describe("dashboard hash filters", () => {
     expect(dashboardRefreshModeText(true, true)).toBe("refreshing");
   });
 
+  it("labels lazy list expansion as an explicit clickable reveal action", () => {
+    expect(lazyListToggleShowAllText(32, "s0 issues")).toBe("Show all 32 hidden s0 issues");
+    expect(lazyListToggleShowAllText(4, "PRs")).toBe("Show all 4 hidden PRs");
+  });
+
   it("labels the deployment service read token separately from personal sign-in", () => {
     expect(serviceReadTokenStatusText(true)).toBe("service read ready");
     expect(serviceReadTokenStatusText(false)).toBe("service read missing");
@@ -780,8 +786,10 @@ describe("dashboard hash filters", () => {
   });
 
   it("summarizes the collapsed PR table with count, scope, and sort", () => {
-    expect(prRotationTableSummary(1, "ci_failed", "age")).toBe("1 PR | CI failed | sort PR age");
-    expect(prRotationTableSummary(12, "attention", "last_action")).toBe("12 PRs | PR attention | sort last action");
+    expect(prRotationTableSummary(1, "ci_failed", "age")).toBe("paginated 1 PR | CI failed | sort PR age");
+    expect(prRotationTableSummary(12, "attention", "last_action")).toBe(
+      "paginated 12 PRs | PR attention | sort last action"
+    );
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {

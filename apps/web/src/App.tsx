@@ -1077,6 +1077,10 @@ function CardListPagination({
   );
 }
 
+export function lazyListToggleShowAllText(hiddenCount: number, itemLabel: string): string {
+  return `Show all ${hiddenCount} hidden ${itemLabel}`;
+}
+
 function LazyListToggle({
   hiddenCount,
   revealCount,
@@ -1097,18 +1101,12 @@ function LazyListToggle({
   onCollapse?: () => void;
 }) {
   if (hiddenCount > 0) {
+    const showAllText = lazyListToggleShowAllText(hiddenCount, itemLabel);
     return (
-      <button
-        type="button"
-        className={className}
-        onClick={onShowMore}
-        aria-label={`Show all ${hiddenCount} hidden ${itemLabel}`}
-      >
+      <button type="button" className={className} onClick={onShowMore} aria-label={showAllText}>
         <ChevronDown size={14} aria-hidden="true" />
-        <span className="list-toggle-copy">
-          Show {revealCount} more {itemLabel}
-        </span>
-        <strong className="list-toggle-action">Show all</strong>
+        <span className="list-toggle-copy">{showAllText}</span>
+        <strong className="list-toggle-action">{revealCount} more</strong>
       </button>
     );
   }
@@ -11106,7 +11104,7 @@ function prSortLabel(sort: PrSort): string {
 }
 
 export function prRotationTableSummary(prCount: number, scope: PrScopeFilter, sort: PrSort): string {
-  return `${prCount} ${prCount === 1 ? "PR" : "PRs"} | ${prScopeLabel(scope)} | sort ${prSortLabel(sort)}`;
+  return `paginated ${prCount} ${prCount === 1 ? "PR" : "PRs"} | ${prScopeLabel(scope)} | sort ${prSortLabel(sort)}`;
 }
 
 export function pagedRangeLabel(total: number, page: number, pageSize: number): string | null {
@@ -24099,7 +24097,7 @@ export default function App() {
                     </details>
                     <details className="secondary-disclosure pr-table-disclosure">
                       <summary>
-                        <span>PR table</span>
+                        <span>Paginated PR table</span>
                         <Space size={[4, 4]} wrap>
                           <Tag>{prRotationTableSummary(filteredPendingPrs.length, prScopeFilter, prSort)}</Tag>
                           {prRotationTableRangeLabel ? <Tag>{prRotationTableRangeLabel}</Tag> : null}
