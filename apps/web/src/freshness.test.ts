@@ -640,6 +640,12 @@ describe("production readiness summary", () => {
       value: "observer",
       target: "connect_token"
     });
+    expect(summary.gates.find((gate) => gate.key === "service_token")).toMatchObject({
+      label: "Service read token",
+      status: "ready",
+      value: "configured",
+      target: "health"
+    });
     expect(summary.gates.find((gate) => gate.key === "webhook")).toMatchObject({
       status: "waiting",
       value: "waiting for delivery",
@@ -677,6 +683,14 @@ describe("production readiness summary", () => {
       value: "anonymous only",
       target: "health"
     });
+    expect(summary.gates.find((gate) => gate.key === "service_token")).toMatchObject({
+      status: "needs_action",
+      tone: "critical",
+      value: "anonymous"
+    });
+    expect(summary.blockers.map((gate) => gate.key)).toEqual(
+      expect.arrayContaining(["service_token", "github_evidence"])
+    );
     expect(summary.gates.find((gate) => gate.key === "github_evidence")?.detail).toContain("PR review");
   });
 

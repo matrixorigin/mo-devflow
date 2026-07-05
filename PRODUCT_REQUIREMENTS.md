@@ -188,6 +188,8 @@ The product must cache GitHub data in a database.
 
 GitHub should not be queried repeatedly for every page load. Pages should read from local cached data and show the last updated time.
 
+Production deployments should configure a service read token during startup for repository-wide read-only polling and evidence backfill. This token is deployment configuration, not a leader's browser Connect session. It must be used only as a read source and recorded as `service_read_token` evidence. Personal Connect tokens remain per-user and are used for user-scoped reads and confirmed writes.
+
 Supported data ingestion modes:
 
 - Webhook ingestion for near-real-time updates, enabled only when the GitHub webhook secret is configured.

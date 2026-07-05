@@ -260,6 +260,9 @@ Polling:
 - Keep PR enrichment bounded by `MO_DEVFLOW_PR_BACKFILL_MAX_ITEMS`; default anonymous enrichment is off because GitHub anonymous REST quota is only 60 requests/hour.
 - Keep issue comment and issue timeline backfill bounded by `MO_DEVFLOW_COMMENT_BACKFILL_MAX_ITEMS` and `MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS`.
 - Treat `MO_DEVFLOW_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` as a service read token for polling and backfill. The API may expose whether a service token is configured, but must never expose the token value.
+- The service read token is deployment configuration loaded by the API/worker process. It is not created by a user's Connect action and must not be sourced from a leader's browser session.
+- Data fetched with the service read token should use `source_auth_type = service_read_token` and `source_user_id = NULL`.
+- Personal Connect tokens remain stored per GitHub user and should use `source_auth_type = user_token` only for user-scoped reads or confirmed writes.
 - Show the configured PR detail/comment/timeline backfill limits in production readiness so operators know whether PR review, CI, mergeability, issue links, and comment-backed rules have production-quality evidence.
 - For production-quality request-change, CI-failure, and merge-conflict attention rules, configure a service read token or authenticated sync path.
 

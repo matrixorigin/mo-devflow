@@ -719,6 +719,15 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
       configured: configuration.localCheckoutConfigured
     },
     {
+      key: "service-read-token",
+      label: "Service read token",
+      value: configuration.githubServiceTokenConfigured ? "configured" : "anonymous",
+      detail: configuration.githubServiceTokenConfigured
+        ? "Worker polling and backfill use the deployment read-only source; it is not a leader Connect session."
+        : "Configure MO_DEVFLOW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN for production-quality read evidence.",
+      configured: configuration.githubServiceTokenConfigured
+    },
+    {
       key: "github-evidence",
       label: "PR/issue evidence",
       value: configuration.githubEvidenceBackfillConfigured
@@ -728,7 +737,7 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
           : "anonymous only",
       detail: configuration.githubEvidenceBackfillConfigured
         ? "PR detail, comments, and issue timeline backfill can support review, CI, links, and workflow checks."
-        : "PR review, CI, issue links, and comment-backed rules can be incomplete until evidence backfill is configured.",
+        : "PR review, CI, issue links, and comment-backed rules can be incomplete until service read token and evidence backfill are configured.",
       configured: configuration.githubEvidenceBackfillConfigured
     },
     {

@@ -66,7 +66,15 @@ export interface WebhookReadinessSummary {
 
 export type ProductionReadinessStatus = "ready" | "needs_action" | "waiting" | "disabled";
 export type ProductionReadinessGateKey =
-  "cache" | "worker" | "github_evidence" | "webhook" | "token" | "write_back" | "notifications" | "audit";
+  | "cache"
+  | "worker"
+  | "service_token"
+  | "github_evidence"
+  | "webhook"
+  | "token"
+  | "write_back"
+  | "notifications"
+  | "audit";
 export type ProductionReadinessTarget = "health" | "webhooks" | "notifications" | "audit" | "connect_token";
 
 export interface ProductionReadinessGate {
@@ -152,6 +160,22 @@ function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarni
 }
 
 const githubEvidenceLayers: ManualRefreshLayer[] = ["pr_backfill", "comment_backfill", "issue_timeline_backfill"];
+
+function summarizeServiceReadTokenGate(data: DashboardSummary): ProductionReadinessGate {
+  const configured = data.profileConfiguration.githubServiceTokenConfigured;
+  return {
+    key: "service_token",
+    label: "Service read token",
+    status: configured ? "ready" : "needs_action",
+    tone: configured ? "good" : "critical",
+    value: configured ? "configured" : "anonymous",
+    detail: configured
+      ? "Worker polling and backfill use the deployment service read token; personal Connect is not the service source."
+      : "Configure MO_DEVFLOW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN for read-only polling and evidence backfill. Do not use a leader browser Connect as the service source.",
+    action: configured ? "Inspect health" : "Configure env",
+    target: "health"
+  };
+}
 
 function summarizeGithubEvidenceGate(data: DashboardSummary): ProductionReadinessGate {
   const configuration = data.profileConfiguration;
@@ -524,6 +548,7 @@ export function summarizeProductionReadiness(input: {
       action: "Open health",
       target: "health"
     },
+    summarizeServiceReadTokenGate(data),
     summarizeGithubEvidenceGate(data),
     {
       key: "webhook",
@@ -544,7 +569,7 @@ export function summarizeProductionReadiness(input: {
     },
     {
       key: "token",
-      label: "User token",
+      label: "Personal write token",
       status: tokenEncryptionMissing ? "needs_action" : authenticated ? "ready" : "waiting",
       tone: tokenEncryptionMissing ? "critical" : authenticated ? "good" : "attention",
       value: tokenEncryptionMissing
@@ -555,9 +580,9 @@ export function summarizeProductionReadiness(input: {
       detail: tokenEncryptionMissing
         ? "Token encryption is missing, so users cannot connect GitHub tokens."
         : authenticated
-          ? "GitHub operations use the connected user's identity."
+          ? "GitHub writes and privileged actions use the connected user's identity."
           : "Anonymous viewers can inspect cached data only.",
-      action: authenticated ? "Reconnect token" : "Connect token",
+      action: authenticated ? "Reconnect personal token" : "Connect personal token",
       target: "connect_token"
     },
     {
@@ -584,8 +609,9 @@ export function summarizeProductionReadiness(input: {
           : (writeCapability?.status.replaceAll("_", " ") ?? "token needed"),
       detail: !data.profileConfiguration.writeBackEnabled
         ? "Repository profile keeps GitHub write-back disabled."
-        : (writeCapability?.message ?? "Connect a token with issue label/comment permissions before confirmed writes."),
-      action: writeCapability?.enabled ? "Open audit" : "Connect token",
+        : (writeCapability?.message ??
+          "Connect a personal token with issue label/comment permissions before confirmed writes."),
+      action: writeCapability?.enabled ? "Open audit" : "Connect personal token",
       target: writeCapability?.enabled ? "audit" : "connect_token"
     },
     {
@@ -678,7 +704,7 @@ export function summarizeProductionReadiness(input: {
       score,
       label: "waiting for evidence",
       title: "Production readiness is waiting for live evidence",
-      detail: `${waiting.length} gates are configured or safe, but still need a real token, delivery, write, or audit event to prove the loop.`,
+      detail: `${waiting.length} gates are configured or safe, but still need real service/personal token, delivery, write, or audit evidence to prove the loop.`,
       gates,
       blockers,
       waiting,
@@ -692,7 +718,7 @@ export function summarizeProductionReadiness(input: {
     label: "ready",
     title: "Production readiness is clear",
     detail:
-      "Cache, worker, PR/issue evidence, webhook, token, write-back, notifications, and audit evidence are in a usable state.",
+      "Cache, worker, service read token, PR/issue evidence, webhook, personal write token, write-back, notifications, and audit evidence are in a usable state.",
     gates,
     blockers,
     waiting,
