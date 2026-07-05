@@ -10227,6 +10227,37 @@ button.flow-diagnostic-card:focus-visible {
   color: #6b7280;
 }
 
+.manual-refresh-result {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.manual-refresh-result-main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.manual-refresh-result-main > span {
+  color: #374151;
+  font-weight: 650;
+}
+
+.manual-refresh-result-jobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.manual-refresh-result-jobs .ant-tag {
+  margin-inline-end: 0;
+  white-space: normal;
+}
+
 .sync-health-tags,
 .sync-health-layer {
   max-width: 100%;

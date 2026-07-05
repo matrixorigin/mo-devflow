@@ -16,6 +16,7 @@ import {
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
   manualRefreshPresetLayers,
+  manualRefreshQueuedJobLabel,
   notificationDeliveryScopeFilterFromHash,
   peoplePrFlowMatrixRows,
   peopleRiskSummary,
@@ -268,6 +269,17 @@ describe("dashboard hash filters", () => {
       "ai_drift",
       "notifications"
     ]);
+  });
+
+  it("summarizes queued manual refresh jobs with status and readiness", () => {
+    expect(
+      manualRefreshQueuedJobLabel({
+        jobKey: "rules:repo",
+        jobType: "rules",
+        status: "pending",
+        nextRunAt: null
+      })
+    ).toBe("rules pending · ready now");
   });
 
   it("routes capped read models to the most relevant board drilldown", () => {

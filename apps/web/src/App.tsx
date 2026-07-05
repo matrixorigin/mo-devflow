@@ -2642,6 +2642,40 @@ function manualRefreshStatusColor(status: string): string {
   return "default";
 }
 
+export function manualRefreshQueuedJobLabel(job: ManualRefreshResult["queuedJobs"][number]): string {
+  return `${labelText(job.jobType)} ${labelText(job.status)} · ${job.nextRunAt ? `next ${formatDate(job.nextRunAt)}` : "ready now"}`;
+}
+
+function ManualRefreshResultDetails({ result }: { result: ManualRefreshResult }) {
+  return (
+    <div className="manual-refresh-result">
+      <div className="manual-refresh-result-main">
+        <span>
+          Request #{result.requestId} at {formatDate(result.requestedAt)}
+        </span>
+        <Space size={[4, 4]} wrap>
+          {result.requestedLayers.map((layer) => (
+            <Tooltip title={manualRefreshLayerDescription(layer)} key={layer}>
+              <Tag>{labelText(layer)}</Tag>
+            </Tooltip>
+          ))}
+        </Space>
+      </div>
+      <div className="manual-refresh-result-jobs" aria-label="Queued refresh jobs">
+        {result.queuedJobs.length > 0 ? (
+          result.queuedJobs.map((job) => (
+            <Tag color={manualRefreshStatusColor(job.status)} key={job.jobKey}>
+              {manualRefreshQueuedJobLabel(job)}
+            </Tag>
+          ))
+        ) : (
+          <Tag color="gold">No worker job was returned by the queue</Tag>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
   if (severity === "critical") {
     return "red";
@@ -21921,9 +21955,7 @@ export default function App() {
             className="band"
             type="success"
             title={`Queued ${manualRefreshResult.queuedJobs.length} refresh jobs`}
-            description={`Request #${manualRefreshResult.requestId} at ${formatDate(manualRefreshResult.requestedAt)}: ${manualRefreshResult.requestedLayers
-              .map(labelText)
-              .join(", ")}`}
+            description={<ManualRefreshResultDetails result={manualRefreshResult} />}
             showIcon
           />
         ) : null}
