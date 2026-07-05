@@ -2686,6 +2686,64 @@ function ManualRefreshResultDetails({ result }: { result: ManualRefreshResult })
   );
 }
 
+type WorkflowPostWriteRefresh = NonNullable<WorkflowFixExecutionResult["postWriteRefresh"]>;
+
+export function workflowPostWriteRefreshSummary(refresh: WorkflowPostWriteRefresh): string {
+  if (!refresh.queued) {
+    return refresh.errorMessage ?? "Post-write refresh was not queued.";
+  }
+  if (refresh.queuedJobs.length === 0) {
+    return `${refresh.layers.map(labelText).join(", ")} requested, but no worker job was returned by the queue.`;
+  }
+  return `${refresh.queuedJobs.length} worker jobs queued for ${refresh.layers.map(labelText).join(", ")}.`;
+}
+
+function WorkflowPostWriteRefreshDetails({
+  refresh,
+  onOpenHealth,
+  onPrepareManualRefresh
+}: {
+  refresh: WorkflowPostWriteRefresh;
+  onOpenHealth: () => void;
+  onPrepareManualRefresh: (layers: ManualRefreshLayer[]) => void;
+}) {
+  return (
+    <div className="manual-refresh-result">
+      <div className="manual-refresh-result-main">
+        <span>{workflowPostWriteRefreshSummary(refresh)}</span>
+        <Space size={[4, 4]} wrap>
+          {refresh.layers.map((layer) => (
+            <Tooltip title={manualRefreshLayerDescription(layer)} key={layer}>
+              <Tag>{labelText(layer)}</Tag>
+            </Tooltip>
+          ))}
+        </Space>
+      </div>
+      <div className="manual-refresh-result-jobs" aria-label="Post-write refresh jobs">
+        {refresh.queuedJobs.length > 0 ? (
+          refresh.queuedJobs.map((job) => (
+            <Tag color={manualRefreshStatusColor(job.status)} key={job.jobKey}>
+              {manualRefreshQueuedJobLabel(job)}
+            </Tag>
+          ))
+        ) : (
+          <Tag color="gold">No worker job was returned by the queue</Tag>
+        )}
+      </div>
+      <Space size={6} wrap>
+        {!refresh.queued ? (
+          <Button size="small" icon={<RefreshCcw size={14} />} onClick={() => onPrepareManualRefresh(refresh.layers)}>
+            Queue manually
+          </Button>
+        ) : null}
+        <Button size="small" onClick={onOpenHealth}>
+          Open Health
+        </Button>
+      </Space>
+    </div>
+  );
+}
+
 function blockerColor(severity: CriticalIssueBlockerView["severity"]): string {
   if (severity === "critical") {
     return "red";
@@ -23593,8 +23651,17 @@ export default function App() {
                     : "Post-write refresh was not queued"
                 }
                 description={
-                  workflowExecution.postWriteRefresh.errorMessage ??
-                  `${workflowExecution.postWriteRefresh.layers.map(labelText).join(", ")} will refresh from GitHub and recompute derived dashboards.`
+                  <WorkflowPostWriteRefreshDetails
+                    refresh={workflowExecution.postWriteRefresh}
+                    onOpenHealth={() => {
+                      setPreviewModalOpen(false);
+                      selectView("Health");
+                    }}
+                    onPrepareManualRefresh={(layers) => {
+                      setPreviewModalOpen(false);
+                      openManualRefreshModal(layers);
+                    }}
+                  />
                 }
                 showIcon
               />

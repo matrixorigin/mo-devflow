@@ -59,6 +59,7 @@ import {
   violationSignalFilterFromHash,
   webhookScopeFilterFromHash,
   writeAuditScopeFilterFromHash,
+  workflowPostWriteRefreshSummary,
   workflowViolationMatchesSignalFilter
 } from "./App";
 
@@ -98,6 +99,36 @@ describe("dashboard hash filters", () => {
     expect(retryLaterErrorMessage("Retry failed webhooks later.", 6.2)).toBe(
       "Retry failed webhooks later. Try again in 7s."
     );
+  });
+
+  it("summarizes post-write refresh queueing outcomes", () => {
+    expect(
+      workflowPostWriteRefreshSummary({
+        queued: true,
+        layers: ["github_sync", "rules"],
+        queuedJobs: [
+          { jobKey: "github-sync:test", jobType: "github_sync", status: "queued", nextRunAt: null },
+          { jobKey: "rules:test", jobType: "rules", status: "pending", nextRunAt: "2026-07-05T10:00:00.000Z" }
+        ],
+        errorMessage: null
+      })
+    ).toBe("2 worker jobs queued for github sync, rules.");
+    expect(
+      workflowPostWriteRefreshSummary({
+        queued: true,
+        layers: ["metrics"],
+        queuedJobs: [],
+        errorMessage: null
+      })
+    ).toBe("metrics requested, but no worker job was returned by the queue.");
+    expect(
+      workflowPostWriteRefreshSummary({
+        queued: false,
+        layers: ["github_sync"],
+        queuedJobs: [],
+        errorMessage: "queue unavailable"
+      })
+    ).toBe("queue unavailable");
   });
 
   it("round-trips issue board filters for shareable drilldown links", () => {
