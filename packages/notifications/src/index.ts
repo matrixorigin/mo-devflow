@@ -69,10 +69,13 @@ export function buildWeComMarkdown(profile: RepoProfile, candidate: Notification
       `## mo-devflow ${digestPeriod} digest`,
       `> Repo: ${profile.key}`,
       `> Date: ${title}`,
+      candidate.relatedLogin ? `> Person: ${candidate.relatedLogin}` : null,
       `> Dashboard: ${dashboardTarget}`,
       "",
       evidence
-    ].join("\n");
+    ]
+      .filter((line): line is string => line !== null)
+      .join("\n");
   }
   return [
     `## mo-devflow ${candidate.severity.toUpperCase()} alert`,

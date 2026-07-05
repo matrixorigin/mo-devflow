@@ -105,6 +105,28 @@ describe("notifications", () => {
     expect(markdown).not.toContain("INFO alert");
   });
 
+  test("builds watched-user daily digest markdown with the target person", () => {
+    const markdown = buildWeComMarkdown(profile, {
+      ...candidate,
+      sourceType: "daily_digest",
+      ruleKey: "daily_watched_user_digest",
+      severity: "warning",
+      objectType: "digest",
+      objectNumber: null,
+      title: "Daily digest for alice on 2026-07-03",
+      htmlUrl: "https://github.com/matrixorigin/matrixone",
+      dashboardUrl: "https://devflow.example.com/#personal?person=alice",
+      relatedLogin: "alice",
+      evidenceSummary: "alice: 1 active s-1/s0, 2 pending PRs."
+    });
+
+    expect(markdown).toContain("mo-devflow daily digest");
+    expect(markdown).toContain("Person: alice");
+    expect(markdown).toContain("[Open in mo-devflow](https://devflow.example.com/#personal?person=alice)");
+    expect(markdown).toContain("alice: 1 active s-1/s0, 2 pending PRs.");
+    expect(markdown).not.toContain("WARNING alert");
+  });
+
   test("builds weekly digest markdown as a summary instead of an alert", () => {
     const markdown = buildWeComMarkdown(profile, {
       ...candidate,
