@@ -79,6 +79,13 @@ describe("dashboard hash filters", () => {
     expect(
       dashboardHashForView("Personal", {
         personLogin: "alice",
+        personalDrilldownFilter: "active_no_pr"
+      })
+    ).toBe("personal?person=alice&drilldown=active_no_pr");
+    expect(personalDrilldownFilterFromHash("#personal?person=alice&drilldown=active_no_pr")).toBe("active_no_pr");
+    expect(
+      dashboardHashForView("Personal", {
+        personLogin: "alice",
         personalDrilldownFilter: "active_issues"
       })
     ).toBe("personal?person=alice");

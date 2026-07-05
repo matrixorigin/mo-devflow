@@ -262,7 +262,15 @@ type PrSort = "risk" | "age" | "last_action" | "testing_wait" | "number";
 type PrBoardTab = "rotation" | "testing";
 type TestingIssueQueueFilter = "all" | "stale" | "attention" | "unlinked" | "data_gap";
 type PersonalDrilldownFilter =
-  "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
+  | "active_issues"
+  | "active_no_pr"
+  | "pr_attention"
+  | "pending_pr"
+  | "testing"
+  | "triage"
+  | "deferred"
+  | "yesterday_pr"
+  | "threads";
 type WebhookDeliveryScopeFilter =
   "all" | "pending" | "failed" | "processed" | "ignored" | "connectivity_probe" | "duplicates";
 type WriteAuditScopeFilter =
@@ -326,6 +334,7 @@ const peopleBoardSorts = [
 ] satisfies PeopleBoardSort[];
 const personalDrilldownFilters = [
   "active_issues",
+  "active_no_pr",
   "pr_attention",
   "pending_pr",
   "testing",
@@ -3469,7 +3478,7 @@ function personalTestingStaleCount(person: PersonalActionView): number {
 }
 
 function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
-  if (filter === "active_issues") {
+  if (filter === "active_issues" || filter === "active_no_pr") {
     return "critical";
   }
   if (filter === "pr_attention") {
@@ -4091,7 +4100,9 @@ function TeamRotationOverview({
           )
         }
         onOpenOwnerNoPrIssues={(summary) =>
-          onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "no_pr" })
+          openOwnerPersonalDrilldown(summary, "active_no_pr", () =>
+            onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "no_pr" })
+          )
         }
         onOpenPrRisks={() => onOpenPrsFilter("attention")}
         onOpenOwnerPrRisks={(summary) =>
@@ -14998,7 +15009,7 @@ function PersonalRotationOverview({
               type="button"
               className={`inline-filter-chip ${
                 person.activeCriticalIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              } ${isPersonalActiveDrilldown(drilldownFilter) ? "inline-filter-chip-active" : ""}`}
               onClick={() => onDrilldownChange("active_issues")}
             >
               {person.activeCriticalIssues.length} active s-1/s0
@@ -15541,6 +15552,9 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
   if (filter === "active_issues") {
     return "Active s-1/s0 Issues";
   }
+  if (filter === "active_no_pr") {
+    return "Active Issues Without PR";
+  }
   if (filter === "pr_attention") {
     return "PR Attention";
   }
@@ -15560,6 +15574,10 @@ function personalDrilldownLabel(filter: PersonalDrilldownFilter): string {
     return "Yesterday PR";
   }
   return "Issue-PR Threads";
+}
+
+function isPersonalActiveDrilldown(filter: PersonalDrilldownFilter): boolean {
+  return filter === "active_issues" || filter === "active_no_pr";
 }
 
 function PersonalExecutionMap({
@@ -15837,17 +15855,20 @@ function PersonalDrilldownBoard({
   person,
   chart,
   filter,
+  onDrilldownChange,
   onIssuePreview,
   onPullRequestPreview
 }: {
   person: PersonalActionView;
   chart: PersonalGanttChart;
   filter: PersonalDrilldownFilter;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
   onIssuePreview: (issue: CriticalIssueView | PersonalIssueView) => void;
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
 }) {
   const title = personalDrilldownLabel(filter);
   const [testingIssueFilter, setTestingIssueFilter] = useState<TestingIssueQueueFilter>("all");
+  const activeNoPrIssues = person.activeCriticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
 
   if (filter === "threads") {
     return (
@@ -15897,18 +15918,34 @@ function PersonalDrilldownBoard({
     );
   }
 
-  if (filter === "active_issues") {
+  if (filter === "active_issues" || filter === "active_no_pr") {
+    const activeIssues = filter === "active_no_pr" ? activeNoPrIssues : person.activeCriticalIssues;
     return (
       <section className="personal-filtered-board personal-filtered-board-critical">
         <div className="subsection-heading">
           <Title level={5}>{title}</Title>
-          <Tag color={person.activeCriticalIssues.length > 0 ? "red" : "default"}>
-            {person.activeCriticalIssues.length} active
-          </Tag>
+          <Space size={[4, 4]} wrap>
+            <button
+              type="button"
+              className={`inline-filter-chip ${filter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("active_issues")}
+            >
+              {person.activeCriticalIssues.length} active
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activeNoPrIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              } ${filter === "active_no_pr" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("active_no_pr")}
+            >
+              {activeNoPrIssues.length} no PR
+            </button>
+          </Space>
         </div>
         <IssueCardList
-          issues={person.activeCriticalIssues}
-          emptyText="No active s-1/s0 issues"
+          issues={activeIssues}
+          emptyText={filter === "active_no_pr" ? "No active issue without visible PR" : "No active s-1/s0 issues"}
           onPreview={onIssuePreview}
         />
       </section>
@@ -16177,7 +16214,7 @@ function WatchedPersonOperationsSummary({
           value={person.activeCriticalIssues.length}
           detail={`oldest ${optionalHours(maxCriticalActiveAge(person.activeCriticalIssues))}`}
           tone={personOpsTone(person.activeCriticalIssues.length, true)}
-          active={activeFilter === "active_issues"}
+          active={isPersonalActiveDrilldown(activeFilter)}
           onClick={() => onSelect("active_issues")}
         />
         <PersonOpsTile
@@ -16932,7 +16969,7 @@ function SelectedPersonWorkbench({
               type="button"
               className={`inline-filter-chip ${
                 person.activeCriticalIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              } ${isPersonalActiveDrilldown(drilldownFilter) ? "inline-filter-chip-active" : ""}`}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -16984,6 +17021,7 @@ function SelectedPersonWorkbench({
         person={person}
         chart={gantt}
         filter={drilldownFilter}
+        onDrilldownChange={onDrilldownChange}
         onIssuePreview={previewIssue}
         onPullRequestPreview={previewPullRequest}
       />
@@ -16996,7 +17034,7 @@ function SelectedPersonWorkbench({
               type="button"
               className={`inline-filter-chip ${
                 activityCounts.critical > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
-              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              } ${isPersonalActiveDrilldown(drilldownFilter) ? "inline-filter-chip-active" : ""}`}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
