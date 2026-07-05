@@ -8418,6 +8418,21 @@ function prSortLabel(sort: PrSort): string {
   return "risk";
 }
 
+export function prRotationTableSummary(prCount: number, scope: PrScopeFilter, sort: PrSort): string {
+  return `${prCount} ${prCount === 1 ? "PR" : "PRs"} | ${prScopeLabel(scope)} | sort ${prSortLabel(sort)}`;
+}
+
+export function pagedRangeLabel(total: number, page: number, pageSize: number): string | null {
+  if (total <= 0 || pageSize <= 0 || total <= pageSize) {
+    return null;
+  }
+  const maxPage = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, page), maxPage);
+  const start = (safePage - 1) * pageSize + 1;
+  const end = Math.min(total, safePage * pageSize);
+  return `${start}-${end}`;
+}
+
 function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
   scope: PrScopeFilter;
   title: string;
@@ -8573,7 +8588,7 @@ function PrOperationsSummary({
       </div>
       <div className="pr-ops-side">
         <div className={`pr-ops-next pr-ops-next-${firstAction.scope === "all" ? "good" : "attention"}`}>
-          <span>Open PR board</span>
+          <span>Next PR focus</span>
           <button type="button" onClick={() => onScopeFilterChange(firstAction.scope)}>
             <strong>{firstAction.title}</strong>
             <small>{firstAction.detail}</small>
@@ -17312,6 +17327,11 @@ export default function App() {
         criticalIssuesByPr
       )
     : [];
+  const prRotationTableRangeLabel = pagedRangeLabel(
+    filteredPendingPrs.length,
+    prRotationTablePage,
+    prRotationTablePageSize
+  );
   const testingPrTableScope: PrScopeFilter = isTestingPrScope(prScopeFilter) ? prScopeFilter : "testing";
   const testingPendingPrsForTable = data
     ? sortPendingPrsForDisplay(
@@ -18312,21 +18332,32 @@ export default function App() {
                         />
                       </div>
                     </details>
-                    <Table
-                      rowKey="number"
-                      size="middle"
-                      columns={prColumns}
-                      dataSource={filteredPendingPrs}
-                      scroll={{ x: 1832 }}
-                      pagination={tablePagination(filteredPendingPrs.length, prRotationTablePageSize, {
-                        current: prRotationTablePage,
-                        onChange: (page, pageSize) => {
-                          setPrRotationTablePage(page);
-                          setPrRotationTablePageSize(pageSize);
-                        }
-                      })}
-                      locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
-                    />
+                    <details className="secondary-disclosure pr-table-disclosure">
+                      <summary>
+                        <span>PR table</span>
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{prRotationTableSummary(filteredPendingPrs.length, prScopeFilter, prSort)}</Tag>
+                          {prRotationTableRangeLabel ? <Tag>{prRotationTableRangeLabel}</Tag> : null}
+                        </Space>
+                      </summary>
+                      <div className="secondary-disclosure-body">
+                        <Table
+                          rowKey="number"
+                          size="middle"
+                          columns={prColumns}
+                          dataSource={filteredPendingPrs}
+                          scroll={{ x: 1832 }}
+                          pagination={tablePagination(filteredPendingPrs.length, prRotationTablePageSize, {
+                            current: prRotationTablePage,
+                            onChange: (page, pageSize) => {
+                              setPrRotationTablePage(page);
+                              setPrRotationTablePageSize(pageSize);
+                            }
+                          })}
+                          locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
+                        />
+                      </div>
+                    </details>
                   </>
                 )}
               </section>

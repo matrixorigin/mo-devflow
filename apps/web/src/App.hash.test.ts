@@ -10,8 +10,10 @@ import {
   peopleScopeFilterFromHash,
   peopleSortLabel,
   peopleSortFromHash,
+  pagedRangeLabel,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
+  prRotationTableSummary,
   prScopeHelp,
   prScopeFilterFromHash,
   prScopeLabel,
@@ -155,6 +157,18 @@ describe("dashboard hash filters", () => {
     expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
     expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
     expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
+  });
+
+  it("summarizes the collapsed PR table with count, scope, and sort", () => {
+    expect(prRotationTableSummary(1, "ci_failed", "age")).toBe("1 PR | CI failed | sort PR age");
+    expect(prRotationTableSummary(12, "attention", "last_action")).toBe("12 PRs | PR attention | sort last action");
+  });
+
+  it("clamps paged range labels when filters shrink the table", () => {
+    expect(pagedRangeLabel(12, 1, 8)).toBe("1-8");
+    expect(pagedRangeLabel(12, 9, 8)).toBe("9-12");
+    expect(pagedRangeLabel(8, 1, 8)).toBeNull();
+    expect(pagedRangeLabel(0, 3, 8)).toBeNull();
   });
 
   it("uses neutral people sort labels for observed and watched boards", () => {
