@@ -9418,32 +9418,77 @@ function TestingCommandBoard({
       ) : null}
 
       {queuePrs.length > 0 ? (
-        <div className="testing-command-lanes">
-          <TestingQueueLane
-            title="Linked Issue Wait >24h"
-            description="PRs whose linked issues are assigned to testers and have waited more than a day."
-            prs={stalePrs}
-            visibleLimit={8}
-            tone="critical"
-            emptyText="No issue in testing has waited more than a day"
-          />
-          <TestingQueueLane
-            title="Linked PR Data Gaps"
-            description="PRs whose linked issue is in testing but cached wait time or PR details are incomplete."
-            prs={evidenceGapPrs}
-            visibleLimit={6}
-            tone="attention"
-            emptyText="No linked PR data gaps in cached pending PRs"
-          />
-          <TestingQueueLane
-            title="PRs Linked To Issues In Testing"
-            description="PRs attached to issues already assigned to testers, without current blocker evidence."
-            prs={activePrs}
-            visibleLimit={6}
-            tone="normal"
-            emptyText="No active linked-issue test movement outside waiting lanes"
-          />
-        </div>
+        <details className="secondary-disclosure testing-pr-evidence-disclosure">
+          <summary>
+            <span>Linked PR evidence</span>
+            <Space size={[4, 4]} wrap>
+              <button
+                type="button"
+                className={`inline-filter-chip ${queuePrs.length > 0 ? "" : "inline-filter-chip-muted"}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenPrsFilter("testing");
+                }}
+              >
+                {queuePrs.length} linked PRs
+              </button>
+              <button
+                type="button"
+                className={`inline-filter-chip ${
+                  stalePrs.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+                }`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenPrsFilter("stale_testing");
+                }}
+              >
+                {stalePrs.length} issue waits &gt;24h
+              </button>
+              <button
+                type="button"
+                className={`inline-filter-chip ${
+                  evidenceGapPrs.length > 0 ? "" : "inline-filter-chip-muted"
+                }`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenPrsFilter("testing_evidence_gap");
+                }}
+              >
+                {evidenceGapPrs.length} data gaps
+              </button>
+              <span className="secondary-summary-note">PR cards are evidence for issue testing, not a PR handoff.</span>
+            </Space>
+          </summary>
+          <div className="secondary-disclosure-body testing-command-lanes">
+            <TestingQueueLane
+              title="Linked Issue Wait >24h"
+              description="PRs whose linked issues are assigned to testers and have waited more than a day."
+              prs={stalePrs}
+              visibleLimit={8}
+              tone="critical"
+              emptyText="No issue in testing has waited more than a day"
+            />
+            <TestingQueueLane
+              title="Linked PR Data Gaps"
+              description="PRs whose linked issue is in testing but cached wait time or PR details are incomplete."
+              prs={evidenceGapPrs}
+              visibleLimit={6}
+              tone="attention"
+              emptyText="No linked PR data gaps in cached pending PRs"
+            />
+            <TestingQueueLane
+              title="Linked PR Evidence"
+              description="PR evidence for issues already assigned to testers; the issue remains the testing handoff."
+              prs={activePrs}
+              visibleLimit={6}
+              tone="normal"
+              emptyText="No active linked-issue test movement outside waiting lanes"
+            />
+          </div>
+        </details>
       ) : null}
     </div>
   );
