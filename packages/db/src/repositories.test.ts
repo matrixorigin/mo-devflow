@@ -9,6 +9,7 @@ import type {
 import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
+  applyBacklogSnapshotMetrics,
   attentionItemsToResolve,
   buildSyncHealthSummary,
   cacheStaleHoursFromEnv,
@@ -35,6 +36,7 @@ import {
   profileSetupPlanForViewer,
   pullRequestAttentionFlagsForRules,
   pullRequestWithPreservedInsight,
+  testingIssueContextsByNumber,
   testingIssueHandoffToCloseSamplesFromRows,
   testingIssueTransitionsFromQueueIssues,
   testingIssuesForLogin,
@@ -1387,6 +1389,41 @@ describe("pull request rule inputs", () => {
 });
 
 describe("metric aggregation", () => {
+  function metricPoint(
+    date: string,
+    scopeType: DailyMetricPoint["scopeType"],
+    scopeKey: string
+  ): DailyMetricPoint {
+    return {
+      date,
+      scopeType,
+      scopeKey,
+      prsCreated: 0,
+      prsMerged: 0,
+      issuesOpened: 0,
+      issuesClosed: 0,
+      issuesDeferred: 0,
+      workflowViolationsDetected: 0,
+      activeCriticalIssues: 0,
+      averageActiveCriticalIssueAgeHours: null,
+      needsTriageIssues: 0,
+      averageNeedsTriageIssueAgeHours: null,
+      deferredIssues: 0,
+      averageDeferredIssueAgeHours: null,
+      pendingPrs: 0,
+      averagePendingPrAgeHours: null,
+      attentionPrs: 0,
+      ciFailedPrs: 0,
+      requestedChangePrs: 0,
+      reviewWaitingPrs: 0,
+      mergeConflictPrs: 0,
+      testingQueuePrs: 0,
+      averageTestingQueueAgeHours: null,
+      sourceCompleteness: "complete_cache",
+      generatedAt: "2026-07-04T00:00:00.000Z"
+    };
+  }
+
   test("uses severity timeline evidence for active critical issue age", () => {
     expect(
       criticalActiveMetricSnapshot({
@@ -1523,6 +1560,82 @@ describe("metric aggregation", () => {
         date: "2026-07-04"
       }
     ]);
+  });
+
+  test("counts testing queue from issue handoff context instead of PR state", () => {
+    const profile: RepoProfile = {
+      ...baseProfile,
+      people: { watchedUsers: ["alice", "bob"], testers: ["tester-a"] }
+    };
+    const date = "2026-07-03";
+    const metrics = new Map<string, DailyMetricPoint>([
+      [`${date}:team:all`, metricPoint(date, "team", "all")],
+      [`${date}:person:alice`, metricPoint(date, "person", "alice")],
+      [`${date}:person:bob`, metricPoint(date, "person", "bob")]
+    ]);
+    const issueRows = [
+      {
+        number: 42,
+        state: "open",
+        owner_login: "alice",
+        assignees_json: JSON.stringify(["tester-a"]),
+        labels_json: "[]",
+        created_at: "2026-07-01 00:00:00",
+        updated_at: "2026-07-02 00:00:00",
+        closed_at: null,
+        lifecycle_state: "active",
+        severity: null,
+        is_complete: 1,
+        sync_error: null
+      }
+    ];
+    const prRows = [
+      {
+        owner_login: "bob",
+        author_login: "bob",
+        assignees_json: "[]",
+        created_at: "2026-07-01 00:00:00",
+        closed_at: null,
+        merged_at: null,
+        requested_reviewers_json: "[]",
+        review_decision: null,
+        merge_state_status: null,
+        ci_state: null,
+        latest_review_state: null,
+        latest_review_submitted_at: null,
+        attention_flags_json: "[]",
+        testing_state: "testing",
+        testing_queue_age_hours: 99,
+        detail_synced_at: "2026-07-01 01:00:00",
+        detail_error: null,
+        is_complete: 1,
+        sync_error: null
+      }
+    ];
+    const testingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
+
+    applyBacklogSnapshotMetrics({
+      metrics,
+      dateKeys: [date],
+      profile,
+      issueRows,
+      prRows,
+      criticalStartedAtByIssueNumber: new Map(),
+      testingIssueContexts
+    });
+
+    expect(metrics.get(`${date}:team:all`)).toMatchObject({
+      testingQueuePrs: 1,
+      averageTestingQueueAgeHours: 40
+    });
+    expect(metrics.get(`${date}:person:alice`)).toMatchObject({
+      testingQueuePrs: 1,
+      averageTestingQueueAgeHours: 40
+    });
+    expect(metrics.get(`${date}:person:bob`)).toMatchObject({
+      testingQueuePrs: 0,
+      averageTestingQueueAgeHours: null
+    });
   });
 
   const points: DailyMetricPoint[] = [

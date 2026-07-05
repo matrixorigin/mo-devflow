@@ -69,6 +69,8 @@ interface RowData extends RowDataPacket {
   [key: string]: unknown;
 }
 
+type CacheRow = Record<string, unknown>;
+
 export interface IssueCommentBackfillCandidate {
   issueNumber: number;
   objectType: "issue" | "pull_request";
@@ -504,11 +506,11 @@ function workflowSkippedFromSet(login: string | null, skippedLogins: Set<string>
   return Boolean(login && skippedLogins.has(normalizedLogin(login)));
 }
 
-function rowLogin(row: RowData, column: string): string | null {
+function rowLogin(row: CacheRow, column: string): string | null {
   return row[column] ? asString(row[column]) : null;
 }
 
-function pullRequestRowWorkflowSkipped(row: RowData, skippedLogins: Set<string>): boolean {
+function pullRequestRowWorkflowSkipped(row: CacheRow, skippedLogins: Set<string>): boolean {
   if (skippedLogins.size === 0) {
     return false;
   }
@@ -2202,7 +2204,7 @@ function linkedIssueNumbersForPullRequestRow(row: RowData): number[] {
   ]);
 }
 
-interface TestingIssueContext {
+export interface TestingIssueContext {
   issueNumber: number;
   testers: string[];
   testingLabels: string[];
@@ -2221,7 +2223,7 @@ function uniqueValues(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.length > 0)));
 }
 
-function testingIssueContextsByNumber(profile: RepoProfile, rows: RowData[]): Map<number, TestingIssueContext> {
+export function testingIssueContextsByNumber(profile: RepoProfile, rows: CacheRow[]): Map<number, TestingIssueContext> {
   const testerLogins = testingAssigneeLoginSet(profile);
   const testingLabels = testingLabelSet(profile);
   const contexts = new Map<number, TestingIssueContext>();
@@ -3162,7 +3164,7 @@ function markMetricPartial(
   }
 }
 
-function rowMetricCompleteness(row: RowData, requireDetail = false): MetricSourceCompleteness {
+function rowMetricCompleteness(row: CacheRow, requireDetail = false): MetricSourceCompleteness {
   return metricSourceCompletenessForObject({
     isComplete: asBoolean(row.is_complete),
     syncError: row.sync_error ? asString(row.sync_error) : null,
@@ -3203,7 +3205,7 @@ function metricSnapshotAt(dateKey: string, timezone: string): Date {
   return end.getTime() > now.getTime() ? now : end;
 }
 
-function isOpenAt(row: RowData, asOf: Date): boolean {
+function isOpenAt(row: CacheRow, asOf: Date): boolean {
   const createdAt = fromSqlDate(row.created_at);
   if (!createdAt || new Date(createdAt).getTime() >= asOf.getTime()) {
     return false;
@@ -3212,7 +3214,7 @@ function isOpenAt(row: RowData, asOf: Date): boolean {
   return !closedAt || new Date(closedAt).getTime() >= asOf.getTime();
 }
 
-function isPendingPullRequestAt(row: RowData, asOf: Date): boolean {
+function isPendingPullRequestAt(row: CacheRow, asOf: Date): boolean {
   const createdAt = fromSqlDate(row.created_at);
   if (!createdAt || new Date(createdAt).getTime() >= asOf.getTime()) {
     return false;
@@ -3221,12 +3223,23 @@ function isPendingPullRequestAt(row: RowData, asOf: Date): boolean {
   return !finishedAt || new Date(finishedAt).getTime() >= asOf.getTime();
 }
 
-function ageHoursAt(row: RowData, asOf: Date): number | null {
+function ageHoursAt(row: CacheRow, asOf: Date): number | null {
   const createdAt = fromSqlDate(row.created_at);
   if (!createdAt) {
     return null;
   }
   return Math.max(0, Math.round(((asOf.getTime() - new Date(createdAt).getTime()) / 3_600_000) * 10) / 10);
+}
+
+function testingIssueQueueAgeHoursAt(context: TestingIssueContext, asOf: Date): number | null {
+  if (!context.queueStartedAt) {
+    return null;
+  }
+  const startedAt = new Date(context.queueStartedAt).getTime();
+  if (!Number.isFinite(startedAt) || startedAt > asOf.getTime()) {
+    return null;
+  }
+  return Math.max(0, Math.round(((asOf.getTime() - startedAt) / 3_600_000) * 10) / 10);
 }
 
 export interface CriticalActiveMetricSnapshot {
@@ -3274,11 +3287,11 @@ function isTestingQueueState(value: string): boolean {
 
 const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
 
-function normalizedRowState(row: RowData, key: string): string {
+function normalizedRowState(row: CacheRow, key: string): string {
   return asString(row[key]).toLowerCase();
 }
 
-function prHasReviewWaitingSignal(row: RowData, attentionFlags: string[]): boolean {
+function prHasReviewWaitingSignal(row: CacheRow, attentionFlags: string[]): boolean {
   if (attentionFlags.includes("review_requested_no_response")) {
     return true;
   }
@@ -3308,17 +3321,17 @@ function copyMetricSnapshot(target: DailyMetricPoint, source: DailyMetricPoint):
   target.averageTestingQueueAgeHours = source.averageTestingQueueAgeHours;
 }
 
-function applyBacklogSnapshotMetrics(input: {
+export function applyBacklogSnapshotMetrics(input: {
   metrics: Map<string, DailyMetricPoint>;
   dateKeys: string[];
   profile: RepoProfile;
-  issueRows: RowData[];
-  prRows: RowData[];
+  issueRows: CacheRow[];
+  prRows: CacheRow[];
   criticalStartedAtByIssueNumber: Map<number, string>;
+  testingIssueContexts: Map<number, TestingIssueContext>;
 }): void {
   const people = input.profile.people.watchedUsers;
   const criticalLabels = input.profile.labels.critical;
-  const currentDate = dateKeyInTimezone(new Date(), input.profile.reporting.timezone);
   const skippedLogins = normalizedLoginSet(input.profile.workflow.skipUsers);
 
   for (const date of input.dateKeys) {
@@ -3379,6 +3392,20 @@ function applyBacklogSnapshotMetrics(input: {
           point.deferredIssues += 1;
           deferredAges.push(ageHours);
         }
+        const testingContext = input.testingIssueContexts.get(asNumber(row.number));
+        if (testingContext) {
+          const testingAge = testingIssueQueueAgeHoursAt(testingContext, asOf);
+          if (testingAge !== null) {
+            point.testingQueuePrs += 1;
+            testingQueueAges.push(testingAge);
+          } else if (!testingContext.queueStartedAt) {
+            point.testingQueuePrs += 1;
+            point.sourceCompleteness = "partial_cache";
+          }
+          if (testingContext.queueAgeEvidence === "issue_cache_timestamp") {
+            point.sourceCompleteness = "partial_cache";
+          }
+        }
       }
 
       for (const row of input.prRows) {
@@ -3424,16 +3451,6 @@ function applyBacklogSnapshotMetrics(input: {
           (attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty")
         ) {
           point.mergeConflictPrs += 1;
-        }
-        if (isTestingQueueState(asString(row.testing_state))) {
-          point.testingQueuePrs += 1;
-          const currentQueueAge =
-            row.testing_queue_age_hours === null || row.testing_queue_age_hours === undefined
-              ? null
-              : asNumber(row.testing_queue_age_hours);
-          if (currentQueueAge !== null && date === currentDate) {
-            testingQueueAges.push(currentQueueAge);
-          }
         }
       }
 
@@ -3565,8 +3582,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     `SELECT owner_login, author_login, assignees_json, created_at, closed_at, merged_at,
             requested_reviewers_json, review_decision, merge_state_status, ci_state,
             latest_review_state, latest_review_submitted_at,
-            attention_flags_json, testing_state, testing_queue_age_hours,
-            detail_synced_at, detail_error, is_complete, sync_error
+            attention_flags_json, detail_synced_at, detail_error, is_complete, sync_error
      FROM pull_requests
      WHERE repo_id = ?
        AND (
@@ -3610,7 +3626,8 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   }
 
   const [issueRows] = await pool.execute<RowData[]>(
-    `SELECT number, owner_login, created_at, closed_at, lifecycle_state, severity, is_complete, sync_error
+    `SELECT number, state, owner_login, assignees_json, labels_json,
+            created_at, updated_at, closed_at, lifecycle_state, severity, is_complete, sync_error
      FROM issues
      WHERE repo_id = ? AND is_pull_request = 0
        AND (
@@ -3638,6 +3655,11 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
       .filter(([, severity]) => profile.labels.critical.includes(severity))
   );
   const criticalStartedAtMap = await criticalStartedAtByIssueNumber(repoId, criticalSeverityByIssueNumber, "1 = 1", []);
+  const baseTestingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
+  const testingIssueContexts = testingIssueContextsWithHandoffEvidence(
+    baseTestingIssueContexts,
+    await testingHandoffStartedAtByIssueNumber(repoId, baseTestingIssueContexts, "1 = 1", [])
+  );
   for (const row of issueRows) {
     const owner = row.owner_login ? asString(row.owner_login) : "";
     const createdDate = dateKeyInTimezone(row.created_at, profile.reporting.timezone);
@@ -3703,7 +3725,8 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     profile,
     issueRows,
     prRows,
-    criticalStartedAtByIssueNumber: criticalStartedAtMap
+    criticalStartedAtByIssueNumber: criticalStartedAtMap,
+    testingIssueContexts
   });
 
   const generatedAt = nowSql();
