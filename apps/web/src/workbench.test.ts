@@ -613,7 +613,8 @@ describe("work item attention reasons", () => {
   });
 
   it("labels issue-scoped testing states without PR-side handoff concepts", () => {
-    expect(testingStateBusinessLabel("testing")).toBe("linked issue in test");
+    expect(testingStateBusinessLabel("testing")).toBe("linked issue testing");
+    expect(testingStateBusinessLabel("test_changes_requested")).toBe("linked issue tester feedback");
     expect(testingStateBusinessLabel("not_ready")).toBe("no linked issue test");
     expect(testingStateHelpText("testing")).toContain("linked to an issue");
   });

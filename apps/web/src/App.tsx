@@ -564,7 +564,7 @@ function LazyListToggle({
       >
         <ChevronDown size={14} aria-hidden="true" />
         <span className="list-toggle-copy">
-          +{revealCount} more {itemLabel} ({hiddenCount} hidden)
+          Show {revealCount} more {itemLabel}
         </span>
         <strong className="list-toggle-action">Show all</strong>
       </button>
@@ -1478,18 +1478,18 @@ function TestingStateTag({ state, label }: { state: TestingFlowState; label?: st
 
 function issueTestingStateLabel(state: TestingFlowState): string {
   if (state === "testing") {
-    return "issue in test";
+    return "issue entered testing";
   }
   if (state === "test_changes_requested") {
-    return "changes requested by test";
+    return "tester feedback";
   }
   if (state === "test_passed") {
     return "issue test passed";
   }
   if (state === "closed_or_merged") {
-    return "issue closed";
+    return "issue closed or merged";
   }
-  return "not in test";
+  return "not in issue testing";
 }
 
 function testingSignalBusinessLabel(signal: string): string {
@@ -2426,7 +2426,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "linked issue in test";
+    return "linked issue testing";
   }
   if (filter === "stale_testing") {
     return "linked issue wait";
@@ -2444,10 +2444,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no visible issue after sync";
+    return "no cached issue after sync";
   }
   if (filter === "issue_link_pending") {
-    return "issue link sync pending";
+    return "issue-link cache pending";
   }
   if (filter === "evidence_pending") {
     return "PR detail pending";
@@ -2460,10 +2460,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
 
 function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "no_issue") {
-    return "Only PRs whose detail and relationship sync has completed and still have no visible issue in cache. If GitHub shows an issue, refresh PR detail and issue-link evidence before treating the PR as unlinked.";
+    return "Cache evidence says PR detail sync completed, but no related issue is visible in the local cache. If GitHub shows an issue, queue PR detail and issue-link refresh before treating it as a real link gap.";
   }
   if (filter === "issue_link_pending") {
-    return "These PRs are not treated as unlinked yet because PR detail or relationship evidence is still incomplete.";
+    return "These PRs are missing local issue-link evidence because PR detail or relationship sync is still incomplete.";
   }
   if (filter === "evidence_pending") {
     return "PR review, CI, merge, or issue-link evidence is still incomplete for these rows.";
@@ -3091,14 +3091,14 @@ function PrFilterBar({
             { label: "All", value: "all" },
             { label: "Active issue", value: "active_issue" },
             { label: "Attention", value: "attention" },
-            { label: "Linked issue in test", value: "testing" },
+            { label: "Linked issue test", value: "testing" },
             { label: "Linked issue wait", value: "stale_testing" },
             { label: "Issue test evidence gap", value: "testing_evidence_gap" },
             { label: "CI failed", value: "ci_failed" },
             { label: "Requested changes", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No visible issue after sync", value: "no_issue" },
-            { label: "Issue link syncing", value: "issue_link_pending" },
+            { label: "No cached issue", value: "no_issue" },
+            { label: "Issue-link pending", value: "issue_link_pending" },
             { label: "PR detail pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
@@ -4734,7 +4734,7 @@ function TeamPrRiskRow({
           </div>
         ) : activeIssues.length === 0 ? (
           <div className="team-linked-row team-linked-row-missing">
-            {prIssueLinkUnknown(pr, activeIssues) ? "Issue link sync pending" : "Unlinked after sync"}
+            {prIssueLinkUnknown(pr, activeIssues) ? "Issue-link cache pending" : "No cached issue after sync"}
           </div>
         ) : null}
       </div>
@@ -5047,8 +5047,8 @@ function TeamPullRequestPreviewModal({
           ) : (
             <Text type="secondary">
               {prIssueLinkUnknown(pr, activeIssues)
-                ? "Issue link sync is still pending."
-                : "No linked issue found after sync."}
+                ? "Issue-link cache is still pending."
+                : "No cached issue was found after PR detail sync."}
             </Text>
           )}
         </section>
@@ -5115,18 +5115,18 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
         <Space size={[4, 4]} wrap>
           {prIssueLinkUnknown(pr, activeIssues) ? (
             <Tooltip title="PR detail or relationship sync has not completed. GitHub linked issues may still be missing from cache.">
-              <Tag color="gold">issue link sync pending</Tag>
+              <Tag color="gold">issue-link cache pending</Tag>
             </Tooltip>
           ) : (
-            <Tooltip title="PR detail sync completed, and no related issue was found in GitHub relationship data or PR text.">
-              <Tag color="orange">unlinked after sync</Tag>
+            <Tooltip title="PR detail sync completed, and no related issue is visible in cached relationship data or PR text.">
+              <Tag color="orange">no cached issue after sync</Tag>
             </Tooltip>
           )}
         </Space>
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <TestingStateTag state={pr.testingState} label="linked issue in test" />
+          <TestingStateTag state={pr.testingState} label="linked issue testing" />
           {pr.testingQueueAgeHours !== null ? <Tag>linked issue wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
@@ -6260,12 +6260,12 @@ function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
     return pr.testingTesters.length > 0
       ? `linked issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "linked issue in test";
+      : "linked issue testing";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
   }
-  return prIssueLinkUnknown(pr) ? "issue link sync pending" : "unlinked after sync";
+  return prIssueLinkUnknown(pr) ? "issue-link cache pending" : "no cached issue after sync";
 }
 
 function prActiveIssueActionContext(activeIssues: PrCriticalIssueContext[], pr: PendingPrView): string {
@@ -7706,7 +7706,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="linked issue in test"
+        label="linked issue testing"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
@@ -7748,14 +7748,14 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("conflict")}
       />
       <CriticalBoardStat
-        label="unlinked after sync"
+        label="no cached issue"
         value={noIssuePrs}
         tone={noIssuePrs > 0 ? "attention" : "good"}
         active={scopeFilter === "no_issue"}
         onClick={() => onScopeFilterChange("no_issue")}
       />
       <CriticalBoardStat
-        label="issue link sync pending"
+        label="issue-link pending"
         value={issueLinkPendingPrs}
         tone={issueLinkPendingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "issue_link_pending"}
@@ -8605,7 +8605,7 @@ function TestingCommandBoard({
             emptyText="No linked PR data gaps in cached pending PRs"
           />
           <TestingQueueLane
-            title="PRs With Linked Issue In Test"
+            title="PRs Linked To Issues In Testing"
             description="PRs attached to issues already assigned to testers, without current blocker evidence."
             prs={activePrs}
             visibleLimit={6}
@@ -9224,7 +9224,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
             />
           </div>
         ) : (
-          <Text type="secondary">Issue link sync pending</Text>
+          <Text type="secondary">Issue-link cache pending</Text>
         )}
       </div>
     </article>
@@ -9888,7 +9888,9 @@ function ObservedPersonPrRow({ pr, onPreview }: { pr: PendingPrView; onPreview: 
             />
           </>
         ) : (
-          <Tag color={pr.isComplete ? "orange" : "default"}>{pr.isComplete ? "unlinked" : "link sync pending"}</Tag>
+          <Tag color={pr.isComplete ? "orange" : "default"}>
+            {pr.isComplete ? "no cached issue" : "issue-link pending"}
+          </Tag>
         )}
         <Tooltip title={`Preview PR ${pr.number}`}>
           <Button
@@ -10006,8 +10008,8 @@ function isCriticalIssueView(issue: CriticalIssueView | PersonalIssueView): issu
 }
 
 type IssueListSort = "priority" | "duration" | "number";
-type PullRequestListFilter = "all" | "attention" | "ci" | "review" | "merge" | "testing";
-type PullRequestListSort = "age" | "last_action" | "number";
+type PullRequestListFilter = "all" | "attention" | "ci" | "review" | "merge" | "testing" | "issue_link_gap";
+type PullRequestListSort = "age" | "blockers" | "last_action" | "number";
 
 function issueCommentEvidenceDisplay(issue: CriticalIssueView | PersonalIssueView): {
   label: string;
@@ -10108,11 +10110,31 @@ function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullR
   if (filter === "merge") {
     return pr.mergeStateStatus === "dirty";
   }
+  if (filter === "issue_link_gap") {
+    return !prHasVisibleIssueContext(pr);
+  }
   return isTestingQueuePr(pr);
+}
+
+function pullRequestBlockerScore(pr: PersonalPullRequestView): number {
+  return (
+    prAttentionReasons(pr).length * 80 +
+    (pr.reviewDecision === "changes_requested" ? 220 : 0) +
+    (pr.latestReviewState === "changes_requested" ? 180 : 0) +
+    (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
+      ? 200
+      : 0) +
+    (pr.mergeStateStatus === "dirty" ? 200 : 0) +
+    (isTestingStalePr(pr) ? 140 : 0) +
+    (!prHasVisibleIssueContext(pr) ? 60 : 0)
+  );
 }
 
 function sortPullRequestList(prs: PersonalPullRequestView[], sort: PullRequestListSort): PersonalPullRequestView[] {
   return [...prs].sort((left, right) => {
+    if (sort === "blockers") {
+      return pullRequestBlockerScore(right) - pullRequestBlockerScore(left) || right.ageHours - left.ageHours;
+    }
     if (sort === "last_action") {
       return sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt) || right.number - left.number;
     }
@@ -10244,6 +10266,12 @@ function PullRequestWorkCard({
   onPreview?: (pr: PersonalPullRequestView) => void;
 }) {
   const attentionReasons = prAttentionReasons(pr);
+  const reasonLazy = useLazyVisibleCount(attentionReasons.length, 4, `pr:${pr.number}:reasons`);
+  const visibleAttentionReasons = attentionReasons.slice(0, reasonLazy.visibleCount);
+  const issueLazy = useLazyVisibleCount(pr.linkedIssueNumbers.length, 4, `pr:${pr.number}:issues`);
+  const visibleIssueNumbers = pr.linkedIssueNumbers.slice(0, issueLazy.visibleCount);
+  const testerLazy = useLazyVisibleCount(pr.testingTesters.length, 4, `pr:${pr.number}:testers`);
+  const visibleTesters = pr.testingTesters.slice(0, testerLazy.visibleCount);
 
   return (
     <article className={`work-item-card ${emphasized || attentionReasons.length > 0 ? "work-item-attention" : ""}`}>
@@ -10288,6 +10316,38 @@ function PullRequestWorkCard({
         {isTestingQueuePr(pr) ? <TestingStateTag state={pr.testingState} /> : null}
         {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
       </div>
+      <div className="work-tag-row">
+        <Text type="secondary">Issues</Text>
+        {visibleIssueNumbers.length > 0 ? (
+          visibleIssueNumbers.map((number) => (
+            <a href={linkedObjectUrl(pr.htmlUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
+              #{number}
+            </a>
+          ))
+        ) : (
+          <Tooltip
+            title={
+              prIssueLinkUnknown(pr)
+                ? "PR detail or relationship evidence is still syncing."
+                : "Local cache has completed PR detail sync but did not find a related issue."
+            }
+          >
+            <Tag color={prIssueLinkUnknown(pr) ? "gold" : "orange"}>
+              {prIssueLinkUnknown(pr) ? "issue-link cache pending" : "no cached issue after sync"}
+            </Tag>
+          </Tooltip>
+        )}
+        <LazyListToggle
+          hiddenCount={issueLazy.hiddenCount}
+          revealCount={issueLazy.revealCount}
+          canCollapse={issueLazy.canCollapse}
+          itemLabel="issues"
+          className="linked-overflow-button"
+          collapsedLabel="Show fewer issues"
+          onShowMore={issueLazy.showMore}
+          onCollapse={issueLazy.reset}
+        />
+      </div>
       <div className="work-meta-row">
         <span>
           <UserRound size={13} aria-hidden="true" />
@@ -10306,15 +10366,26 @@ function PullRequestWorkCard({
       </div>
       {pr.testingTesters.length > 0 ? (
         <div className="work-tag-row">
-          {pr.testingTesters.map((tester) => (
+          <Text type="secondary">Testers</Text>
+          {visibleTesters.map((tester) => (
             <Tag key={tester}>{tester}</Tag>
           ))}
           {pr.testingQueueAgeHours !== null ? <Tag>{hours(pr.testingQueueAgeHours)}</Tag> : null}
+          <LazyListToggle
+            hiddenCount={testerLazy.hiddenCount}
+            revealCount={testerLazy.revealCount}
+            canCollapse={testerLazy.canCollapse}
+            itemLabel="testers"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer testers"
+            onShowMore={testerLazy.showMore}
+            onCollapse={testerLazy.reset}
+          />
         </div>
       ) : null}
       {attentionReasons.length > 0 ? (
         <div className="work-reasons">
-          {attentionReasons.map((reason) => (
+          {visibleAttentionReasons.map((reason) => (
             <Tag
               color={
                 reason.includes("failed") || reason.includes("conflict") || reason.includes("Changes")
@@ -10326,6 +10397,16 @@ function PullRequestWorkCard({
               {reason}
             </Tag>
           ))}
+          <LazyListToggle
+            hiddenCount={reasonLazy.hiddenCount}
+            revealCount={reasonLazy.revealCount}
+            canCollapse={reasonLazy.canCollapse}
+            itemLabel="signals"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer signals"
+            onShowMore={reasonLazy.showMore}
+            onCollapse={reasonLazy.reset}
+          />
         </div>
       ) : null}
     </article>
@@ -10447,7 +10528,8 @@ function PullRequestCardList({
     { label: "CI", value: "ci" },
     { label: "Review", value: "review" },
     { label: "Merge", value: "merge" },
-    { label: "Linked issue in test", value: "testing" }
+    { label: "Linked issue test", value: "testing" },
+    { label: "Issue-link gap", value: "issue_link_gap" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
@@ -10478,6 +10560,7 @@ function PullRequestCardList({
             onChange={(value) => setSort(value as PullRequestListSort)}
             options={[
               { label: "Age", value: "age" },
+              { label: "Blockers", value: "blockers" },
               { label: "Last action", value: "last_action" },
               { label: "#", value: "number" }
             ]}
@@ -11811,7 +11894,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
           <div className="team-object-preview-metric">
             <span>Issue testing</span>
             <strong>{testingWorkCount}</strong>
-            <small>{testingWorkCount > 0 ? "issue testing visible" : "not in test"}</small>
+            <small>{testingWorkCount > 0 ? "issue testing visible" : "no issue test"}</small>
           </div>
         </div>
 
@@ -12741,7 +12824,7 @@ function PersonalDrilldownBoard({
           <Space size={[4, 4]} wrap>
             <Tag>{chart.rows.length} threads</Tag>
             <Tag>{chart.sharedPrCount} shared PR</Tag>
-            <Tag color={chart.unlinkedPrCount > 0 ? "orange" : "default"}>{chart.unlinkedPrCount} unlinked PR</Tag>
+            <Tag color={chart.unlinkedPrCount > 0 ? "orange" : "default"}>{chart.unlinkedPrCount} issue-link gap</Tag>
           </Space>
         </div>
         <PersonalFlowMap chart={chart} />

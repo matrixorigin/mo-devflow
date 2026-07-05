@@ -988,7 +988,7 @@ export function personalOperatingSignals(
     },
     {
       key: "testing",
-      label: "Testing",
+      label: "Issue testing",
       value: person.testingIssues.length,
       detail: testingDetail,
       tone: staleTestingIssues.length > 0 ? "critical" : person.testingIssues.length > 0 ? "attention" : "good",
@@ -1393,7 +1393,7 @@ export function teamOperatingSignals(input: {
     },
     {
       key: "testing_flow",
-      label: "Testing",
+      label: "Issue testing",
       value: data.testing.queueIssues,
       detail: `${data.testing.staleQueueIssues} >24h | avg wait ${diagnosticDuration(
         data.testing.averageIssueQueueAgeHours
@@ -1416,10 +1416,10 @@ export function teamOperatingSignals(input: {
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "testing") {
-    return "linked issue in test";
+    return "linked issue testing";
   }
   if (state === "test_changes_requested") {
-    return "linked issue changes requested";
+    return "linked issue tester feedback";
   }
   if (state === "test_passed") {
     return "linked issue test passed";
@@ -2311,7 +2311,7 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     warnings.push("issue test wait over 24h");
   }
   if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
-    warnings.push("unlinked PR");
+    warnings.push("PR issue-link gap");
   }
   return uniqueStrings(warnings);
 }
