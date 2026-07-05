@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getLatestSuccessfulSyncCursor: vi.fn(),
   githubSnapshotCursorValue: vi.fn(),
   listCachedIssuesForRules: vi.fn(),
+  listCachedPullRequestsForRules: vi.fn(),
   listIssueCommentBackfillCandidates: vi.fn(),
   listPullRequestNumbersForDetailBackfill: vi.fn(),
   loadEnv: vi.fn(),
@@ -22,9 +23,12 @@ const mocks = vi.hoisted(() => ({
   ),
   recordSyncRun: vi.fn(),
   replaceIssueComments: vi.fn(),
+  replaceAiDriftSignals: vi.fn(),
   replaceWorkflowViolations: vi.fn(),
   resolveStaleAttentionItems: vi.fn(),
   upsertAttentionItem: vi.fn(),
+  upsertIssue: vi.fn(),
+  upsertIssueTimelineEvent: vi.fn(),
   upsertPullRequest: vi.fn(),
   upsertRepoProfile: vi.fn()
 }));
@@ -54,6 +58,7 @@ vi.mock("@mo-devflow/db", () => ({
   getLatestSuccessfulSyncCursor: mocks.getLatestSuccessfulSyncCursor,
   isNotificationInCooldown: vi.fn(),
   listCachedIssuesForRules: mocks.listCachedIssuesForRules,
+  listCachedPullRequestsForRules: mocks.listCachedPullRequestsForRules,
   listIssueCommentBackfillCandidates: mocks.listIssueCommentBackfillCandidates,
   listPullRequestNumbersForDetailBackfill: mocks.listPullRequestNumbersForDetailBackfill,
   listNotificationCandidates: vi.fn(),
@@ -62,13 +67,14 @@ vi.mock("@mo-devflow/db", () => ({
   recordNotificationDelivery: vi.fn(),
   recordSyncRun: mocks.recordSyncRun,
   recomputeDailyMetricsFromCache: vi.fn(),
-  replaceAiDriftSignals: vi.fn(),
+  replaceAiDriftSignals: mocks.replaceAiDriftSignals,
   replaceIssueComments: mocks.replaceIssueComments,
   replaceWorkflowViolations: mocks.replaceWorkflowViolations,
   resolveStaleAttentionItems: mocks.resolveStaleAttentionItems,
   runWithJobLease: vi.fn(),
   upsertAttentionItem: mocks.upsertAttentionItem,
-  upsertIssue: vi.fn(),
+  upsertIssue: mocks.upsertIssue,
+  upsertIssueTimelineEvent: mocks.upsertIssueTimelineEvent,
   upsertPullRequest: mocks.upsertPullRequest,
   upsertRepoProfile: mocks.upsertRepoProfile
 }));
@@ -148,6 +154,8 @@ describe("webhook review processing", () => {
     mocks.upsertRepoProfile.mockResolvedValue(10);
     mocks.getLatestSuccessfulSyncCursor.mockResolvedValue(null);
     mocks.githubSnapshotCursorValue.mockReturnValue("next-cursor");
+    mocks.listCachedIssuesForRules.mockResolvedValue([]);
+    mocks.listCachedPullRequestsForRules.mockResolvedValue([]);
     mocks.resolveStaleAttentionItems.mockResolvedValue(0);
   });
 
@@ -796,6 +804,73 @@ describe("webhook review processing", () => {
     ).rejects.toThrow("Cannot refresh PR #44 insight from GitHub: GitHub rate limit exceeded");
     expect(mocks.upsertPullRequest).not.toHaveBeenCalled();
     expect(mocks.upsertAttentionItem).not.toHaveBeenCalled();
+  });
+
+  test("uses the stored delivery id for issue label timeline events", async () => {
+    const { processGitHubWebhookDeliveriesOnce } = await import("./sync");
+    const now = "2026-07-04T08:00:00.000Z";
+    mocks.claimNextGitHubWebhookDelivery
+      .mockResolvedValueOnce({
+        id: 101,
+        repoId: 10,
+        deliveryId: "delivery-label-1",
+        eventName: "issues",
+        action: "labeled",
+        attempts: 1,
+        payload: {
+          action: "labeled",
+          issue: {
+            id: 4242,
+            number: 42,
+            title: "urgent active issue",
+            state: "open",
+            user: { login: "alice" },
+            html_url: "https://github.com/matrixorigin/matrixone/issues/42",
+            created_at: "2026-07-01T00:00:00Z",
+            updated_at: now,
+            labels: [{ name: "kind/bug" }, { name: "severity/s-1" }, { name: "ai-easy" }],
+            assignees: [{ login: "alice" }]
+          },
+          label: { name: "severity/s-1" },
+          sender: { login: "lead" }
+        },
+        processingOwner: "worker-1"
+      })
+      .mockResolvedValueOnce(null);
+    mocks.upsertIssue.mockImplementation(async (_repoId: number, issue: unknown) => issue);
+
+    const result = await processGitHubWebhookDeliveriesOnce();
+
+    expect(result).toMatchObject({
+      repoId: 10,
+      claimed: 1,
+      processed: 1,
+      failed: 0,
+      skipped: 0
+    });
+    expect(mocks.upsertIssueTimelineEvent).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        githubId: "delivery-label-1",
+        issueNumber: 42,
+        eventType: "labeled",
+        labelName: "severity/s-1",
+        actorLogin: "lead",
+        occurredAt: now
+      })
+    );
+    expect(mocks.completeGitHubWebhookDelivery).toHaveBeenCalledWith({
+      deliveryId: 101,
+      processingOwner: expect.any(String),
+      result: expect.objectContaining({
+        deliveryId: "delivery-label-1",
+        eventName: "issues",
+        action: "labeled",
+        message: "updated issue #42",
+        skipped: false
+      })
+    });
+    expect(mocks.failGitHubWebhookDelivery).not.toHaveBeenCalled();
   });
 
   test("marks malformed supported webhook deliveries as failed normalization", async () => {

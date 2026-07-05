@@ -1059,6 +1059,7 @@ export async function backfillIssueTimelineOnce(): Promise<IssueTimelineBackfill
 export async function processWebhookPayload(input: {
   repoId: number;
   profile: ReturnType<typeof loadRepoProfile>;
+  deliveryId?: string;
   eventName: string;
   payload: Record<string, unknown>;
 }): Promise<{ processed: boolean; skipped: boolean; message: string }> {
@@ -1085,7 +1086,7 @@ export async function processWebhookPayload(input: {
       const timelineEvent = normalizeIssueTimelineEvent(
         issue.number,
         {
-          id: input.payload.delivery_id,
+          id: input.deliveryId,
           event: action,
           label: input.payload.label,
           assignee: input.payload.assignee,
@@ -1288,6 +1289,7 @@ export async function processGitHubWebhookDeliveriesOnce(): Promise<WebhookDeliv
       const result = await processWebhookPayload({
         repoId,
         profile,
+        deliveryId: delivery.deliveryId,
         eventName: delivery.eventName,
         payload: delivery.payload
       });
