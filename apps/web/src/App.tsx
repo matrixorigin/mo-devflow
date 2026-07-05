@@ -13740,7 +13740,11 @@ export default function App() {
                 ? `This updates only ${authenticatedUser.githubLogin}'s token.`
                 : "Each teammate connects their own GitHub token."
             }
-            description="Write actions run as the currently connected GitHub user; anonymous viewers stay read-only."
+            description={
+              authenticatedUser
+                ? "The saved token is keyed by this validated GitHub identity. This browser has its own session; another machine must connect again to create its own session for the same GitHub user."
+                : "Connect validates the token with GitHub, creates or updates that GitHub user's saved token, then signs in only this browser session. Other teammates and other machines connect separately."
+            }
             showIcon
           />
           {authenticatedUser ? (

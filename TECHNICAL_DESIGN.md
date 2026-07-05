@@ -303,6 +303,8 @@ Logged-in users bind their own GitHub token. The token is used for:
 
 Token binding is per GitHub user, not per deployment. The API validates the submitted token with GitHub, upserts `app_users` by GitHub ID, stores one active encrypted token row per user in `user_github_tokens`, and creates a browser session in `user_sessions`. Multiple team members can therefore use the same service concurrently from different browsers or browser profiles. The frontend must present the current browser session as the active actor for writes.
 
+The MVP does not have a separate GitHub OAuth or SSO login. `POST /api/session/github-token` is both identity proof and token binding: a new machine has no session cookie, so the user connects a token again; if GitHub returns the same `github_id`, the API reuses the same app user and creates another session row. A later OAuth or SSO layer can separate sign-in from token storage without changing the write-audit or per-user token model.
+
 Token requirements:
 
 - Store encrypted at rest.

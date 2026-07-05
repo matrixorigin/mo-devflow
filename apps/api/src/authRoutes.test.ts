@@ -384,6 +384,59 @@ describe("auth routes", () => {
     }
   });
 
+  test("uses the validated GitHub identity as the user when connecting from multiple browser sessions", async () => {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+    mocks.upsertGitHubTokenBinding.mockResolvedValue(42);
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/session/github-token",
+        payload: { token: `ghp_${"d".repeat(40)}` }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/session/github-token",
+        payload: { token: `ghp_${"e".repeat(40)}` }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(mocks.upsertGitHubTokenBinding).toHaveBeenCalledTimes(2);
+      expect(mocks.upsertGitHubTokenBinding).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          githubId: "1001",
+          githubLogin: "alice"
+        })
+      );
+      expect(mocks.upsertGitHubTokenBinding).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          githubId: "1001",
+          githubLogin: "alice"
+        })
+      );
+      expect(mocks.createUserSession).toHaveBeenCalledTimes(2);
+      expect(mocks.createUserSession).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          userId: 42
+        })
+      );
+      expect(mocks.createUserSession).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          userId: 42
+        })
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   test("keeps a valid token bound as repository none when the target repo is inaccessible", async () => {
     process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
     mocks.fetchIssueWritePermission.mockRejectedValue(new Error("not found"));

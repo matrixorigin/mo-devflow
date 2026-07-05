@@ -51,6 +51,8 @@ Key rule: all writes must use the user's own GitHub token. The platform should n
 
 A single deployment should support many team members connecting independently. Token binding is determined by the validated GitHub identity, not by a manually selected person. The current browser session decides which GitHub user is acting. Signing out clears only that browser session; removing a saved token revokes the stored token for that GitHub user and disables writes until they reconnect.
 
+In the MVP, personal token Connect is also the sign-in mechanism. On a new machine or browser profile, the user must Connect again to create a new browser session. If the submitted token validates to the same GitHub ID, the product updates the same stored app user and creates a separate session for that browser. A later production authentication layer can add GitHub OAuth or SSO so users can sign in before choosing whether to reconnect a token.
+
 ### 2.3 Maintainer / Team Lead
 
 Maintainers need an overall view of workflow health:
