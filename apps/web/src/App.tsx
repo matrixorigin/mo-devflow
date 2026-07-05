@@ -147,6 +147,7 @@ import {
   personalTestingWorkCount,
   personPrimaryReasons,
   personWorkloadStatus,
+  prQualityRiskSummary,
   criticalOwnerFlowSummaries,
   personalIssueReasons,
   prAttentionReasons,
@@ -2965,6 +2966,10 @@ type FlowEfficiencyActions = Partial<{
   triageFlow: () => void;
   pendingPrAge: () => void;
   prAttention: () => void;
+  prCiFailed: () => void;
+  prRequestChanges: () => void;
+  prReviewWaiting: () => void;
+  prConflict: () => void;
   activeCriticalAge: () => void;
   testingQueue: () => void;
   workflowViolations: () => void;
@@ -4500,6 +4505,10 @@ function TeamRotationOverview({
     triageFlow: () => onOpenPeopleFilter("triage"),
     pendingPrAge: () => onOpenPrsFilter("all"),
     prAttention: () => onOpenPrsFilter("attention"),
+    prCiFailed: () => onOpenPrsFilter("ci_failed"),
+    prRequestChanges: () => onOpenPrsFilter("request_changes"),
+    prReviewWaiting: () => onOpenPrsFilter("attention"),
+    prConflict: () => onOpenPrsFilter("conflict"),
     activeCriticalAge: () => onOpenIssuesFilter({}),
     testingQueue: () => onOpenTestingIssueQueue("all"),
     workflowViolations: () => onNavigate("Violations")
@@ -8545,6 +8554,7 @@ function TrendChartReadout({ points, actions }: { points: TrendMetricPoint[]; ac
   const prOpenDelta = latest.prsCreated - latest.prsMerged;
   const issueDrain = latest.issuesClosed + latest.issuesDeferred - latest.issuesOpened;
   const testingWait = latest.averageTestingQueueAgeHours;
+  const prQuality = prQualityRiskSummary(latest);
   const items: TrendReadoutItem[] = [
     {
       key: "pr_open_delta",
@@ -8577,6 +8587,38 @@ function TrendChartReadout({ points, actions }: { points: TrendMetricPoint[]; ac
       detail: `${latest.pendingPrs} pending PRs`,
       tone: latest.attentionPrs > 0 ? "attention" : "good",
       onClick: actions.prAttention
+    },
+    {
+      key: "ci_failed",
+      label: "CI failed",
+      value: percentText(prQuality.ciFailureRatePercent),
+      detail: `${prQuality.ciFailedPrs}/${prQuality.pendingPrs} pending PRs`,
+      tone: prQuality.ciFailedPrs > 0 ? "critical" : "good",
+      onClick: actions.prCiFailed ?? actions.prAttention
+    },
+    {
+      key: "review_waiting",
+      label: "Review waiting",
+      value: percentText(prQuality.reviewWaitingRatePercent),
+      detail: `${prQuality.reviewWaitingPrs}/${prQuality.pendingPrs} pending PRs`,
+      tone: prQuality.reviewWaitingPrs > 0 ? "attention" : "good",
+      onClick: actions.prReviewWaiting ?? actions.prAttention
+    },
+    {
+      key: "request_changes",
+      label: "Request changes",
+      value: percentText(prQuality.requestedChangeRatePercent),
+      detail: `${prQuality.requestedChangePrs}/${prQuality.pendingPrs} pending PRs`,
+      tone: prQuality.requestedChangePrs > 0 ? "critical" : "good",
+      onClick: actions.prRequestChanges ?? actions.prAttention
+    },
+    {
+      key: "merge_conflict",
+      label: "Merge conflict",
+      value: percentText(prQuality.mergeConflictRatePercent),
+      detail: `${prQuality.mergeConflictPrs}/${prQuality.pendingPrs} pending PRs`,
+      tone: prQuality.mergeConflictPrs > 0 ? "critical" : "good",
+      onClick: actions.prConflict ?? actions.prAttention
     },
     {
       key: "testing_wait",
@@ -18734,6 +18776,10 @@ function SelectedPersonWorkbench({
     prFlow: () => onDrilldownChange("pending_pr"),
     issueDrain: () => onDrilldownChange("active_issues"),
     prAttention: () => onDrilldownChange("pr_attention"),
+    prCiFailed: () => onDrilldownChange("pr_attention"),
+    prRequestChanges: () => onDrilldownChange("pr_attention"),
+    prReviewWaiting: () => onDrilldownChange("pr_attention"),
+    prConflict: () => onDrilldownChange("pr_attention"),
     activeCriticalAge: () => onDrilldownChange("active_issues"),
     testingQueue: () => onDrilldownChange("testing")
   };
@@ -22110,6 +22156,10 @@ export default function App() {
     triageFlow: () => openPeopleWithFilter("triage"),
     pendingPrAge: () => openPrsWithFilter("all"),
     prAttention: () => openPrsWithFilter("attention"),
+    prCiFailed: () => openPrsWithFilter("ci_failed"),
+    prRequestChanges: () => openPrsWithFilter("request_changes"),
+    prReviewWaiting: () => openPrsWithFilter("attention"),
+    prConflict: () => openPrsWithFilter("conflict"),
     activeCriticalAge: () => openIssuesWithFilter({}),
     testingQueue: () => openIssueTestingQueue("all"),
     workflowViolations: () => selectView("Violations")

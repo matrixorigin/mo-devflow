@@ -575,6 +575,29 @@ export interface FlowEfficiencyMetricPoint {
   workflowViolationsDetected: number;
 }
 
+export interface PrQualityMetricPoint {
+  pendingPrs: number;
+  ciFailedPrs: number;
+  requestedChangePrs: number;
+  reviewWaitingPrs: number;
+  mergeConflictPrs: number;
+}
+
+export interface PrQualityRiskSummary {
+  pendingPrs: number;
+  qualitySignalTotal: number;
+  qualitySignalRatePercent: number | null;
+  ciFailedPrs: number;
+  ciFailureRatePercent: number | null;
+  requestedChangePrs: number;
+  requestedChangeRatePercent: number | null;
+  reviewWaitingPrs: number;
+  reviewWaitingRatePercent: number | null;
+  mergeConflictPrs: number;
+  mergeConflictRatePercent: number | null;
+  tone: "critical" | "attention" | "normal" | "good";
+}
+
 export interface FlowEfficiencyPullRequest {
   ageHours: number;
   attentionFlags: string[];
@@ -837,6 +860,34 @@ export function flowEfficiencySummary(input: {
     testingQueuePrs: input.testingQueuePrs ?? testingPrs.length,
     averageTestingQueueAgeHours:
       input.averageTestingQueueAgeHours !== undefined ? input.averageTestingQueueAgeHours : average(testingWaits)
+  };
+}
+
+export function prQualityRiskSummary(point: PrQualityMetricPoint): PrQualityRiskSummary {
+  const qualitySignalTotal =
+    point.ciFailedPrs + point.requestedChangePrs + point.reviewWaitingPrs + point.mergeConflictPrs;
+  const criticalSignals = point.ciFailedPrs + point.requestedChangePrs + point.mergeConflictPrs;
+  const qualitySignalRatePercent = percentage(qualitySignalTotal, point.pendingPrs);
+  return {
+    pendingPrs: point.pendingPrs,
+    qualitySignalTotal,
+    qualitySignalRatePercent,
+    ciFailedPrs: point.ciFailedPrs,
+    ciFailureRatePercent: percentage(point.ciFailedPrs, point.pendingPrs),
+    requestedChangePrs: point.requestedChangePrs,
+    requestedChangeRatePercent: percentage(point.requestedChangePrs, point.pendingPrs),
+    reviewWaitingPrs: point.reviewWaitingPrs,
+    reviewWaitingRatePercent: percentage(point.reviewWaitingPrs, point.pendingPrs),
+    mergeConflictPrs: point.mergeConflictPrs,
+    mergeConflictRatePercent: percentage(point.mergeConflictPrs, point.pendingPrs),
+    tone:
+      criticalSignals > 0
+        ? "critical"
+        : point.reviewWaitingPrs > 0
+          ? "attention"
+          : point.pendingPrs > 0
+            ? "normal"
+            : "good"
   };
 }
 

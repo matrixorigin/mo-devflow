@@ -40,6 +40,7 @@ import {
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
+  prQualityRiskSummary,
   prHasNoVisibleIssue,
   prIssueLinkEvidencePending,
   sortPeopleForBoard,
@@ -1863,6 +1864,62 @@ describe("observed owner threads", () => {
       durationHours: 12,
       linkedIssueNumbers: [999],
       needsLink: true
+    });
+  });
+});
+
+describe("PR quality risk summary", () => {
+  it("derives PR quality signal rates from the latest metric point", () => {
+    expect(
+      prQualityRiskSummary({
+        pendingPrs: 10,
+        ciFailedPrs: 2,
+        requestedChangePrs: 1,
+        reviewWaitingPrs: 3,
+        mergeConflictPrs: 1
+      })
+    ).toMatchObject({
+      qualitySignalTotal: 7,
+      qualitySignalRatePercent: 70,
+      ciFailureRatePercent: 20,
+      requestedChangeRatePercent: 10,
+      reviewWaitingRatePercent: 30,
+      mergeConflictRatePercent: 10,
+      tone: "critical"
+    });
+  });
+
+  it("keeps rates unknown without pending PR denominator", () => {
+    expect(
+      prQualityRiskSummary({
+        pendingPrs: 0,
+        ciFailedPrs: 0,
+        requestedChangePrs: 0,
+        reviewWaitingPrs: 0,
+        mergeConflictPrs: 0
+      })
+    ).toMatchObject({
+      qualitySignalRatePercent: null,
+      ciFailureRatePercent: null,
+      requestedChangeRatePercent: null,
+      reviewWaitingRatePercent: null,
+      mergeConflictRatePercent: null,
+      tone: "good"
+    });
+  });
+
+  it("treats review waiting as attention when there are no hard blockers", () => {
+    expect(
+      prQualityRiskSummary({
+        pendingPrs: 4,
+        ciFailedPrs: 0,
+        requestedChangePrs: 0,
+        reviewWaitingPrs: 1,
+        mergeConflictPrs: 0
+      })
+    ).toMatchObject({
+      qualitySignalRatePercent: 25,
+      tone: "attention"
     });
   });
 });
