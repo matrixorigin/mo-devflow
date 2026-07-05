@@ -24,6 +24,7 @@ import {
   manualRefreshPresetLayers,
   manualRefreshPresetLayersForQuota,
   manualRefreshQueuedJobLabel,
+  notificationCommandSummary,
   notificationDeliveryScopeFilterFromHash,
   peoplePrFlowMatrixRows,
   peopleRiskSummary,
@@ -153,6 +154,56 @@ describe("dashboard hash filters", () => {
         errorMessage: "queue unavailable"
       })
     ).toBe("queue unavailable");
+  });
+
+  it("summarizes the notification board action by operator priority", () => {
+    const failed = notificationCommandSummary(
+      notifications({
+        failedDeliveries: 2,
+        unacknowledgedDeliveries: 5,
+        lastDeliveries: [notificationDeliveryForCommand({ status: "failed_transient" })]
+      })
+    );
+    const escalation = notificationCommandSummary(
+      notifications({
+        unacknowledgedDeliveries: 4,
+        escalationPendingDeliveries: 1,
+        escalateAfterHours: 18,
+        lastDeliveries: [notificationDeliveryForCommand({ status: "sent", acknowledgedAt: null })]
+      })
+    );
+    const degraded = notificationCommandSummary(
+      notifications({
+        readiness: {
+          status: "degraded",
+          warnings: ["2 watched users need employee mappings"]
+        }
+      })
+    );
+    const ready = notificationCommandSummary(notifications());
+
+    expect(failed).toMatchObject({
+      title: "2 notification deliveries failed",
+      tone: "critical",
+      scopeFilter: "failed",
+      actionLabel: "Show failed deliveries"
+    });
+    expect(escalation).toMatchObject({
+      title: "1 notification acknowledgement needs escalation",
+      tone: "critical",
+      scopeFilter: "ack_pending"
+    });
+    expect(degraded).toMatchObject({
+      title: "Notification routing is degraded",
+      detail: "2 watched users need employee mappings",
+      tone: "attention",
+      scopeFilter: "all"
+    });
+    expect(ready).toMatchObject({
+      title: "Notification route is ready",
+      tone: "normal",
+      scopeFilter: "all"
+    });
   });
 
   it("round-trips issue board filters for shareable drilldown links", () => {
@@ -1363,6 +1414,42 @@ describe("dashboard hash filters", () => {
     expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | test 1/1 (100%)");
   });
 });
+
+function notifications(input: Record<string, any> = {}) {
+  const readiness = {
+    status: "ready",
+    mappedEmployees: 3,
+    missingEmployeeMappings: 0,
+    blockers: [],
+    warnings: [],
+    webhookEnvVar: "MO_DEVFLOW_WECOM_WEBHOOK_URL",
+    ...(input.readiness ?? {})
+  };
+
+  return {
+    enabled: true,
+    webhookConfigured: true,
+    cooldownHours: 6,
+    escalateAfterHours: 12,
+    failedDeliveries: 0,
+    unacknowledgedDeliveries: 0,
+    escalationPendingDeliveries: 0,
+    lastDeliveries: [],
+    ...input,
+    readiness
+  } as any;
+}
+
+function notificationDeliveryForCommand(input: Record<string, any> = {}) {
+  return {
+    id: 1,
+    status: "sent",
+    sourceType: "workflow_violation",
+    sourceActive: true,
+    acknowledgedAt: "2026-07-05T02:00:00.000Z",
+    ...input
+  } as any;
+}
 
 function personalPr(input: {
   number: number;

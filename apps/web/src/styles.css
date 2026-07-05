@@ -2238,6 +2238,101 @@ button.freshness-path-card:focus-visible {
   color: #92400e;
 }
 
+.notification-command-callout {
+  appearance: none;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #475569;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  min-width: 0;
+  padding: 12px 14px;
+  text-align: left;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.notification-command-callout:hover,
+.notification-command-callout:focus-visible {
+  background: #f1f5f9;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  outline: none;
+}
+
+.notification-command-callout span,
+.notification-command-callout strong,
+.notification-command-callout small,
+.notification-command-callout em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-command-callout span {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.notification-command-callout strong {
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.notification-command-callout small {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notification-command-callout em {
+  color: #334155;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.notification-command-callout-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.notification-command-callout-critical:hover,
+.notification-command-callout-critical:focus-visible {
+  background: #fee2e2;
+}
+
+.notification-command-callout-critical span,
+.notification-command-callout-critical em {
+  color: #b91c1c;
+}
+
+.notification-command-callout-attention {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.notification-command-callout-attention:hover,
+.notification-command-callout-attention:focus-visible {
+  background: #fef3c7;
+}
+
+.notification-command-callout-attention span,
+.notification-command-callout-attention em {
+  color: #92400e;
+}
+
 .critical-flow-funnel {
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;

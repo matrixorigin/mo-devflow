@@ -2533,6 +2533,118 @@ function notificationDeliveryScopeLabel(filter: NotificationDeliveryScopeFilter)
   return "all deliveries";
 }
 
+type NotificationCommandTone = "critical" | "attention" | "normal";
+
+interface NotificationCommandSummary {
+  title: string;
+  detail: string;
+  tone: NotificationCommandTone;
+  scopeFilter: NotificationDeliveryScopeFilter;
+  actionLabel: string;
+}
+
+export function notificationCommandSummary(
+  notifications: DashboardSummary["notifications"]
+): NotificationCommandSummary {
+  const counts = notificationDeliveryScopeCounts(notifications.lastDeliveries);
+  const failedScope: NotificationDeliveryScopeFilter = counts.failed > 0 ? "failed" : "attention";
+  const setupProblem = notifications.readiness.blockers[0] ?? notifications.readiness.warnings[0] ?? null;
+
+  if (notifications.failedDeliveries > 0) {
+    const noun = notifications.failedDeliveries === 1 ? "delivery" : "deliveries";
+    return {
+      title: `${notifications.failedDeliveries} notification ${noun} failed`,
+      detail: `${notifications.unacknowledgedDeliveries} unacknowledged; fix channel, mapping, or provider errors before retrying.`,
+      tone: "critical",
+      scopeFilter: failedScope,
+      actionLabel: counts.failed > 0 ? "Show failed deliveries" : "Show attention deliveries"
+    };
+  }
+
+  if (notifications.escalationPendingDeliveries > 0) {
+    const noun = notifications.escalationPendingDeliveries === 1 ? "acknowledgement" : "acknowledgements";
+    const verb = notifications.escalationPendingDeliveries === 1 ? "needs" : "need";
+    return {
+      title: `${notifications.escalationPendingDeliveries} notification ${noun} ${verb} escalation`,
+      detail: `${notifications.unacknowledgedDeliveries} acknowledgements remain open for more than ${notifications.escalateAfterHours}h.`,
+      tone: "critical",
+      scopeFilter: "ack_pending",
+      actionLabel: "Show ack pending"
+    };
+  }
+
+  if (notifications.unacknowledgedDeliveries > 0 || counts.ack_pending > 0) {
+    const waiting = Math.max(notifications.unacknowledgedDeliveries, counts.ack_pending);
+    const noun = waiting === 1 ? "notification waits" : "notifications wait";
+    return {
+      title: `${waiting} ${noun} for acknowledgement`,
+      detail: "Confirm owners saw the workflow alert and that the related issue or PR is moving.",
+      tone: "attention",
+      scopeFilter: "ack_pending",
+      actionLabel: "Show ack pending"
+    };
+  }
+
+  if (notifications.readiness.status === "action_required") {
+    return {
+      title: "Notification channel needs setup",
+      detail: setupProblem ?? "Configure WeCom webhook, employee mappings, and fallback routing.",
+      tone: "critical",
+      scopeFilter: counts.attention > 0 ? "attention" : "all",
+      actionLabel: counts.attention > 0 ? "Show attention deliveries" : "Show deliveries"
+    };
+  }
+
+  if (notifications.readiness.status === "degraded") {
+    return {
+      title: "Notification routing is degraded",
+      detail: setupProblem ?? `${notifications.readiness.missingEmployeeMappings} watched users need employee mapping.`,
+      tone: "attention",
+      scopeFilter: counts.attention > 0 ? "attention" : "all",
+      actionLabel: counts.attention > 0 ? "Show attention deliveries" : "Show deliveries"
+    };
+  }
+
+  if (notifications.readiness.status === "disabled" || !notifications.enabled) {
+    return {
+      title: "Notifications are disabled",
+      detail: setupProblem ?? "Workflow alerts will stay visible in the dashboard but will not be sent to WeCom.",
+      tone: "normal",
+      scopeFilter: "all",
+      actionLabel: "Show recent deliveries"
+    };
+  }
+
+  return {
+    title: "Notification route is ready",
+    detail: `${notifications.readiness.mappedEmployees} employees mapped; ${notifications.lastDeliveries.length} recent deliveries retained; ${notifications.cooldownHours}h cooldown.`,
+    tone: "normal",
+    scopeFilter: "all",
+    actionLabel: "Show recent deliveries"
+  };
+}
+
+function NotificationCommandCallout({
+  summary,
+  onClick
+}: {
+  summary: NotificationCommandSummary;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`notification-command-callout notification-command-callout-${summary.tone}`}
+      onClick={onClick}
+    >
+      <span>Recommended action</span>
+      <strong>{summary.title}</strong>
+      <small>{summary.detail}</small>
+      <em>{summary.actionLabel}</em>
+    </button>
+  );
+}
+
 function workflowExecutionStatusColor(value: WriteActionExecutionView["status"]): string {
   if (value === "success") {
     return "green";
@@ -22810,6 +22922,7 @@ export default function App() {
     : [];
   const filteredPeople = data ? filterPeopleByScope(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
   const notificationDeliveryCounts = data ? notificationDeliveryScopeCounts(data.notifications.lastDeliveries) : null;
+  const notificationCommand = data ? notificationCommandSummary(data.notifications) : null;
   const filteredNotificationDeliveries = data
     ? data.notifications.lastDeliveries.filter((delivery) =>
         notificationDeliveryMatchesScope(delivery, notificationDeliveryScopeFilter)
@@ -23428,6 +23541,12 @@ export default function App() {
                     </Tooltip>
                   </Space>
                 </div>
+                {notificationCommand ? (
+                  <NotificationCommandCallout
+                    summary={notificationCommand}
+                    onClick={() => changeNotificationDeliveryScopeFilter(notificationCommand.scopeFilter)}
+                  />
+                ) : null}
                 {notificationAckError ? (
                   <Alert
                     className="band"
