@@ -10918,6 +10918,174 @@ function PeopleFocusQueue({
   );
 }
 
+interface PeoplePrFlowMatrixRow {
+  login: string;
+  person: PersonSummary;
+  personal: PersonalActionView;
+  periods: Record<MetricPeriod, PersonalPrThroughputRow>;
+  flow: PersonalCriticalFlowEfficiency;
+}
+
+export function peoplePrFlowMatrixRows(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  sort: PeopleBoardSort
+): PeoplePrFlowMatrixRow[] {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  return sortPeopleForBoard(people, personalViews, sort)
+    .map((person) => {
+      const personal = personalByLogin.get(person.login);
+      if (!personal) {
+        return null;
+      }
+      const throughputRows = personalPrThroughputRows(personal);
+      const periods = Object.fromEntries(
+        metricPeriods.map((period) => [
+          period,
+          throughputRows.find((row) => row.period === period) ?? personalPrThroughputRow(period, null)
+        ])
+      ) as Record<MetricPeriod, PersonalPrThroughputRow>;
+      return {
+        login: person.login,
+        person,
+        personal,
+        periods,
+        flow: personalCriticalFlowEfficiency(personal)
+      };
+    })
+    .filter((row): row is PeoplePrFlowMatrixRow => row !== null);
+}
+
+function PeoplePrFlowMatrix({
+  people,
+  personalViews,
+  sort,
+  onSelect,
+  onMetricSelect,
+  onThroughputSelect
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  sort: PeopleBoardSort;
+  onSelect: (login: string) => void;
+  onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect: (login: string, selection: PersonalPrThroughputSelection) => void;
+}) {
+  const rows = peoplePrFlowMatrixRows(people, personalViews, sort);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const openPeriod = (row: PeoplePrFlowMatrixRow, period: MetricPeriod): void => {
+    onThroughputSelect(row.login, personalPrThroughputSelectionForPeriod(row.personal, period));
+  };
+  const openFlow = (row: PeoplePrFlowMatrixRow): void => {
+    onMetricSelect(row.login, row.flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing");
+  };
+
+  const columns: ColumnsType<PeoplePrFlowMatrixRow> = [
+    {
+      title: "Person",
+      dataIndex: "login",
+      fixed: "left",
+      width: 190,
+      render: (_, row) => (
+        <button type="button" className="people-matrix-person" onClick={() => onSelect(row.login)}>
+          <span className="person-avatar" aria-hidden="true">
+            {row.login.slice(0, 1).toUpperCase()}
+          </span>
+          <span>
+            <strong>{row.login}</strong>
+            <small>
+              {personPrimaryReasons(row.person, personalTestingWorkCount(row.personal)).slice(0, 2).join(" | ")}
+            </small>
+          </span>
+        </button>
+      )
+    },
+    ...metricPeriods.map((period): ColumnsType<PeoplePrFlowMatrixRow>[number] => ({
+      title: `${metricPeriodLabel(period)} PRs`,
+      width: 190,
+      render: (_, row) => {
+        const throughput = row.periods[period];
+        return (
+          <button type="button" className="people-matrix-period" onClick={() => openPeriod(row, period)}>
+            <strong>{personalPrThroughputPair(throughput)}</strong>
+            <small>{personalPrPeriodThroughputDetail(row.personal, period)}</small>
+          </button>
+        );
+      }
+    })),
+    {
+      title: "Open PRs",
+      width: 190,
+      render: (_, row) => (
+        <div className="people-matrix-split">
+          <button type="button" onClick={() => onMetricSelect(row.login, "pending_pr")}>
+            <strong>{row.personal.pendingPrs.length}</strong>
+            <small>pending</small>
+          </button>
+          <button
+            type="button"
+            className={row.personal.attentionPrs.length > 0 ? "people-matrix-attention" : ""}
+            onClick={() => onMetricSelect(row.login, "pr_attention")}
+          >
+            <strong>{row.personal.attentionPrs.length}</strong>
+            <small>attention</small>
+          </button>
+        </div>
+      )
+    },
+    {
+      title: "s-1/s0 → PR → Test",
+      width: 260,
+      render: (_, row) => (
+        <button
+          type="button"
+          className={`people-matrix-flow ${
+            row.flow.issuesWithoutPr > 0 ||
+            row.flow.activeIssues > row.flow.issuesInTesting ||
+            row.flow.slowEasyIssues > 0
+              ? "people-matrix-flow-alert"
+              : ""
+          }`}
+          onClick={() => openFlow(row)}
+        >
+          <strong>{personalCriticalFlowEfficiencyCompactSummary(row.flow)}</strong>
+          <small>
+            to PR {optionalHours(row.flow.averageActiveToFirstPrHours)} | to test{" "}
+            {optionalHours(row.flow.averageActiveToTestingHours)}
+          </small>
+        </button>
+      )
+    }
+  ];
+
+  return (
+    <section className="people-pr-flow-matrix" aria-label="Team PR and issue flow matrix">
+      <div className="subsection-heading subsection-heading-compact">
+        <div>
+          <Title level={5}>Team PR / Flow Matrix</Title>
+          <Text type="secondary">Per-person PR volume, PR duration, blockers, and active issue handoff health.</Text>
+        </div>
+        <Tag>
+          {rows.length} people | sort {peopleSortLabel(sort)}
+        </Tag>
+      </div>
+      <Table
+        rowKey="login"
+        size="small"
+        columns={columns}
+        dataSource={rows}
+        className="people-pr-flow-table"
+        scroll={{ x: 1020 }}
+        pagination={tablePagination(rows.length, 8)}
+      />
+    </section>
+  );
+}
+
 function PersonBoardDailyPlanStrip({
   items,
   fallback,
@@ -17368,9 +17536,13 @@ export function personalPrThroughputSummary(rows: PersonalPrThroughputRow[]): st
 
 export function personalPrPeriodThroughputDetail(person: PersonalActionView, period: MetricPeriod): string {
   const periodList = personalPrPeriodListForPeriod(person, period);
-  return `${personalPrVisibleUniqueTotalForPeriod(person, period)} PRs in list | avg ${personalPrPeriodAverageDurationText(
+  return `${prCountLabel(personalPrVisibleUniqueTotalForPeriod(person, period))} in list | avg ${personalPrPeriodAverageDurationText(
     periodList
   )}`;
+}
+
+function prCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "PR" : "PRs"}`;
 }
 
 export function personalCriticalFlowEfficiency(
@@ -22750,6 +22922,16 @@ export default function App() {
                   onScopeFilterChange={changePeopleScopeFilter}
                   onRiskSelect={changePeopleScopeAndSort}
                 />
+                {!peopleBoardUsesObserved && filteredPeople.length > 0 ? (
+                  <PeoplePrFlowMatrix
+                    people={filteredPeople}
+                    personalViews={data.personalViews}
+                    sort={peopleSort}
+                    onSelect={openPeopleBoardPerson}
+                    onMetricSelect={openPeopleBoardMetric}
+                    onThroughputSelect={openPersonalThroughput}
+                  />
+                ) : null}
                 {filteredPeople.length > 0 ? (
                   <PeopleFocusQueue
                     people={filteredPeople}

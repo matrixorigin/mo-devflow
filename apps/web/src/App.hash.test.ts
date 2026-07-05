@@ -13,6 +13,7 @@ import {
   driftSignalFilterFromHash,
   manualRefreshPresetLayers,
   notificationDeliveryScopeFilterFromHash,
+  peoplePrFlowMatrixRows,
   peopleRiskSummary,
   peopleScopeFilterFromHash,
   peopleSortLabel,
@@ -29,6 +30,7 @@ import {
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
   personalPrSortLabel,
+  personalPrThroughputPair,
   personalPrThroughputSummary,
   personalPrThroughputSelectionForPeriod,
   personalPrThroughputRows,
@@ -728,6 +730,112 @@ describe("dashboard hash filters", () => {
     expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
     expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | test 1/2 (50%)");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
+  });
+
+  it("builds the people PR and flow matrix from watched personal analytics", () => {
+    const people = [
+      {
+        login: "alice",
+        activeCriticalIssues: 1,
+        attentionPrs: 1,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        pendingPrs: 2,
+        prsCreatedYesterday: 3,
+        prsMergedYesterday: 2
+      },
+      {
+        login: "bob",
+        activeCriticalIssues: 0,
+        attentionPrs: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        pendingPrs: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0
+      }
+    ] as any;
+    const personalViews = [
+      {
+        login: "alice",
+        pendingPrs: [personalPr({ number: 20, ageHours: 12, createdAt: "2026-07-04T09:00:00.000Z", mergedAt: null })],
+        attentionPrs: [
+          personalPr({
+            number: 21,
+            ageHours: 36,
+            createdAt: "2026-07-03T09:00:00.000Z",
+            mergedAt: null,
+            ciState: "failure"
+          })
+        ],
+        activeCriticalIssues: [
+          {
+            number: 10,
+            severity: "severity/s0",
+            aiEffortLabel: null,
+            criticalAgeHours: 48,
+            linkedPullRequests: [{ ageHours: 24, testingQueueAgeHours: 6, testingState: "testing" }]
+          }
+        ],
+        analytics: [metricPoint({ date: "2026-07-04", prsCreated: 3, prsMerged: 2 })],
+        analyticsWeekly: [
+          {
+            ...metricPoint({ date: "2026-07-05", prsCreated: 8, prsMerged: 6 }),
+            period: "week",
+            periodStart: "2026-06-29",
+            periodEnd: "2026-07-06",
+            label: "Jun 29-Jul 5"
+          }
+        ],
+        analyticsMonthly: [
+          {
+            ...metricPoint({ date: "2026-07-31", prsCreated: 18, prsMerged: 14 }),
+            period: "month",
+            periodStart: "2026-07-01",
+            periodEnd: "2026-08-01",
+            label: "Jul 2026"
+          }
+        ],
+        prPeriodLists: [
+          {
+            period: "week",
+            label: "Jun 29-Jul 5",
+            periodStart: "2026-06-29",
+            periodEnd: "2026-07-06",
+            totalCreatedPrs: 1,
+            totalMergedPrs: 1,
+            createdPrs: [
+              personalPr({
+                number: 22,
+                ageHours: 12,
+                createdAt: "2026-07-02T09:00:00.000Z",
+                mergedAt: "2026-07-03T09:00:00.000Z"
+              })
+            ],
+            mergedPrs: [],
+            truncated: false
+          }
+        ]
+      },
+      {
+        login: "bob",
+        pendingPrs: [],
+        attentionPrs: [],
+        activeCriticalIssues: [],
+        analytics: [],
+        analyticsWeekly: [],
+        analyticsMonthly: [],
+        prPeriodLists: []
+      }
+    ] as any;
+
+    const rows = peoplePrFlowMatrixRows(people, personalViews, "pr_throughput");
+
+    expect(rows.map((row) => row.login)).toEqual(["alice", "bob"]);
+    expect(personalPrThroughputPair(rows[0].periods.day)).toBe("3/2");
+    expect(personalPrThroughputPair(rows[0].periods.week)).toBe("8/6");
+    expect(personalPrPeriodThroughputDetail(rows[0].personal, "week")).toBe("1 PR in list | avg 1.0d");
+    expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | test 1/1 (100%)");
   });
 });
 
