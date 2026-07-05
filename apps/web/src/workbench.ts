@@ -2311,7 +2311,7 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     warnings.push("issue test wait over 24h");
   }
   if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
-    warnings.push("PR issue-link gap");
+    warnings.push("PR issue link missing");
   }
   return uniqueStrings(warnings);
 }
