@@ -5641,6 +5641,10 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.people-attention-queue-compact .people-attention-list {
+  grid-template-columns: 1fr;
+}
+
 .people-attention-item {
   background: #f8fafc;
   border: 1px solid #e5e7eb;

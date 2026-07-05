@@ -4141,7 +4141,7 @@ function personalTestingStaleCount(person: PersonalActionView): number {
   return person.testingIssues.filter(isTestingIssueStale).length;
 }
 
-function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
+export function peopleScopeForPersonalMetric(filter: PersonalDrilldownFilter): PeopleScopeFilter {
   if (filter === "active_issues" || filter === "active_no_pr" || filter === "active_not_testing") {
     return "critical";
   }
@@ -4906,6 +4906,11 @@ function TeamRotationOverview({
             personalViews={data.personalViews}
             observedMode={peopleSourceIsObserved}
             onPersonSelect={peopleSourceIsObserved ? () => onOpenPeopleFilter("attention") : onPersonSelect}
+            onMetricSelect={
+              peopleSourceIsObserved
+                ? (_login, metric) => onOpenPeopleFilter(peopleScopeForPersonalMetric(metric))
+                : onPersonalDrilldown
+            }
           />
           <TeamOpsStatus data={data} onNavigate={onNavigate} />
         </aside>
@@ -7433,15 +7438,18 @@ function TeamPeopleFocus({
   people,
   personalViews,
   observedMode,
-  onPersonSelect
+  onPersonSelect,
+  onMetricSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   observedMode: boolean;
   onPersonSelect: (login: string) => void;
+  onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const summary = teamPeopleFocusSummary(people, personalViews);
+  const attentionQueue = peopleAttentionQueue(people, personalViews, 3);
   const pagedPeople = usePagedList(people, 4, people.map((person) => person.login).join(":"));
 
   return (
@@ -7498,6 +7506,12 @@ function TeamPeopleFocus({
           })
         )}
       </div>
+      <PeopleAttentionQueueStrip
+        compact
+        items={attentionQueue}
+        onPersonSelect={onPersonSelect}
+        onMetricSelect={onMetricSelect}
+      />
       <CardListPagination
         total={people.length}
         page={pagedPeople.page}
@@ -11324,10 +11338,12 @@ function PeopleRiskButton({
 }
 
 function PeopleAttentionQueueStrip({
+  compact = false,
   items,
   onPersonSelect,
   onMetricSelect
 }: {
+  compact?: boolean;
   items: PeopleAttentionQueueItem[];
   onPersonSelect: (login: string) => void;
   onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
@@ -11337,7 +11353,10 @@ function PeopleAttentionQueueStrip({
   }
 
   return (
-    <div className="people-attention-queue" aria-label="People needing manager attention">
+    <div
+      className={`people-attention-queue ${compact ? "people-attention-queue-compact" : ""}`}
+      aria-label="People needing manager attention"
+    >
       <div className="people-attention-heading">
         <span>Needs attention</span>
         <small>{items.length} people</small>

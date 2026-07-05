@@ -26,6 +26,7 @@ import {
   notificationDeliveryScopeFilterFromHash,
   peoplePrFlowMatrixRows,
   peopleRiskSummary,
+  peopleScopeForPersonalMetric,
   peopleScopeFilterFromHash,
   peopleSortLabel,
   peopleSortFromHash,
@@ -603,6 +604,9 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("pr_throughput")).toBe("PR volume");
     expect(peopleSortLabel("flow_gap")).toBe("flow gap");
     expect(peopleSortLabel("testing_wait")).toBe("testing wait");
+    expect(peopleScopeForPersonalMetric("active_no_pr")).toBe("critical");
+    expect(peopleScopeForPersonalMetric("pr_attention")).toBe("attention");
+    expect(peopleScopeForPersonalMetric("testing")).toBe("testing");
   });
 
   it("summarizes people risks for management shortcuts", () => {
