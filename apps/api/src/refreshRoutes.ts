@@ -17,12 +17,16 @@ const manualRefreshSchema = z.object({
   layers: z.array(z.enum(manualRefreshLayers)).min(1).max(manualRefreshLayers.length).optional()
 });
 
+interface RefreshRouteOptions {
+  onDashboardMutated?: () => void;
+}
+
 function uniqueLayers(layers: ManualRefreshLayer[] | undefined): ManualRefreshLayer[] {
   const selected = layers && layers.length > 0 ? layers : [...manualRefreshLayers];
   return selected.filter((layer, index) => selected.indexOf(layer) === index);
 }
 
-export async function registerRefreshRoutes(app: FastifyInstance): Promise<void> {
+export async function registerRefreshRoutes(app: FastifyInstance, options: RefreshRouteOptions = {}): Promise<void> {
   app.post("/api/refresh", async (request, reply) => {
     const session = await getSessionRecordFromRequest(request, reply);
     if (!session) {
@@ -59,13 +63,15 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
 
     try {
       const queuedJobs = await enqueueJobsNow(jobs);
-      return await recordManualRefreshRequest({
+      const refreshRequest = await recordManualRefreshRequest({
         repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
         requestedLayers,
         queuedJobs
       });
+      options.onDashboardMutated?.();
+      return refreshRequest;
     } catch (error) {
       app.log.error({ error, githubLogin: session.githubLogin, requestedLayers }, "manual refresh queueing failed");
       return reply.status(500).send({
@@ -115,6 +121,9 @@ export async function registerRefreshRoutes(app: FastifyInstance): Promise<void>
               queuedJobs
             })
           : null;
+      if (refreshRequest) {
+        options.onDashboardMutated?.();
+      }
 
       return {
         retriedDeliveries: retryResult.retriedDeliveries,

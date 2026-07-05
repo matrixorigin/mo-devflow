@@ -79,7 +79,7 @@ await registerApiSecurity(app);
 
 await registerAuthRoutes(app);
 await registerActionRoutes(app);
-await registerRefreshRoutes(app);
+await registerRefreshRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 await registerNotificationRoutes(app);
 await registerWebhookRoutes(app);
 

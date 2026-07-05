@@ -52,7 +52,8 @@ describe("refresh routes", () => {
 
   test("queues only selected manual refresh layers", async () => {
     const app = Fastify();
-    await registerRefreshRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
     mocks.enqueueJobsNow.mockResolvedValue([
       { jobKey: "rules:matrixorigin/matrixone", jobType: "rules", status: "pending", nextRunAt: null },
       {
@@ -98,6 +99,7 @@ describe("refresh routes", () => {
           requestedLayers: ["rules", "notifications"]
         })
       );
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -105,7 +107,8 @@ describe("refresh routes", () => {
 
   test("rejects an empty manual refresh layer selection", async () => {
     const app = Fastify();
-    await registerRefreshRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -122,6 +125,7 @@ describe("refresh routes", () => {
       });
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
       expect(mocks.recordManualRefreshRequest).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -129,7 +133,8 @@ describe("refresh routes", () => {
 
   test("resets failed webhook deliveries and queues webhook repair jobs", async () => {
     const app = Fastify();
-    await registerRefreshRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
     mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 3 });
     mocks.enqueueJobsNow.mockResolvedValue([
       { jobKey: "webhooks:matrixorigin/matrixone", jobType: "webhooks", status: "pending", nextRunAt: null },
@@ -175,6 +180,7 @@ describe("refresh routes", () => {
           requestedLayers: ["webhooks", "rules", "metrics", "ai_drift", "notifications"]
         })
       );
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -182,7 +188,8 @@ describe("refresh routes", () => {
 
   test("does not queue webhook repair jobs when there are no failed deliveries", async () => {
     const app = Fastify();
-    await registerRefreshRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
     mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 0 });
 
     try {
@@ -201,6 +208,7 @@ describe("refresh routes", () => {
       });
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
       expect(mocks.recordManualRefreshRequest).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
