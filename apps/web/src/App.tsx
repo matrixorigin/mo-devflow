@@ -1115,6 +1115,108 @@ function SessionModelPanel({
   );
 }
 
+function hasSavedPersonalToken(user: NonNullable<SessionView["user"]> | null): boolean {
+  return Boolean(user?.tokenLastValidatedAt);
+}
+
+function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
+  label: string;
+  detail: string;
+} {
+  if (!user) {
+    return {
+      label: "not signed in",
+      detail: "Connect a personal token in this browser before confirmed writes."
+    };
+  }
+  if (!hasSavedPersonalToken(user)) {
+    return {
+      label: "token removed",
+      detail: "Browser session remains, but GitHub writes are disabled until this user reconnects."
+    };
+  }
+  return {
+    label: `repo: ${user.tokenRepoPermission}`,
+    detail: `Token checked ${formatDate(user.tokenLastValidatedAt)}.`
+  };
+}
+
+function personalTokenActionLabel(user: NonNullable<SessionView["user"]> | null): string {
+  if (!user) {
+    return "Sign in with GitHub token";
+  }
+  return hasSavedPersonalToken(user) ? "Update saved token" : "Reconnect personal token";
+}
+
+function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
+  if (!user) {
+    return "Sign In with GitHub Token";
+  }
+  return hasSavedPersonalToken(user)
+    ? `Update saved GitHub token for ${user.githubLogin}`
+    : `Reconnect GitHub token for ${user.githubLogin}`;
+}
+
+function tokenModalOkText(user: NonNullable<SessionView["user"]> | null): string {
+  if (!user) {
+    return "Sign in";
+  }
+  return hasSavedPersonalToken(user) ? "Update token" : "Reconnect token";
+}
+
+function teamSignInActivityText(teamSignIn: SessionView["teamSignIn"]): string {
+  if (teamSignIn.connectedUsers === 0) {
+    return "No teammate has signed in with a GitHub token on this deployment yet.";
+  }
+  return `Last team sign-in activity ${formatDate(teamSignIn.lastSeenAt)}.`;
+}
+
+function ConnectedUsersPanel({
+  users,
+  title,
+  tag = "same deployment"
+}: {
+  users: SessionView["connectedUsers"];
+  title: string;
+  tag?: string;
+}) {
+  if (users.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="account-team-panel">
+      <div className="account-team-heading">
+        <Text strong>{title}</Text>
+        <Tag>{tag}</Tag>
+      </div>
+      <div className="account-team-list">
+        {users.map((user) => (
+          <div className="account-team-user" key={user.githubId}>
+            <Avatar size={28} src={user.avatarUrl}>
+              {user.githubLogin.slice(0, 1).toUpperCase()}
+            </Avatar>
+            <div>
+              <Space size={4} wrap>
+                <Text strong>{user.githubLogin}</Text>
+                {user.isCurrentUser ? <Tag color="blue">current browser</Tag> : null}
+                <Tag color={user.tokenConnected ? repoPermissionColor(user.tokenRepoPermission) : "default"}>
+                  {user.tokenConnected ? `repo: ${user.tokenRepoPermission}` : "token removed"}
+                </Tag>
+              </Space>
+              <Text type="secondary">
+                {`${user.activeSessionCount} active browser session${user.activeSessionCount === 1 ? "" : "s"} | last seen ${formatDate(
+                  user.lastSeenAt ?? user.tokenLastValidatedAt
+                )}`}
+              </Text>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AccountControl({
   authenticatedUser,
   connectedUsers,
@@ -1134,6 +1236,7 @@ function AccountControl({
   onConnectToken: () => void;
   onSignOut: () => void;
 }) {
+  const tokenStatus = personalTokenStatus(authenticatedUser);
   const statusLabel = authenticatedUser
     ? capability?.enabled
       ? "write ready"
@@ -1159,21 +1262,21 @@ function AccountControl({
       </div>
       <div className="account-session-facts">
         <div>
-          <span>GitHub user</span>
+          <span>Current browser</span>
           <strong>{authenticatedUser ? authenticatedUser.githubLogin : "none"}</strong>
         </div>
         <div>
-          <span>Write token</span>
-          <strong>{authenticatedUser ? "saved for this user" : "not signed in"}</strong>
+          <span>Personal token</span>
+          <strong>{tokenStatus.label}</strong>
         </div>
         <div>
-          <span>Other machines</span>
-          <strong>{authenticatedUser ? "sign in again" : "sign in there"}</strong>
+          <span>Service source</span>
+          <strong>{serviceReadTokenConfigured ? "configured" : "missing"}</strong>
         </div>
       </div>
       <Text type="secondary" className="account-session-copy">
         {authenticatedUser
-          ? "Multiple teammates can use this deployment at the same time. The submitted token is validated by GitHub, keyed by that GitHub ID, and this browser receives its own session cookie. Another browser or machine signs in again to create its own session for the same GitHub user."
+          ? `${tokenStatus.detail} Multiple teammates can use this deployment at the same time. Another browser or machine signs in again to create its own session for the same GitHub user.`
           : "Anonymous users only observe cached data. Each teammate signs in with a personal GitHub token in their own browser session when they need manual repair or confirmed GitHub writes."}
       </Text>
       <SessionModelPanel
@@ -1202,46 +1305,14 @@ function AccountControl({
           </div>
         </div>
         <Text type="secondary" className="account-session-copy">
-          {teamSignIn.connectedUsers > 0
-            ? `Last team sign-in activity ${formatDate(teamSignIn.lastSeenAt)}.`
-            : "No teammate has signed in with a GitHub token on this deployment yet."}
+          {teamSignInActivityText(teamSignIn)}
         </Text>
       </div>
-      {authenticatedUser && connectedUsers.length > 0 ? (
-        <div className="account-team-panel">
-          <div className="account-team-heading">
-            <Text strong>Signed-in teammates</Text>
-            <Tag>same deployment</Tag>
-          </div>
-          <div className="account-team-list">
-            {connectedUsers.map((user) => (
-              <div className="account-team-user" key={user.githubId}>
-                <Avatar size={28} src={user.avatarUrl}>
-                  {user.githubLogin.slice(0, 1).toUpperCase()}
-                </Avatar>
-                <div>
-                  <Space size={4} wrap>
-                    <Text strong>{user.githubLogin}</Text>
-                    {user.isCurrentUser ? <Tag color="blue">you</Tag> : null}
-                    <Tag color={user.tokenConnected ? repoPermissionColor(user.tokenRepoPermission) : "default"}>
-                      {user.tokenConnected ? `repo: ${user.tokenRepoPermission}` : "token removed"}
-                    </Tag>
-                  </Space>
-                  <Text type="secondary">
-                    {`${user.activeSessionCount} active browser session${user.activeSessionCount === 1 ? "" : "s"} | last seen ${formatDate(
-                      user.lastSeenAt ?? user.tokenLastValidatedAt
-                    )}`}
-                  </Text>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {authenticatedUser ? <ConnectedUsersPanel users={connectedUsers} title="Connected GitHub users" /> : null}
       {capability ? <TokenCapabilityPanel capability={capability} /> : null}
       <Space size={[8, 8]} wrap>
         <Button icon={<KeyRound size={16} />} disabled={tokenEncryptionUnavailable} onClick={onConnectToken}>
-          {authenticatedUser ? "Update saved token" : "Sign in with GitHub token"}
+          {personalTokenActionLabel(authenticatedUser)}
         </Button>
         {authenticatedUser ? (
           <Button icon={<LogOut size={16} />} onClick={onSignOut}>
@@ -17182,18 +17253,12 @@ export default function App() {
         onClose={() => setObservedPersonPreviewState(null)}
       />
       <Modal
-        title={
-          authenticatedUser
-            ? `Update saved GitHub token for ${authenticatedUser.githubLogin}`
-            : "Sign In with GitHub Token"
-        }
+        title={tokenModalTitle(authenticatedUser)}
         open={tokenModalOpen}
         okText={
           tokenRetryActive
             ? `Retry in ${retryDelayText(tokenRetryRemainingSeconds)}`
-            : authenticatedUser
-              ? "Update token"
-              : "Sign in"
+            : tokenModalOkText(authenticatedUser)
         }
         confirmLoading={tokenSaving}
         okButtonProps={{ disabled: tokenEncryptionUnavailable || tokenInput.trim().length < 20 || tokenRetryActive }}
@@ -17210,12 +17275,14 @@ export default function App() {
             type="info"
             title={
               authenticatedUser
-                ? `This updates only ${authenticatedUser.githubLogin}'s token.`
+                ? hasSavedPersonalToken(authenticatedUser)
+                  ? `This updates only ${authenticatedUser.githubLogin}'s saved token.`
+                  : `This reconnects only ${authenticatedUser.githubLogin}'s personal token.`
                 : "Each teammate signs in with their own GitHub token."
             }
             description={
               authenticatedUser
-                ? "The saved token is keyed by this validated GitHub identity. This browser has its own session; another machine must sign in again to create its own session for the same GitHub user."
+                ? "The token is keyed by the validated GitHub identity. This browser session remains separate from the saved token; another machine signs in again to create its own browser session for the same GitHub user."
                 : "Sign-in validates the token with GitHub, creates or updates that GitHub user's saved token, then signs in only this browser session. Other teammates and other machines sign in separately."
             }
             showIcon
@@ -17232,6 +17299,13 @@ export default function App() {
             }
             serviceReadTokenConfigured={serviceReadTokenConfigured}
           />
+          {session?.connectedUsers?.length ? (
+            <ConnectedUsersPanel
+              users={session.connectedUsers}
+              title="Connected GitHub users"
+              tag="visible after sign-in"
+            />
+          ) : null}
           {authenticatedUser ? (
             <div className="token-session-panel">
               <div className="token-session-heading">
@@ -17246,7 +17320,11 @@ export default function App() {
               <div className="token-session-facts">
                 <div>
                   <span>Repo permission</span>
-                  <strong>{labelText(authenticatedUser.tokenRepoPermission)}</strong>
+                  <strong>
+                    {hasSavedPersonalToken(authenticatedUser)
+                      ? labelText(authenticatedUser.tokenRepoPermission)
+                      : "token removed"}
+                  </strong>
                 </div>
                 <div>
                   <span>Token checked</span>
@@ -17273,7 +17351,11 @@ export default function App() {
           ) : (
             <Alert
               type="info"
-              title="Sign-in token needs repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+              title={
+                authenticatedUser
+                  ? "Reconnect a personal token with repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+                  : "Sign-in token needs repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+              }
               showIcon
             />
           )}
