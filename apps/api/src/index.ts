@@ -173,7 +173,7 @@ app.get("/api/dashboard", async (request, reply) => {
       ifNoneMatch,
       loadVersion: async () => {
         try {
-          return await getDashboardDataVersion(await resolveRepoId());
+          return await getDashboardDataVersion(await resolveRepoId(), profile, viewer);
         } catch (error) {
           app.log.warn({ error, repoKey: profile.key }, "dashboard data version query failed");
           throw error;

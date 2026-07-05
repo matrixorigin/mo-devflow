@@ -4044,32 +4044,69 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
   return metrics.size;
 }
 
-export function dashboardDataVersionSql(): string {
+interface DashboardDataVersionFilters {
+  issues: SqlFilter;
+  pullRequests: SqlFilter;
+  issueCommentSyncs: SqlFilter;
+  issueComments: SqlFilter;
+  issueTimelineEvents: SqlFilter;
+  issueTimelineSyncs: SqlFilter;
+}
+
+function unrestrictedDashboardDataVersionFilters(): DashboardDataVersionFilters {
+  const all = { sql: "1 = 1", params: [] };
+  return {
+    issues: all,
+    pullRequests: all,
+    issueCommentSyncs: all,
+    issueComments: all,
+    issueTimelineEvents: all,
+    issueTimelineSyncs: all
+  };
+}
+
+function dashboardDataVersionFilters(profile?: RepoProfile, viewer?: DashboardViewer): DashboardDataVersionFilters {
+  if (!profile || !viewer) {
+    return unrestrictedDashboardDataVersionFilters();
+  }
+  return {
+    issues: dashboardVisibilityFilter("i", profile, viewer),
+    pullRequests: dashboardVisibilityFilter("p", profile, viewer),
+    issueCommentSyncs: dashboardVisibilityFilter("ics", profile, viewer),
+    issueComments: dashboardVisibilityFilter("c", profile, viewer),
+    issueTimelineEvents: dashboardVisibilityFilter("e", profile, viewer),
+    issueTimelineSyncs: dashboardVisibilityFilter("its", profile, viewer)
+  };
+}
+
+export function dashboardDataVersionSql(
+  filters: DashboardDataVersionFilters = unrestrictedDashboardDataVersionFilters()
+): string {
   return `SELECT source_name, row_count, max_id, max_event_at, max_aux_at
           FROM (
             SELECT 'issues' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
                    MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM issues WHERE repo_id = ?
+       FROM issues i WHERE i.repo_id = ? AND ${filters.issues.sql}
        UNION ALL
        SELECT 'pull_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM pull_requests WHERE repo_id = ?
+       FROM pull_requests p WHERE p.repo_id = ? AND ${filters.pullRequests.sql}
        UNION ALL
        SELECT 'issue_comment_syncs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_synced_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM issue_comment_syncs WHERE repo_id = ?
+       FROM issue_comment_syncs ics WHERE ics.repo_id = ? AND ${filters.issueCommentSyncs.sql}
        UNION ALL
        SELECT 'issue_comments' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(updated_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM issue_comments WHERE repo_id = ?
+       FROM issue_comments c WHERE c.repo_id = ? AND ${filters.issueComments.sql}
        UNION ALL
        SELECT 'issue_timeline_events' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(occurred_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM issue_timeline_events WHERE repo_id = ?
+       FROM issue_timeline_events e WHERE e.repo_id = ? AND ${filters.issueTimelineEvents.sql}
        UNION ALL
        SELECT 'issue_timeline_syncs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_synced_at) AS max_event_at, MAX(last_synced_at) AS max_aux_at
-       FROM issue_timeline_syncs WHERE repo_id = ?
+       FROM issue_timeline_syncs its WHERE its.repo_id = ? AND ${filters.issueTimelineSyncs.sql}
        UNION ALL
        SELECT 'sync_runs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
@@ -4150,11 +4187,39 @@ export function dashboardDataVersionRepoIdParameterCount(): number {
   return (dashboardDataVersionSql().match(/\?/g) ?? []).length;
 }
 
-export async function getDashboardDataVersion(repoId: number): Promise<string> {
-  const [rows] = await getPool().execute<RowData[]>(
-    dashboardDataVersionSql(),
-    Array.from({ length: dashboardDataVersionRepoIdParameterCount() }, () => repoId)
-  );
+export function dashboardDataVersionQuery(
+  repoId: number,
+  profile?: RepoProfile,
+  viewer?: DashboardViewer
+): { sql: string; params: Array<number | string> } {
+  const filters = dashboardDataVersionFilters(profile, viewer);
+  return {
+    sql: dashboardDataVersionSql(filters),
+    params: [
+      repoId,
+      ...filters.issues.params,
+      repoId,
+      ...filters.pullRequests.params,
+      repoId,
+      ...filters.issueCommentSyncs.params,
+      repoId,
+      ...filters.issueComments.params,
+      repoId,
+      ...filters.issueTimelineEvents.params,
+      repoId,
+      ...filters.issueTimelineSyncs.params,
+      ...Array.from({ length: dashboardDataVersionRepoIdParameterCount() - 6 }, () => repoId)
+    ]
+  };
+}
+
+export async function getDashboardDataVersion(
+  repoId: number,
+  profile?: RepoProfile,
+  viewer?: DashboardViewer
+): Promise<string> {
+  const query = dashboardDataVersionQuery(repoId, profile, viewer);
+  const [rows] = await getPool().execute<RowData[]>(query.sql, query.params);
 
   const normalized = rows.map((row) => ({
     source: asString(row.source_name),

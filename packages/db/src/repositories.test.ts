@@ -19,6 +19,7 @@ import {
   criticalIssueOwnerCoverage,
   criticalIssueOwnershipCounts,
   criticalIssueOwnerScope,
+  dashboardDataVersionQuery,
   dashboardDataVersionRepoIdParameterCount,
   dashboardDataVersionSql,
   dateKeyInTimezone,
@@ -294,6 +295,43 @@ describe("dashboard data version", () => {
     expect(dashboardDataVersionSql()).toContain("COALESCE(SUM(attempts), 0)");
     expect(dashboardDataVersionSql()).toContain("COALESCE(SUM(duplicate_count), 0)");
     expect(dashboardDataVersionSql()).toContain("MAX(last_duplicate_at)");
+  });
+
+  test("scopes GitHub cache object version sources to anonymous-visible rows", () => {
+    const query = dashboardDataVersionQuery(7, baseProfile, { authenticated: false, userId: null });
+
+    expect(query.sql).toContain("FROM issues i WHERE i.repo_id = ? AND i.visibility_class IN ('anonymous_readable')");
+    expect(query.sql).toContain(
+      "FROM pull_requests p WHERE p.repo_id = ? AND p.visibility_class IN ('anonymous_readable')"
+    );
+    expect(query.sql).toContain(
+      "FROM issue_comment_syncs ics WHERE ics.repo_id = ? AND ics.visibility_class IN ('anonymous_readable')"
+    );
+    expect(query.sql).toContain(
+      "FROM issue_comments c WHERE c.repo_id = ? AND c.visibility_class IN ('anonymous_readable')"
+    );
+    expect(query.sql).toContain(
+      "FROM issue_timeline_events e WHERE e.repo_id = ? AND e.visibility_class IN ('anonymous_readable')"
+    );
+    expect(query.sql).toContain(
+      "FROM issue_timeline_syncs its WHERE its.repo_id = ? AND its.visibility_class IN ('anonymous_readable')"
+    );
+    expect(query.params).toEqual(Array.from({ length: dashboardDataVersionRepoIdParameterCount() }, () => 7));
+  });
+
+  test("includes only the signed-in user's token-owned cache objects in dashboard version sources", () => {
+    const query = dashboardDataVersionQuery(7, baseProfile, { authenticated: true, userId: 42 });
+
+    expect(query.sql).toContain(
+      "(i.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (i.visibility_class = 'token_owner_only' AND i.source_user_id = ?))"
+    );
+    expect(query.sql).toContain(
+      "(p.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (p.visibility_class = 'token_owner_only' AND p.source_user_id = ?))"
+    );
+    expect(query.sql).toContain(
+      "(ics.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (ics.visibility_class = 'token_owner_only' AND ics.source_user_id = ?))"
+    );
+    expect(query.params.slice(0, 12)).toEqual([7, 42, 7, 42, 7, 42, 7, 42, 7, 42, 7, 42]);
   });
 });
 
