@@ -2604,6 +2604,143 @@ button.team-monitor-tile:hover,
   min-width: 0;
 }
 
+.linked-work-preview {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.linked-work-column {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.linked-work-column-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.linked-work-column-title {
+  align-items: center;
+  color: #374151;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+  min-width: 0;
+}
+
+.linked-work-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.linked-work-item {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  color: #111827;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 9px;
+  text-decoration: none;
+}
+
+.linked-work-item:hover,
+.linked-work-item:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.linked-work-item-critical {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+
+.linked-work-item-attention {
+  background: #fffbeb;
+  border-color: #fed7aa;
+}
+
+.linked-work-item-muted {
+  color: #6b7280;
+}
+
+.linked-work-item-number {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.linked-work-item strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.linked-work-item small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.linked-work-badges {
+  min-width: 0;
+}
+
+.linked-work-empty {
+  font-size: 12px;
+}
+
+.linked-work-more {
+  align-items: center;
+  appearance: none;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 7px;
+  color: #1d4ed8;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  gap: 6px;
+  justify-content: center;
+  line-height: 1.2;
+  padding: 8px 9px;
+  text-align: center;
+  width: 100%;
+}
+
+.linked-work-more .list-toggle-action {
+  margin-left: 0;
+}
+
+.linked-work-more:hover,
+.linked-work-more:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.linked-work-more-muted {
+  color: #475569;
+}
+
 .team-object-preview-linked {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -9159,6 +9296,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-object-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .linked-work-preview {
     grid-template-columns: 1fr;
   }
 

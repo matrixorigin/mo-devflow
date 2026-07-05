@@ -5589,6 +5589,133 @@ function TeamIssuePreviewLinkedPr({ pr }: { pr: CriticalIssueLinkedPullRequestVi
   );
 }
 
+type LinkedWorkPreviewTone = "critical" | "attention" | "normal" | "muted";
+
+interface LinkedWorkPreviewItem {
+  number: number;
+  url: string;
+  title?: string;
+  meta?: string;
+  tone?: LinkedWorkPreviewTone;
+  badges?: ReactNode[];
+}
+
+function LinkedWorkPreview({
+  issueLinks,
+  prLinks,
+  emptyText = "No linked issue or PR is visible in cache.",
+  initialLimit = 6
+}: {
+  issueLinks: LinkedWorkPreviewItem[];
+  prLinks: LinkedWorkPreviewItem[];
+  emptyText?: string;
+  initialLimit?: number;
+}) {
+  const issueResetKey = issueLinks.map((link) => link.number).join(",");
+  const prResetKey = prLinks.map((link) => link.number).join(",");
+  const issueLazy = useLazyVisibleCount(issueLinks.length, initialLimit, `issues:${issueResetKey}`);
+  const prLazy = useLazyVisibleCount(prLinks.length, initialLimit, `prs:${prResetKey}`);
+
+  if (issueLinks.length === 0 && prLinks.length === 0) {
+    return <Text type="secondary">{emptyText}</Text>;
+  }
+
+  return (
+    <div className="linked-work-preview">
+      <LinkedWorkPreviewColumn
+        emptyText="No issue link visible"
+        icon={<CircleAlert size={14} aria-hidden="true" />}
+        itemLabel="issues"
+        items={issueLinks.slice(0, issueLazy.visibleCount)}
+        kindLabel="Issue"
+        lazy={issueLazy}
+        title="Issues"
+        total={issueLinks.length}
+      />
+      <LinkedWorkPreviewColumn
+        emptyText="No PR link visible"
+        icon={<GitPullRequest size={14} aria-hidden="true" />}
+        itemLabel="PRs"
+        items={prLinks.slice(0, prLazy.visibleCount)}
+        kindLabel="PR"
+        lazy={prLazy}
+        title="PRs"
+        total={prLinks.length}
+      />
+    </div>
+  );
+}
+
+function LinkedWorkPreviewColumn({
+  emptyText,
+  icon,
+  itemLabel,
+  items,
+  kindLabel,
+  lazy,
+  title,
+  total
+}: {
+  emptyText: string;
+  icon: ReactNode;
+  itemLabel: string;
+  items: LinkedWorkPreviewItem[];
+  kindLabel: "Issue" | "PR";
+  lazy: ReturnType<typeof useLazyVisibleCount>;
+  title: string;
+  total: number;
+}) {
+  return (
+    <div className="linked-work-column">
+      <div className="linked-work-column-heading">
+        <span className="linked-work-column-title">
+          {icon}
+          {title}
+        </span>
+        <Tag>{total}</Tag>
+      </div>
+      {items.length > 0 ? (
+        <div className="linked-work-list">
+          {items.map((item) => (
+            <a
+              className={`linked-work-item linked-work-item-${item.tone ?? "normal"}`}
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              key={`${kindLabel}-${item.number}`}
+            >
+              <span className="linked-work-item-number">
+                {kindLabel} #{item.number}
+              </span>
+              {item.title ? <strong>{item.title}</strong> : null}
+              {item.meta ? <small>{item.meta}</small> : null}
+              {item.badges && item.badges.length > 0 ? (
+                <Space className="linked-work-badges" size={[4, 4]} wrap>
+                  {item.badges}
+                </Space>
+              ) : null}
+            </a>
+          ))}
+          <LazyListToggle
+            hiddenCount={lazy.hiddenCount}
+            revealCount={lazy.revealCount}
+            canCollapse={lazy.canCollapse}
+            itemLabel={itemLabel}
+            className="linked-work-more"
+            collapsedLabel={`Show compact ${itemLabel} list`}
+            onShowMore={lazy.showMore}
+            onCollapse={lazy.reset}
+          />
+        </div>
+      ) : (
+        <Text className="linked-work-empty" type="secondary">
+          {emptyText}
+        </Text>
+      )}
+    </div>
+  );
+}
+
 function TeamPullRequestPreviewModal({
   activeIssues,
   pr,
@@ -12683,22 +12810,7 @@ function PersonalActivityPreviewModal({ item, onClose }: { item: PersonalActivit
 
         <section className="team-object-preview-section">
           <Text strong>Linked work</Text>
-          {linkedIssueUrls.length === 0 && linkedPrUrls.length === 0 ? (
-            <Text type="secondary">No linked issue or PR is visible in cache.</Text>
-          ) : (
-            <Space size={[6, 6]} wrap>
-              {linkedIssueUrls.map((link) => (
-                <a href={link.url} target="_blank" rel="noreferrer" key={`issue-${link.number}`}>
-                  issue #{link.number}
-                </a>
-              ))}
-              {linkedPrUrls.map((link) => (
-                <a href={link.url} target="_blank" rel="noreferrer" key={`pr-${link.number}`}>
-                  PR #{link.number}
-                </a>
-              ))}
-            </Space>
-          )}
+          <LinkedWorkPreview issueLinks={linkedIssueUrls} prLinks={linkedPrUrls} />
         </section>
       </div>
     </Modal>
@@ -13290,9 +13402,27 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
   const testingWorkCount = statusCounts.testingIssues + statusCounts.testingPrs;
   const nextAction = flowThreadNextAction(row);
   const sourceUrl = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
-  const linkedIssueUrls = sourceUrl
-    ? row.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
+  const linkedIssuePreviewLinks = sourceUrl
+    ? row.linkedIssueNumbers.map((number) => {
+        const isCurrentIssue = row.issue.number === number;
+        return {
+          number,
+          url: linkedObjectUrl(sourceUrl, "issues", number),
+          title: isCurrentIssue ? row.issue.title : undefined,
+          meta: isCurrentIssue ? flowThreadIssuePreviewMeta(row) : undefined,
+          tone: isCurrentIssue ? row.issue.tone : undefined,
+          badges: isCurrentIssue ? flowThreadIssuePreviewBadges(row) : undefined
+        };
+      })
     : [];
+  const linkedPrPreviewLinks = row.prs.map((pr) => ({
+    number: pr.number,
+    url: pr.htmlUrl,
+    title: pr.title,
+    meta: flowThreadPrPreviewMeta(pr),
+    tone: pr.tone,
+    badges: flowThreadPrPreviewBadges(pr)
+  }));
   const previewPrs = previewPrsExpanded ? row.prs : row.prs.slice(0, 10);
   const hiddenPreviewPrCount = Math.max(0, row.prs.length - previewPrs.length);
 
@@ -13354,6 +13484,11 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
         <section className="team-object-preview-section">
           <Text strong>Next action</Text>
           <Text>{nextAction}</Text>
+        </section>
+
+        <section className="team-object-preview-section">
+          <Text strong>Issue / PR links</Text>
+          <LinkedWorkPreview issueLinks={linkedIssuePreviewLinks} prLinks={linkedPrPreviewLinks} />
         </section>
 
         <section className="team-object-preview-section">
@@ -13430,22 +13565,90 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
             </div>
           )}
         </section>
-
-        {linkedIssueUrls.length > 0 && row.kind !== "issue" ? (
-          <section className="team-object-preview-section">
-            <Text strong>Linked issues</Text>
-            <Space size={[6, 6]} wrap>
-              {linkedIssueUrls.map((link) => (
-                <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
-                  issue #{link.number}
-                </a>
-              ))}
-            </Space>
-          </section>
-        ) : null}
       </div>
     </Modal>
   );
+}
+
+function flowThreadIssuePreviewMeta(row: PersonalGanttRow): string {
+  const duration = row.issue.durationHours === null ? "unknown duration" : hours(row.issue.durationHours);
+  return `${flowIssueDurationLabel(row.issue.durationKind)} ${duration}`;
+}
+
+function flowThreadIssuePreviewBadges(row: PersonalGanttRow): ReactNode[] {
+  const badges: ReactNode[] = [];
+  if (row.issue.severity) {
+    badges.push(
+      <Tag color={severityColor(row.issue.severity)} key="severity">
+        {row.issue.severity}
+      </Tag>
+    );
+  }
+  if (row.issue.lifecycleState) {
+    badges.push(<Tag key="lifecycle">{labelText(row.issue.lifecycleState)}</Tag>);
+  }
+  if (row.issue.aiEffortLabel) {
+    badges.push(
+      <Tag color="blue" key="ai">
+        {effectiveAiEffortLabel(row.issue.aiEffortLabel)}
+      </Tag>
+    );
+  }
+  if (!row.issue.isComplete) {
+    badges.push(
+      <Tag color="gold" key="sync">
+        cache sync pending
+      </Tag>
+    );
+  }
+  return badges;
+}
+
+function flowThreadPrPreviewMeta(pr: PersonalGanttPrBar): string {
+  return [
+    `owner ${pr.ownerLogin}`,
+    `age ${hours(pr.startAgeHours)}`,
+    pr.testingQueueAgeHours !== null ? `issue test wait ${hours(pr.testingQueueAgeHours)}` : null,
+    pr.isComplete ? null : "detail sync pending"
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" | ");
+}
+
+function flowThreadPrPreviewBadges(pr: PersonalGanttPrBar): ReactNode[] {
+  const badges: ReactNode[] = [];
+  if (pr.isShared) {
+    badges.push(
+      <Tag color="purple" key="shared">
+        shared
+      </Tag>
+    );
+  }
+  if (pr.ciState) {
+    badges.push(
+      <Tag color={ciColor(pr.ciState)} key="ci">
+        ci {labelText(pr.ciState)}
+      </Tag>
+    );
+  }
+  if (pr.reviewDecision) {
+    badges.push(
+      <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"} key="review">
+        {labelText(pr.reviewDecision)}
+      </Tag>
+    );
+  }
+  if (pr.mergeStateStatus) {
+    badges.push(
+      <Tag color={mergeColor(pr.mergeStateStatus)} key="merge">
+        merge {labelText(pr.mergeStateStatus)}
+      </Tag>
+    );
+  }
+  if (pr.testingState !== "not_ready") {
+    badges.push(<TestingStateTag state={pr.testingState} key="testing" />);
+  }
+  return badges;
 }
 
 function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
