@@ -20,9 +20,11 @@ import {
   pagedRangeLabel,
   personalActionQueueDisclosureSummary,
   personalCriticalFlowEfficiency,
+  personalCriticalFlowEfficiencyCompactSummary,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalPrPeriodAverageDurationText,
+  personalPrPeriodThroughputDetail,
   personalPrListForScope,
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
@@ -159,6 +161,7 @@ describe("dashboard hash filters", () => {
     expect(auditHash).toBe("audit?scope=token_unavailable");
     expect(notificationDeliveryScopeFilterFromHash(`#${notificationHash}`)).toBe("failed");
     expect(webhookScopeFilterFromHash(`#${webhookHash}`)).toBe("duplicates");
+    expect(webhookScopeFilterFromHash("#webhooks?scope=stale_processing")).toBe("stale_processing");
     expect(writeAuditScopeFilterFromHash(`#${auditHash}`)).toBe("token_unavailable");
     expect(
       dashboardHashForView("Notifications", {
@@ -526,6 +529,7 @@ describe("dashboard hash filters", () => {
     expect(personalPrListTotalForScope(person, "attention", "day")).toBe(1);
     expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
     expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
+    expect(personalPrPeriodThroughputDetail(person, "week")).toBe("3 PRs in list | avg 6.7d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
     expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
@@ -722,6 +726,7 @@ describe("dashboard hash filters", () => {
       slowEasyIssues: 0
     });
     expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
+    expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | test 1/2 (50%)");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
   });
 });

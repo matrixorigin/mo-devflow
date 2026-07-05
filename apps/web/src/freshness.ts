@@ -53,7 +53,13 @@ export interface UpdatePipelineSummary {
 }
 
 export type WebhookReadinessMode =
-  "polling_only" | "waiting_for_delivery" | "connected_waiting_for_activity" | "receiving" | "queued" | "failed";
+  | "polling_only"
+  | "waiting_for_delivery"
+  | "connected_waiting_for_activity"
+  | "receiving"
+  | "queued"
+  | "stale_processing"
+  | "failed";
 
 export interface WebhookReadinessSummary {
   tone: UpdatePipelineTone;
@@ -167,7 +173,11 @@ function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number
 }
 
 export function webhookDeliveryBacklogNeedsRefreshWatch(input: Pick<DashboardSummary, "webhooks">): boolean {
-  return input.webhooks.pendingDeliveries > 0 || failedWebhookDeliveries(input.webhooks) > 0;
+  return (
+    input.webhooks.pendingDeliveries > 0 ||
+    input.webhooks.staleProcessingDeliveries > 0 ||
+    failedWebhookDeliveries(input.webhooks) > 0
+  );
 }
 
 function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
@@ -283,6 +293,26 @@ export function summarizeWebhookReadiness(
       nextActions: [
         "Retry failed deliveries after the underlying GitHub or normalization error is fixed.",
         "Review failed rows below before relying on near-real-time freshness."
+      ]
+    };
+  }
+
+  if (webhooks.staleProcessingDeliveries > 0) {
+    return {
+      tone: "critical",
+      mode: "stale_processing",
+      title: "Webhook processing is stale",
+      description: "GitHub deliveries were claimed by a worker, but their processing leases expired before completion.",
+      facts: [
+        `${webhooks.staleProcessingDeliveries} stale processing`,
+        `${webhooks.pendingDeliveries} pending`,
+        webhooks.oldestPendingReceivedAt
+          ? `oldest pending ${webhooks.oldestPendingReceivedAt}`
+          : "oldest pending wait unknown"
+      ],
+      nextActions: [
+        "Check worker heartbeat and webhook job logs before relying on near-real-time updates.",
+        "Queue webhook processing after the worker is healthy."
       ]
     };
   }
@@ -414,7 +444,8 @@ export function summarizeUpdatePipeline(
   const webhookFailures = failedWebhookDeliveries(webhooks);
   const workerRisk = worker.status !== "active";
   const queueRisk = queue.status !== "healthy";
-  const webhookRisk = webhookFailures > 0;
+  const staleWebhookProcessingRisk = webhooks.staleProcessingDeliveries > 0;
+  const webhookRisk = webhookFailures > 0 || staleWebhookProcessingRisk;
   const staleRisk = input.sync.staleObjects > 0;
   const partialRisk = input.sync.partialObjects > 0;
   const pendingWebhookRisk = webhooks.pendingDeliveries > 0;
@@ -450,22 +481,26 @@ export function summarizeUpdatePipeline(
       value:
         webhookFailures > 0
           ? `${webhookFailures} failed`
-          : webhooks.pendingDeliveries > 0
-            ? `${webhooks.pendingDeliveries} pending`
-            : secretMissing
-              ? "polling only"
-              : webhooks.processedDeliveries > 0
-                ? "receiving"
-                : webhooks.lastConnectivityProbeAt
-                  ? "connected"
-                  : "no deliveries",
-      detail: webhooks.lastReceivedAt
-        ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed; ping ${evidenceDate(
-            webhooks.lastConnectivityProbeAt
-          )}`
-        : secretMissing
-          ? "webhook secret is missing; worker polling and manual refresh are the current update path"
-          : "polling repair is the only observed update path",
+          : staleWebhookProcessingRisk
+            ? `${webhooks.staleProcessingDeliveries} stale`
+            : webhooks.pendingDeliveries > 0
+              ? `${webhooks.pendingDeliveries} pending`
+              : secretMissing
+                ? "polling only"
+                : webhooks.processedDeliveries > 0
+                  ? "receiving"
+                  : webhooks.lastConnectivityProbeAt
+                    ? "connected"
+                    : "no deliveries",
+      detail: staleWebhookProcessingRisk
+        ? "processing leases expired before completion"
+        : webhooks.lastReceivedAt
+          ? `last ${webhooks.lastReceivedAt}; ${webhooks.processedDeliveries} processed; ping ${evidenceDate(
+              webhooks.lastConnectivityProbeAt
+            )}`
+          : secretMissing
+            ? "webhook secret is missing; worker polling and manual refresh are the current update path"
+            : "polling repair is the only observed update path",
       tone: webhookRisk
         ? "critical"
         : pendingWebhookRisk
@@ -849,9 +884,7 @@ export function summarizeCacheEvidence(input: {
     facts.push(`${input.sync.partialObjects} cached objects are partial`);
   }
   if (input.sync.viewLimits.length > 0) {
-    facts.push(
-      `Dashboard read limits reached: ${input.sync.viewLimits.map((limit) => limit.label).join(", ")}`
-    );
+    facts.push(`Dashboard read limits reached: ${input.sync.viewLimits.map((limit) => limit.label).join(", ")}`);
   }
   if (input.visibility.hiddenObjects > 0) {
     facts.push(`${input.visibility.hiddenObjects} cached GitHub objects are hidden`);

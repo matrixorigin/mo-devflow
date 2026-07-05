@@ -52,6 +52,7 @@ const operational: OperationalHealthSummary = {
   },
   webhooks: {
     pendingDeliveries: 0,
+    staleProcessingDeliveries: 0,
     processedDeliveries: 0,
     failedDeliveries: 0,
     normalizationFailedDeliveries: 0,
@@ -281,14 +282,7 @@ describe("API health status", () => {
     ]);
     expect(findings.find((finding) => finding.key === "github_oauth")).toMatchObject({ severity: "warning" });
     expect(findings.find((finding) => finding.key === "service_read_token")).toMatchObject({
-      recommendedLayers: [
-        "pr_backfill",
-        "issue_timeline_backfill",
-        "comment_backfill",
-        "rules",
-        "metrics",
-        "ai_drift"
-      ]
+      recommendedLayers: ["pr_backfill", "issue_timeline_backfill", "comment_backfill", "rules", "metrics", "ai_drift"]
     });
   });
 

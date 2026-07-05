@@ -2045,6 +2045,7 @@ function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: n
 function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardSummary["webhooks"] {
   return {
     pendingDeliveries: 0,
+    staleProcessingDeliveries: 0,
     processedDeliveries: 0,
     failedDeliveries: 0,
     normalizationFailedDeliveries: 0,

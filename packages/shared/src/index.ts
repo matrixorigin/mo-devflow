@@ -1049,6 +1049,7 @@ export interface DashboardViewLimit {
 
 export interface WebhookIngestionHealth {
   pendingDeliveries: number;
+  staleProcessingDeliveries: number;
   processedDeliveries: number;
   failedDeliveries: number;
   normalizationFailedDeliveries: number;
@@ -1085,6 +1086,7 @@ export interface GitHubWebhookDeliveryView {
   status: GitHubWebhookDeliveryStatus;
   attempts: number;
   duplicateCount: number;
+  staleProcessing: boolean;
   receivedAt: string;
   processedAt: string | null;
   errorMessage: string | null;

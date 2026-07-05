@@ -77,6 +77,7 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
 function webhooks(input: Partial<DashboardSummary["webhooks"]> = {}): DashboardSummary["webhooks"] {
   return {
     pendingDeliveries: 0,
+    staleProcessingDeliveries: 0,
     processedDeliveries: 0,
     failedDeliveries: 0,
     normalizationFailedDeliveries: 0,
@@ -444,6 +445,11 @@ describe("webhook readiness summary", () => {
     ).toBe(true);
     expect(
       webhookDeliveryBacklogNeedsRefreshWatch({
+        webhooks: webhooks({ staleProcessingDeliveries: 1 })
+      })
+    ).toBe(true);
+    expect(
+      webhookDeliveryBacklogNeedsRefreshWatch({
         webhooks: webhooks({ processedDeliveries: 3 })
       })
     ).toBe(false);
@@ -552,6 +558,27 @@ describe("webhook readiness summary", () => {
     expect(summary.facts).toContain("2 pending");
     expect(summary.facts).toContain("oldest pending waited 1.5h");
     expect(summary.description).toContain("oldest pending delivery has waited 1.5h");
+  });
+
+  test("reports stale webhook processing before ordinary queued deliveries", () => {
+    const summary = summarizeWebhookReadiness({
+      profileWarnings: [],
+      webhooks: webhooks({
+        pendingDeliveries: 2,
+        staleProcessingDeliveries: 1,
+        processedDeliveries: 4,
+        lastReceivedAt: "2026-07-04T01:00:00.000Z",
+        oldestPendingReceivedAt: "2026-07-04T00:30:00.000Z"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      tone: "critical",
+      mode: "stale_processing",
+      title: "Webhook processing is stale"
+    });
+    expect(summary.facts).toContain("1 stale processing");
+    expect(summary.nextActions.join(" ")).toContain("worker heartbeat");
   });
 
   test("reports healthy receiving when deliveries are processed without failures", () => {

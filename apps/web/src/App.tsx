@@ -274,7 +274,7 @@ type PersonalDrilldownFilter =
   | "yesterday_pr"
   | "threads";
 type WebhookDeliveryScopeFilter =
-  "all" | "pending" | "failed" | "processed" | "ignored" | "connectivity_probe" | "duplicates";
+  "all" | "pending" | "stale_processing" | "failed" | "processed" | "ignored" | "connectivity_probe" | "duplicates";
 type WorkflowSignalFilter =
   "all" | "critical" | "warning" | "unowned" | "fixable" | "notified" | "ack_pending" | "notification_failed";
 type DriftSignalFilter =
@@ -388,6 +388,7 @@ const metricPeriods = ["day", "week", "month"] satisfies MetricPeriod[];
 const webhookDeliveryScopeFilters = [
   "all",
   "pending",
+  "stale_processing",
   "failed",
   "processed",
   "ignored",
@@ -3343,6 +3344,9 @@ function webhookScopeLabel(filter: WebhookDeliveryScopeFilter): string {
   if (filter === "pending") {
     return "pending";
   }
+  if (filter === "stale_processing") {
+    return "stale processing";
+  }
   if (filter === "failed") {
     return "failed";
   }
@@ -3368,6 +3372,9 @@ function webhookFailedDeliveryCount(webhooks: DashboardSummary["webhooks"]): num
 function webhookDeliveryMatchesScope(delivery: GitHubWebhookDeliveryView, filter: WebhookDeliveryScopeFilter): boolean {
   if (filter === "pending") {
     return delivery.status === "received" || delivery.status === "processing";
+  }
+  if (filter === "stale_processing") {
+    return delivery.staleProcessing;
   }
   if (filter === "failed") {
     return delivery.status === "failed" || delivery.status === "failed_normalization";
@@ -12604,26 +12611,28 @@ function PersonQueueRhythmStrip({
             key={row.period}
             onClick={() => openThroughput(row.period)}
           >
-            <span>{metricPeriodLabel(row.period)} created/merged</span>
-            <strong>{personalPrThroughputPair(row)}</strong>
-            <small>
-              {personalPrVisibleUniqueTotalForPeriod(person, row.period)} PRs | avg time{" "}
-              {personalPrPeriodAverageDurationText(personalPrPeriodListForPeriod(person, row.period))}
-            </small>
+            <span>{metricPeriodLabel(row.period)} PRs</span>
+            <strong>{personalPrThroughputPair(row)} created / merged</strong>
+            <small>{personalPrPeriodThroughputDetail(person, row.period)}</small>
           </button>
         ))}
       </div>
       <button
         type="button"
         className={`person-queue-flow-card ${
-          flow.activeIssues > flow.issuesWithPr || flow.cachePendingIssues > 0 ? "person-queue-flow-card-alert" : ""
+          flow.activeIssues > flow.issuesWithPr ||
+          flow.activeIssues > flow.issuesInTesting ||
+          flow.cachePendingIssues > 0 ||
+          flow.slowEasyIssues > 0
+            ? "person-queue-flow-card-alert"
+            : ""
         }`}
         onClick={() => onOpenMetric("active_issues")}
       >
         <span>s-1/s0 → PR → Issue Testing</span>
-        <strong>{personalCriticalFlowEfficiencySummary(flow)}</strong>
+        <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
         <small>
-          to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to test{" "}
+          avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | avg to test{" "}
           {optionalHours(flow.averageActiveToTestingHours)}
         </small>
       </button>
@@ -16975,8 +16984,8 @@ function WatchedPersonOperationsSummary({
       <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
       <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
         <div className="person-ops-pr-rhythm-heading">
-          <span>PR volume / duration</span>
-          <small>s-1/s0 -&gt; PR -&gt; issue testing</small>
+          <span>PRs day / week / month</span>
+          <small>created / merged counts, PR list, avg duration, and active issue flow</small>
         </div>
         <div className="person-ops-pr-periods">
           {throughputRows.map((row) => {
@@ -16994,7 +17003,7 @@ function WatchedPersonOperationsSummary({
                   {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
                 </strong>
                 <small>
-                  {periodPrVisibleUniqueTotal(periodList)} PRs | avg PR time{" "}
+                  {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg{" "}
                   {personalPrPeriodAverageDurationText(periodList)}
                 </small>
               </button>
@@ -17007,11 +17016,12 @@ function WatchedPersonOperationsSummary({
             }`}
             onClick={() => onSelect(flow.issuesWithoutPr > 0 ? "active_no_pr" : "testing")}
           >
-            <span>Flow</span>
-            <strong>
-              {flow.issuesWithPr}/{flow.activeIssues}
-            </strong>
-            <small>to testing {optionalHours(flow.averageActiveToTestingHours)}</small>
+            <span>s-1/s0 → PR → test</span>
+            <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
+            <small>
+              avg to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to test{" "}
+              {optionalHours(flow.averageActiveToTestingHours)}
+            </small>
           </button>
         </div>
       </div>
@@ -17356,6 +17366,13 @@ export function personalPrThroughputSummary(rows: PersonalPrThroughputRow[]): st
   return rows.map((row) => `${metricPeriodShortText(row.period)} ${personalPrThroughputPair(row)}`).join(" | ");
 }
 
+export function personalPrPeriodThroughputDetail(person: PersonalActionView, period: MetricPeriod): string {
+  const periodList = personalPrPeriodListForPeriod(person, period);
+  return `${personalPrVisibleUniqueTotalForPeriod(person, period)} PRs in list | avg ${personalPrPeriodAverageDurationText(
+    periodList
+  )}`;
+}
+
 export function personalCriticalFlowEfficiency(
   person: Pick<PersonalActionView, "activeCriticalIssues">
 ): PersonalCriticalFlowEfficiency {
@@ -17388,6 +17405,12 @@ export function personalCriticalFlowEfficiencySummary(flow: PersonalCriticalFlow
   return `${flow.issuesWithPr}/${flow.activeIssues} linked (${percentText(
     flow.linkedIssueRatePercent
   )}) | ${flow.issuesInTesting}/${flow.activeIssues} in testing (${percentText(flow.testingIssueRatePercent)})`;
+}
+
+export function personalCriticalFlowEfficiencyCompactSummary(flow: PersonalCriticalFlowEfficiency): string {
+  return `PR ${flow.issuesWithPr}/${flow.activeIssues} (${percentText(
+    flow.linkedIssueRatePercent
+  )}) | test ${flow.issuesInTesting}/${flow.activeIssues} (${percentText(flow.testingIssueRatePercent)})`;
 }
 
 function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {
@@ -18442,6 +18465,7 @@ function WebhookIngestionBoard({
     webhookDeliveryMatchesScope(delivery, scopeFilter)
   );
   const pendingDeliveries = data.webhooks.pendingDeliveries;
+  const staleProcessingDeliveries = data.webhooks.staleProcessingDeliveries;
   const failedDeliveries = webhookFailedDeliveryCount(data.webhooks);
   const duplicateDeliveries = data.webhooks.duplicateDeliveries;
   const connectivityProbeDeliveries = data.webhooks.connectivityProbeDeliveries;
@@ -18480,6 +18504,7 @@ function WebhookIngestionBoard({
       render: (status, delivery) => (
         <Space size={[4, 4]} wrap>
           <Tag color={webhookDeliveryStatusColor(status)}>{labelText(status)}</Tag>
+          {delivery.staleProcessing ? <Tag color="red">stale lease</Tag> : null}
           {delivery.duplicateCount > 0 ? <Tag color="gold">{delivery.duplicateCount} duplicate</Tag> : null}
         </Space>
       )
@@ -18585,6 +18610,13 @@ function WebhookIngestionBoard({
             tone={pendingDeliveries > 0 ? "attention" : "good"}
             active={scopeFilter === "pending"}
             onClick={() => onScopeFilterChange("pending")}
+          />
+          <CriticalBoardStat
+            label="stale"
+            value={staleProcessingDeliveries}
+            tone={staleProcessingDeliveries > 0 ? "critical" : "good"}
+            active={scopeFilter === "stale_processing"}
+            onClick={() => onScopeFilterChange("stale_processing")}
           />
           <CriticalBoardStat
             label="failed"
@@ -18697,6 +18729,7 @@ function WebhookUpdatePathPanel({
   onRefreshWebhooks: () => void;
 }) {
   const failedDeliveries = webhookFailedDeliveryCount(data.webhooks);
+  const staleProcessingDeliveries = data.webhooks.staleProcessingDeliveries;
   const workerHealthy = data.sync.worker.status === "active";
   const queueHealthy = data.sync.jobQueue.status === "healthy";
   const workerRepairTone: WebhookPathTone =
@@ -18708,11 +18741,13 @@ function WebhookUpdatePathPanel({
   const processingTone: WebhookPathTone =
     failedDeliveries > 0
       ? "critical"
-      : data.webhooks.pendingDeliveries > 0
-        ? "attention"
-        : data.webhooks.processedDeliveries > 0
-          ? "good"
-          : "muted";
+      : staleProcessingDeliveries > 0
+        ? "critical"
+        : data.webhooks.pendingDeliveries > 0
+          ? "attention"
+          : data.webhooks.processedDeliveries > 0
+            ? "good"
+            : "muted";
   const cacheTone: WebhookPathTone =
     data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good";
   const totalDeliveries =
@@ -18733,6 +18768,9 @@ function WebhookUpdatePathPanel({
   const oldestPendingWebhookAge = hoursSince(data.webhooks.oldestPendingReceivedAt, data.sync.generatedAt);
   const webhookProcessingDetail =
     data.webhooks.latestFailure ??
+    (staleProcessingDeliveries > 0
+      ? `${staleProcessingDeliveries} processing leases expired before completion; check worker heartbeat and webhook jobs.`
+      : null) ??
     (data.webhooks.pendingDeliveries > 0 && data.webhooks.oldestPendingReceivedAt
       ? `Oldest pending delivery has waited ${
           oldestPendingWebhookAge === null ? "unknown time" : hours(oldestPendingWebhookAge)
@@ -18796,9 +18834,11 @@ function WebhookUpdatePathPanel({
           value={
             failedDeliveries > 0
               ? `${failedDeliveries} failed`
-              : data.webhooks.pendingDeliveries > 0
-                ? `${data.webhooks.pendingDeliveries} pending`
-                : `${data.webhooks.processedDeliveries} processed`
+              : staleProcessingDeliveries > 0
+                ? `${staleProcessingDeliveries} stale`
+                : data.webhooks.pendingDeliveries > 0
+                  ? `${data.webhooks.pendingDeliveries} pending`
+                  : `${data.webhooks.processedDeliveries} processed`
           }
           detail={webhookProcessingDetail}
           tone={processingTone}
@@ -18808,6 +18848,13 @@ function WebhookUpdatePathPanel({
             value={data.webhooks.pendingDeliveries}
             active={scopeFilter === "pending"}
             onClick={() => onScopeFilterChange("pending")}
+          />
+          <WebhookPathMetric
+            label="stale"
+            value={staleProcessingDeliveries}
+            active={scopeFilter === "stale_processing"}
+            tone={staleProcessingDeliveries > 0 ? "critical" : "normal"}
+            onClick={() => onScopeFilterChange("stale_processing")}
           />
           <WebhookPathMetric
             label="failed"

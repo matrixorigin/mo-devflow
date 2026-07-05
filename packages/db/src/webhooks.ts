@@ -315,6 +315,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
   const [statusRows] = await getPool().execute<RowData[]>(
     `SELECT
        SUM(CASE WHEN status IN ('received', 'processing') THEN 1 ELSE 0 END) AS pending_deliveries,
+       SUM(CASE WHEN status = 'processing' AND processing_expires_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END) AS stale_processing_deliveries,
        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_deliveries,
        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries,
        SUM(CASE WHEN status = 'failed_normalization' THEN 1 ELSE 0 END) AS normalization_failed_deliveries,
@@ -362,6 +363,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
   );
   const [recentRows] = await getPool().execute<RowData[]>(
     `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,
+            CASE WHEN status = 'processing' AND processing_expires_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS stale_processing,
             received_at, processed_at, error_message
      FROM github_webhook_deliveries
      WHERE repo_id = ?
@@ -371,6 +373,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
   );
   const [recentFailureRows] = await getPool().execute<RowData[]>(
     `SELECT delivery_id, event_name, action, status, attempts, duplicate_count,
+            CASE WHEN status = 'processing' AND processing_expires_at < UTC_TIMESTAMP() THEN 1 ELSE 0 END AS stale_processing,
             received_at, processed_at, error_message
      FROM github_webhook_deliveries
      WHERE repo_id = ? AND status IN ('failed', 'failed_normalization')
@@ -388,6 +391,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
 
   return {
     pendingDeliveries: asNumber(row.pending_deliveries),
+    staleProcessingDeliveries: asNumber(row.stale_processing_deliveries),
     processedDeliveries: asNumber(row.processed_deliveries),
     failedDeliveries: asNumber(row.failed_deliveries),
     normalizationFailedDeliveries: asNumber(row.normalization_failed_deliveries),
@@ -443,6 +447,7 @@ function toGitHubWebhookDeliveryView(row: RowData): GitHubWebhookDeliveryView {
     status: asString(row.status) as GitHubWebhookDeliveryStatus,
     attempts: asNumber(row.attempts),
     duplicateCount: asNumber(row.duplicate_count),
+    staleProcessing: asNumber(row.stale_processing) > 0,
     receivedAt: fromSqlDate(row.received_at) ?? "",
     processedAt: fromSqlDate(row.processed_at),
     errorMessage: row.error_message === null || row.error_message === undefined ? null : asString(row.error_message)

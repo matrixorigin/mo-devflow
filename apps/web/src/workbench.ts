@@ -468,9 +468,7 @@ export function notificationDeliveryMatchesScope(
     return true;
   }
   if (filter === "failed") {
-    return (
-      delivery.sourceActive && (delivery.status === "failed_transient" || delivery.status === "failed_permanent")
-    );
+    return delivery.sourceActive && (delivery.status === "failed_transient" || delivery.status === "failed_permanent");
   }
   if (filter === "ack_pending") {
     return delivery.sourceActive && delivery.status === "sent" && !delivery.acknowledgedAt;
@@ -1682,6 +1680,9 @@ function webhookTrustDetail(data: DashboardSummary): string {
   if (failures > 0) {
     return `${failures} webhook failed`;
   }
+  if (webhooks.staleProcessingDeliveries > 0) {
+    return `${webhooks.staleProcessingDeliveries} webhook stale`;
+  }
   if (webhooks.pendingDeliveries > 0) {
     return `${webhooks.pendingDeliveries} webhook pending`;
   }
@@ -1716,7 +1717,8 @@ export function teamOperatingSignals(input: {
   const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
   const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
   const webhookFailures = data.webhooks.failedDeliveries + data.webhooks.normalizationFailedDeliveries;
-  const webhookDeliveryRiskCount = webhookFailures + data.webhooks.pendingDeliveries;
+  const webhookDeliveryRiskCount =
+    webhookFailures + data.webhooks.staleProcessingDeliveries + data.webhooks.pendingDeliveries;
   const webhookSetupRiskCount =
     webhookDeliveryRiskCount === 0 &&
     (hasWebhookSecretWarning(data.profileWarnings) ||
@@ -1728,7 +1730,10 @@ export function teamOperatingSignals(input: {
   const trustRiskCount = dataRiskCount + webhookDeliveryRiskCount + webhookSetupRiskCount;
   const webhookNeedsAttention = webhookDeliveryRiskCount > 0 || webhookSetupRiskCount > 0;
   const dataRiskTone =
-    data.sync.worker.status === "failed" || data.sync.worker.status === "offline" || webhookFailures > 0
+    data.sync.worker.status === "failed" ||
+    data.sync.worker.status === "offline" ||
+    webhookFailures > 0 ||
+    data.webhooks.staleProcessingDeliveries > 0
       ? "critical"
       : dataRiskCount > 0 ||
           data.sync.worker.status === "stale" ||

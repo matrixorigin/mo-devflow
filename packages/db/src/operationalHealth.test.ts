@@ -24,7 +24,8 @@ const healthyInput = {
   syncHealth: [layer({ layer: "github_sync" })],
   staleObjects: 0,
   notificationFailures: 0,
-  webhookFailures: 0
+  webhookFailures: 0,
+  staleWebhookProcessing: 0
 };
 
 describe("operational health summary", () => {
@@ -43,6 +44,7 @@ describe("operational health summary", () => {
     ).toBe("degraded");
     expect(operationalHealthStatus({ ...healthyInput, notificationFailures: 1 })).toBe("degraded");
     expect(operationalHealthStatus({ ...healthyInput, webhookFailures: 1 })).toBe("degraded");
+    expect(operationalHealthStatus({ ...healthyInput, staleWebhookProcessing: 1 })).toBe("degraded");
   });
 
   test("separates partial cache warnings from stale cache degradation", () => {
@@ -75,6 +77,7 @@ describe("operational health summary", () => {
         staleObjects: 2,
         notificationFailures: 1,
         webhookFailures: 1,
+        staleWebhookProcessing: 1,
         latestWebhookFailure: "delivery-1: bad payload"
       })
     ).toContain("github_sync");
@@ -85,8 +88,20 @@ describe("operational health summary", () => {
         staleObjects: 0,
         notificationFailures: 0,
         webhookFailures: 1,
+        staleWebhookProcessing: 0,
         latestWebhookFailure: "delivery-1: bad payload"
       })
     ).toContain("delivery-1");
+
+    expect(
+      operationalHealthRecommendedAction({
+        syncHealth: [layer({ layer: "github_sync" })],
+        staleObjects: 0,
+        notificationFailures: 0,
+        webhookFailures: 0,
+        staleWebhookProcessing: 2,
+        latestWebhookFailure: null
+      })
+    ).toContain("stale processing leases");
   });
 });

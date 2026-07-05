@@ -45,9 +45,16 @@ export function operationalHealthStatus(input: {
   staleObjects: number;
   notificationFailures: number;
   webhookFailures: number;
+  staleWebhookProcessing: number;
 }): OperationalHealthStatus {
   const unhealthySync = input.syncHealth.some((item) => item.status === "failed" || item.status === "blocked");
-  if (unhealthySync || input.staleObjects > 0 || input.notificationFailures > 0 || input.webhookFailures > 0) {
+  if (
+    unhealthySync ||
+    input.staleObjects > 0 ||
+    input.notificationFailures > 0 ||
+    input.webhookFailures > 0 ||
+    input.staleWebhookProcessing > 0
+  ) {
     return "degraded";
   }
   return "healthy";
@@ -58,6 +65,7 @@ export function operationalHealthRecommendedAction(input: {
   staleObjects: number;
   notificationFailures: number;
   webhookFailures: number;
+  staleWebhookProcessing: number;
   latestWebhookFailure: string | null;
 }): string | null {
   const failedSync = input.syncHealth.find((item) => item.status === "failed" || item.status === "blocked");
@@ -72,6 +80,9 @@ export function operationalHealthRecommendedAction(input: {
   }
   if (input.webhookFailures > 0) {
     return `${input.webhookFailures} webhook deliveries failed.${input.latestWebhookFailure ? ` Latest failure: ${input.latestWebhookFailure}` : ""}`;
+  }
+  if (input.staleWebhookProcessing > 0) {
+    return `${input.staleWebhookProcessing} webhook deliveries have stale processing leases; check worker heartbeat and webhook jobs.`;
   }
   return null;
 }
@@ -169,7 +180,8 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
     syncHealth,
     staleObjects,
     notificationFailures: failedDeliveries,
-    webhookFailures
+    webhookFailures,
+    staleWebhookProcessing: webhooks.staleProcessingDeliveries
   });
 
   return {
@@ -179,6 +191,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
       staleObjects,
       notificationFailures: failedDeliveries,
       webhookFailures,
+      staleWebhookProcessing: webhooks.staleProcessingDeliveries,
       latestWebhookFailure: webhooks.latestFailure
     }),
     sync: {

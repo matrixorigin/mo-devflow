@@ -5684,9 +5684,7 @@ button.testing-board-stat:focus-visible {
   color: #111827;
   font-size: 14px;
   line-height: 1.15;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .person-queue-rhythm-period small,
@@ -5694,9 +5692,7 @@ button.testing-board-stat:focus-visible {
   color: #4b5563;
   font-size: 12px;
   line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .person-queue-flow-card {
@@ -5704,6 +5700,8 @@ button.testing-board-stat:focus-visible {
 }
 
 .person-queue-flow-card-alert {
+  background: #fffbeb;
+  border-color: #fde68a;
   border-left-color: #d97706;
 }
 
@@ -6565,9 +6563,7 @@ button.testing-board-stat:focus-visible {
   color: #6b7280;
   font-size: 11px;
   line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .person-ops-pr-period strong {
@@ -6576,9 +6572,7 @@ button.testing-board-stat:focus-visible {
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1.1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .person-ops-pr-period-flow {

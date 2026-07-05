@@ -48,6 +48,7 @@ describe("webhook ingestion health", () => {
           [
             {
               pending_deliveries: 2,
+              stale_processing_deliveries: 1,
               processed_deliveries: 5,
               failed_deliveries: 1,
               normalization_failed_deliveries: 1,
@@ -77,6 +78,7 @@ describe("webhook ingestion health", () => {
               status: "failed_normalization",
               attempts: 1,
               duplicate_count: 2,
+              stale_processing: 1,
               received_at: "2026-07-04 12:00:00",
               processed_at: null,
               error_message: "bad payload"
@@ -89,6 +91,7 @@ describe("webhook ingestion health", () => {
 
     await expect(getWebhookIngestionHealth(10)).resolves.toEqual({
       pendingDeliveries: 2,
+      staleProcessingDeliveries: 1,
       processedDeliveries: 5,
       failedDeliveries: 1,
       normalizationFailedDeliveries: 1,
@@ -131,6 +134,7 @@ describe("webhook ingestion health", () => {
           status: "failed_normalization",
           attempts: 1,
           duplicateCount: 2,
+          staleProcessing: true,
           receivedAt: "2026-07-04T12:00:00.000Z",
           processedAt: null,
           errorMessage: "bad payload"
