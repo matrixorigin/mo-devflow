@@ -508,16 +508,19 @@ describe("webhook readiness summary", () => {
     expect(summary.facts).toContain("latest: bad payload");
   });
 
-  test("reports queued deliveries before healthy receiving state", () => {
-    const summary = summarizeWebhookReadiness({
-      profileWarnings: [],
-      webhooks: webhooks({
-        pendingDeliveries: 2,
-        processedDeliveries: 4,
-        lastReceivedAt: "2026-07-04T01:00:00.000Z",
-        oldestPendingReceivedAt: "2026-07-04T00:30:00.000Z"
-      })
-    });
+  test("reports queued deliveries with user-readable wait age before healthy receiving state", () => {
+    const summary = summarizeWebhookReadiness(
+      {
+        profileWarnings: [],
+        webhooks: webhooks({
+          pendingDeliveries: 2,
+          processedDeliveries: 4,
+          lastReceivedAt: "2026-07-04T01:00:00.000Z",
+          oldestPendingReceivedAt: "2026-07-04T00:30:00.000Z"
+        })
+      },
+      Date.parse("2026-07-04T02:00:00.000Z")
+    );
 
     expect(summary).toMatchObject({
       tone: "attention",
@@ -525,7 +528,8 @@ describe("webhook readiness summary", () => {
       title: "Webhook deliveries are queued"
     });
     expect(summary.facts).toContain("2 pending");
-    expect(summary.facts).toContain("oldest pending 2026-07-04T00:30:00.000Z");
+    expect(summary.facts).toContain("oldest pending waited 1.5h");
+    expect(summary.description).toContain("oldest pending delivery has waited 1.5h");
   });
 
   test("reports healthy receiving when deliveries are processed without failures", () => {

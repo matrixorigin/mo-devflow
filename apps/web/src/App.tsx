@@ -14849,10 +14849,13 @@ function WebhookUpdatePathPanel({
     data.sync.staleObjects > 0 || data.sync.partialObjects > 0
       ? `${data.sync.staleObjects} stale objects, ${data.sync.partialObjects} incomplete objects.`
       : `Dashboard generated ${formatDate(data.sync.generatedAt)}.`;
+  const oldestPendingWebhookAge = hoursSince(data.webhooks.oldestPendingReceivedAt, data.sync.generatedAt);
   const webhookProcessingDetail =
     data.webhooks.latestFailure ??
     (data.webhooks.pendingDeliveries > 0 && data.webhooks.oldestPendingReceivedAt
-      ? `Oldest pending delivery received ${formatDate(data.webhooks.oldestPendingReceivedAt)}.`
+      ? `Oldest pending delivery has waited ${
+          oldestPendingWebhookAge === null ? "unknown time" : hours(oldestPendingWebhookAge)
+        }; received ${formatDate(data.webhooks.oldestPendingReceivedAt)}.`
       : `${data.webhooks.normalizationFailedDeliveries} normalization failures, ${data.webhooks.duplicateDeliveries} duplicates.`);
 
   return (
@@ -15366,7 +15369,7 @@ export default function App() {
     peopleScopeFilterFromHash(initialHash())
   );
   const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>(() => peopleSortFromHash(initialHash()));
-  const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
+  const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("pending");
   const [notificationDeliveryScopeFilter, setNotificationDeliveryScopeFilter] =
     useState<NotificationDeliveryScopeFilter>("attention");
   const [writeAuditScopeFilter, setWriteAuditScopeFilter] = useState<WriteAuditScopeFilter>("attention");

@@ -147,6 +147,17 @@ function evidenceHours(value: number | null): string {
   return `${(value / 24).toFixed(1)}d`;
 }
 
+function elapsedHoursSince(value: string | null, now: number): number | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return Math.max(0, (now - timestamp) / (60 * 60 * 1000));
+}
+
 function evidenceDate(value: string | null): string {
   return value ?? "none";
 }
@@ -246,7 +257,8 @@ function summarizeGithubEvidenceGate(data: DashboardSummary): ProductionReadines
 }
 
 export function summarizeWebhookReadiness(
-  input: Pick<DashboardSummary, "profileWarnings" | "webhooks">
+  input: Pick<DashboardSummary, "profileWarnings" | "webhooks">,
+  now = Date.now()
 ): WebhookReadinessSummary {
   const secretMissing = hasWebhookSecretWarning(input.profileWarnings);
   const webhooks = input.webhooks;
@@ -292,17 +304,23 @@ export function summarizeWebhookReadiness(
   }
 
   if (webhooks.pendingDeliveries > 0) {
+    const oldestPendingAgeHours = elapsedHoursSince(webhooks.oldestPendingReceivedAt, now);
     return {
       tone: "attention",
       mode: "queued",
       title: "Webhook deliveries are queued",
-      description: "GitHub deliveries have been accepted and are waiting for the worker to process cache updates.",
+      description:
+        oldestPendingAgeHours === null
+          ? "GitHub deliveries have been accepted and are waiting for the worker to process cache updates."
+          : `GitHub deliveries have been accepted, and the oldest pending delivery has waited ${evidenceHours(
+              oldestPendingAgeHours
+            )}.`,
       facts: [
         `${webhooks.pendingDeliveries} pending`,
         `${processed} processed`,
-        webhooks.oldestPendingReceivedAt
-          ? `oldest pending ${webhooks.oldestPendingReceivedAt}`
-          : "oldest pending unknown",
+        oldestPendingAgeHours === null
+          ? "oldest pending wait unknown"
+          : `oldest pending waited ${evidenceHours(oldestPendingAgeHours)}`,
         webhooks.lastReceivedAt ? `last ${webhooks.lastReceivedAt}` : "no processed delivery yet"
       ],
       nextActions: [
