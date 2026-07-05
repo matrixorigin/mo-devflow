@@ -2489,6 +2489,19 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   return "all active";
 }
 
+function criticalIssueSortLabel(sort: CriticalIssueSort): string {
+  if (sort === "active_age") {
+    return "active age";
+  }
+  if (sort === "last_action") {
+    return "last action";
+  }
+  if (sort === "number") {
+    return "issue number";
+  }
+  return "risk";
+}
+
 function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "active_issue") {
     return "linked to active s-1/s0";
@@ -7512,6 +7525,68 @@ function criticalIssueNextAction(issue: CriticalIssueView, generatedAt: string):
   return issue.severity === "severity/s-1" ? "Drive emergency closure" : "Drive active execution";
 }
 
+function CriticalIssueActionQueue({
+  issues,
+  generatedAt,
+  aiFilter,
+  scopeFilter,
+  ownerFilter,
+  sort,
+  onPreview
+}: {
+  issues: CriticalIssueView[];
+  generatedAt: string;
+  aiFilter: CriticalIssueAiFilter;
+  scopeFilter: CriticalIssueScopeFilter;
+  ownerFilter: CriticalIssueOwnerFilter;
+  sort: CriticalIssueSort;
+  onPreview: (preview: TeamWorkPreview) => void;
+}) {
+  const pagedIssues = usePagedList(
+    issues,
+    6,
+    `${scopeFilter}:${ownerFilter}:${aiFilter}:${sort}:${issues.map((issue) => issue.number).join(",")}`
+  );
+
+  return (
+    <section className="critical-action-queue" aria-label="Critical issue action queue">
+      <div className="critical-action-queue-heading">
+        <div>
+          <Text strong>Issue Action Queue</Text>
+          <Text type="secondary">
+            Sorted {criticalIssueSortLabel(sort)} view for {criticalScopeLabel(scopeFilter)},{" "}
+            {criticalIssueOwnerFilterLabel(ownerFilter)}, {aiFilter === "all" ? "all AI effort" : aiFilter}.
+          </Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <Tag>{issues.length} issues</Tag>
+          {pagedIssues.visibleItems.length < issues.length ? (
+            <Tag>
+              {pagedIssues.startIndex + 1}-{pagedIssues.startIndex + pagedIssues.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
+      </div>
+      {pagedIssues.visibleItems.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active issues match this filter" />
+      ) : (
+        <div className="critical-action-queue-list">
+          {pagedIssues.visibleItems.map((issue) => (
+            <TeamCriticalIssueRow issue={issue} generatedAt={generatedAt} key={issue.number} onPreview={onPreview} />
+          ))}
+        </div>
+      )}
+      <CardListPagination
+        total={issues.length}
+        page={pagedIssues.page}
+        pageSize={pagedIssues.pageSize}
+        defaultPageSize={6}
+        onChange={pagedIssues.onPageChange}
+      />
+    </section>
+  );
+}
+
 function CriticalIssueBoard({
   issues,
   generatedAt,
@@ -7557,6 +7632,7 @@ function CriticalIssueBoard({
     sort,
     generatedAt
   );
+  const actionQueueIssues = sortCriticalIssuesForDisplay(filteredIssues, sort, generatedAt);
   const missingTimeline = ownerFilteredIssues.filter(
     (issue) => issue.criticalAgeEvidence === "missing_timeline"
   ).length;
@@ -7656,6 +7732,15 @@ function CriticalIssueBoard({
           onClick={() => onScopeFilterChange("skipped")}
         />
       </div>
+      <CriticalIssueActionQueue
+        issues={actionQueueIssues}
+        generatedAt={generatedAt}
+        aiFilter={aiFilter}
+        scopeFilter={scopeFilter}
+        ownerFilter={ownerFilter}
+        sort={sort}
+        onPreview={onPreview}
+      />
       <div className="critical-board-lanes">
         <CriticalIssueLane
           title="s-1 Emergency Lane"

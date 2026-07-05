@@ -2433,6 +2433,52 @@ button.team-monitor-tile:hover,
   text-decoration: underline;
 }
 
+.critical-action-queue {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.critical-action-queue-heading {
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.critical-action-queue-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.critical-action-queue-heading span:last-child {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.critical-action-queue-list {
+  display: grid;
+  min-width: 0;
+}
+
+.critical-action-queue .team-work-row {
+  padding-inline: 12px;
+}
+
+.critical-action-queue .card-list-pagination {
+  border-top: 1px solid #eef2f7;
+  padding: 10px 12px 12px;
+}
+
 .team-linked-row-missing {
   color: #b45309;
 }
