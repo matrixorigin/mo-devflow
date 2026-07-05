@@ -5,6 +5,7 @@ import {
   criticalIssueScopeFilterFromHash,
   criticalIssueSortFromHash,
   dashboardHashForView,
+  dashboardViewLimitTargetForKey,
   peopleScopeFilterFromHash,
   peopleSortFromHash,
   personalDrilldownFilterFromHash,
@@ -61,5 +62,41 @@ describe("dashboard hash filters", () => {
     expect(prSortFromHash(hash)).toBe("risk");
     expect(prBoardTabFromHash(hash)).toBe("rotation");
     expect(criticalIssueOwnerFilterFromHash("#issues?owner=owner%3A")).toBe("all");
+  });
+
+  it("routes capped read models to the most relevant board drilldown", () => {
+    expect(dashboardViewLimitTargetForKey("critical_issues")).toEqual({
+      view: "Issues",
+      label: "Open active issues",
+      options: {
+        criticalIssueAiFilter: "all",
+        criticalIssueScopeFilter: "all",
+        criticalIssueOwnerFilter: "all",
+        criticalIssueSort: "active_age"
+      }
+    });
+    expect(dashboardViewLimitTargetForKey("pending_prs")).toEqual({
+      view: "PRs",
+      label: "Open PR board",
+      options: { prScopeFilter: "all", prSort: "risk", prBoardTab: "rotation" }
+    });
+    expect(dashboardViewLimitTargetForKey("linked_pr_candidates")).toEqual({
+      view: "PRs",
+      label: "Open link gaps",
+      options: { prScopeFilter: "issue_link_pending", prSort: "risk", prBoardTab: "rotation" }
+    });
+    expect(dashboardViewLimitTargetForKey("attention_summary")).toEqual({
+      view: "People",
+      label: "Open attention owners",
+      options: { peopleScopeFilter: "attention", peopleSort: "pr_attention" }
+    });
+    expect(dashboardViewLimitTargetForKey("workflow_violations")).toEqual({
+      view: "Violations",
+      label: "Open violations"
+    });
+    expect(dashboardViewLimitTargetForKey("unknown")).toEqual({
+      view: "Health",
+      label: "Open health"
+    });
   });
 });

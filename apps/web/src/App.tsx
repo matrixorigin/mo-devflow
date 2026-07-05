@@ -33,6 +33,7 @@ import type {
   CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardSummary,
+  DashboardViewLimit,
   GitHubWebhookDeliveryView,
   GitHubWriteCapability,
   ManualRefreshLayer,
@@ -312,6 +313,12 @@ interface DashboardHashOptions {
   personalDrilldownFilter?: PersonalDrilldownFilter;
 }
 
+export interface DashboardViewLimitTarget {
+  view: DashboardView;
+  label: string;
+  options?: DashboardHashOptions;
+}
+
 interface ObservedPersonPreview {
   login: string;
   summary: PersonSummary;
@@ -547,6 +554,78 @@ export function dashboardHashForView(view: DashboardView, options: DashboardHash
   }
   const query = params.toString();
   return query ? `${base}?${query}` : base;
+}
+
+export function dashboardViewLimitTargetForKey(key: string): DashboardViewLimitTarget {
+  if (key === "issue_scan") {
+    return {
+      view: "Issues",
+      label: "Open issue board",
+      options: {
+        criticalIssueAiFilter: "all",
+        criticalIssueScopeFilter: "all",
+        criticalIssueOwnerFilter: "all",
+        criticalIssueSort: "risk"
+      }
+    };
+  }
+  if (key === "critical_issues") {
+    return {
+      view: "Issues",
+      label: "Open active issues",
+      options: {
+        criticalIssueAiFilter: "all",
+        criticalIssueScopeFilter: "all",
+        criticalIssueOwnerFilter: "all",
+        criticalIssueSort: "active_age"
+      }
+    };
+  }
+  if (key === "pull_request_scan" || key === "pending_prs") {
+    return {
+      view: "PRs",
+      label: "Open PR board",
+      options: { prScopeFilter: "all", prSort: "risk", prBoardTab: "rotation" }
+    };
+  }
+  if (key === "linked_pr_candidates") {
+    return {
+      view: "PRs",
+      label: "Open link gaps",
+      options: { prScopeFilter: "issue_link_pending", prSort: "risk", prBoardTab: "rotation" }
+    };
+  }
+  if (key === "personal_issues") {
+    return {
+      view: "People",
+      label: "Open people board",
+      options: { peopleScopeFilter: "critical", peopleSort: "workload" }
+    };
+  }
+  if (key === "personal_prs") {
+    return {
+      view: "People",
+      label: "Open PR owners",
+      options: { peopleScopeFilter: "pending_pr", peopleSort: "pr_age" }
+    };
+  }
+  if (key === "attention_summary") {
+    return {
+      view: "People",
+      label: "Open attention owners",
+      options: { peopleScopeFilter: "attention", peopleSort: "pr_attention" }
+    };
+  }
+  if (key === "workflow_violations") {
+    return { view: "Violations", label: "Open violations" };
+  }
+  if (key === "ai_drift") {
+    return { view: "Drift", label: "Open AI drift" };
+  }
+  if (key === "analytics_rows") {
+    return { view: "Analytics", label: "Open analytics" };
+  }
+  return { view: "Health", label: "Open health" };
 }
 
 function initialDashboardView(): DashboardView {
@@ -7227,6 +7306,7 @@ function FreshnessStatusBar({
   lastLoadedAt,
   expanded,
   onExpandedChange,
+  onOpenViewLimit,
   onOpenHealth,
   onOpenWebhooks
 }: {
@@ -7239,6 +7319,7 @@ function FreshnessStatusBar({
   lastLoadedAt: string | null;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  onOpenViewLimit: (limit: DashboardViewLimit) => void;
   onOpenHealth: () => void;
   onOpenWebhooks: () => void;
 }) {
@@ -7281,7 +7362,11 @@ function FreshnessStatusBar({
             {sync.partialObjects} incomplete
           </button>
           {sync.viewLimits.length > 0 ? (
-            <button type="button" className="freshness-chip freshness-chip-attention" onClick={onOpenHealth}>
+            <button
+              type="button"
+              className="freshness-chip freshness-chip-attention"
+              onClick={() => onExpandedChange(true)}
+            >
               {sync.viewLimits.length} view caps
             </button>
           ) : null}
@@ -7362,13 +7447,24 @@ function FreshnessStatusBar({
             <div className="freshness-view-limits">
               <Text type="secondary">Capped read models</Text>
               <Space size={[4, 4]} wrap>
-                {sync.viewLimits.map((limit) => (
-                  <Tooltip title={limit.message} key={limit.key}>
-                    <Tag color="orange">
-                      {limit.label} {limit.returned}/{limit.limit}
-                    </Tag>
-                  </Tooltip>
-                ))}
+                {sync.viewLimits.map((limit) => {
+                  const target = dashboardViewLimitTargetForKey(limit.key);
+                  return (
+                    <Tooltip title={`${limit.message} ${target.label}.`} key={limit.key}>
+                      <button
+                        type="button"
+                        className="freshness-limit-chip"
+                        onClick={() => onOpenViewLimit(limit)}
+                        aria-label={`${target.label} for capped ${limit.label}`}
+                      >
+                        <span>
+                          {limit.label} {limit.returned}/{limit.limit}
+                        </span>
+                        <strong>{target.label}</strong>
+                      </button>
+                    </Tooltip>
+                  );
+                })}
               </Space>
             </div>
           ) : null}
@@ -15723,6 +15819,47 @@ export default function App() {
     selectView("People", selectedPerson, { peopleScopeFilter: scope });
   }
 
+  function openDashboardViewLimit(limit: DashboardViewLimit) {
+    const target = dashboardViewLimitTargetForKey(limit.key);
+    const options = target.options ?? {};
+    if (target.view === "Issues") {
+      const nextAi = options.criticalIssueAiFilter ?? criticalIssueAiFilter;
+      const nextScope = options.criticalIssueScopeFilter ?? criticalIssueScopeFilter;
+      const nextOwner = options.criticalIssueOwnerFilter ?? criticalIssueOwnerFilter;
+      const nextSort = options.criticalIssueSort ?? criticalIssueSort;
+      setCriticalIssueAiFilter(nextAi);
+      setCriticalIssueScopeFilter(nextScope);
+      setCriticalIssueOwnerFilter(nextOwner);
+      setCriticalIssueSort(nextSort);
+      selectView("Issues", selectedPerson, {
+        criticalIssueAiFilter: nextAi,
+        criticalIssueScopeFilter: nextScope,
+        criticalIssueOwnerFilter: nextOwner,
+        criticalIssueSort: nextSort
+      });
+      return;
+    }
+    if (target.view === "PRs") {
+      const nextScope = options.prScopeFilter ?? prScopeFilter;
+      const nextSort = options.prSort ?? prSort;
+      const nextTab = options.prBoardTab ?? prBoardTabForScope(nextScope);
+      setPrScopeFilter(nextScope);
+      setPrSort(nextSort);
+      setPrBoardTab(nextTab);
+      selectView("PRs", selectedPerson, { prScopeFilter: nextScope, prSort: nextSort, prBoardTab: nextTab });
+      return;
+    }
+    if (target.view === "People") {
+      const nextScope = options.peopleScopeFilter ?? peopleScopeFilter;
+      const nextSort = options.peopleSort ?? peopleSort;
+      setPeopleScopeFilter(nextScope);
+      setPeopleSort(nextSort);
+      selectView("People", selectedPerson, { peopleScopeFilter: nextScope, peopleSort: nextSort });
+      return;
+    }
+    selectView(target.view);
+  }
+
   function changeCriticalIssueAiFilter(value: CriticalIssueAiFilter) {
     setCriticalIssueAiFilter(value);
     if (view === "Issues") {
@@ -17381,6 +17518,7 @@ export default function App() {
                 lastLoadedAt={lastDashboardLoadedAt}
                 expanded={freshnessExpanded}
                 onExpandedChange={setFreshnessExpanded}
+                onOpenViewLimit={openDashboardViewLimit}
                 onOpenHealth={() => selectView("Health")}
                 onOpenWebhooks={() => selectView("Webhooks")}
               />
