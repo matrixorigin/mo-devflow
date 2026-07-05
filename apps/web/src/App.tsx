@@ -8433,6 +8433,131 @@ function PeopleBoardSummary({
   );
 }
 
+function PeopleFocusQueue({
+  people,
+  personalViews,
+  selectedLogin,
+  scopeFilter,
+  mode,
+  onSelect,
+  onMetricSelect
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  selectedLogin: string | null;
+  scopeFilter: PeopleScopeFilter;
+  mode: "watched" | "observed";
+  onSelect: (login: string) => void;
+  onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+}) {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const focusPeople = sortPeopleForBoard(people, personalViews, "workload").slice(0, 5);
+
+  if (focusPeople.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="people-focus-queue" aria-label="People needing attention">
+      <div className="people-focus-heading">
+        <div>
+          <Text strong>People needing attention</Text>
+          <Text type="secondary">
+            {focusPeople.length} in {peopleScopeLabel(scopeFilter)} scope: active issues, PR blockers, issue testing,
+            triage.
+          </Text>
+        </div>
+        <Tag>{mode === "observed" ? "observed owners" : "watched users"}</Tag>
+      </div>
+      <div className="people-focus-list" role="list">
+        {focusPeople.map((person) => {
+          const personal = personalByLogin.get(person.login);
+          const status = personWorkloadStatus(person);
+          const focus = personCardFocus(person, personal);
+          const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+          const staleTesting = personal ? personalTestingStaleCount(personal) : 0;
+          const openMetric = (metric: PersonalDrilldownFilter): void => {
+            if (onMetricSelect) {
+              onMetricSelect(person.login, metric);
+              return;
+            }
+            onSelect(person.login);
+          };
+
+          return (
+            <article
+              className={`people-focus-row people-focus-row-${status}${
+                selectedLogin === person.login ? " is-selected" : ""
+              }`}
+              key={person.login}
+              role="listitem"
+            >
+              <button
+                type="button"
+                className="people-focus-person"
+                aria-pressed={selectedLogin === person.login}
+                onClick={() => onSelect(person.login)}
+              >
+                <span className="person-avatar" aria-hidden="true">
+                  {person.login.slice(0, 1).toUpperCase()}
+                </span>
+                <span>
+                  <strong>{person.login}</strong>
+                  <small>
+                    {workloadStatusText(status)}
+                    {mode === "observed" ? " | observed" : ""}
+                  </small>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className={`people-focus-action people-focus-action-${focus.tone}`}
+                onClick={() => openMetric(focus.metric)}
+              >
+                <span>Open board</span>
+                <strong>{focus.title}</strong>
+                <small>{focus.detail}</small>
+              </button>
+
+              <div className="people-focus-metrics" aria-label={`${person.login} focus metrics`}>
+                <PersonQueueMetric
+                  label="Active"
+                  value={person.activeCriticalIssues}
+                  detail={personActiveQueueDetail(person, personal)}
+                  tone={personActiveMetricTone(person.activeCriticalIssues)}
+                  onClick={() => openMetric("active_issues")}
+                />
+                <PersonQueueMetric
+                  label="PR attention"
+                  value={`${person.attentionPrs}/${person.pendingPrs}`}
+                  detail={personPrQueueDetail(person, personal)}
+                  tone={person.attentionPrs > 0 ? "attention" : person.pendingPrs > 0 ? "normal" : "good"}
+                  onClick={() => openMetric(person.attentionPrs > 0 ? "pr_attention" : "pending_pr")}
+                />
+                <PersonQueueMetric
+                  label="Triage"
+                  value={`${person.needsTriageIssues}/${person.deferredIssues}`}
+                  detail={personTriageQueueDetail(person, personal)}
+                  tone={person.needsTriageIssues > 0 ? "attention" : person.deferredIssues > 0 ? "normal" : "good"}
+                  onClick={() => openMetric(person.needsTriageIssues > 0 ? "triage" : "deferred")}
+                />
+                <PersonQueueMetric
+                  label="Issue test"
+                  value={testingWork}
+                  detail={personTestingQueueDetail(personal)}
+                  tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+                  onClick={() => openMetric("testing")}
+                />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function CriticalIssueLane({
   title,
   description,
@@ -18001,6 +18126,15 @@ export default function App() {
                   filteredPeople={filteredPeople}
                   scopeFilter={peopleScopeFilter}
                   onScopeFilterChange={setPeopleScopeFilter}
+                />
+                <PeopleFocusQueue
+                  people={filteredPeople}
+                  personalViews={data.personalViews}
+                  selectedLogin={selectedPersonalView?.login ?? null}
+                  scopeFilter={peopleScopeFilter}
+                  mode={peopleBoardUsesObserved ? "observed" : "watched"}
+                  onSelect={openPeopleBoardPerson}
+                  onMetricSelect={openPeopleBoardMetric}
                 />
                 <PersonWorkloadBoard
                   people={filteredPeople}
