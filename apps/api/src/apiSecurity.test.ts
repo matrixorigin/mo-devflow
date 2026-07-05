@@ -105,7 +105,8 @@ describe("API security", () => {
         "x-github-delivery",
         "x-github-event",
         "x-hub-signature-256",
-        "x-mo-devflow-csrf"
+        "x-mo-devflow-csrf",
+        "x-request-id"
       ],
       exposedHeaders: [
         "etag",
@@ -130,13 +131,14 @@ describe("API security", () => {
         headers: {
           origin: "http://localhost:5173",
           "access-control-request-method": "GET",
-          "access-control-request-headers": "if-none-match,x-mo-devflow-csrf"
+          "access-control-request-headers": "if-none-match,x-mo-devflow-csrf,x-request-id"
         }
       });
 
       expect(response.statusCode).toBe(204);
       expect(String(response.headers["access-control-allow-headers"])).toContain("if-none-match");
       expect(String(response.headers["access-control-allow-headers"])).toContain("x-mo-devflow-csrf");
+      expect(String(response.headers["access-control-allow-headers"])).toContain("x-request-id");
     } finally {
       await app.close();
     }

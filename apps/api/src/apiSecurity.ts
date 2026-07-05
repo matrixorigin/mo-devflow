@@ -69,7 +69,8 @@ export function buildCorsOptions(env: Record<string, string | undefined> = proce
       "x-github-delivery",
       "x-github-event",
       "x-hub-signature-256",
-      "x-mo-devflow-csrf"
+      "x-mo-devflow-csrf",
+      "x-request-id"
     ],
     exposedHeaders: [
       "etag",

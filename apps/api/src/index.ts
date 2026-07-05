@@ -23,6 +23,7 @@ import { createDashboardSummaryCache, dashboardCacheTtlMsFromEnv } from "./dashb
 import { dashboardReadAccess } from "./dashboardAccess";
 import { readCookieValue, sessionCookieName } from "./sessionCookie";
 import { dashboardQueryFailurePayload, publicStartupMigrationError } from "./apiErrors";
+import { generateApiRequestId } from "./requestId";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -35,6 +36,7 @@ loadEnv();
 const host = process.env.MO_DEVFLOW_API_HOST ?? "0.0.0.0";
 const port = Number(process.env.MO_DEVFLOW_API_PORT ?? "18081");
 const app = Fastify({
+  genReqId: generateApiRequestId,
   logger: {
     level: process.env.MO_DEVFLOW_LOG_LEVEL ?? "info"
   }
