@@ -775,6 +775,46 @@ function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError })
   );
 }
 
+type ActionErrorContext = "token" | "manual_refresh" | "webhook_retry" | "notification" | "workflow";
+
+function actionErrorGuidance(context: ActionErrorContext, message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("csrf") || normalized.includes("refresh the session")) {
+    return "Reload the page to refresh the browser session token, then retry the action.";
+  }
+  if (normalized.includes("sign in") || normalized.includes("login")) {
+    return "Sign in with a personal GitHub token in this browser before retrying.";
+  }
+  if (normalized.includes("rate limit") || normalized.includes("retry later")) {
+    return "Wait for the retry window to pass; avoid repeatedly submitting the same action.";
+  }
+  if (normalized.includes("permission") || normalized.includes("scope") || normalized.includes("rejected")) {
+    return "Reconnect a token with the required repository permission and scopes before retrying.";
+  }
+  if (context === "manual_refresh") {
+    return "Open Health to check worker and queue state; queue a narrower repair layer if the full refresh keeps failing.";
+  }
+  if (context === "webhook_retry") {
+    return "Open Webhooks to inspect the failed delivery rows, fix the underlying payload or worker issue, then retry failed deliveries.";
+  }
+  if (context === "notification") {
+    return "Check notification readiness, WeCom webhook configuration, employee mappings, and delivery status before retrying.";
+  }
+  if (context === "workflow") {
+    return "Refresh the preview; the target issue or PR may have changed since the cached recommendation was generated.";
+  }
+  return "Verify the GitHub token and service health, then retry.";
+}
+
+function ActionErrorDescription({ context, message }: { context: ActionErrorContext; message: string }) {
+  return (
+    <Space orientation="vertical" size={4}>
+      <Text>{message}</Text>
+      <Text type="secondary">{actionErrorGuidance(context, message)}</Text>
+    </Space>
+  );
+}
+
 function readBrowserCookie(name: string): string | null {
   for (const segment of document.cookie.split(";")) {
     const [rawKey, ...valueParts] = segment.trim().split("=");
@@ -15855,7 +15895,12 @@ export default function App() {
             className="band"
             type="error"
             title="Refresh was not queued"
-            description={manualRefreshError}
+            description={<ActionErrorDescription context="manual_refresh" message={manualRefreshError} />}
+            action={
+              <Button size="small" onClick={() => selectView("Health")}>
+                Open health
+              </Button>
+            }
             showIcon
           />
         ) : null}
@@ -15875,7 +15920,12 @@ export default function App() {
             className="band"
             type="error"
             title="Webhook retry was not queued"
-            description={webhookRetryError}
+            description={<ActionErrorDescription context="webhook_retry" message={webhookRetryError} />}
+            action={
+              <Button size="small" onClick={() => selectView("Webhooks")}>
+                Open webhooks
+              </Button>
+            }
             showIcon
           />
         ) : null}
@@ -16226,7 +16276,7 @@ export default function App() {
                     className="band"
                     type="error"
                     title="Notification action failed"
-                    description={notificationAckError}
+                    description={<ActionErrorDescription context="notification" message={notificationAckError} />}
                     showIcon
                   />
                 ) : null}
@@ -17159,7 +17209,14 @@ export default function App() {
               showIcon
             />
           ) : null}
-          {tokenError ? <Alert type={tokenRetryActive ? "warning" : "error"} title={tokenError} showIcon /> : null}
+          {tokenError ? (
+            <Alert
+              type={tokenRetryActive ? "warning" : "error"}
+              title="GitHub token sign-in failed"
+              description={<ActionErrorDescription context="token" message={tokenError} />}
+              showIcon
+            />
+          ) : null}
         </Space>
       </Modal>
       <Modal
@@ -17216,7 +17273,14 @@ export default function App() {
               ))}
             </Space>
           </Checkbox.Group>
-          {manualRefreshError ? <Alert type="error" title={manualRefreshError} showIcon /> : null}
+          {manualRefreshError ? (
+            <Alert
+              type="error"
+              title="Refresh was not queued"
+              description={<ActionErrorDescription context="manual_refresh" message={manualRefreshError} />}
+              showIcon
+            />
+          ) : null}
         </Space>
       </Modal>
       <Modal
@@ -17254,7 +17318,14 @@ export default function App() {
         }}
         onCancel={() => setPreviewModalOpen(false)}
       >
-        {previewError ? <Alert type="error" title={previewError} showIcon /> : null}
+        {previewError ? (
+          <Alert
+            type="error"
+            title="Workflow preview failed"
+            description={<ActionErrorDescription context="workflow" message={previewError} />}
+            showIcon
+          />
+        ) : null}
         {!previewError && !workflowPreview ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
         {workflowPreview ? (
           <Space orientation="vertical" size={12} className="token-modal-body">
