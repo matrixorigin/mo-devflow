@@ -3799,8 +3799,7 @@ function TeamCriticalFlowPanel({
   onOpenPrRisks: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
-  const lazy = useLazyVisibleCount(rows.length, 7, rows.map((row) => row.id).join(":"));
-  const visibleRows = rows.slice(0, lazy.visibleCount);
+  const pagedRows = usePagedList(rows, 7, rows.map((row) => row.id).join(":"));
   const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
   const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
 
@@ -3828,8 +3827,8 @@ function TeamCriticalFlowPanel({
       </div>
 
       <div className="team-critical-flow-list">
-        {visibleRows.length > 0 ? (
-          visibleRows.map((row) => (
+        {pagedRows.visibleItems.length > 0 ? (
+          pagedRows.visibleItems.map((row) => (
             <TeamCriticalFlowRow key={row.id} row={row} onOpenPrRisks={onOpenPrRisks} onPreviewIssue={onPreviewIssue} />
           ))
         ) : (
@@ -3837,14 +3836,12 @@ function TeamCriticalFlowPanel({
         )}
       </div>
 
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="active issues"
-        className="team-critical-flow-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={rows.length}
+        page={pagedRows.page}
+        pageSize={pagedRows.pageSize}
+        defaultPageSize={7}
+        onChange={pagedRows.onPageChange}
       />
     </section>
   );
@@ -4898,8 +4895,7 @@ function TeamPeopleFocus({
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const summary = teamPeopleFocusSummary(people, personalViews);
-  const lazy = useLazyVisibleCount(people.length, 6, people.map((person) => person.login).join(":"));
-  const visiblePeople = people.slice(0, lazy.visibleCount);
+  const pagedPeople = usePagedList(people, 6, people.map((person) => person.login).join(":"));
 
   return (
     <section className="team-side-panel">
@@ -4920,7 +4916,7 @@ function TeamPeopleFocus({
             description={observedMode ? "No active owners observed" : "No watched people with active risk"}
           />
         ) : (
-          visiblePeople.map((person) => {
+          pagedPeople.visibleItems.map((person) => {
             const testingWork = testingCountForPerson(person.login, personalViews);
             const focus = personCardFocus(person, personalByLogin.get(person.login));
             return (
@@ -4955,14 +4951,12 @@ function TeamPeopleFocus({
           })
         )}
       </div>
-      <LazyListToggle
-        hiddenCount={lazy.hiddenCount}
-        revealCount={lazy.revealCount}
-        canCollapse={lazy.canCollapse}
-        itemLabel="people"
-        className="team-rotation-more"
-        onShowMore={lazy.showMore}
-        onCollapse={lazy.reset}
+      <CardListPagination
+        total={people.length}
+        page={pagedPeople.page}
+        pageSize={pagedPeople.pageSize}
+        defaultPageSize={6}
+        onChange={pagedPeople.onPageChange}
       />
     </section>
   );
@@ -7651,8 +7645,7 @@ function TestingCommandBoard({
     }
     return (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0);
   });
-  const testerLazy = useLazyVisibleCount(testerRows.length, 8, testerRows.map((tester) => tester.login).join(":"));
-  const visibleTesterRows = testerRows.slice(0, testerLazy.visibleCount);
+  const pagedTesterRows = usePagedList(testerRows, 8, testerRows.map((tester) => tester.login).join(":"));
   const scrollToIssueQueue = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -7763,10 +7756,10 @@ function TestingCommandBoard({
         onFilterChange={onTestingIssueFilterChange}
       />
 
-      {visibleTesterRows.length > 0 ? (
+      {pagedTesterRows.visibleItems.length > 0 ? (
         <div className="testing-tester-panel" id="testing-tester-queue" aria-label="Tester queue ownership">
           <div className="testing-tester-strip">
-            {visibleTesterRows.map((tester) => (
+            {pagedTesterRows.visibleItems.map((tester) => (
               <article className="testing-tester-card" key={tester.login}>
                 <div>
                   <Text strong>{tester.login}</Text>
@@ -7779,15 +7772,12 @@ function TestingCommandBoard({
               </article>
             ))}
           </div>
-          <LazyListToggle
-            hiddenCount={testerLazy.hiddenCount}
-            revealCount={testerLazy.revealCount}
-            canCollapse={testerLazy.canCollapse}
-            itemLabel="tester rows"
-            className="testing-queue-more"
-            collapsedLabel="Show compact tester queue"
-            onShowMore={testerLazy.showMore}
-            onCollapse={testerLazy.reset}
+          <CardListPagination
+            total={testerRows.length}
+            page={pagedTesterRows.page}
+            pageSize={pagedTesterRows.pageSize}
+            defaultPageSize={8}
+            onChange={pagedTesterRows.onPageChange}
           />
         </div>
       ) : null}
@@ -8683,7 +8673,7 @@ function ObservedPersonThreadRow({
   const action = observedThreadAction(thread);
   const prs = observedThreadPullRequests(thread);
   const sourceUrl = thread.issue?.htmlUrl ?? prs[0]?.htmlUrl ?? null;
-  const prLazy = useLazyVisibleCount(prs.length, 4, thread.id);
+  const pagedPrs = usePagedList(prs, 4, thread.id);
 
   return (
     <article className={`observed-thread-row observed-thread-row-${thread.tone}`}>
@@ -8719,7 +8709,7 @@ function ObservedPersonThreadRow({
       </div>
       <div className="observed-thread-links">
         {prs.length > 0 ? (
-          prs.slice(0, prLazy.visibleCount).map((pr) => {
+          pagedPrs.visibleItems.map((pr) => {
             const reasons = prAttentionReasons(pr as PendingPrView);
             const canPreviewPr = isObservedThreadPendingPr(pr);
             return (
@@ -8752,15 +8742,12 @@ function ObservedPersonThreadRow({
         ) : (
           <Text type="secondary">No visible PR linked to this active issue</Text>
         )}
-        <LazyListToggle
-          hiddenCount={prLazy.hiddenCount}
-          revealCount={prLazy.revealCount}
-          canCollapse={prLazy.canCollapse}
-          itemLabel="PRs"
-          className="linked-overflow-button"
-          collapsedLabel="Show fewer PRs"
-          onShowMore={prLazy.showMore}
-          onCollapse={prLazy.reset}
+        <CardListPagination
+          total={prs.length}
+          page={pagedPrs.page}
+          pageSize={pagedPrs.pageSize}
+          defaultPageSize={4}
+          onChange={pagedPrs.onPageChange}
         />
         {!thread.issue && thread.linkedIssueNumbers.length > 0 && sourceUrl ? (
           <span className="observed-thread-issues">
@@ -11424,15 +11411,23 @@ function PersonalRotationOverview({
   const staleTestingWorkCount = testingStaleIssues.length;
   const sortedTestingIssueRows = sortTestingIssueQueue(person.testingIssues, "priority");
   const sortedTestingPrRows = sortTestingQueuePrs(person.testingPrs);
-  const testingIssueLazy = useLazyVisibleCount(sortedTestingIssueRows.length, 4, person.login);
-  const testingPrLazy = useLazyVisibleCount(sortedTestingPrRows.length, 4, person.login);
-  const testingIssueRows = sortedTestingIssueRows.slice(0, testingIssueLazy.visibleCount);
-  const testingPrRows = sortedTestingPrRows.slice(0, testingPrLazy.visibleCount);
+  const testingIssuePage = usePagedList(
+    sortedTestingIssueRows,
+    4,
+    `${person.login}:${sortedTestingIssueRows.map((issue) => issue.number).join(",")}`
+  );
+  const testingPrPage = usePagedList(
+    sortedTestingPrRows,
+    4,
+    `${person.login}:${sortedTestingPrRows.map((pr) => pr.number).join(",")}`
+  );
   const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
-  const threadLazy = useLazyVisibleCount(filteredRows.length, 6, aiFilter);
-  const focusRows = filteredRows.slice(0, threadLazy.visibleCount);
-  const prLazy = useLazyVisibleCount(person.attentionPrs.length, 5, person.login);
-  const visibleAttentionPrs = person.attentionPrs.slice(0, prLazy.visibleCount);
+  const threadPage = usePagedList(filteredRows, 6, `${aiFilter}:${filteredRows.map((row) => row.id).join(",")}`);
+  const prPage = usePagedList(
+    person.attentionPrs,
+    5,
+    `${person.login}:${person.attentionPrs.map((pr) => pr.number).join(",")}`
+  );
   const primaryFocus = personalPrimaryFocus(person, chart, blockedPrItems.length, staleTestingWorkCount);
   const criticalIssuesByPr = useMemo(
     () => criticalIssueContextsByPullRequest(person.activeCriticalIssues, person.pendingPrs),
@@ -11582,21 +11577,20 @@ function PersonalRotationOverview({
             </div>
           </div>
           <div className="team-rotation-list">
-            {focusRows.length === 0 ? (
+            {threadPage.visibleItems.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible personal work threads" />
             ) : (
-              focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} onPreview={setPreviewThread} />)
+              threadPage.visibleItems.map((row) => (
+                <PersonalRotationThreadRow row={row} key={row.id} onPreview={setPreviewThread} />
+              ))
             )}
           </div>
-          <LazyListToggle
-            hiddenCount={threadLazy.hiddenCount}
-            revealCount={threadLazy.revealCount}
-            canCollapse={threadLazy.canCollapse}
-            itemLabel="threads"
-            className="critical-lane-more"
-            collapsedLabel="Show compact threads"
-            onShowMore={threadLazy.showMore}
-            onCollapse={threadLazy.reset}
+          <CardListPagination
+            total={filteredRows.length}
+            page={threadPage.page}
+            pageSize={threadPage.pageSize}
+            defaultPageSize={6}
+            onChange={threadPage.onPageChange}
           />
         </section>
 
@@ -11649,7 +11643,7 @@ function PersonalRotationOverview({
             {person.attentionPrs.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PR blockers" />
             ) : (
-              visibleAttentionPrs.map((pr) => (
+              prPage.visibleItems.map((pr) => (
                 <TeamPrRiskRow
                   activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
                   pr={pr}
@@ -11659,15 +11653,12 @@ function PersonalRotationOverview({
               ))
             )}
           </div>
-          <LazyListToggle
-            hiddenCount={prLazy.hiddenCount}
-            revealCount={prLazy.revealCount}
-            canCollapse={prLazy.canCollapse}
-            itemLabel="PR blockers"
-            className="critical-lane-more"
-            collapsedLabel="Show compact PR list"
-            onShowMore={prLazy.showMore}
-            onCollapse={prLazy.reset}
+          <CardListPagination
+            total={person.attentionPrs.length}
+            page={prPage.page}
+            pageSize={prPage.pageSize}
+            defaultPageSize={5}
+            onChange={prPage.onPageChange}
           />
         </section>
 
@@ -11697,22 +11688,19 @@ function PersonalRotationOverview({
                       {testingWorkCount}
                     </Tag>
                   </div>
-                  {testingIssueRows.length === 0 ? (
+                  {testingIssuePage.visibleItems.length === 0 ? (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues assigned to testing" />
                   ) : (
-                    testingIssueRows.map((issue) => (
+                    testingIssuePage.visibleItems.map((issue) => (
                       <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
                     ))
                   )}
-                  <LazyListToggle
-                    hiddenCount={testingIssueLazy.hiddenCount}
-                    revealCount={testingIssueLazy.revealCount}
-                    canCollapse={testingIssueLazy.canCollapse}
-                    itemLabel="testing issues"
-                    className="critical-lane-more"
-                    collapsedLabel="Show compact issue list"
-                    onShowMore={testingIssueLazy.showMore}
-                    onCollapse={testingIssueLazy.reset}
+                  <CardListPagination
+                    total={sortedTestingIssueRows.length}
+                    page={testingIssuePage.page}
+                    pageSize={testingIssuePage.pageSize}
+                    defaultPageSize={4}
+                    onChange={testingIssuePage.onPageChange}
                   />
                 </div>
                 <div className="personal-testing-subsection">
@@ -11722,12 +11710,12 @@ function PersonalRotationOverview({
                       {person.testingPrs.length}
                     </Tag>
                   </div>
-                  {testingPrRows.length === 0 ? (
+                  {testingPrPage.visibleItems.length === 0 ? (
                     <Text type="secondary" className="personal-testing-empty">
                       No linked PR evidence is visible for current issue testing.
                     </Text>
                   ) : (
-                    testingPrRows.map((pr) => (
+                    testingPrPage.visibleItems.map((pr) => (
                       <TeamPrRiskRow
                         activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
                         pr={pr}
@@ -11736,15 +11724,12 @@ function PersonalRotationOverview({
                       />
                     ))
                   )}
-                  <LazyListToggle
-                    hiddenCount={testingPrLazy.hiddenCount}
-                    revealCount={testingPrLazy.revealCount}
-                    canCollapse={testingPrLazy.canCollapse}
-                    itemLabel="linked PRs"
-                    className="critical-lane-more"
-                    collapsedLabel="Show compact PR evidence"
-                    onShowMore={testingPrLazy.showMore}
-                    onCollapse={testingPrLazy.reset}
+                  <CardListPagination
+                    total={sortedTestingPrRows.length}
+                    page={testingPrPage.page}
+                    pageSize={testingPrPage.pageSize}
+                    defaultPageSize={4}
+                    onChange={testingPrPage.onPageChange}
                   />
                 </div>
               </>
