@@ -6577,6 +6577,13 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
     number,
     url: linkedObjectUrl(pr.htmlUrl, "issues", number)
   }));
+  const [risksExpanded, setRisksExpanded] = useState(false);
+  const [issueLinksExpanded, setIssueLinksExpanded] = useState(false);
+  const visibleRisks = risksExpanded ? risks : risks.slice(0, 4);
+  const hiddenRiskCount = Math.max(0, risks.length - visibleRisks.length);
+  const visibleIssueLinks = issueLinksExpanded ? issueLinks : issueLinks.slice(0, 4);
+  const hiddenIssueLinkCount = Math.max(0, issueLinks.length - visibleIssueLinks.length);
+
   return (
     <article className={`testing-queue-row ${isTestingStalePr(pr) ? "testing-queue-row-critical" : ""}`}>
       <div className="testing-queue-main">
@@ -6608,12 +6615,20 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
         <Text type="secondary">Next</Text>
         <Text strong>{testingQueueNextAction(pr)}</Text>
         <div className="testing-queue-risks">
-          {risks.slice(0, 4).map((risk) => (
+          {visibleRisks.map((risk) => (
             <Tag color={testingRiskColor(risk)} key={risk}>
               {risk}
             </Tag>
           ))}
-          {risks.length > 4 ? <Tag>+{risks.length - 4}</Tag> : null}
+          {hiddenRiskCount > 0 ? (
+            <button type="button" className="linked-overflow-button" onClick={() => setRisksExpanded(true)}>
+              +{hiddenRiskCount} more risks
+            </button>
+          ) : risks.length > 4 && risksExpanded ? (
+            <button type="button" className="linked-overflow-button" onClick={() => setRisksExpanded(false)}>
+              Show fewer risks
+            </button>
+          ) : null}
           {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
           {pr.mergeStateStatus ? (
             <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
@@ -6621,12 +6636,20 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
         </div>
         {issueLinks.length > 0 ? (
           <div className="testing-queue-links">
-            {issueLinks.slice(0, 4).map((link) => (
+            {visibleIssueLinks.map((link) => (
               <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
                 issue #{link.number}
               </a>
             ))}
-            {issueLinks.length > 4 ? <span>+{issueLinks.length - 4}</span> : null}
+            {hiddenIssueLinkCount > 0 ? (
+              <button type="button" className="linked-overflow-button" onClick={() => setIssueLinksExpanded(true)}>
+                +{hiddenIssueLinkCount} more issues
+              </button>
+            ) : issueLinks.length > 4 && issueLinksExpanded ? (
+              <button type="button" className="linked-overflow-button" onClick={() => setIssueLinksExpanded(false)}>
+                Show fewer issues
+              </button>
+            ) : null}
           </div>
         ) : (
           <Text type="secondary">Issue link sync pending</Text>
@@ -9349,9 +9372,7 @@ function PersonalRotationThreadRow({
               icon={<Eye size={14} />}
               size="small"
               onClick={() => onPreview(row)}
-            >
-              Preview
-            </Button>
+            />
           </Tooltip>
         </div>
         <div className="personal-thread-title">{row.issue.title}</div>
@@ -9379,7 +9400,14 @@ function PersonalRotationThreadRow({
                   {pr.testingState !== "not_ready" ? ` ${testingStateBusinessLabel(pr.testingState)}` : ""}
                 </a>
               ))}
-              {row.prs.length > 5 ? <span>+{row.prs.length - 5}</span> : null}
+              {row.prs.length > 5 ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview ${row.title} with ${row.prs.length - 5} more linked PRs`}
+                  count={row.prs.length - 5}
+                  label="more PRs"
+                  onClick={() => onPreview(row)}
+                />
+              ) : null}
             </>
           ) : (
             <span className="team-linked-row-missing">No linked PR visible</span>
