@@ -12,6 +12,7 @@ import {
   peopleSortLabel,
   peopleSortFromHash,
   pagedRangeLabel,
+  personalActionQueueDisclosureSummary,
   personalFlowThreadsSummary,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
@@ -198,5 +199,17 @@ describe("dashboard hash filters", () => {
         unlinkedPrCount: 2
       })
     ).toBe("1 thread | 1 shared PR | 2 link gaps | oldest 2.0d");
+  });
+
+  it("summarizes the collapsed personal action queue with user-facing queue names", () => {
+    expect(
+      personalActionQueueDisclosureSummary({
+        all: 8,
+        critical: 2,
+        pr_blockers: 1,
+        testing: 1,
+        needs_link: 3
+      })
+    ).toBe("8 objects | 2 s-1/s0 | 1 PR blocker | 1 issue test | 3 link gaps");
   });
 });

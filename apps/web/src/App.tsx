@@ -13674,6 +13674,20 @@ export function personalFlowThreadsSummary(chart: {
   } ${linkGapNoun} | oldest ${hours(chart.maxAgeHours)}`;
 }
 
+export function personalActionQueueDisclosureSummary(counts: {
+  all: number;
+  critical: number;
+  pr_blockers: number;
+  testing: number;
+  needs_link: number;
+}): string {
+  const objectNoun = counts.all === 1 ? "object" : "objects";
+  const blockerNoun = counts.pr_blockers === 1 ? "PR blocker" : "PR blockers";
+  const testNoun = counts.testing === 1 ? "issue test" : "issue tests";
+  const gapNoun = counts.needs_link === 1 ? "link gap" : "link gaps";
+  return `${counts.all} ${objectNoun} | ${counts.critical} s-1/s0 | ${counts.pr_blockers} ${blockerNoun} | ${counts.testing} ${testNoun} | ${counts.needs_link} ${gapNoun}`;
+}
+
 function PersonalRotationThreadRow({
   row,
   onPreview
@@ -14434,6 +14448,7 @@ function SelectedPersonWorkbench({
   const attentionNumbers = new Set(person.attentionPrs.map((pr) => pr.number));
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
   const activityItems = personalActivityItems(person);
+  const activityCounts = personalActionQueueCounts(activityItems);
   const activityItemById = new Map(activityItems.map((item) => [item.id, item]));
   const operatingSignals = personalOperatingSignals(person, activityItems);
   const [objectPreviewItem, setObjectPreviewItem] = useState<PersonalActivityItem | null>(null);
@@ -14484,26 +14499,6 @@ function SelectedPersonWorkbench({
         />
       </details>
 
-      <section className="activity-panel personal-action-panel">
-        <div className="subsection-heading">
-          <Title level={5}>Action Queue</Title>
-          <Space size={[6, 6]} wrap>
-            <Tag color={activityItems.some((item) => item.tone === "critical") ? "red" : "default"}>
-              {activityItems.filter((item) => item.tone === "critical").length} critical
-            </Tag>
-            <Tag color={activityItems.some((item) => item.tone === "attention") ? "orange" : "default"}>
-              {activityItems.filter((item) => item.tone === "attention").length} attention
-            </Tag>
-            <Tag>{gantt.rows.length} threads</Tag>
-          </Space>
-        </div>
-        <PersonalActionQueue
-          activeDrilldownFilter={drilldownFilter}
-          items={activityItems}
-          onDrilldownChange={onDrilldownChange}
-        />
-      </section>
-
       <PersonalDrilldownBoard
         person={person}
         chart={gantt}
@@ -14512,11 +14507,81 @@ function SelectedPersonWorkbench({
         onPullRequestPreview={previewPullRequest}
       />
 
+      <details className="secondary-disclosure personal-action-disclosure">
+        <summary>
+          <span>Action Queue</span>
+          <Space className="personal-action-summary-actions" size={[4, 4]} wrap>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activityCounts.critical > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("active_issues");
+              }}
+            >
+              {activityCounts.critical} s-1/s0
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activityCounts.pr_blockers > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("pr_attention");
+              }}
+            >
+              {activityCounts.pr_blockers} PR blockers
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activityCounts.testing > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "testing" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("testing");
+              }}
+            >
+              {activityCounts.testing} issue testing
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                activityCounts.needs_link > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "threads" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("threads");
+              }}
+            >
+              {activityCounts.needs_link} link gaps
+            </button>
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body personal-action-queue-body">
+          <div className="subsection-heading">
+            <Title level={5}>Execution Queue</Title>
+            <Text type="secondary">{personalActionQueueDisclosureSummary(activityCounts)}</Text>
+          </div>
+          <PersonalActionQueue
+            activeDrilldownFilter={drilldownFilter}
+            items={activityItems}
+            onDrilldownChange={onDrilldownChange}
+          />
+        </div>
+      </details>
+
       <details className="secondary-disclosure personal-flow-disclosure">
         <summary>
           <span>Flow threads</span>
           <Space size={[4, 4]} wrap>
-            <Tag>{personalFlowThreadsSummary(gantt)}</Tag>
             <button
               type="button"
               className={`inline-filter-chip ${drilldownFilter === "threads" ? "inline-filter-chip-active" : ""}`}
@@ -14526,8 +14591,35 @@ function SelectedPersonWorkbench({
                 onDrilldownChange("threads");
               }}
             >
-              Open threads
+              {gantt.rows.length} threads
             </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${gantt.unlinkedPrCount > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "threads" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("threads");
+              }}
+            >
+              {gantt.unlinkedPrCount} link gaps
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${gantt.sharedPrCount > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "threads" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("threads");
+              }}
+            >
+              {gantt.sharedPrCount} shared PR
+            </button>
+            <span className="secondary-summary-note">oldest {hours(gantt.maxAgeHours)}</span>
           </Space>
         </summary>
         <div className="secondary-disclosure-body">
@@ -14546,11 +14638,43 @@ function SelectedPersonWorkbench({
         <summary>
           <span>Object lists</span>
           <Space size={[4, 4]} wrap>
-            <Tag>{routinePendingPrs.length} routine PR</Tag>
-            <Tag>{person.deferredIssues.length} deferred</Tag>
-            <Tag>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                routinePendingPrs.length > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "pending_pr" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("pending_pr");
+              }}
+            >
+              {routinePendingPrs.length} routine PR
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                person.deferredIssues.length > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "deferred" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("deferred");
+              }}
+            >
+              {person.deferredIssues.length} deferred
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${drilldownFilter === "yesterday_pr" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("yesterday_pr");
+              }}
+            >
               yesterday {person.prsCreatedYesterday.length}/{person.prsMergedYesterday.length}
-            </Tag>
+            </button>
           </Space>
         </summary>
         <div className="secondary-disclosure-body">

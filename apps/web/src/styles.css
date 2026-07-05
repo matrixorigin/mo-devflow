@@ -3198,9 +3198,16 @@ button.webhook-path-metric:focus-visible {
   align-items: center;
   cursor: pointer;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: space-between;
   min-width: 0;
+}
+
+.secondary-disclosure summary > span:first-child {
+  color: #111827;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .secondary-disclosure-body {
@@ -3208,6 +3215,13 @@ button.webhook-path-metric:focus-visible {
   gap: 10px;
   margin-top: 10px;
   min-width: 0;
+}
+
+.secondary-summary-note {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .section {
