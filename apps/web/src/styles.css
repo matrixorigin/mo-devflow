@@ -5475,6 +5475,48 @@ button.testing-board-stat:focus-visible {
   padding: 12px;
 }
 
+.trend-chart-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trend-evidence-strip {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #ca8a04;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(104px, max-content)) minmax(0, 1fr);
+  min-width: 0;
+  padding: 9px 12px;
+}
+
+.trend-evidence-strip > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trend-evidence-strip span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.trend-evidence-strip strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.trend-evidence-strip .ant-typography {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
 .flow-efficiency-strip {
   border-block: 1px solid #e5e7eb;
   display: grid;
@@ -5650,6 +5692,22 @@ button.flow-diagnostic-card:focus-visible {
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.chart-tooltip-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.chart-tooltip-evidence {
+  background: #fef3c7;
+  border-radius: 999px;
+  color: #92400e;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+  padding: 1px 6px;
 }
 
 .health-grid {
@@ -6246,6 +6304,7 @@ button.flow-diagnostic-card:focus-visible {
   .work-lane-grid-priority,
   .work-lane-grid-secondary,
   .flow-efficiency-strip,
+  .trend-evidence-strip,
   .account-session-facts,
   .account-team-summary-grid,
   .token-session-facts,

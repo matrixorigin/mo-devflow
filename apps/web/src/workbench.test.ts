@@ -47,7 +47,8 @@ import {
   teamTriageSnapshot,
   teamCommandSignals,
   testingStateBusinessLabel,
-  testingStateHelpText
+  testingStateHelpText,
+  trendEvidenceSummary
 } from "./workbench";
 
 describe("person workload summaries", () => {
@@ -1420,6 +1421,54 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
     generatedAt: input.generatedAt ?? "2026-07-04T00:00:00Z"
   };
 }
+
+describe("trend evidence summary", () => {
+  it("marks trend points as partial when any cached metric point is incomplete", () => {
+    expect(
+      trendEvidenceSummary([
+        metricPoint({
+          date: "2026-07-03",
+          sourceCompleteness: "complete_cache",
+          generatedAt: "2026-07-04T00:00:00Z"
+        }),
+        metricPoint({
+          date: "2026-07-04",
+          sourceCompleteness: "partial_cache",
+          generatedAt: "2026-07-04T00:05:00Z"
+        })
+      ])
+    ).toEqual({
+      totalPoints: 2,
+      partialPoints: 1,
+      latestGeneratedAt: "2026-07-04T00:05:00Z",
+      evidenceLabel: "1/2 partial",
+      message: "Trend lines include partial cache points; use them for direction, not final historical accounting."
+    });
+  });
+
+  it("summarizes complete metric evidence without a partial warning", () => {
+    expect(
+      trendEvidenceSummary([
+        metricPoint({
+          date: "2026-07-02",
+          sourceCompleteness: "complete_cache",
+          generatedAt: "2026-07-04T00:00:00Z"
+        }),
+        metricPoint({
+          date: "2026-07-03",
+          sourceCompleteness: "complete_cache",
+          generatedAt: "2026-07-04T00:03:00Z"
+        })
+      ])
+    ).toEqual({
+      totalPoints: 2,
+      partialPoints: 0,
+      latestGeneratedAt: "2026-07-04T00:03:00Z",
+      evidenceLabel: "complete points",
+      message: "Every visible trend point is marked complete in the local cache."
+    });
+  });
+});
 
 function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: number }): NotificationDeliveryView {
   return {

@@ -147,6 +147,7 @@ import {
   teamOperatingSignals,
   teamPeopleFocusSummary,
   teamTriageSnapshot,
+  trendEvidenceSummary,
   testingStateBusinessLabel,
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
@@ -4742,95 +4743,161 @@ function TrendChart({ points }: { points: TrendMetricPoint[] }) {
   if (points.length === 0) {
     return <Empty description="No cached analytics metrics yet" />;
   }
+  const evidence = trendEvidenceSummary(points);
   return (
-    <div className="flow-chart-grid">
-      <MetricFlowChart
-        title="PR Flow"
-        points={points}
-        series={[
-          { name: "Created", type: "bar", color: "#2563eb", data: (point) => point.prsCreated },
-          { name: "Merged", type: "bar", color: "#16a34a", data: (point) => point.prsMerged },
-          {
-            name: "Open delta",
-            type: "line",
-            color: "#d97706",
-            data: (point) => point.prsCreated - point.prsMerged
-          }
-        ]}
-      />
-      <MetricFlowChart
-        title="Issue Flow"
-        points={points}
-        series={[
-          { name: "Opened", type: "bar", color: "#7c3aed", data: (point) => point.issuesOpened },
-          { name: "Closed", type: "bar", color: "#16a34a", data: (point) => point.issuesClosed },
-          { name: "Deferred", type: "bar", color: "#64748b", data: (point) => point.issuesDeferred }
-        ]}
-      />
-      <MetricFlowChart
-        title="Risk Flow"
-        points={points}
-        series={[
-          {
-            name: "Violations",
-            type: "bar",
-            color: "#dc2626",
-            data: (point) => point.workflowViolationsDetected
-          },
-          {
-            name: "Issue drain",
-            type: "line",
-            color: "#0f766e",
-            data: (point) => point.issuesClosed + point.issuesDeferred - point.issuesOpened
-          }
-        ]}
-      />
-      <MetricFlowChart
-        title="Backlog Snapshot"
-        points={points}
-        series={[
-          {
-            name: "Active s-1/s0",
-            type: "line",
-            color: "#dc2626",
-            data: (point) => point.activeCriticalIssues
-          },
-          { name: "Pending PR", type: "line", color: "#2563eb", data: (point) => point.pendingPrs },
-          { name: "Needs triage", type: "line", color: "#ca8a04", data: (point) => point.needsTriageIssues },
-          { name: "PR attention", type: "bar", color: "#d97706", data: (point) => point.attentionPrs }
-        ]}
-      />
-      <MetricFlowChart
-        title="PR Quality"
-        points={points}
-        series={[
-          { name: "CI failed", type: "bar", color: "#dc2626", data: (point) => point.ciFailedPrs },
-          {
-            name: "Requested changes",
-            type: "bar",
-            color: "#ea580c",
-            data: (point) => point.requestedChangePrs
-          },
-          { name: "Review waiting", type: "line", color: "#2563eb", data: (point) => point.reviewWaitingPrs },
-          { name: "Merge conflict", type: "bar", color: "#7f1d1d", data: (point) => point.mergeConflictPrs }
-        ]}
-      />
-      <MetricFlowChart
-        title="Testing Flow"
-        points={points}
-        series={[
-          { name: "Testing queue", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
-          {
-            name: "Avg wait h",
-            type: "line",
-            color: "#d97706",
-            data: (point) => point.averageTestingQueueAgeHours ?? 0
-          },
-          { name: "PR attention", type: "line", color: "#dc2626", data: (point) => point.attentionPrs }
-        ]}
-      />
+    <div className="trend-chart-stack">
+      <div className="trend-evidence-strip" aria-label="Trend evidence completeness">
+        <div>
+          <span>Cache evidence</span>
+          <strong>{evidence.evidenceLabel}</strong>
+        </div>
+        <div>
+          <span>Last generated</span>
+          <strong>{formatDate(evidence.latestGeneratedAt)}</strong>
+        </div>
+        <Text type="secondary">{evidence.message}</Text>
+      </div>
+      <div className="flow-chart-grid">
+        <MetricFlowChart
+          title="PR Flow"
+          points={points}
+          series={[
+            { name: "Created", type: "bar", color: "#2563eb", data: (point) => point.prsCreated },
+            { name: "Merged", type: "bar", color: "#16a34a", data: (point) => point.prsMerged },
+            {
+              name: "Open delta",
+              type: "line",
+              color: "#d97706",
+              data: (point) => point.prsCreated - point.prsMerged
+            }
+          ]}
+        />
+        <MetricFlowChart
+          title="Issue Flow"
+          points={points}
+          series={[
+            { name: "Opened", type: "bar", color: "#7c3aed", data: (point) => point.issuesOpened },
+            { name: "Closed", type: "bar", color: "#16a34a", data: (point) => point.issuesClosed },
+            { name: "Deferred", type: "bar", color: "#64748b", data: (point) => point.issuesDeferred }
+          ]}
+        />
+        <MetricFlowChart
+          title="Risk Flow"
+          points={points}
+          series={[
+            {
+              name: "Violations",
+              type: "bar",
+              color: "#dc2626",
+              data: (point) => point.workflowViolationsDetected
+            },
+            {
+              name: "Issue drain",
+              type: "line",
+              color: "#0f766e",
+              data: (point) => point.issuesClosed + point.issuesDeferred - point.issuesOpened
+            }
+          ]}
+        />
+        <MetricFlowChart
+          title="Backlog Snapshot"
+          points={points}
+          series={[
+            {
+              name: "Active s-1/s0",
+              type: "line",
+              color: "#dc2626",
+              data: (point) => point.activeCriticalIssues
+            },
+            { name: "Pending PR", type: "line", color: "#2563eb", data: (point) => point.pendingPrs },
+            { name: "Needs triage", type: "line", color: "#ca8a04", data: (point) => point.needsTriageIssues },
+            { name: "PR attention", type: "bar", color: "#d97706", data: (point) => point.attentionPrs }
+          ]}
+        />
+        <MetricFlowChart
+          title="PR Quality"
+          points={points}
+          series={[
+            { name: "CI failed", type: "bar", color: "#dc2626", data: (point) => point.ciFailedPrs },
+            {
+              name: "Requested changes",
+              type: "bar",
+              color: "#ea580c",
+              data: (point) => point.requestedChangePrs
+            },
+            { name: "Review waiting", type: "line", color: "#2563eb", data: (point) => point.reviewWaitingPrs },
+            { name: "Merge conflict", type: "bar", color: "#7f1d1d", data: (point) => point.mergeConflictPrs }
+          ]}
+        />
+        <MetricFlowChart
+          title="Testing Flow"
+          points={points}
+          series={[
+            { name: "Testing queue", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
+            {
+              name: "Avg wait h",
+              type: "line",
+              color: "#d97706",
+              data: (point) => point.averageTestingQueueAgeHours ?? 0
+            },
+            { name: "PR attention", type: "line", color: "#dc2626", data: (point) => point.attentionPrs }
+          ]}
+        />
+      </div>
     </div>
   );
+}
+
+function trendPointLabel(point: TrendMetricPoint): string {
+  return "label" in point ? point.label : point.date.slice(5);
+}
+
+function trendPointEvidenceLabel(point: TrendMetricPoint): string {
+  return point.sourceCompleteness === "complete_cache" ? "complete cache" : "partial cache";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+interface ChartTooltipItem {
+  seriesName?: string;
+  marker?: string;
+  value?: unknown;
+  dataIndex?: number;
+}
+
+function chartTooltipItems(params: unknown): ChartTooltipItem[] {
+  if (Array.isArray(params)) {
+    return params.filter((item): item is ChartTooltipItem => typeof item === "object" && item !== null);
+  }
+  return typeof params === "object" && params !== null ? [params as ChartTooltipItem] : [];
+}
+
+function metricTooltipFormatter(points: TrendMetricPoint[]) {
+  return (params: unknown): string => {
+    const items = chartTooltipItems(params);
+    const dataIndex = items.find((item) => typeof item.dataIndex === "number")?.dataIndex ?? 0;
+    const point = points[dataIndex] ?? points[0];
+    const header = point
+      ? `${escapeHtml(trendPointLabel(point))} <span class="chart-tooltip-evidence">${escapeHtml(
+          trendPointEvidenceLabel(point)
+        )}</span>`
+      : "";
+    const rows = items
+      .map((item) => {
+        const seriesName = escapeHtml(item.seriesName ?? "");
+        const value = escapeHtml(String(item.value ?? ""));
+        return `<div>${item.marker ?? ""}${seriesName}: <strong>${value}</strong></div>`;
+      })
+      .join("");
+    return `<div class="chart-tooltip">${header ? `<div class="chart-tooltip-title">${header}</div>` : ""}${rows}</div>`;
+  };
 }
 
 function MetricFlowChart({
@@ -4852,10 +4919,16 @@ function MetricFlowChart({
     const labels = points.map((point) => ("label" in point ? point.label : point.date.slice(5)));
     chart.setOption({
       color: series.map((item) => item.color),
-      tooltip: { trigger: "axis" },
+      tooltip: { trigger: "axis", formatter: metricTooltipFormatter(points) },
       legend: { top: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
       grid: { left: 32, right: 12, top: 42, bottom: 28 },
-      xAxis: { type: "category", data: labels, boundaryGap: true, axisLabel: { fontSize: 11 } },
+      xAxis: {
+        type: "category",
+        data: labels,
+        boundaryGap: true,
+        axisLabel: { fontSize: 11 },
+        axisPointer: { label: { formatter: ({ value }: { value: string }) => value } }
+      },
       yAxis: { type: "value", minInterval: 1 },
       series: series.map((item) => ({
         name: item.name,

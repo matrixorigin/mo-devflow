@@ -1,6 +1,7 @@
 import type {
   CriticalIssueLinkedPullRequestView,
   CriticalIssueView,
+  DailyMetricPoint,
   DashboardSummary,
   NotificationDeliveryView,
   PendingPrView,
@@ -121,6 +122,36 @@ export interface TeamCommandSignal {
   tone: TeamCommandSignalTone;
   target: TeamCommandSignalTarget;
   priority: number;
+}
+
+export interface TrendEvidenceSummary {
+  totalPoints: number;
+  partialPoints: number;
+  latestGeneratedAt: string | null;
+  evidenceLabel: string;
+  message: string;
+}
+
+export function trendEvidenceSummary(
+  points: ReadonlyArray<Pick<DailyMetricPoint, "sourceCompleteness" | "generatedAt">>
+): TrendEvidenceSummary {
+  const partialPoints = points.filter((point) => point.sourceCompleteness === "partial_cache").length;
+  const latestGeneratedAt = points.reduce<string | null>((latest, point) => {
+    if (!latest) {
+      return point.generatedAt;
+    }
+    return new Date(point.generatedAt).getTime() > new Date(latest).getTime() ? point.generatedAt : latest;
+  }, null);
+  return {
+    totalPoints: points.length,
+    partialPoints,
+    latestGeneratedAt,
+    evidenceLabel: partialPoints > 0 ? `${partialPoints}/${points.length} partial` : "complete points",
+    message:
+      partialPoints > 0
+        ? "Trend lines include partial cache points; use them for direction, not final historical accounting."
+        : "Every visible trend point is marked complete in the local cache."
+  };
 }
 
 export function teamCommandSignals(input: {
