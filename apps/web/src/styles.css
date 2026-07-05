@@ -4707,6 +4707,7 @@ button.testing-board-stat:focus-visible {
 .people-focus-queue {
   background: #ffffff;
   border: 1px solid #dbe3ee;
+  border-left: 3px solid #111827;
   border-radius: 8px;
   display: grid;
   gap: 10px;

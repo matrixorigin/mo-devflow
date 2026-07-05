@@ -9305,6 +9305,7 @@ function PeopleFocusQueue({
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const focusPeople = sortPeopleForBoard(people, personalViews, "workload").slice(0, 5);
+  const counts = peopleBoardScopeCounts(people, personalViews);
 
   if (focusPeople.length === 0) {
     return null;
@@ -9316,11 +9317,16 @@ function PeopleFocusQueue({
         <div>
           <Text strong>People needing attention</Text>
           <Text type="secondary">
-            {focusPeople.length} in {peopleScopeLabel(scopeFilter)} scope: active issues, PR blockers, issue testing,
-            triage.
+            Top {focusPeople.length} by workload in {peopleScopeLabel(scopeFilter)}. Metrics open that person's filtered
+            workbench.
           </Text>
         </div>
-        <Tag>{mode === "observed" ? "observed owners" : "watched users"}</Tag>
+        <Space size={[4, 4]} wrap>
+          <Tag>{mode === "observed" ? "observed owners" : "watched users"}</Tag>
+          <Tag color={counts.critical > 0 ? "red" : "default"}>{counts.critical} s-1/s0</Tag>
+          <Tag color={counts.attention > 0 ? "orange" : "default"}>{counts.attention} PR attention</Tag>
+          <Tag color={counts.triage > 0 ? "gold" : "default"}>{counts.triage} triage</Tag>
+        </Space>
       </div>
       <div className="people-focus-list" role="list">
         {focusPeople.map((person) => {
@@ -19992,12 +19998,23 @@ export default function App() {
                   scopeFilter={peopleScopeFilter}
                   onScopeFilterChange={changePeopleScopeFilter}
                 />
+                {filteredPeople.length > 0 ? (
+                  <PeopleFocusQueue
+                    people={filteredPeople}
+                    personalViews={data.personalViews}
+                    selectedLogin={selectedPersonalView?.login ?? null}
+                    scopeFilter={peopleScopeFilter}
+                    mode={peopleBoardUsesObserved ? "observed" : "watched"}
+                    onSelect={openPeopleBoardPerson}
+                    onMetricSelect={openPeopleBoardMetric}
+                  />
+                ) : null}
                 <section className="people-by-person-board" aria-label="By person workload">
                   <div className="subsection-heading subsection-heading-compact">
                     <div>
-                      <Title level={5}>By Person</Title>
+                      <Title level={5}>All People</Title>
                       <Text type="secondary">
-                        {peopleScopeLabel(peopleScopeFilter)} | sort {peopleSortLabel(peopleSort)}
+                        Full person list for {peopleScopeLabel(peopleScopeFilter)} | sort {peopleSortLabel(peopleSort)}
                       </Text>
                     </div>
                     <button
@@ -20018,29 +20035,6 @@ export default function App() {
                     mode={peopleBoardUsesObserved ? "observed" : "watched"}
                   />
                 </section>
-                {filteredPeople.length > 0 ? (
-                  <details className="secondary-disclosure people-roster-disclosure">
-                    <summary>
-                      <span>Priority people queue</span>
-                      <Space size={[4, 4]} wrap>
-                        <span className="secondary-summary-note">
-                          Top 5 by workload in {peopleScopeLabel(peopleScopeFilter)}
-                        </span>
-                      </Space>
-                    </summary>
-                    <div className="secondary-disclosure-body">
-                      <PeopleFocusQueue
-                        people={filteredPeople}
-                        personalViews={data.personalViews}
-                        selectedLogin={selectedPersonalView?.login ?? null}
-                        scopeFilter={peopleScopeFilter}
-                        mode={peopleBoardUsesObserved ? "observed" : "watched"}
-                        onSelect={openPeopleBoardPerson}
-                        onMetricSelect={openPeopleBoardMetric}
-                      />
-                    </div>
-                  </details>
-                ) : null}
               </section>
             ) : null}
           </>
