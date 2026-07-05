@@ -74,6 +74,7 @@ import {
   syncRateLimitSummary,
   syncHealthCursorText,
   teamCriticalFlowCommandSummary,
+  teamOwnerGapDefaultScope,
   teamPeopleFocusDefaultScope,
   teamPrimaryFocus,
   testingIssueEvidenceGapSummary,
@@ -302,6 +303,12 @@ describe("dashboard hash filters", () => {
         triagePeople: 0
       })
     ).toBe("all");
+  });
+
+  it("opens the full owner-gap board so the clicked count matches the result", () => {
+    expect(teamOwnerGapDefaultScope({ unownedCriticalIssues: 3, nonWatchedCriticalIssues: 4 })).toBe("owner_gap");
+    expect(teamOwnerGapDefaultScope({ unownedCriticalIssues: 0, nonWatchedCriticalIssues: 4 })).toBe("owner_gap");
+    expect(teamOwnerGapDefaultScope({ unownedCriticalIssues: 0, nonWatchedCriticalIssues: 0 })).toBe("all");
   });
 
   it("round-trips issue board filters for shareable drilldown links", () => {

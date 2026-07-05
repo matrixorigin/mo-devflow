@@ -4763,6 +4763,7 @@ function TeamRotationOverview({
     fallback();
   };
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
+  const ownerGapIssues = data.counts.unownedCriticalIssues + data.counts.nonWatchedCriticalIssues;
   const triageSnapshot = teamTriageSnapshot(data);
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
@@ -4846,6 +4847,17 @@ function TeamRotationOverview({
             >
               {data.counts.attentionPrs} PR attention
             </button>
+            {ownerGapIssues > 0 ? (
+              <button
+                type="button"
+                className="inline-filter-chip inline-filter-chip-red"
+                onClick={() =>
+                  onOpenIssuesFilter({ ai: "all", scope: teamOwnerGapDefaultScope(data.counts), owner: "all" })
+                }
+              >
+                {ownerGapIssues} owner gaps
+              </button>
+            ) : null}
           </Space>
         </div>
         <TeamOperationsSummary
@@ -5372,6 +5384,12 @@ export function teamPeopleFocusDefaultScope(summary: TeamPeopleFocusSummary): Pe
     return "triage";
   }
   return "all";
+}
+
+export function teamOwnerGapDefaultScope(
+  counts: Pick<DashboardSummary["counts"], "unownedCriticalIssues" | "nonWatchedCriticalIssues">
+): CriticalIssueScopeFilter {
+  return counts.unownedCriticalIssues + counts.nonWatchedCriticalIssues > 0 ? "owner_gap" : "all";
 }
 
 function TeamOpsSummaryTile({
