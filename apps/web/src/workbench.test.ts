@@ -1428,6 +1428,7 @@ function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: n
     ruleKey: input.ruleKey ?? "critical_no_human_action",
     objectType: input.objectType ?? "issue",
     objectNumber: input.objectNumber ?? 42,
+    dashboardUrl: input.dashboardUrl ?? "http://localhost:5173/#issues?issue=42",
     recipientScope: input.recipientScope ?? "mapped_employee",
     channel: input.channel ?? "wecom",
     status: input.status ?? "sent",

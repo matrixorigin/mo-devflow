@@ -403,6 +403,7 @@ const schemaStatements = [
     rule_key VARCHAR(128),
     object_type VARCHAR(64),
     object_number INT,
+    dashboard_url TEXT NOT NULL,
     dedupe_key VARCHAR(512),
     channel VARCHAR(64) NOT NULL,
     recipient VARCHAR(255) NOT NULL,
@@ -555,6 +556,17 @@ const migrations: SchemaMigration[] = [
         connection,
         "CREATE INDEX idx_issue_timeline_events_repo_assignee ON issue_timeline_events(repo_id, assignee_login, occurred_at)"
       );
+    }
+  },
+  {
+    version: "0008",
+    name: "notification_delivery_dashboard_url",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("notification_deliveries")) {
+        await connection.query("ALTER TABLE notification_deliveries ADD COLUMN dashboard_url TEXT");
+        await connection.query("UPDATE notification_deliveries SET dashboard_url = '' WHERE dashboard_url IS NULL");
+        await connection.query("ALTER TABLE notification_deliveries MODIFY COLUMN dashboard_url TEXT NOT NULL");
+      }
     }
   }
 ];

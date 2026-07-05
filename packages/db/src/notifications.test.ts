@@ -76,14 +76,17 @@ describe("daily digest notification candidates", () => {
   });
 
   test("builds dashboard deep links for notification candidates", () => {
-    expect(notificationDashboardUrl("https://devflow.example.com", "workflow_violation", "issue")).toBe(
-      "https://devflow.example.com/#violations"
+    expect(notificationDashboardUrl("https://devflow.example.com", "workflow_violation", "issue", 24413, 7)).toBe(
+      "https://devflow.example.com/#violations?source_id=7&object_type=issue&object_number=24413"
     );
-    expect(notificationDashboardUrl("https://devflow.example.com", "ai_drift_signal", "pull_request")).toBe(
-      "https://devflow.example.com/#drift"
+    expect(notificationDashboardUrl("https://devflow.example.com", "ai_drift_signal", "pull_request", 24994, 9)).toBe(
+      "https://devflow.example.com/#drift?source_id=9&object_type=pull_request&object_number=24994"
     );
-    expect(notificationDashboardUrl("https://devflow.example.com", "attention_item", "pull_request")).toBe(
-      "https://devflow.example.com/#prs"
+    expect(notificationDashboardUrl("https://devflow.example.com", "attention_item", "pull_request", 24994)).toBe(
+      "https://devflow.example.com/#prs?pr=24994"
+    );
+    expect(notificationDashboardUrl("https://devflow.example.com", "attention_item", "issue", 24413)).toBe(
+      "https://devflow.example.com/#issues?issue=24413"
     );
     expect(notificationDashboardUrl("https://devflow.example.com", "daily_digest", "digest")).toBe(
       "https://devflow.example.com/#analytics"
@@ -252,7 +255,7 @@ describe("notification acknowledgement health", () => {
       ruleKey: "critical_no_human_action",
       objectType: "issue",
       objectNumber: 24413,
-      dashboardUrl: "https://devflow.example.com/#overview",
+      dashboardUrl: "https://devflow.example.com/#issues?issue=24413",
       htmlUrl: "https://github.com/matrixorigin/matrixone/issues/24413",
       relatedLogin: "alice",
       evidenceSummary: "Active s-1/s0 issue #24413 has no recent human action.",
@@ -270,7 +273,7 @@ describe("notification acknowledgement health", () => {
       objectType: "issue",
       objectNumber: 24413,
       title: "Escalation: issue #24413",
-      dashboardUrl: "https://devflow.example.com/#overview",
+      dashboardUrl: "https://devflow.example.com/#issues?issue=24413",
       relatedLogin: "alice",
       recipient: "maintainer_group",
       dedupeKey: "notification:attention_item_escalation:42:critical_no_human_action"

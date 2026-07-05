@@ -67,21 +67,46 @@ export function notificationDashboardBaseUrlFromEnv(env: Record<string, string |
 export function notificationDashboardUrl(
   baseUrl: string,
   sourceType: NotificationSourceType,
-  objectType: string
+  objectType: string,
+  objectNumber: number | null = null,
+  sourceId: number | null = null
 ): string {
+  const urlForHash = (view: string, params: Record<string, string | number | null | undefined> = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== null && value !== undefined && String(value).length > 0) {
+        query.set(key, String(value));
+      }
+    }
+    const queryText = query.toString();
+    return `${baseUrl}/#${view}${queryText ? `?${queryText}` : ""}`;
+  };
+
   switch (sourceType) {
     case "workflow_violation":
-      return `${baseUrl}/#violations`;
+      return urlForHash("violations", {
+        source_id: sourceId,
+        object_type: objectType,
+        object_number: objectNumber
+      });
     case "ai_drift_signal":
-      return `${baseUrl}/#drift`;
+      return urlForHash("drift", {
+        source_id: sourceId,
+        object_type: objectType,
+        object_number: objectNumber
+      });
     case "attention_item":
-      return objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`;
+      if (objectType === "pull_request") {
+        return urlForHash("prs", { pr: objectNumber });
+      }
+      if (objectType === "issue") {
+        return urlForHash("issues", { issue: objectNumber });
+      }
+      return urlForHash("overview");
     case "daily_digest":
-      return `${baseUrl}/#analytics`;
     case "weekly_digest":
-      return `${baseUrl}/#analytics`;
     case "monthly_digest":
-      return `${baseUrl}/#analytics`;
+      return urlForHash("analytics");
   }
 }
 
@@ -785,7 +810,13 @@ export async function listNotificationCandidates(
         objectNumber,
         title: asString(row.title),
         htmlUrl: asString(row.html_url),
-        dashboardUrl: notificationDashboardUrl(dashboardBaseUrl, "workflow_violation", asString(row.object_type)),
+        dashboardUrl: notificationDashboardUrl(
+          dashboardBaseUrl,
+          "workflow_violation",
+          asString(row.object_type),
+          objectNumber,
+          asNumber(row.id)
+        ),
         relatedLogin,
         recipient: notificationRecipient(profile, relatedLogin),
         dedupeKey: `notification:workflow_violation:${asNumber(row.id)}:${asString(row.rule_key)}`,
@@ -822,7 +853,13 @@ export async function listNotificationCandidates(
         objectNumber,
         title: asString(row.title),
         htmlUrl: asString(row.html_url),
-        dashboardUrl: notificationDashboardUrl(dashboardBaseUrl, "ai_drift_signal", asString(row.object_type)),
+        dashboardUrl: notificationDashboardUrl(
+          dashboardBaseUrl,
+          "ai_drift_signal",
+          asString(row.object_type),
+          objectNumber,
+          asNumber(row.id)
+        ),
         relatedLogin: ownerLogin,
         recipient: notificationRecipient(profile, ownerLogin),
         dedupeKey: `notification:ai_drift_signal:${asNumber(row.id)}:${asString(row.rule_key)}`,
@@ -914,9 +951,9 @@ export async function recordNotificationDelivery(input: {
   await getPool().execute(
     `INSERT INTO notification_deliveries(
       repo_id, attention_item_id, source_type, source_id, rule_key, object_type, object_number,
-      dedupe_key, channel, recipient, status, dry_run, payload_json,
+      dashboard_url, dedupe_key, channel, recipient, status, dry_run, payload_json,
       provider_response, error_message, attempted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.repoId,
       input.candidate.sourceType === "attention_item" ? input.candidate.sourceId : null,
@@ -925,6 +962,7 @@ export async function recordNotificationDelivery(input: {
       input.candidate.ruleKey,
       input.candidate.objectType,
       input.candidate.objectNumber,
+      input.candidate.dashboardUrl,
       input.candidate.dedupeKey,
       input.channel,
       input.candidate.recipient,
@@ -1010,6 +1048,7 @@ export async function requestNotificationDeliveryRetry(input: {
     asString(delivery.rule_key),
     asString(delivery.object_type),
     delivery.object_number === null || delivery.object_number === undefined ? null : asNumber(delivery.object_number),
+    asString(delivery.dashboard_url),
     asString(delivery.dedupe_key),
     asString(delivery.channel),
     asString(delivery.recipient),
@@ -1019,9 +1058,9 @@ export async function requestNotificationDeliveryRetry(input: {
   const [result] = await getPool().execute<ResultSetHeader>(
     `INSERT INTO notification_deliveries(
       repo_id, attention_item_id, source_type, source_id, rule_key, object_type, object_number,
-      dedupe_key, channel, recipient, status, dry_run, payload_json,
+      dashboard_url, dedupe_key, channel, recipient, status, dry_run, payload_json,
       provider_response, error_message, attempted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retry_requested', 0, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retry_requested', 0, NULL, NULL, ?, ?)`,
     retryInsertValues
   );
 
@@ -1192,6 +1231,7 @@ export async function getNotificationHealth(input: {
     ruleKey: asString(row.rule_key),
     objectType: asString(row.object_type),
     objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
+    dashboardUrl: asString(row.dashboard_url),
     recipientScope: notificationRecipientScope(input.profile, row.recipient),
     channel: asString(row.channel),
     status: asString(row.status) as NotificationDeliveryView["status"],

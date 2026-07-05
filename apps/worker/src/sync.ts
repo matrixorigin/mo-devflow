@@ -275,8 +275,8 @@ function notificationCooldownHours(candidate: NotificationCandidate, defaultCool
   return defaultCooldownHours;
 }
 
-function attentionDashboardUrl(objectType: "issue" | "pull_request"): string {
-  return notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "attention_item", objectType);
+function attentionDashboardUrl(objectType: "issue" | "pull_request", objectNumber: number): string {
+  return notificationDashboardUrl(notificationDashboardBaseUrlFromEnv(), "attention_item", objectType, objectNumber);
 }
 
 function webhookLimitFromEnv(): number {
@@ -613,7 +613,7 @@ async function upsertPullRequestFromWebhook(input: {
       targetRecipient: cachedPr.ownerLogin,
       dedupeKey,
       evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete),
-      dashboardUrl: attentionDashboardUrl("pull_request")
+      dashboardUrl: attentionDashboardUrl("pull_request", cachedPr.number)
     });
   }
   await resolveStaleAttentionItems({
@@ -1095,7 +1095,7 @@ export async function processWebhookPayload(input: {
         targetRecipient: issue.ownerLogin,
         dedupeKey,
         evidenceSummary: issueEvidence(flag, issue),
-        dashboardUrl: attentionDashboardUrl("issue")
+        dashboardUrl: attentionDashboardUrl("issue", issue.number)
       });
     }
     await resolveStaleAttentionItems({
@@ -1157,7 +1157,7 @@ export async function processWebhookPayload(input: {
         targetRecipient: issue.ownerLogin,
         dedupeKey,
         evidenceSummary: issueEvidence(flag, issueWithComments),
-        dashboardUrl: attentionDashboardUrl("issue")
+        dashboardUrl: attentionDashboardUrl("issue", issue.number)
       });
     }
     await resolveStaleAttentionItems({
@@ -1378,7 +1378,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           targetRecipient: issue.ownerLogin,
           dedupeKey,
           evidenceSummary: issueEvidence(flag, issueWithComments),
-          dashboardUrl: attentionDashboardUrl("issue")
+          dashboardUrl: attentionDashboardUrl("issue", issue.number)
         });
       }
       resolvedAttentionItems += await resolveStaleAttentionItems({
@@ -1453,7 +1453,7 @@ export async function syncGitHubSnapshotOnce(): Promise<SyncResult> {
           targetRecipient: cachedPr.ownerLogin,
           dedupeKey,
           evidenceSummary: prEvidence(flag, cachedPr.number, cachedPr.isComplete),
-          dashboardUrl: attentionDashboardUrl("pull_request")
+          dashboardUrl: attentionDashboardUrl("pull_request", cachedPr.number)
         });
       }
       resolvedAttentionItems += await resolveStaleAttentionItems({

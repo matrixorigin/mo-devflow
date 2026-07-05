@@ -14,8 +14,8 @@ const mocks = vi.hoisted(() => ({
   loadEnv: vi.fn(),
   loadRepoProfile: vi.fn(),
   notificationDashboardBaseUrlFromEnv: vi.fn(() => "http://localhost:5173"),
-  notificationDashboardUrl: vi.fn((baseUrl: string, _sourceType: string, objectType: string) =>
-    objectType === "pull_request" ? `${baseUrl}/#prs` : `${baseUrl}/#overview`
+  notificationDashboardUrl: vi.fn((baseUrl: string, _sourceType: string, objectType: string, objectNumber?: number) =>
+    objectType === "pull_request" ? `${baseUrl}/#prs?pr=${objectNumber}` : `${baseUrl}/#issues?issue=${objectNumber}`
   ),
   recordSyncRun: vi.fn(),
   replaceIssueComments: vi.fn(),
@@ -370,7 +370,7 @@ describe("webhook review processing", () => {
         targetRecipient: "alice",
         dedupeKey: "matrixorigin/matrixone:pr:42:requested_changes",
         evidenceSummary: "PR #42 has unresolved requested changes.",
-        dashboardUrl: "http://localhost:5173/#prs"
+        dashboardUrl: "http://localhost:5173/#prs?pr=42"
       })
     );
     expect(mocks.resolveStaleAttentionItems).toHaveBeenCalledWith(
@@ -462,7 +462,7 @@ describe("webhook review processing", () => {
         targetRecipient: "bob",
         dedupeKey: "matrixorigin/matrixone:pr:43:ci_failed",
         evidenceSummary: "PR #43 has failing CI checks.",
-        dashboardUrl: "http://localhost:5173/#prs"
+        dashboardUrl: "http://localhost:5173/#prs?pr=43"
       })
     );
   });

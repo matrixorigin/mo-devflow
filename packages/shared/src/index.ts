@@ -800,6 +800,7 @@ export interface NotificationDeliveryView {
   ruleKey: string;
   objectType: string;
   objectNumber: number | null;
+  dashboardUrl: string;
   recipientScope: NotificationRecipientScope;
   channel: string;
   status: NotificationStatus;

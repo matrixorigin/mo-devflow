@@ -22,6 +22,7 @@ describe("schema contract", () => {
     expect(expected.get("issue_timeline_events")).toContain("assignee_login");
     expect(expected.get("issue_timeline_syncs")).toContain("is_complete");
     expect(expected.get("notification_deliveries")).toContain("payload_json");
+    expect(expected.get("notification_deliveries")).toContain("dashboard_url");
     expect(expected.get("workflow_violations")).toContain("fixable");
     expect(expected.get("user_github_tokens")).toContain("repo_permission");
     expect(expected.get("daily_metrics")).toContain("active_critical_issues");
@@ -41,6 +42,10 @@ describe("schema contract", () => {
     expect(specs.get("notification_deliveries")?.get("payload_json")).toEqual({
       columnType: "TEXT",
       nullable: true
+    });
+    expect(specs.get("notification_deliveries")?.get("dashboard_url")).toEqual({
+      columnType: "TEXT",
+      nullable: false
     });
     expect(specs.get("user_github_tokens")?.get("repo_permission")).toEqual({
       columnType: "VARCHAR(64)",

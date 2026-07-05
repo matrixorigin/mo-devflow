@@ -288,6 +288,31 @@ function selectedPersonFromHash(hash: string): string | null {
   return person && person.length > 0 ? person : null;
 }
 
+type DashboardObjectTarget =
+  { objectType: "issue"; objectNumber: number } | { objectType: "pull_request"; objectNumber: number };
+
+function positiveHashNumberParam(params: URLSearchParams, key: string): number | null {
+  const raw = params.get(key)?.trim();
+  if (!raw) {
+    return null;
+  }
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function dashboardObjectTargetFromHash(hash: string): DashboardObjectTarget | null {
+  const params = dashboardHashParams(hash);
+  const issueNumber = positiveHashNumberParam(params, "issue");
+  if (issueNumber) {
+    return { objectType: "issue", objectNumber: issueNumber };
+  }
+  const pullRequestNumber = positiveHashNumberParam(params, "pr");
+  if (pullRequestNumber) {
+    return { objectType: "pull_request", objectNumber: pullRequestNumber };
+  }
+  return null;
+}
+
 function dashboardHashForView(view: DashboardView, personLogin?: string | null): string {
   const base = view.toLowerCase();
   if (view !== "Personal" || !personLogin) {
@@ -11051,6 +11076,7 @@ export default function App() {
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [error, setError] = useState<DashboardLoadError | null>(null);
   const [view, setView] = useState<DashboardView>(initialDashboardView);
+  const [currentHash, setCurrentHash] = useState(() => (typeof window === "undefined" ? "" : window.location.hash));
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSaving, setTokenSaving] = useState(false);
@@ -11095,6 +11121,7 @@ export default function App() {
   const [notificationTestSaving, setNotificationTestSaving] = useState(false);
   const [notificationTestResult, setNotificationTestResult] = useState<NotificationTestResult | null>(null);
   const dashboardRefreshInFlight = useRef(false);
+  const openedDashboardObjectTargetRef = useRef<string | null>(null);
   const latestDataRef = useRef<DashboardSummary | null>(null);
   const dashboardReadModelRef = useRef<DashboardReadModelMeta | null>(null);
   const criticalIssuesByPr = useMemo(
@@ -11112,6 +11139,44 @@ export default function App() {
   useEffect(() => {
     dashboardReadModelRef.current = dashboardReadModel;
   }, [dashboardReadModel]);
+
+  useEffect(() => {
+    if (!data || typeof window === "undefined") {
+      return;
+    }
+    const target = dashboardObjectTargetFromHash(currentHash);
+    if (!target) {
+      openedDashboardObjectTargetRef.current = null;
+      return;
+    }
+    const targetKey = `${target.objectType}:${target.objectNumber}`;
+    if (openedDashboardObjectTargetRef.current === targetKey) {
+      return;
+    }
+    openedDashboardObjectTargetRef.current = targetKey;
+
+    if (target.objectType === "issue") {
+      setView("Issues");
+      setCriticalIssueScopeFilter("all");
+      const issue = data.criticalIssues.find((item) => item.number === target.objectNumber);
+      if (issue) {
+        setWorkObjectPreview({ objectType: "issue", issue });
+      }
+      return;
+    }
+
+    setView("PRs");
+    setPrScopeFilter("all");
+    setPrBoardTab("rotation");
+    const pr = data.pendingPrs.find((item) => item.number === target.objectNumber);
+    if (pr) {
+      setWorkObjectPreview({
+        objectType: "pull_request",
+        pr,
+        activeIssues: criticalIssuesByPr.get(pr.number) ?? []
+      });
+    }
+  }, [criticalIssuesByPr, currentHash, data]);
 
   useEffect(() => {
     if (tokenRetryUntil === null) {
@@ -11291,6 +11356,7 @@ export default function App() {
     if (window.location.hash !== nextHash) {
       window.history.replaceState(null, "", nextHash);
     }
+    setCurrentHash(nextHash);
   }
 
   function selectView(nextView: DashboardView, personLogin: string | null = selectedPerson) {
@@ -11654,10 +11720,12 @@ export default function App() {
 
   useEffect(() => {
     const syncViewFromHash = () => {
-      const nextView = dashboardViewFromHash(window.location.hash);
+      const nextHash = window.location.hash;
+      setCurrentHash(nextHash);
+      const nextView = dashboardViewFromHash(nextHash);
       setView(nextView);
       if (nextView === "Personal") {
-        setSelectedPerson(selectedPersonFromHash(window.location.hash));
+        setSelectedPerson(selectedPersonFromHash(nextHash));
       }
     };
     window.addEventListener("hashchange", syncViewFromHash);
@@ -12242,14 +12310,33 @@ export default function App() {
       },
       {
         title: "Object",
-        width: 120,
+        width: 190,
         render: (_, delivery) =>
           delivery.objectNumber ? (
-            <Text>
-              {labelText(delivery.objectType)} #{delivery.objectNumber}
-            </Text>
+            <Space size={6} wrap>
+              <Text>
+                {labelText(delivery.objectType)} #{delivery.objectNumber}
+              </Text>
+              <Button
+                href={delivery.dashboardUrl}
+                icon={<ExternalLink size={13} />}
+                size="small"
+                type="link"
+                disabled={!delivery.dashboardUrl}
+              >
+                Dashboard
+              </Button>
+            </Space>
           ) : (
-            <Text type="secondary">-</Text>
+            <Button
+              href={delivery.dashboardUrl}
+              icon={<ExternalLink size={13} />}
+              size="small"
+              type="link"
+              disabled={!delivery.dashboardUrl}
+            >
+              Dashboard
+            </Button>
           )
       },
       {
