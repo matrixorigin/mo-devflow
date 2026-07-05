@@ -48,6 +48,7 @@ import {
   prScopeFilterFromHash,
   prScopeLabel,
   prSortFromHash,
+  retryLaterErrorMessage,
   serviceReadTokenStatusText,
   sortPersonalPrList,
   syncHealthCursorText,
@@ -86,6 +87,15 @@ describe("dashboard hash filters", () => {
       "2 issues / 1 PR hidden; visible: anonymous-readable, logged-in-readable, current user's token-only"
     );
     expect(dashboardVisibilityClassLabel("admin_only")).toBe("admin-only");
+  });
+
+  it("formats retry-after feedback for rate-limited actions", () => {
+    expect(retryLaterErrorMessage("Too many manual refresh requests.", 65)).toBe(
+      "Too many manual refresh requests. Try again in 1m 5s."
+    );
+    expect(retryLaterErrorMessage("Retry failed webhooks later.", 6.2)).toBe(
+      "Retry failed webhooks later. Try again in 7s."
+    );
   });
 
   it("round-trips issue board filters for shareable drilldown links", () => {

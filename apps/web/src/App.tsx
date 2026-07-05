@@ -1595,6 +1595,10 @@ function retryDelayText(seconds: number): string {
   return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
 }
 
+export function retryLaterErrorMessage(message: string, seconds: number): string {
+  return `${message} Try again in ${retryDelayText(seconds)}.`;
+}
+
 function workloadStatusColor(status: WorkloadStatus): string {
   if (status === "critical") {
     return "red";
@@ -19940,7 +19944,7 @@ export default function App() {
     } catch (err) {
       if (err instanceof ApiResponseError && err.retryAfterSeconds) {
         setTokenRetryUntil(Date.now() + err.retryAfterSeconds * 1000);
-        setTokenError(`${err.message} Try again in ${retryDelayText(err.retryAfterSeconds)}.`);
+        setTokenError(retryLaterErrorMessage(err.message, err.retryAfterSeconds));
       } else {
         setTokenError(displayError(err));
       }
@@ -20459,13 +20463,17 @@ export default function App() {
         body: JSON.stringify({ layers: normalizedLayers })
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setManualRefreshResult((await response.json()) as ManualRefreshResult);
       setManualRefreshModalOpen(false);
       startRefreshWatch();
     } catch (err) {
-      setManualRefreshError(displayError(err));
+      if (err instanceof ApiResponseError && err.retryAfterSeconds) {
+        setManualRefreshError(retryLaterErrorMessage(err.message, err.retryAfterSeconds));
+      } else {
+        setManualRefreshError(displayError(err));
+      }
     } finally {
       setManualRefreshSaving(false);
     }
@@ -20490,7 +20498,7 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       const result = (await response.json()) as WebhookRetryResult;
       setWebhookRetryResult(result);
@@ -20501,7 +20509,11 @@ export default function App() {
         void loadApiHealth({ silent: true });
       }
     } catch (err) {
-      setWebhookRetryError(displayError(err));
+      if (err instanceof ApiResponseError && err.retryAfterSeconds) {
+        setWebhookRetryError(retryLaterErrorMessage(err.message, err.retryAfterSeconds));
+      } else {
+        setWebhookRetryError(displayError(err));
+      }
       void loadSession();
     } finally {
       setWebhookRetrySaving(false);
