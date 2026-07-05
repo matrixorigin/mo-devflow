@@ -101,6 +101,7 @@ import {
   summarizeProductionReadiness,
   summarizeUpdatePipeline,
   summarizeWebhookReadiness,
+  webhookDeliveryBacklogNeedsRefreshWatch,
   type CacheEvidenceSummary,
   type FreshnessSummary,
   type ProductionReadinessGate,
@@ -16275,6 +16276,18 @@ export default function App() {
     const intervalId = window.setInterval(refreshIfVisible, dashboardRefreshWatchPollMs);
     return () => window.clearInterval(intervalId);
   }, [refreshWatchUntil]);
+
+  useEffect(() => {
+    if (!data || !webhookDeliveryBacklogNeedsRefreshWatch(data)) {
+      return;
+    }
+    setRefreshWatchUntil((current) => Math.max(current ?? 0, Date.now() + dashboardRefreshWatchMs));
+  }, [
+    data?.sync.generatedAt,
+    data?.webhooks.failedDeliveries,
+    data?.webhooks.normalizationFailedDeliveries,
+    data?.webhooks.pendingDeliveries
+  ]);
 
   useEffect(() => {
     const syncViewFromHash = () => {

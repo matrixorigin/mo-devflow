@@ -166,6 +166,10 @@ function failedWebhookDeliveries(webhooks: DashboardSummary["webhooks"]): number
   return webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
 }
 
+export function webhookDeliveryBacklogNeedsRefreshWatch(input: Pick<DashboardSummary, "webhooks">): boolean {
+  return input.webhooks.pendingDeliveries > 0 || failedWebhookDeliveries(input.webhooks) > 0;
+}
+
 function hasWebhookSecretWarning(profileWarnings: DashboardSummary["profileWarnings"]): boolean {
   return profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
 }

@@ -6,7 +6,8 @@ import {
   summarizeFreshness,
   summarizeProductionReadiness,
   summarizeUpdatePipeline,
-  summarizeWebhookReadiness
+  summarizeWebhookReadiness,
+  webhookDeliveryBacklogNeedsRefreshWatch
 } from "./freshness";
 
 function layer(input: Partial<SyncHealth> & Pick<SyncHealth, "layer">): SyncHealth {
@@ -427,6 +428,24 @@ describe("update pipeline summary", () => {
 });
 
 describe("webhook readiness summary", () => {
+  test("marks pending and failed webhook deliveries as refresh-watch backlog", () => {
+    expect(
+      webhookDeliveryBacklogNeedsRefreshWatch({
+        webhooks: webhooks({ pendingDeliveries: 1 })
+      })
+    ).toBe(true);
+    expect(
+      webhookDeliveryBacklogNeedsRefreshWatch({
+        webhooks: webhooks({ normalizationFailedDeliveries: 1 })
+      })
+    ).toBe(true);
+    expect(
+      webhookDeliveryBacklogNeedsRefreshWatch({
+        webhooks: webhooks({ processedDeliveries: 3 })
+      })
+    ).toBe(false);
+  });
+
   test("reports polling-only mode when the webhook secret is missing", () => {
     const summary = summarizeWebhookReadiness({
       profileWarnings: webhookWarning(),
