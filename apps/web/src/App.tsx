@@ -2480,7 +2480,7 @@ function teamCommandActions({
       tone: "attention",
       actionLabel: "Open testing",
       priority: 860,
-      onClick: () => onOpenPrsFilter("testing")
+      onClick: () => onOpenPrsFilter("stale_testing")
     });
   }
   if (criticalPeople.length > 0) {
@@ -2641,7 +2641,7 @@ function TeamFlowRiskStrip({
         detail={`${data.testing.queueIssues} issues in test | max ${optionalHours(maxTestingIssueAge(data.testing.issues))}`}
         tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
         action="Open test queue"
-        onClick={() => onNavigate("PRs")}
+        onClick={() => onOpenPrsFilter("stale_testing")}
       />
       <TeamFlowRiskCard
         label="Data risk"
@@ -10965,6 +10965,13 @@ export default function App() {
   function openPrsWithFilter(scope: PrScopeFilter) {
     setPrScopeFilter(scope);
     setPrBoardTab(prBoardTabForScope(scope));
+    if (scope === "stale_testing") {
+      setTestingIssueQueueFilter("stale");
+    } else if (scope === "testing_evidence_gap") {
+      setTestingIssueQueueFilter("data_gap");
+    } else if (scope === "testing") {
+      setTestingIssueQueueFilter("all");
+    }
     selectView("PRs");
   }
 
