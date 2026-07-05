@@ -13,7 +13,9 @@ import {
   peopleSortFromHash,
   pagedRangeLabel,
   personalActionQueueDisclosureSummary,
+  personalCriticalFlowEfficiency,
   personalFlowThreadsSummary,
+  personalPrThroughputRows,
   personalDrilldownFilterFromHash,
   prBoardTabFromHash,
   prRotationTableSummary,
@@ -193,7 +195,7 @@ describe("dashboard hash filters", () => {
   });
 
   it("describes PR issue-link scopes without implying incomplete evidence is a confirmed missing issue", () => {
-    expect(prScopeLabel("no_issue")).toBe("no visible issue after sync");
+    expect(prScopeLabel("no_issue")).toBe("no linked issue in cache");
     expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
     expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
     expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
@@ -224,7 +226,7 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("workload")).toBe("workload");
     expect(peopleSortLabel("active")).toBe("active issues");
     expect(peopleSortLabel("pr_age")).toBe("PR age");
-    expect(peopleSortLabel("testing_wait")).toBe("issue test wait");
+    expect(peopleSortLabel("testing_wait")).toBe("testing wait");
   });
 
   it("summarizes personal flow thread evidence compactly", () => {
@@ -247,6 +249,112 @@ describe("dashboard hash filters", () => {
         testing: 1,
         needs_link: 3
       })
-    ).toBe("8 objects | 2 s-1/s0 | 1 PR blocker | 1 issue test | 3 link gaps");
+    ).toBe("8 objects | 2 s-1/s0 | 1 PR blocker | 1 testing issue | 3 link gaps");
+  });
+
+  it("summarizes personal PR throughput for day, week, and month", () => {
+    const rows = personalPrThroughputRows({
+      analytics: [
+        metricPoint({ date: "2026-07-03", prsCreated: 1, prsMerged: 0 }),
+        metricPoint({ date: "2026-07-04", prsCreated: 3, prsMerged: 2, averagePendingPrAgeHours: 18 })
+      ],
+      analyticsWeekly: [
+        {
+          ...metricPoint({ date: "2026-07-05", prsCreated: 9, prsMerged: 7 }),
+          period: "week",
+          periodStart: "2026-06-29",
+          periodEnd: "2026-07-05",
+          label: "Jun 29-Jul 5"
+        }
+      ],
+      analyticsMonthly: [
+        {
+          ...metricPoint({ date: "2026-07-31", prsCreated: 24, prsMerged: 20 }),
+          period: "month",
+          periodStart: "2026-07-01",
+          periodEnd: "2026-07-31",
+          label: "Jul 2026"
+        }
+      ]
+    });
+
+    expect(rows.map((row) => `${row.period}:${row.prsCreated}/${row.prsMerged}`)).toEqual([
+      "day:3/2",
+      "week:9/7",
+      "month:24/20"
+    ]);
+    expect(rows[0]?.averagePendingPrAgeHours).toBe(18);
+  });
+
+  it("derives active severity to PR and issue testing efficiency from cache timestamps", () => {
+    const flow = personalCriticalFlowEfficiency({
+      activeCriticalIssues: [
+        {
+          number: 10,
+          severity: "severity/s0",
+          aiEffortLabel: null,
+          criticalAgeHours: 48,
+          linkedPullRequests: [
+            {
+              ageHours: 30,
+              testingQueueAgeHours: 6,
+              testingState: "testing"
+            }
+          ]
+        },
+        {
+          number: 11,
+          severity: "severity/s-1",
+          aiEffortLabel: "ai-heavy",
+          criticalAgeHours: 12,
+          linkedPullRequests: []
+        }
+      ]
+    } as any);
+
+    expect(flow).toMatchObject({
+      activeIssues: 2,
+      issuesWithPr: 1,
+      issuesInTesting: 1,
+      averageActiveToFirstPrHours: 18,
+      averageActiveToTestingHours: 42
+    });
+    expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
   });
 });
+
+function metricPoint(input: {
+  date?: string;
+  prsCreated?: number;
+  prsMerged?: number;
+  averagePendingPrAgeHours?: number | null;
+}) {
+  return {
+    date: input.date ?? "2026-07-04",
+    scopeType: "person",
+    scopeKey: "alice",
+    prsCreated: input.prsCreated ?? 0,
+    prsMerged: input.prsMerged ?? 0,
+    issuesOpened: 0,
+    issuesClosed: 0,
+    issuesDeferred: 0,
+    workflowViolationsDetected: 0,
+    activeCriticalIssues: 0,
+    averageActiveCriticalIssueAgeHours: null,
+    needsTriageIssues: 0,
+    averageNeedsTriageIssueAgeHours: null,
+    deferredIssues: 0,
+    averageDeferredIssueAgeHours: null,
+    pendingPrs: 0,
+    averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
+    attentionPrs: 0,
+    ciFailedPrs: 0,
+    requestedChangePrs: 0,
+    reviewWaitingPrs: 0,
+    mergeConflictPrs: 0,
+    testingQueuePrs: 0,
+    averageTestingQueueAgeHours: null,
+    sourceCompleteness: "complete_cache",
+    generatedAt: "2026-07-05T00:00:00Z"
+  } as const;
+}

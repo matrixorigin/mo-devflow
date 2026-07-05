@@ -610,14 +610,14 @@ describe("work item attention reasons", () => {
       "Changes requested",
       "CI failed",
       "Merge conflict",
-      "Issue test changes requested"
+      "Issue testing changes requested"
     ]);
   });
 
   it("labels issue-scoped testing states without PR-side handoff concepts", () => {
     expect(testingStateBusinessLabel("testing")).toBe("issue in test");
     expect(testingStateBusinessLabel("test_changes_requested")).toBe("tester feedback");
-    expect(testingStateBusinessLabel("not_ready")).toBe("not in issue test");
+    expect(testingStateBusinessLabel("not_ready")).toBe("not in issue testing");
     expect(testingStateHelpText("testing")).toContain("PR reviewer or assignee is not used");
   });
 
@@ -1122,8 +1122,8 @@ describe("personal activity feed", () => {
     expect(items.map((item) => `${item.id}:${item.phase}`)).toEqual(["pull_request:20:PR attention"]);
     expect(items[0]?.reasons).toEqual([
       "CI failed",
-      "Linked issue test wait visible",
-      "Also linked issue test evidence",
+      "Linked issue testing wait visible",
+      "Also linked issue in testing",
       "Also pending PR",
       "Also created yesterday"
     ]);
@@ -1204,11 +1204,11 @@ describe("personal activity feed", () => {
       "pull_request:22"
     ]);
     expect(items.find((item) => item.id === "pull_request:21")).toMatchObject({
-      phase: "Linked issue test evidence",
-      reasons: ["Linked issue test wait visible", "Also pending PR"]
+      phase: "Linked issue in testing",
+      reasons: ["Linked issue testing wait visible", "Also pending PR"]
     });
     expect(personalActivityNextAction(items.find((item) => item.id === "pull_request:21")!)).toBe(
-      "Check linked issue test status"
+      "Check linked issue testing status"
     );
   });
 
@@ -1231,7 +1231,7 @@ describe("personal activity feed", () => {
     expect(personalActivityNextAction(items[0]!)).toBe("Link the tested PR");
   });
 
-  it("asks for issue test status after a linked testing issue waits too long", () => {
+  it("asks for issue testing status after a linked testing issue waits too long", () => {
     const items = personalActivityItems(
       personalView({
         testingIssues: [
@@ -1244,7 +1244,7 @@ describe("personal activity feed", () => {
       })
     );
 
-    expect(personalActivityNextAction(items[0]!)).toBe("Check issue test status");
+    expect(personalActivityNextAction(items[0]!)).toBe("Check issue testing status");
   });
 });
 
@@ -1523,7 +1523,7 @@ describe("personal gantt chart", () => {
       testingPrs: 1,
       unlinkedPrs: 0
     });
-    expect(flowThreadDurationWarnings(row)).toContain("issue test wait over 24h");
+    expect(flowThreadDurationWarnings(row)).toContain("issue testing wait over 24h");
     expect(personalFlowThreadMatchesFilter(row, "testing")).toBe(true);
   });
 

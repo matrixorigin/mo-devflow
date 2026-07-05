@@ -292,7 +292,13 @@ const prScopeFilters = [
 ] satisfies PrScopeFilter[];
 const prSorts = ["risk", "age", "last_action", "testing_wait", "number"] satisfies PrSort[];
 const prBoardTabs = ["rotation", "testing"] satisfies PrBoardTab[];
-const testingIssueQueueFilters = ["all", "stale", "attention", "unlinked", "data_gap"] satisfies TestingIssueQueueFilter[];
+const testingIssueQueueFilters = [
+  "all",
+  "stale",
+  "attention",
+  "unlinked",
+  "data_gap"
+] satisfies TestingIssueQueueFilter[];
 const peopleScopeFilterValues = [
   "all",
   "critical",
@@ -423,12 +429,7 @@ function selectedPersonFromHash(hash: string): string | null {
   return person && person.length > 0 ? person : null;
 }
 
-function hashEnumParam<T extends string>(
-  hash: string,
-  key: string,
-  allowedValues: readonly T[],
-  fallback: T
-): T {
+function hashEnumParam<T extends string>(hash: string, key: string, allowedValues: readonly T[], fallback: T): T {
   const value = dashboardHashParams(hash).get(key)?.trim();
   return value && (allowedValues as readonly string[]).includes(value) ? (value as T) : fallback;
 }
@@ -976,8 +977,7 @@ export function syncHealthCursorText(cursorValue: string | null): string | null 
     const prsComplete = parsed.openPullRequestsComplete === true;
     const completeness = issuesComplete && prsComplete ? "complete window" : "bounded window";
     const issueWatermark = parsed.issuesWatermarkReached === true ? "issues reached previous watermark" : null;
-    const prWatermark =
-      parsed.openPullRequestsWatermarkReached === true ? "open PRs reached previous watermark" : null;
+    const prWatermark = parsed.openPullRequestsWatermarkReached === true ? "open PRs reached previous watermark" : null;
     const closedPrWatermark =
       parsed.closedPullRequestsWatermarkReached === true ? "closed PRs reached previous watermark" : null;
     return [
@@ -1118,12 +1118,12 @@ function DashboardLoadErrorDescription({ error }: { error: DashboardLoadError })
     error.code === "dashboard_login_required"
       ? "This repository profile has disabled anonymous dashboard reads. Sign in with GitHub to view the cached workflow data allowed for your account."
       : error.code === "dashboard_query_failed"
-      ? "The API could not read the local MatrixOne cache. Check API health, API logs, and MO_DEVFLOW_DB_* configuration."
-      : error.status === 503
-        ? "The API is reachable but unhealthy. Open API health to inspect database, migration, worker, and queue status."
-        : error.status === null
-          ? "The browser could not complete the dashboard request. Check that the API process is running and the Vite proxy can reach it."
-          : "Open API health for the current runtime state, then retry after the service recovers.";
+        ? "The API could not read the local MatrixOne cache. Check API health, API logs, and MO_DEVFLOW_DB_* configuration."
+        : error.status === 503
+          ? "The API is reachable but unhealthy. Open API health to inspect database, migration, worker, and queue status."
+          : error.status === null
+            ? "The browser could not complete the dashboard request. Check that the API process is running and the Vite proxy can reach it."
+            : "Open API health for the current runtime state, then retry after the service recovers.";
 
   return (
     <Space orientation="vertical" size={4}>
@@ -1507,7 +1507,8 @@ function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
   if (!hasSavedPersonalToken(user)) {
     return {
       label: "writes disabled",
-      detail: "The account is logged in, but GitHub write actions are disabled until this user connects a personal token."
+      detail:
+        "The account is logged in, but GitHub write actions are disabled until this user connects a personal token."
     };
   }
   return {
@@ -1744,7 +1745,7 @@ function AccountControl({
             disabled={!githubOAuthConfigured}
             onClick={onSignIn}
           >
-            Sign in with GitHub
+            {githubOAuthConfigured ? "Sign in with GitHub" : "Sign-in setup missing"}
           </Button>
         </Tooltip>
         <Popover placement="bottomRight" trigger="click" content={content}>
@@ -1961,7 +1962,7 @@ function issueTestingStateLabel(state: TestingFlowState): string {
     return "tester feedback";
   }
   if (state === "test_passed") {
-    return "issue test passed";
+    return "issue testing passed";
   }
   if (state === "closed_or_merged") {
     return "issue closed or merged";
@@ -2996,10 +2997,10 @@ export function prScopeLabel(filter: PrScopeFilter): string {
     return "issue in test";
   }
   if (filter === "stale_testing") {
-    return "issue test wait";
+    return "testing wait";
   }
   if (filter === "testing_evidence_gap") {
-    return "issue test evidence gap";
+    return "issue testing cache pending";
   }
   if (filter === "ci_failed") {
     return "CI failed";
@@ -3011,13 +3012,13 @@ export function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no visible issue after sync";
+    return "no linked issue in cache";
   }
   if (filter === "issue_link_pending") {
     return "issue link sync pending";
   }
   if (filter === "evidence_pending") {
-    return "PR evidence incomplete";
+    return "PR cache pending";
   }
   if (filter === "no_action_24h") {
     return "no action 24h";
@@ -3027,16 +3028,16 @@ export function prScopeLabel(filter: PrScopeFilter): string {
 
 export function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "no_issue") {
-    return "PR detail and relationship sync completed, but no related issue is visible in cached relationship data or PR text. This is not the same as an incomplete issue-link sync.";
+    return "PR detail and relationship sync completed, but no related issue is visible in cached relationship data or PR text.";
   }
   if (filter === "issue_link_pending") {
-    return "These PRs are missing local issue-link evidence because PR detail or relationship sync is still incomplete. Do not treat them as unlinked yet.";
+    return "Issue-link sync is still incomplete for these PRs. Do not treat them as unlinked yet.";
   }
   if (filter === "evidence_pending") {
-    return "PR review, CI, merge, or issue link evidence is still incomplete for these rows.";
+    return "PR review, CI, merge, or issue-link cache is still incomplete for these rows.";
   }
   if (filter === "testing_evidence_gap") {
-    return "The linked issue appears to be in testing, but the PR-side cached evidence is incomplete or not synchronized yet.";
+    return "A linked issue is in testing, but the linked PR cache is incomplete or not synchronized yet.";
   }
   return null;
 }
@@ -3439,7 +3440,7 @@ export function peopleSortLabel(sort: PeopleBoardSort): string {
     return "triage";
   }
   if (sort === "testing_wait") {
-    return "issue test wait";
+    return "testing wait";
   }
   if (sort === "name") {
     return "name";
@@ -3491,7 +3492,7 @@ function personCardFocus(person: PersonSummary, personal: PersonalActionView | u
   if (person.activeCriticalIssues > 0) {
     return {
       title: "Drive active s-1/s0",
-      detail: `${person.activeCriticalIssues} issues, ${person.attentionPrs} PR blockers, ${testingWork} issue tests`,
+      detail: `${person.activeCriticalIssues} issues, ${person.attentionPrs} PR blockers, ${testingWork} testing issues`,
       metric: "active_issues",
       tone: "critical"
     };
@@ -3530,7 +3531,7 @@ function personCardFocus(person: PersonSummary, personal: PersonalActionView | u
   }
   if (testingWork > 0) {
     return {
-      title: "Track issue test result",
+      title: "Track issue testing result",
       detail: `${testingWork} issues assigned to testing`,
       metric: "testing",
       tone: "normal"
@@ -3743,15 +3744,15 @@ function PrFilterBar({
             { label: "All", value: "all" },
             { label: "Active issue", value: "active_issue" },
             { label: "Attention", value: "attention" },
-            { label: "Linked issue test", value: "testing" },
-            { label: "Linked issue wait", value: "stale_testing" },
-            { label: "Issue test evidence gap", value: "testing_evidence_gap" },
+            { label: "Issue in testing", value: "testing" },
+            { label: "Testing wait", value: "stale_testing" },
+            { label: "Testing cache pending", value: "testing_evidence_gap" },
             { label: "CI failed", value: "ci_failed" },
             { label: "Requested changes", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No visible issue after sync", value: "no_issue" },
+            { label: "No linked issue in cache", value: "no_issue" },
             { label: "Issue link sync pending", value: "issue_link_pending" },
-            { label: "PR evidence incomplete", value: "evidence_pending" },
+            { label: "PR cache pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -3964,10 +3965,10 @@ function TeamRotationOverview({
       <section className="team-command-panel">
         <div className="team-command-heading">
           <div>
-            <Title level={4}>Management Board</Title>
+            <Title level={4}>Team Board</Title>
             <Text type="secondary">
-              Active issue, PR, and testing rotation. Generated {formatDate(data.sync.generatedAt)} |{" "}
-              {data.repo.timezone}
+              Active s-1/s0, PR attention, issue testing, and people load. Generated {formatDate(data.sync.generatedAt)}{" "}
+              | {data.repo.timezone}
             </Text>
           </div>
           <Space size={[6, 6]} wrap>
@@ -4008,17 +4009,9 @@ function TeamRotationOverview({
           onOpenTestingIssueQueue={onOpenTestingIssueQueue}
           onOpenPeopleFilter={onOpenPeopleFilter}
         />
-        <TeamDataStatusStrip
-          data={data}
-          updatePipeline={updatePipeline}
-          productionReadiness={productionReadiness}
-          onNavigate={onNavigate}
-          onConnectToken={onConnectToken}
-        />
-        <TeamCommandQueue actions={commandActions} />
         <details className="team-evidence-disclosure">
           <summary>
-            <span>Detailed sync and access evidence</span>
+            <span>Setup, sync, and secondary checks</span>
             <Tag color={productionReadiness.blockers.length > 0 ? "orange" : "green"}>
               {productionReadiness.blockers.length > 0
                 ? `${productionReadiness.blockers.length} blockers`
@@ -4026,6 +4019,14 @@ function TeamRotationOverview({
             </Tag>
           </summary>
           <div className="team-evidence-body">
+            <TeamDataStatusStrip
+              data={data}
+              updatePipeline={updatePipeline}
+              productionReadiness={productionReadiness}
+              onNavigate={onNavigate}
+              onConnectToken={onConnectToken}
+            />
+            <TeamCommandQueue actions={commandActions} />
             <TeamHealthStrip
               signals={operatingSignals}
               onNavigate={onNavigate}
@@ -4225,8 +4226,7 @@ function TeamDataStatusStrip({
   onNavigate: (view: DashboardView) => void;
   onConnectToken: () => void;
 }) {
-  const cacheTone =
-    data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good";
+  const cacheTone = data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good";
   const cacheValue =
     data.sync.staleObjects > 0
       ? `${data.sync.staleObjects} stale`
@@ -4361,21 +4361,21 @@ function TeamOperationsSummary({
             onClick={() => onOpenIssuesFilter({ scope: "no_action_24h" })}
           />
           <TeamOpsSummaryTile
-            label="Blocked PRs"
+            label="PR attention"
             value={prRisks.length}
             detail={`oldest ${optionalHours(maxPendingPrAge(prRisks))}`}
             tone={prRisks.length > 0 ? "attention" : "good"}
             onClick={() => onOpenPrsFilter("attention")}
           />
           <TeamOpsSummaryTile
-            label="In test"
+            label="Testing issues"
             value={data.testing.queueIssues}
             detail={`${staleTestingIssues.length} waiting >24h`}
             tone={staleTestingIssues.length > 0 ? "attention" : data.testing.queueIssues > 0 ? "normal" : "good"}
             onClick={() => onOpenTestingIssueQueue(staleTestingIssues.length > 0 ? "stale" : "all")}
           />
           <TeamOpsSummaryTile
-            label="Need triage"
+            label="Needs triage"
             value={triageSnapshot.needsTriageIssues}
             detail={`${triageSnapshot.deferredIssues} deferred`}
             tone={triageTone}
@@ -4384,7 +4384,7 @@ function TeamOperationsSummary({
         </div>
       </div>
       <div className={`team-ops-next team-ops-next-${topAction?.tone ?? "good"}`}>
-        <span>Top blocker</span>
+        <span>Next check</span>
         {topAction ? (
           <button type="button" onClick={topAction.onClick}>
             <strong>{topAction.title}</strong>
@@ -4507,7 +4507,7 @@ function teamCommandActions({
     actions.push({
       key: "issue-pr-gap",
       title: `${issuesWithoutPr.length} active issues have no visible PR`,
-      detail: "confirm whether execution started, or link the PR evidence",
+      detail: "confirm whether execution started, or connect the linked PR in cache",
       tone: "critical",
       actionLabel: "Open gaps",
       priority: 940,
@@ -4551,7 +4551,7 @@ function teamCommandActions({
     actions.push({
       key: "testing-waits",
       title: `${staleTestingRows.length} issues are waiting in test`,
-      detail: `max ${optionalHours(maxTestingIssueAge(staleTestingRows))}; check issue assignment and linked PR evidence`,
+      detail: `max ${optionalHours(maxTestingIssueAge(staleTestingRows))}; check tester assignment and linked PR status`,
       tone: "attention",
       actionLabel: "Open testing",
       priority: 860,
@@ -4656,8 +4656,8 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
     <section className="team-command-board" aria-label="Team command queue">
       <div className="team-command-board-heading">
         <div>
-          <Text strong>Top Actions</Text>
-          <Text type="secondary">Highest-priority filtered boards.</Text>
+          <Text strong>Secondary Checks</Text>
+          <Text type="secondary">Additional queues after the main board.</Text>
         </div>
         <Tag>{actions.length} actions</Tag>
       </div>
@@ -6089,7 +6089,7 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
           <TestingStateTag state={pr.testingState} label="issue in test" />
-          {pr.testingQueueAgeHours !== null ? <Tag>issue test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+          {pr.testingQueueAgeHours !== null ? <Tag>testing wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
     </Space>
@@ -6321,7 +6321,7 @@ function TeamPeopleFocus({
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
-        <Text strong>People To Watch</Text>
+        <Text strong>By Person</Text>
         <Space size={[4, 4]} wrap>
           <Tag>{observedMode ? "observed" : "watched"}</Tag>
           <Tag color={summary.activeIssuePeople > 0 ? "red" : "default"}>{summary.activeIssuePeople} issue</Tag>
@@ -6353,8 +6353,8 @@ function TeamPeopleFocus({
                 <span className="team-person-main">
                   <strong>{person.login}</strong>
                   <small>
-                    {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention | {testingWork} issue
-                    testing
+                    {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention | {testingWork} testing
+                    issues
                   </small>
                   <span className={`team-person-focus team-person-focus-${focus.tone}`}>
                     <TimerReset size={13} aria-hidden="true" />
@@ -6544,7 +6544,9 @@ function apiAccessHealthItems(access: NonNullable<ApiHealthView["access"]>): Arr
       key: "oauth",
       label: "GitHub login",
       value: access.githubOAuthConfigured ? "configured" : "setup required",
-      detail: access.githubOAuthConfigured ? "OAuth browser sessions can be created." : "Set OAuth client ID and secret.",
+      detail: access.githubOAuthConfigured
+        ? "OAuth browser sessions can be created."
+        : "Set OAuth client ID and secret.",
       tone: access.githubOAuthConfigured ? "good" : "attention"
     },
     {
@@ -6567,14 +6569,18 @@ function apiAccessHealthItems(access: NonNullable<ApiHealthView["access"]>): Arr
       key: "service-token",
       label: "Service read source",
       value: access.serviceReadTokenConfigured ? "configured" : "anonymous",
-      detail: access.serviceReadTokenConfigured ? "Polling/backfill has authenticated read quota." : "Evidence may stay partial.",
+      detail: access.serviceReadTokenConfigured
+        ? "Polling/backfill has authenticated read quota."
+        : "Evidence may stay partial.",
       tone: access.serviceReadTokenConfigured ? "good" : "attention"
     },
     {
       key: "write-back",
       label: "Workflow writes",
       value: access.writeBackEnabled ? "enabled" : "disabled",
-      detail: access.writeBackEnabled ? "Confirmed writes require login and personal token." : "Read-only workflow fixes.",
+      detail: access.writeBackEnabled
+        ? "Confirmed writes require login and personal token."
+        : "Read-only workflow fixes.",
       tone: access.writeBackEnabled ? "normal" : "good"
     }
   ];
@@ -6672,9 +6678,7 @@ function HealthLayerRow({
         {item.skipped ? <span>skipped {item.skipReason ?? "no reason recorded"}</span> : null}
         {item.errorMessage ? <span className="health-layer-error">{item.errorMessage}</span> : null}
       </div>
-      <Tooltip
-        title={authenticated ? "Queue this sync layer" : "Sign in with GitHub to queue worker refresh jobs"}
-      >
+      <Tooltip title={authenticated ? "Queue this sync layer" : "Sign in with GitHub to queue worker refresh jobs"}>
         <span>
           <Button size="small" disabled={!authenticated} loading={saving} onClick={() => onQueueLayer(item.layer)}>
             Refresh layer
@@ -7302,9 +7306,7 @@ function prActiveIssueRiskScore(activeIssues: PrCriticalIssueContext[]): number 
 
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
-    return pr.testingTesters.length > 0
-      ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "issue in test";
+    return pr.testingTesters.length > 0 ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}` : "issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -7330,7 +7332,7 @@ function teamPrNextAction(pr: PendingPrView): string {
     ownerLogin: pr.ownerLogin,
     ownerScope: null,
     ownerReason: null,
-    phase: isTestingQueuePr(pr) ? "Linked issue test evidence" : "Pending PR",
+    phase: isTestingQueuePr(pr) ? "Linked issue in testing" : "Pending PR",
     tone: prAttentionReasons(pr).length > 0 ? "attention" : "normal",
     priority: 0,
     ageHours: pr.ageHours,
@@ -7361,7 +7363,7 @@ function teamTestingIssueNextAction(issue: TestingIssueQueueView, blockerCount: 
     return "Link tested PR";
   }
   if (isTestingIssueStale(issue)) {
-    return "Check issue test status";
+    return "Check issue testing status";
   }
   if (issue.queueAgeEvidence === "issue_cache_timestamp") {
     return "Backfill handoff time";
@@ -7532,9 +7534,7 @@ interface TrendReadoutItem {
 function latestTrendPoint(points: TrendMetricPoint[]): TrendMetricPoint {
   return [...points].sort(
     (left, right) =>
-      Date.parse(left.date) -
-        Date.parse(right.date) ||
-      Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
+      Date.parse(left.date) - Date.parse(right.date) || Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
   )[points.length - 1];
 }
 
@@ -7578,7 +7578,7 @@ function TrendChartReadout({ points, actions }: { points: TrendMetricPoint[]; ac
     },
     {
       key: "testing_wait",
-      label: "Issue test wait",
+      label: "Testing wait",
       value: optionalHours(testingWait),
       detail: `${latest.testingQueuePrs} issues in test`,
       tone: testingWait !== null && testingWait >= 24 ? "critical" : latest.testingQueuePrs > 0 ? "normal" : "good",
@@ -7821,7 +7821,7 @@ function cacheEvidenceImpactItems(data: DashboardSummary): CacheEvidenceImpactIt
       target: "testing",
       label: "Issue testing",
       value: testingEvidenceGaps,
-      detail: `${testingEvidenceGaps} issue testing or linked PR evidence records depend on incomplete cache evidence`,
+      detail: `${testingEvidenceGaps} issue testing or linked PR records depend on incomplete cache evidence`,
       tone: testingEvidenceGaps > 0 ? "attention" : "normal"
     },
     {
@@ -8065,9 +8065,7 @@ function CacheRepairPlan({
             {reason}
           </Text>
         ))}
-        {!authenticated ? (
-          <Text type="secondary">Manual repair queueing requires GitHub sign-in.</Text>
-        ) : null}
+        {!authenticated ? <Text type="secondary">Manual repair queueing requires GitHub sign-in.</Text> : null}
       </div>
     </div>
   );
@@ -8171,9 +8169,7 @@ function FreshnessStatusBar({
               {problemLayers.length} sync warnings
             </button>
           ) : null}
-          <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>
-            {refreshModeText}
-          </Tag>
+          <Tag color={refreshing ? "blue" : autoRefreshError ? "orange" : "green"}>{refreshModeText}</Tag>
         </Space>
         <Button
           size="small"
@@ -8434,11 +8430,7 @@ function CacheEvidenceBanner({
               {compactRepair.layers.length > 0 ? (
                 <Space size={6} wrap className="evidence-alert-repair-actions">
                   <Tooltip
-                    title={
-                      authenticated
-                        ? "Queue the recommended cache repair layers"
-                        : "Sign in with GitHub first"
-                    }
+                    title={authenticated ? "Queue the recommended cache repair layers" : "Sign in with GitHub first"}
                   >
                     <Button
                       size="small"
@@ -9305,14 +9297,14 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
-        label="issue test wait >24h"
+        label="testing wait >24h"
         value={staleTestingPrs}
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
         onClick={() => onScopeFilterChange("stale_testing")}
       />
       <CriticalBoardStat
-        label="issue test evidence gap"
+        label="issue testing cache pending"
         value={testingEvidenceGapPrs}
         tone={testingEvidenceGapPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing_evidence_gap"}
@@ -9354,7 +9346,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("issue_link_pending")}
       />
       <CriticalBoardStat
-        label="PR evidence incomplete"
+        label="PR cache pending"
         value={evidencePendingPrs}
         tone={evidencePendingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "evidence_pending"}
@@ -9414,7 +9406,7 @@ function prSortLabel(sort: PrSort): string {
     return "last action";
   }
   if (sort === "testing_wait") {
-    return "issue test wait";
+    return "testing wait";
   }
   if (sort === "number") {
     return "PR number";
@@ -9873,13 +9865,12 @@ function PeopleFocusQueue({
   }
 
   return (
-    <section className="people-focus-queue" aria-label="People needing attention">
+    <section className="people-focus-queue" aria-label="People workload focus">
       <div className="people-focus-heading">
         <div>
-          <Text strong>People needing attention</Text>
+          <Text strong>By Person</Text>
           <Text type="secondary">
-            Top {focusPeople.length} by workload in {peopleScopeLabel(scopeFilter)}. Metrics open that person's filtered
-            workbench.
+            Top {focusPeople.length} by workload in {peopleScopeLabel(scopeFilter)}.
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
@@ -9956,7 +9947,7 @@ function PeopleFocusQueue({
                   onClick={() => openMetric(person.needsTriageIssues > 0 ? "triage" : "deferred")}
                 />
                 <PersonQueueMetric
-                  label="Issue test"
+                  label="Testing"
                   value={testingWork}
                   detail={personTestingQueueDetail(personal)}
                   tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
@@ -10203,9 +10194,7 @@ function sortTestingQueuePrs<T extends PendingPrView>(prs: T[]): T[] {
 }
 
 function testingQueueAgeText(pr: PendingPrView): string {
-  return pr.testingQueueAgeHours === null
-    ? "issue test wait unknown"
-    : `issue waiting ${hours(pr.testingQueueAgeHours)}`;
+  return pr.testingQueueAgeHours === null ? "testing wait unknown" : `issue waiting ${hours(pr.testingQueueAgeHours)}`;
 }
 
 function testingQueueNextAction(pr: PendingPrView): string {
@@ -10219,18 +10208,18 @@ function testingQueueNextAction(pr: PendingPrView): string {
     return "Resolve merge conflict";
   }
   if (isTestingStalePr(pr)) {
-    return "Check issue test status";
+    return "Check issue testing status";
   }
   if (pr.testingState === "testing") {
-    return "Check issue test status";
+    return "Check issue testing status";
   }
-  return "Confirm issue test status";
+  return "Confirm issue testing status";
 }
 
 function testingQueueRiskTags(pr: PendingPrView): string[] {
   const tags = pr.attentionFlags.map(labelText);
   if (pr.testingQueueAgeHours === null) {
-    tags.push("issue test wait unknown");
+    tags.push("testing wait unknown");
   }
   if (!pr.isComplete) {
     tags.push("PR detail sync pending");
@@ -10311,8 +10300,8 @@ function TestingCommandBoard({
       <div className="testing-scope-note">
         <Text strong>An issue enters testing when it matches configured handoff rules.</Text>
         <Text type="secondary">
-          Supported evidence is configured tester assignment or configured issue label. PR reviewer, assignee, label,
-          and comment signals are PR-only evidence, not issue testing handoffs.
+          Supported handoff signals are issue tester assignment or configured issue labels. PR reviewer, assignee,
+          label, and comment signals do not move an issue into testing.
         </Text>
       </div>
 
@@ -10431,7 +10420,7 @@ function TestingCommandBoard({
       {queuePrs.length > 0 ? (
         <details className="secondary-disclosure testing-pr-evidence-disclosure">
           <summary>
-            <span>Linked PR evidence</span>
+            <span>Linked PRs</span>
             <Space size={[4, 4]} wrap>
               <button
                 type="button"
@@ -10459,9 +10448,7 @@ function TestingCommandBoard({
               </button>
               <button
                 type="button"
-                className={`inline-filter-chip ${
-                  evidenceGapPrs.length > 0 ? "" : "inline-filter-chip-muted"
-                }`}
+                className={`inline-filter-chip ${evidenceGapPrs.length > 0 ? "" : "inline-filter-chip-muted"}`}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -10470,7 +10457,9 @@ function TestingCommandBoard({
               >
                 {evidenceGapPrs.length} data gaps
               </button>
-              <span className="secondary-summary-note">PR cards are evidence for issue testing, not a PR handoff.</span>
+              <span className="secondary-summary-note">
+                PR cards show execution status only; issue signals control testing.
+              </span>
             </Space>
           </summary>
           <div className="secondary-disclosure-body testing-command-lanes">
@@ -10491,12 +10480,12 @@ function TestingCommandBoard({
               emptyText="No linked PR data gaps in cached pending PRs"
             />
             <TestingQueueLane
-              title="Linked PR Evidence"
-              description="PR evidence for issues already assigned to testers; the issue remains the testing handoff."
+              title="Linked PRs"
+              description="PR status for issues already assigned to testers; the issue remains the testing handoff."
               prs={activePrs}
               visibleLimit={6}
               tone="normal"
-              emptyText="No active linked-issue test movement outside waiting lanes"
+              emptyText="No active linked issue testing movement outside waiting lanes"
             />
           </div>
         </details>
@@ -11311,7 +11300,7 @@ function PersonWorkloadBoard({
                   aria-label={`Open ${person.login} issue testing`}
                 >
                   <strong>{testingWork}</strong>
-                  <small>issue test</small>
+                  <small>testing</small>
                 </button>
                 <button
                   type="button"
@@ -11560,7 +11549,7 @@ function ObservedPersonThreadBoard({ threads, generatedAt }: { threads: Observed
         <div className="observed-thread-panel-title">
           <span>
             <Text strong>Issue and PR Flow</Text>
-            <Text type="secondary">Active issue first, then linked PR evidence</Text>
+            <Text type="secondary">Active issue first, then linked PR status</Text>
           </span>
           <Space size={[4, 4]} wrap>
             <Tag>{threads.length}</Tag>
@@ -12634,9 +12623,9 @@ function PullRequestCardList({
     { label: "CI", value: "ci" },
     { label: "Review", value: "review" },
     { label: "Merge", value: "merge" },
-    { label: "Linked issue test", value: "testing" },
+    { label: "Issue in testing", value: "testing" },
     { label: "Issue link sync pending", value: "issue_link_pending" },
-    { label: "No visible issue after sync", value: "confirmed_no_issue" }
+    { label: "No linked issue in cache", value: "confirmed_no_issue" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
@@ -13110,7 +13099,7 @@ function actionQueueFilterDescription(filter: PersonalActionQueueFilter): string
     return "Visible issue work owned by this person.";
   }
   if (filter === "testing") {
-    return "Issues currently in testing, plus linked PR evidence.";
+    return "Issues currently in testing, plus linked PR status.";
   }
   if (filter === "prs") {
     return "All visible PR work for this person.";
@@ -13342,7 +13331,7 @@ function PersonalActionQueueItem({
             {item.testingQueueAgeHours !== null ? (
               <span>
                 <ClipboardCheck size={13} aria-hidden="true" />
-                issue test {hours(item.testingQueueAgeHours)}
+                testing {hours(item.testingQueueAgeHours)}
               </span>
             ) : null}
           </div>
@@ -14157,7 +14146,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
           <div className="team-object-preview-metric">
             <span>Issue testing</span>
             <strong>{testingWorkCount}</strong>
-            <small>{testingWorkCount > 0 ? "issue testing visible" : "no issue test"}</small>
+            <small>{testingWorkCount > 0 ? "issue testing visible" : "no testing"}</small>
           </div>
         </div>
 
@@ -14215,7 +14204,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                   <strong>{pr.title}</strong>
                   <small>
                     owner {pr.ownerLogin} | age {hours(pr.startAgeHours)}
-                    {pr.testingQueueAgeHours !== null ? ` | issue test wait ${hours(pr.testingQueueAgeHours)}` : ""}
+                    {pr.testingQueueAgeHours !== null ? ` | testing wait ${hours(pr.testingQueueAgeHours)}` : ""}
                   </small>
                   <Space size={[4, 4]} wrap>
                     {pr.isShared ? <Tag color="purple">shared</Tag> : null}
@@ -14288,7 +14277,7 @@ function flowThreadPrPreviewMeta(pr: PersonalGanttPrBar): string {
   return [
     `owner ${pr.ownerLogin}`,
     `age ${hours(pr.startAgeHours)}`,
-    pr.testingQueueAgeHours !== null ? `issue test wait ${hours(pr.testingQueueAgeHours)}` : null,
+    pr.testingQueueAgeHours !== null ? `testing wait ${hours(pr.testingQueueAgeHours)}` : null,
     pr.isComplete ? null : "detail sync pending"
   ]
     .filter((value): value is string => value !== null)
@@ -14395,7 +14384,7 @@ function FlowTimelinePrRow({ pr }: { pr: PersonalGanttPrBar }) {
     pr.title,
     `owner ${pr.ownerLogin}`,
     `age ${hours(pr.startAgeHours)}`,
-    pr.testingQueueAgeHours !== null ? `issue test wait ${hours(pr.testingQueueAgeHours)}` : null,
+    pr.testingQueueAgeHours !== null ? `testing wait ${hours(pr.testingQueueAgeHours)}` : null,
     pr.reasons.length > 0 ? pr.reasons.join(", ") : null
   ]
     .filter((value): value is string => value !== null)
@@ -14714,7 +14703,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="Issue testing"
             value={testingWorkCount}
-            detail={`${staleTestingWorkCount} waiting >24h | ${person.testingPrs.length} linked PR evidence | ${oldestPersonalTestingText([], person.testingIssues)}`}
+            detail={`${staleTestingWorkCount} waiting >24h | ${person.testingPrs.length} linked PRs | ${oldestPersonalTestingText([], person.testingIssues)}`}
             tone={staleTestingWorkCount > 0 ? "critical" : testingWorkCount > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("testing")}
           />
@@ -14849,7 +14838,7 @@ function PersonalRotationOverview({
                 {testingWorkCount}
               </button>
             </Space>
-            <Text type="secondary">issue handoff status and linked PR evidence</Text>
+            <Text type="secondary">issue testing status and linked PRs</Text>
           </div>
           <div className="team-rotation-list">
             {testingWorkCount === 0 && person.testingPrs.length === 0 ? (
@@ -14880,14 +14869,14 @@ function PersonalRotationOverview({
                 </div>
                 <div className="personal-testing-subsection">
                   <div className="personal-testing-subheading">
-                    <Text strong>Linked PR evidence</Text>
+                    <Text strong>Linked PRs</Text>
                     <Tag color={person.testingPrs.some(isTestingStalePr) ? "orange" : "default"}>
                       {person.testingPrs.length}
                     </Tag>
                   </div>
                   {testingPrPage.visibleItems.length === 0 ? (
                     <Text type="secondary" className="personal-testing-empty">
-                      No linked PR evidence is visible for current issue testing.
+                      No linked PRs are visible for current issue testing.
                     </Text>
                   ) : (
                     testingPrPage.visibleItems.map((pr) => (
@@ -14942,7 +14931,7 @@ export function personalActionQueueDisclosureSummary(counts: {
 }): string {
   const objectNoun = counts.all === 1 ? "object" : "objects";
   const blockerNoun = counts.pr_blockers === 1 ? "PR blocker" : "PR blockers";
-  const testNoun = counts.testing === 1 ? "issue test" : "issue tests";
+  const testNoun = counts.testing === 1 ? "testing issue" : "testing issues";
   const gapNoun = counts.needs_link === 1 ? "link gap" : "link gaps";
   return `${counts.all} ${objectNoun} | ${counts.critical} s-1/s0 | ${counts.pr_blockers} ${blockerNoun} | ${counts.testing} ${testNoun} | ${counts.needs_link} ${gapNoun}`;
 }
@@ -15067,7 +15056,7 @@ function personalPrimaryFocus(
   if (person.activeCriticalIssues.length > 0) {
     return {
       title: `${person.activeCriticalIssues.length} active s-1/s0 issues should drive the day.`,
-      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} issue test waits, ${chart.rows.length} issue/PR threads.`
+      detail: `${blockedPrs} PR blockers, ${staleTestingPrs} testing waits, ${chart.rows.length} issue/PR threads.`
     };
   }
   if (blockedPrs > 0) {
@@ -15329,7 +15318,13 @@ function PersonalExecutionTimeline({
   );
 }
 
-function PersonalExecutionRow({ row, onPreview }: { row: PersonalGanttRow; onPreview: (row: PersonalGanttRow) => void }) {
+function PersonalExecutionRow({
+  row,
+  onPreview
+}: {
+  row: PersonalGanttRow;
+  onPreview: (row: PersonalGanttRow) => void;
+}) {
   const statusCounts = flowThreadStatusCounts(row);
   const reasons = flowThreadReasons(row);
   const nextAction = flowThreadNextAction(row);
@@ -15574,7 +15569,7 @@ function PersonalDrilldownBoard({
           <Title level={5}>{title}</Title>
           <Space size={[4, 4]} wrap>
             <Tag color={staleTestingWorkCount > 0 ? "red" : "blue"}>{testingWorkCount} issue testing</Tag>
-            <Tag>{person.testingPrs.length} linked PR evidence</Tag>
+            <Tag>{person.testingPrs.length} linked PRs</Tag>
           </Space>
         </div>
         <TestingIssueQueuePanel
@@ -15585,12 +15580,12 @@ function PersonalDrilldownBoard({
         {person.testingPrs.length > 0 || person.testingIssues.length === 0 ? (
           <div className="testing-linked-pr-evidence">
             <div className="subsection-heading subsection-heading-compact">
-              <Text strong>Linked PR Evidence</Text>
+              <Text strong>Linked PRs</Text>
               <Tag>{person.testingPrs.length} PR</Tag>
             </div>
             <PullRequestCardList
               prs={sortTestingQueuePrs(person.testingPrs)}
-              emptyText="No linked PR evidence in cache"
+              emptyText="No linked PRs in cache"
               onPreview={onPullRequestPreview}
             />
           </div>
@@ -16076,6 +16071,299 @@ function PersonalOperatingSignalStrip({
   );
 }
 
+type PersonalPrListScope = "attention" | "pending" | "created_yesterday" | "merged_yesterday";
+
+interface PersonalPrThroughputRow {
+  period: MetricPeriod;
+  label: string;
+  prsCreated: number | null;
+  prsMerged: number | null;
+  pendingPrs: number | null;
+  attentionPrs: number | null;
+  averagePendingPrAgeHours: number | null;
+  averageTestingQueueAgeHours: number | null;
+  sourceCompleteness: TrendMetricPoint["sourceCompleteness"] | null;
+}
+
+interface PersonalCriticalFlowEfficiency {
+  activeIssues: number;
+  issuesWithPr: number;
+  issuesInTesting: number;
+  averageActiveToFirstPrHours: number | null;
+  averageActiveToTestingHours: number | null;
+  cachePendingIssues: number;
+  rows: PersonalCriticalFlowEfficiencyRow[];
+}
+
+interface PersonalCriticalFlowEfficiencyRow {
+  issueNumber: number;
+  severity: string | null;
+  aiEffortLabel: string;
+  activeAgeHours: number | null;
+  linkedPrs: number;
+  firstPrAfterActiveHours: number | null;
+  testingAfterActiveHours: number | null;
+  cachePending: boolean;
+}
+
+function latestTrendMetricPoint(points: TrendMetricPoint[]): TrendMetricPoint | null {
+  if (points.length === 0) {
+    return null;
+  }
+  return [...points].sort(
+    (left, right) =>
+      Date.parse(left.date) - Date.parse(right.date) || Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
+  )[points.length - 1];
+}
+
+export function personalPrThroughputRows(
+  person: Pick<PersonalActionView, "analytics" | "analyticsWeekly" | "analyticsMonthly">
+): PersonalPrThroughputRow[] {
+  return [
+    personalPrThroughputRow("day", latestTrendMetricPoint(person.analytics)),
+    personalPrThroughputRow("week", latestTrendMetricPoint(person.analyticsWeekly)),
+    personalPrThroughputRow("month", latestTrendMetricPoint(person.analyticsMonthly))
+  ];
+}
+
+function personalPrThroughputRow(period: MetricPeriod, point: TrendMetricPoint | null): PersonalPrThroughputRow {
+  return {
+    period,
+    label: point ? trendPointLabel(point) : metricPeriodText(period),
+    prsCreated: point?.prsCreated ?? null,
+    prsMerged: point?.prsMerged ?? null,
+    pendingPrs: point?.pendingPrs ?? null,
+    attentionPrs: point?.attentionPrs ?? null,
+    averagePendingPrAgeHours: point?.averagePendingPrAgeHours ?? null,
+    averageTestingQueueAgeHours: point?.averageTestingQueueAgeHours ?? null,
+    sourceCompleteness: point?.sourceCompleteness ?? null
+  };
+}
+
+export function personalCriticalFlowEfficiency(
+  person: Pick<PersonalActionView, "activeCriticalIssues">
+): PersonalCriticalFlowEfficiency {
+  const rows = person.activeCriticalIssues.map(personalCriticalFlowEfficiencyRow);
+  return {
+    activeIssues: rows.length,
+    issuesWithPr: rows.filter((row) => row.linkedPrs > 0).length,
+    issuesInTesting: rows.filter((row) => row.testingAfterActiveHours !== null || row.cachePending).length,
+    averageActiveToFirstPrHours: averageNullable(rows.map((row) => row.firstPrAfterActiveHours)),
+    averageActiveToTestingHours: averageNullable(rows.map((row) => row.testingAfterActiveHours)),
+    cachePendingIssues: rows.filter((row) => row.cachePending).length,
+    rows
+  };
+}
+
+function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {
+  const activeAgeHours = issue.criticalAgeHours;
+  const prLeadTimes =
+    activeAgeHours === null ? [] : issue.linkedPullRequests.map((pr) => Math.max(0, activeAgeHours - pr.ageHours));
+  const testingLeadTimes =
+    activeAgeHours === null
+      ? []
+      : issue.linkedPullRequests
+          .map((pr) =>
+            pr.testingQueueAgeHours === null ? null : Math.max(0, activeAgeHours - pr.testingQueueAgeHours)
+          )
+          .filter((value): value is number => value !== null && Number.isFinite(value));
+  const hasTestingState = issue.linkedPullRequests.some(
+    (pr) => pr.testingState !== "not_ready" || pr.testingQueueAgeHours !== null
+  );
+
+  return {
+    issueNumber: issue.number,
+    severity: issue.severity,
+    aiEffortLabel: effectiveAiEffortLabel(issue.aiEffortLabel),
+    activeAgeHours,
+    linkedPrs: issue.linkedPullRequests.length,
+    firstPrAfterActiveHours: prLeadTimes.length > 0 ? Math.min(...prLeadTimes) : null,
+    testingAfterActiveHours: testingLeadTimes.length > 0 ? Math.min(...testingLeadTimes) : null,
+    cachePending: hasTestingState && testingLeadTimes.length === 0
+  };
+}
+
+function averageNullable(values: Array<number | null>): number | null {
+  const finiteValues = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  if (finiteValues.length === 0) {
+    return null;
+  }
+  return finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
+}
+
+function PersonalPrThroughputPanel({
+  person,
+  onDrilldownChange,
+  onPullRequestPreview
+}: {
+  person: PersonalActionView;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
+  onPullRequestPreview: (pr: PersonalPullRequestView) => void;
+}) {
+  const rows = personalPrThroughputRows(person);
+  const flow = personalCriticalFlowEfficiency(person);
+  const [listScope, setListScope] = useState<PersonalPrListScope>(() =>
+    person.attentionPrs.length > 0 ? "attention" : person.pendingPrs.length > 0 ? "pending" : "created_yesterday"
+  );
+  const visiblePrs = personalPrListForScope(person, listScope);
+
+  return (
+    <section className="personal-throughput-panel" aria-label={`${person.login} PR throughput and active flow`}>
+      <div className="subsection-heading">
+        <div>
+          <Title level={5}>PR Throughput</Title>
+          <Text type="secondary">Day, week, month PR counts, visible PR list, and active issue flow.</Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <button type="button" className="inline-filter-chip" onClick={() => onDrilldownChange("pending_pr")}>
+            {person.pendingPrs.length} pending
+          </button>
+          <button
+            type="button"
+            className={`inline-filter-chip ${person.attentionPrs.length > 0 ? "" : "inline-filter-chip-muted"}`}
+            onClick={() => onDrilldownChange("pr_attention")}
+          >
+            {person.attentionPrs.length} attention
+          </button>
+        </Space>
+      </div>
+
+      <div className="personal-throughput-grid">
+        {rows.map((row) => (
+          <div className="personal-throughput-period" key={row.period}>
+            <span>{metricPeriodText(row.period)}</span>
+            <strong>
+              {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
+            </strong>
+            <small>{row.label} created/merged</small>
+            <em>
+              pending {row.pendingPrs ?? "-"} | attention {row.attentionPrs ?? "-"} | avg age{" "}
+              {optionalHours(row.averagePendingPrAgeHours)}
+            </em>
+            {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="personal-throughput-body">
+        <div className="personal-pr-list-card">
+          <div className="personal-throughput-card-heading">
+            <Text strong>PR List And Duration</Text>
+            <Segmented
+              size="small"
+              value={listScope}
+              onChange={(value) => setListScope(value as PersonalPrListScope)}
+              options={[
+                { label: `Attention ${person.attentionPrs.length}`, value: "attention" },
+                { label: `Pending ${person.pendingPrs.length}`, value: "pending" },
+                { label: `Created yday ${person.prsCreatedYesterday.length}`, value: "created_yesterday" },
+                { label: `Merged yday ${person.prsMergedYesterday.length}`, value: "merged_yesterday" }
+              ]}
+            />
+          </div>
+          <Text type="secondary" className="personal-throughput-note">
+            Week/month PR counts are aggregate metrics today; historical PR detail lists need the next backend list API.
+          </Text>
+          <PullRequestCardList
+            prs={visiblePrs}
+            emptyText="No PRs in this visible list"
+            emphasized={listScope === "attention"}
+            initialLimit={5}
+            onPreview={onPullRequestPreview}
+          />
+        </div>
+
+        <div className="personal-flow-efficiency-card">
+          <div className="personal-throughput-card-heading">
+            <Text strong>s-1/s0 → PR → Issue Testing</Text>
+            <Tag color={flow.cachePendingIssues > 0 ? "gold" : "blue"}>
+              {flow.cachePendingIssues > 0 ? `${flow.cachePendingIssues} cache pending` : "cache-derived"}
+            </Tag>
+          </div>
+          <div className="personal-flow-efficiency-stats">
+            <PersonalFlowEfficiencyMetric label="Active issues" value={flow.activeIssues} detail="s-1/s0 now" />
+            <PersonalFlowEfficiencyMetric label="Linked PR" value={flow.issuesWithPr} detail="issues with PR" />
+            <PersonalFlowEfficiencyMetric label="In testing" value={flow.issuesInTesting} detail="issue handoff" />
+            <PersonalFlowEfficiencyMetric
+              label="To first PR"
+              value={optionalHours(flow.averageActiveToFirstPrHours)}
+              detail="avg from severity"
+            />
+            <PersonalFlowEfficiencyMetric
+              label="To testing"
+              value={optionalHours(flow.averageActiveToTestingHours)}
+              detail="avg from severity"
+            />
+          </div>
+          {flow.rows.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue flow for this person" />
+          ) : (
+            <div className="personal-flow-efficiency-rows">
+              {flow.rows.slice(0, 5).map((row) => (
+                <div className="personal-flow-efficiency-row" key={row.issueNumber}>
+                  <span>
+                    <strong>#{row.issueNumber}</strong>
+                    <small>
+                      {severityShortLabel(row.severity)} | {row.aiEffortLabel}
+                    </small>
+                  </span>
+                  <span>
+                    <strong>{optionalHours(row.activeAgeHours)}</strong>
+                    <small>s-1/s0 age</small>
+                  </span>
+                  <span>
+                    <strong>{row.linkedPrs}</strong>
+                    <small>linked PRs</small>
+                  </span>
+                  <span>
+                    <strong>{optionalHours(row.firstPrAfterActiveHours)}</strong>
+                    <small>to first PR</small>
+                  </span>
+                  <span>
+                    <strong>{row.cachePending ? "cache" : optionalHours(row.testingAfterActiveHours)}</strong>
+                    <small>to testing</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function personalPrListForScope(person: PersonalActionView, scope: PersonalPrListScope): PersonalPullRequestView[] {
+  if (scope === "attention") {
+    return person.attentionPrs;
+  }
+  if (scope === "created_yesterday") {
+    return person.prsCreatedYesterday;
+  }
+  if (scope === "merged_yesterday") {
+    return person.prsMergedYesterday;
+  }
+  return person.pendingPrs;
+}
+
+function PersonalFlowEfficiencyMetric({
+  label,
+  value,
+  detail
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
+  return (
+    <div className="personal-flow-efficiency-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
 function SelectedPersonWorkbench({
   person,
   generatedAt,
@@ -16138,6 +16426,11 @@ function SelectedPersonWorkbench({
         onSelect={onDrilldownChange}
       />
       <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />
+      <PersonalPrThroughputPanel
+        person={person}
+        onDrilldownChange={onDrilldownChange}
+        onPullRequestPreview={previewPullRequest}
+      />
       <details className="secondary-disclosure person-signal-disclosure">
         <summary>
           <span>Signal evidence</span>
@@ -16431,10 +16724,10 @@ function SelectedPersonWorkbench({
                 onPreview={previewPullRequest}
               />
             </WorkLane>
-            <WorkLane title="Linked PR Evidence" count={person.testingPrs.length} tone="normal">
+            <WorkLane title="Linked PRs" count={person.testingPrs.length} tone="normal">
               <PullRequestCardList
                 prs={person.testingPrs}
-                emptyText="No linked PR evidence in cache"
+                emptyText="No linked PRs in cache"
                 onPreview={previewPullRequest}
               />
             </WorkLane>
@@ -16861,9 +17154,7 @@ function WebhookUpdatePathPanel({
                 ? `${data.webhooks.pendingDeliveries} pending`
                 : `${data.webhooks.processedDeliveries} processed`
           }
-          detail={
-            webhookProcessingDetail
-          }
+          detail={webhookProcessingDetail}
           tone={processingTone}
         >
           <WebhookPathMetric
@@ -18891,11 +19182,7 @@ export default function App() {
             return <Tag color="default">not required</Tag>;
           }
           return (
-            <Tooltip
-              title={
-                session?.authenticated ? "Acknowledge notification" : "Sign in with GitHub to acknowledge"
-              }
-            >
+            <Tooltip title={session?.authenticated ? "Acknowledge notification" : "Sign in with GitHub to acknowledge"}>
               <span>
                 <Button
                   size="small"
@@ -19155,7 +19442,7 @@ export default function App() {
           )
         },
         {
-          title: "Issue test state",
+          title: "Issue testing state",
           width: 300,
           render: (_, transition) => (
             <Space size={4} wrap>
@@ -19462,9 +19749,7 @@ export default function App() {
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()} loading={loading || refreshing} />
           </Tooltip>
           <Tooltip
-            title={
-              session?.authenticated ? "Queue worker refresh" : "Sign in with GitHub to queue worker refresh"
-            }
+            title={session?.authenticated ? "Queue worker refresh" : "Sign in with GitHub to queue worker refresh"}
           >
             <Button
               icon={<RefreshCcw size={16} />}
@@ -20144,14 +20429,10 @@ export default function App() {
                       onTestingIssueFilterChange={openTestingIssueQueueFilter}
                       onOpenPrsFilter={openPrsWithFilter}
                     />
-                    <div
-                      className="testing-pr-table-panel"
-                      id="testing-pr-table-panel"
-                      aria-label="Linked PR evidence table"
-                    >
+                    <div className="testing-pr-table-panel" id="testing-pr-table-panel" aria-label="Linked PR table">
                       <div className="subsection-heading subsection-heading-compact">
                         <span className="testing-pr-table-heading-copy">
-                          <Text strong>Linked PR evidence</Text>
+                          <Text strong>Linked PRs</Text>
                           <Text type="secondary">Paginated PR rows linked to issues currently in testing.</Text>
                         </span>
                         <button
@@ -20183,7 +20464,7 @@ export default function App() {
                             setPrTestingTablePageSize(pageSize);
                           }
                         })}
-                        locale={{ emptyText: <Empty description="No linked PR evidence in cache" /> }}
+                        locale={{ emptyText: <Empty description="No linked PRs in cache" /> }}
                       />
                     </div>
                     <details
@@ -20193,7 +20474,7 @@ export default function App() {
                       onToggle={(event) => setTestingEvidenceOpen(event.currentTarget.open)}
                     >
                       <summary>
-                        <span>Issue testing evidence</span>
+                        <span>Issue testing cache</span>
                         <Space size={[4, 4]} wrap>
                           <button
                             type="button"
@@ -20242,7 +20523,7 @@ export default function App() {
                             dataSource={data.testing.recentIssueTransitions}
                             scroll={{ x: 1040 }}
                             pagination={tablePagination(data.testing.recentIssueTransitions.length, 6)}
-                            locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
+                            locale={{ emptyText: <Empty description="No issue testing assignment in cache yet" /> }}
                           />
                         ) : null}
                       </div>
@@ -20656,7 +20937,11 @@ export default function App() {
                     >
                       {filteredPeople.length}/{peopleBoardCounts.all} shown
                     </button>
-                    <Tag color={peopleScopeFilter === "critical" ? "red" : peopleScopeFilter === "all" ? "default" : "orange"}>
+                    <Tag
+                      color={
+                        peopleScopeFilter === "critical" ? "red" : peopleScopeFilter === "all" ? "default" : "orange"
+                      }
+                    >
                       {peopleScopeLabel(peopleScopeFilter)}
                     </Tag>
                     <Tag>sort {peopleSortLabel(peopleSort)}</Tag>

@@ -4831,12 +4831,13 @@ button.testing-board-stat:focus-visible {
 
 .people-focus-row {
   align-items: stretch;
+  background: #ffffff;
   border: 1px solid #e5e7eb;
   border-left: 4px solid #9ca3af;
   border-radius: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(180px, 0.58fr) minmax(220px, 0.78fr) minmax(420px, 1.45fr);
+  grid-template-columns: minmax(160px, 0.55fr) minmax(200px, 0.75fr) minmax(300px, 1.25fr);
   min-width: 0;
   padding: 8px;
 }
@@ -6564,6 +6565,172 @@ button.testing-board-stat:focus-visible {
   gap: 12px;
   grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
   min-width: 0;
+}
+
+.personal-throughput-panel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.personal-throughput-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.personal-throughput-period {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.personal-throughput-period span,
+.personal-throughput-period small,
+.personal-throughput-period em {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-throughput-period strong {
+  color: #111827;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.personal-throughput-period .ant-tag {
+  justify-self: start;
+  margin-inline-end: 0;
+}
+
+.personal-throughput-body {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  min-width: 0;
+}
+
+.personal-pr-list-card,
+.personal-flow-efficiency-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.personal-throughput-card-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.personal-throughput-note {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.personal-flow-efficiency-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.personal-flow-efficiency-metric {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+.personal-flow-efficiency-metric span,
+.personal-flow-efficiency-metric small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-flow-efficiency-metric strong {
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-flow-efficiency-rows {
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.personal-flow-efficiency-row {
+  border-bottom: 1px solid #eef2f7;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(92px, 1.2fr) repeat(4, minmax(72px, 1fr));
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.personal-flow-efficiency-row:last-child {
+  border-bottom: 0;
+}
+
+.personal-flow-efficiency-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.personal-flow-efficiency-row strong,
+.personal-flow-efficiency-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-flow-efficiency-row strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.personal-flow-efficiency-row small {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .personal-rotation-lane {
@@ -9406,6 +9573,14 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .personal-throughput-body {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-flow-efficiency-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .person-ops-summary,
   .person-ops-summary-observed {
     grid-template-columns: 1fr;
@@ -9718,6 +9893,18 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .activity-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personal-throughput-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-flow-efficiency-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personal-flow-efficiency-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

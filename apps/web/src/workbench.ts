@@ -150,12 +150,7 @@ export interface TrendEvidenceSummary {
 }
 
 export type TrendMomentumKey =
-  | "issue_drain"
-  | "pr_open_delta"
-  | "active_critical"
-  | "pr_attention"
-  | "testing_queue"
-  | "triage";
+  "issue_drain" | "pr_open_delta" | "active_critical" | "pr_attention" | "testing_queue" | "triage";
 
 export interface TrendMomentumItem {
   key: TrendMomentumKey;
@@ -1441,7 +1436,7 @@ const attentionFlagLabels: Record<string, string> = {
   ci_failed: "CI failed",
   merge_conflict: "Merge conflict",
   no_human_action_24h: "No human action over 24h",
-  testing_stalled: "Issue test wait over 24h",
+  testing_stalled: "Issue testing wait over 24h",
   review_requested_no_response: "Review waiting"
 };
 
@@ -1465,7 +1460,7 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Issue test changes requested");
+    reasons.push("Issue testing changes requested");
   }
 
   return [...new Set(reasons)];
@@ -1644,12 +1639,12 @@ export function testingStateBusinessLabel(state: TestingFlowState): string {
     return "tester feedback";
   }
   if (state === "test_passed") {
-    return "issue test passed";
+    return "issue testing passed";
   }
   if (state === "closed_or_merged") {
     return "linked work closed";
   }
-  return "not in issue test";
+  return "not in issue testing";
 }
 
 export function testingStateHelpText(state: TestingFlowState): string {
@@ -2084,7 +2079,7 @@ function testingIssueReasons(issue: TestingIssueQueueView): string[] {
   return uniqueStrings(
     [
       "Issue testing",
-      issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Issue test wait over 24h" : null,
+      issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Issue testing wait over 24h" : null,
       issue.queueAgeEvidence === "issue_cache_timestamp" ? "Issue testing start from issue cache timestamp" : null,
       issue.testers.length > 0 ? `${issue.testers.length} tester${issue.testers.length === 1 ? "" : "s"}` : null,
       issue.testingSignals.some((signal) => signal.startsWith("issue_label:")) ? "Issue label handoff" : null,
@@ -2155,10 +2150,10 @@ function prReasons(pr: GanttPullRequestSource): string[] {
     reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
-    reasons.push("Issue test changes requested");
+    reasons.push("Issue testing changes requested");
   }
   if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
-    reasons.push("Issue test wait over 24h");
+    reasons.push("Issue testing wait over 24h");
   }
   return uniqueStrings(reasons);
 }
@@ -2265,9 +2260,9 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   }
   for (const pr of person.testingPrs) {
     add(
-      activityFromPullRequest(pr, "Linked issue test evidence", "attention", 780, [
+      activityFromPullRequest(pr, "Linked issue in testing", "attention", 780, [
         ...prAttentionReasons(pr),
-        pr.testingQueueAgeHours !== null ? "Linked issue test wait visible" : "Linked issue test status visible"
+        pr.testingQueueAgeHours !== null ? "Linked issue testing wait visible" : "Linked issue testing status visible"
       ])
     );
   }
@@ -2300,7 +2295,10 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   });
 }
 
-function mergePersonalActivityItem(existing: PersonalActivityItem, duplicate: PersonalActivityItem): PersonalActivityItem {
+function mergePersonalActivityItem(
+  existing: PersonalActivityItem,
+  duplicate: PersonalActivityItem
+): PersonalActivityItem {
   return {
     ...existing,
     ageHours: Math.max(existing.ageHours, duplicate.ageHours),
@@ -2397,9 +2395,9 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
         return "Link the tested PR";
       }
       if ((item.testingQueueAgeHours ?? 0) >= 24) {
-        return "Check issue test status";
+        return "Check issue testing status";
       }
-      return "Track issue test result";
+      return "Track issue testing result";
     }
     if (item.lifecycleState === "needs-triage") {
       return "Decide s-1/s0 or defer";
@@ -2437,7 +2435,7 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
     return "Respond to test feedback";
   }
   if (item.testingQueueAgeHours !== null || ["testing", "test_changes_requested"].includes(item.testingState ?? "")) {
-    return "Check linked issue test status";
+    return "Check linked issue testing status";
   }
   if (reasons.some((reason) => reason.includes("review waiting"))) {
     return "Request review response";
@@ -2505,9 +2503,9 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
       return "Link the tested PR";
     }
     if ((row.issue.durationHours ?? 0) >= 24) {
-      return "Check issue test status";
+      return "Check issue testing status";
     }
-    return "Track issue test result";
+    return "Track issue testing result";
   }
   if (row.kind === "issue" && row.prs.length === 0) {
     return "Link an execution PR";
@@ -2522,7 +2520,7 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
     return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
-    return "Check linked issue test status";
+    return "Check linked issue testing status";
   }
   if (row.prs.length > 0) {
     return "Move PR toward merge";
@@ -2548,10 +2546,10 @@ export function flowThreadDurationWarnings(row: PersonalGanttRow): string[] {
     row.issue.durationKind !== "testing_queue" &&
     row.prs.some((pr) => pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24)
   ) {
-    warnings.push("linked issue test wait over 24h");
+    warnings.push("linked issue testing wait over 24h");
   }
   if (row.issue.durationKind === "testing_queue" && (row.issue.durationHours ?? 0) >= 24) {
-    warnings.push("issue test wait over 24h");
+    warnings.push("issue testing wait over 24h");
   }
   if (row.prs.some((pr) => pr.linkedIssueNumbers.length === 0)) {
     warnings.push("PR issue link missing");
