@@ -198,6 +198,10 @@ export function dashboardRefreshModeText(refreshing: boolean, refreshWatchActive
   return `auto ${Math.round(dashboardAutoRefreshMs / 1000)}s`;
 }
 
+export function serviceReadTokenStatusText(configured: boolean): string {
+  return configured ? "service ready" : "service missing";
+}
+
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
 interface DashboardReadModelMeta {
@@ -1574,6 +1578,8 @@ function AccountControl({
         : "signed in"
     : "observer";
   const statusColor = authenticatedUser && capability ? capabilityStatusColor(capability.status) : "default";
+  const serviceTokenLabel = serviceReadTokenStatusText(serviceReadTokenConfigured);
+  const serviceTokenColor = serviceReadTokenConfigured ? "green" : "orange";
   const content = (
     <Space orientation="vertical" size={12} className="account-session-popover">
       <div className="account-session-heading">
@@ -1677,6 +1683,7 @@ function AccountControl({
             <UserRound size={16} aria-hidden="true" />
             <span>Observer</span>
             <Tag>{teamSignIn.tokenConnectedUsers} saved tokens</Tag>
+            <Tag color={serviceTokenColor}>{serviceTokenLabel}</Tag>
           </Button>
         </Popover>
       </Space>
@@ -1703,6 +1710,7 @@ function AccountControl({
           <small>{authenticatedUser ? "signed in" : "read only"}</small>
         </span>
         <Tag color={statusColor}>{statusLabel}</Tag>
+        <Tag color={serviceTokenColor}>{serviceTokenLabel}</Tag>
         <ChevronDown size={14} aria-hidden="true" />
       </Button>
     </Popover>

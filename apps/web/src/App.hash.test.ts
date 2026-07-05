@@ -13,6 +13,7 @@ import {
   prBoardTabFromHash,
   prScopeFilterFromHash,
   prSortFromHash,
+  serviceReadTokenStatusText,
   syncHealthCursorText
 } from "./App";
 
@@ -139,5 +140,10 @@ describe("dashboard hash filters", () => {
     expect(dashboardRefreshModeText(false, false)).toBe("auto 30s");
     expect(dashboardRefreshModeText(false, true)).toBe("watch 3s");
     expect(dashboardRefreshModeText(true, true)).toBe("refreshing");
+  });
+
+  it("labels the deployment service read token separately from personal sign-in", () => {
+    expect(serviceReadTokenStatusText(true)).toBe("service ready");
+    expect(serviceReadTokenStatusText(false)).toBe("service missing");
   });
 });
