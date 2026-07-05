@@ -9211,53 +9211,12 @@ function ObservedPersonInlineWorkbench({
 
   return (
     <div className="observed-person-workbench">
-      <section className="person-focus-header observed-person-focus-header">
-        <div className="person-focus-title">
-          <Avatar className="person-avatar-large">{preview.login.slice(0, 1).toUpperCase()}</Avatar>
-          <div>
-            <Title level={5}>{preview.login}</Title>
-            <Text type="secondary">Observed owner from visible active issue and pending PR cache</Text>
-          </div>
-        </div>
-        <Button size="small" icon={<Eye size={14} />} onClick={onOpenPreview}>
-          Quick Preview
-        </Button>
-      </section>
-
-      <div className="observed-person-summary observed-person-summary-actions">
-        <button
-          type="button"
-          className={focus === "active_issues" ? "is-active" : ""}
-          onClick={() => onFocusChange("active_issues")}
-        >
-          <strong>{preview.summary.activeCriticalIssues}</strong>
-          <small>s-1/s0</small>
-        </button>
-        <button
-          type="button"
-          className={focus === "pr_attention" ? "is-active" : ""}
-          onClick={() => onFocusChange("pr_attention")}
-        >
-          <strong>{preview.summary.attentionPrs}</strong>
-          <small>PR attention</small>
-        </button>
-        <button
-          type="button"
-          className={focus === "pending_pr" ? "is-active" : ""}
-          onClick={() => onFocusChange("pending_pr")}
-        >
-          <strong>{preview.summary.pendingPrs}</strong>
-          <small>pending PR</small>
-        </button>
-        <button
-          type="button"
-          className={focus === "threads" ? "is-active" : ""}
-          onClick={() => onFocusChange("threads")}
-        >
-          <strong>{preview.threads.length}</strong>
-          <small>threads</small>
-        </button>
-      </div>
+      <ObservedPersonOperationsSummary
+        preview={preview}
+        focus={focus}
+        onFocusChange={onFocusChange}
+        onOpenPreview={onOpenPreview}
+      />
 
       <ObservedPersonThreadBoard threads={preview.threads} generatedAt={generatedAt} />
       <ObservedPersonDetailPanels
@@ -11651,143 +11610,6 @@ function activityReasonColor(reason: string): string {
   return "orange";
 }
 
-function personalQuickChipClass({
-  active,
-  count,
-  critical = false
-}: {
-  active: boolean;
-  count: number;
-  critical?: boolean;
-}): string {
-  return `inline-filter-chip ${critical && count > 0 ? "inline-filter-chip-red" : ""} ${
-    count > 0 ? "" : "inline-filter-chip-muted"
-  } ${active ? "inline-filter-chip-active" : ""}`;
-}
-
-function PersonalWorkbenchQuickFilters({
-  observedPreview,
-  person,
-  activeFilter,
-  onSelect
-}: {
-  observedPreview: ObservedPersonPreview | null;
-  person: PersonalActionView | null;
-  activeFilter: PersonalDrilldownFilter;
-  onSelect: (filter: PersonalDrilldownFilter) => void;
-}) {
-  const activeIssues = person?.summary.activeCriticalIssues ?? observedPreview?.summary.activeCriticalIssues ?? 0;
-  const attentionPrs = person?.summary.attentionPrs ?? observedPreview?.summary.attentionPrs ?? 0;
-  const pendingPrs = person?.summary.pendingPrs ?? observedPreview?.summary.pendingPrs ?? 0;
-
-  if (!person) {
-    const threads = observedPreview?.threads.length ?? 0;
-    return (
-      <Space size={[6, 6]} wrap>
-        <button
-          type="button"
-          className={personalQuickChipClass({
-            active: activeFilter === "active_issues",
-            count: activeIssues,
-            critical: true
-          })}
-          onClick={() => onSelect("active_issues")}
-        >
-          {activeIssues} s-1/s0
-        </button>
-        <button
-          type="button"
-          className={personalQuickChipClass({ active: activeFilter === "pending_pr", count: pendingPrs })}
-          onClick={() => onSelect("pending_pr")}
-        >
-          {pendingPrs} pending PR
-        </button>
-        <button
-          type="button"
-          className={personalQuickChipClass({ active: activeFilter === "pr_attention", count: attentionPrs })}
-          onClick={() => onSelect("pr_attention")}
-        >
-          {attentionPrs} PR attention
-        </button>
-        <button
-          type="button"
-          className={personalQuickChipClass({ active: activeFilter === "threads", count: threads })}
-          onClick={() => onSelect("threads")}
-        >
-          {threads} threads
-        </button>
-      </Space>
-    );
-  }
-
-  const testingWork = personalTestingWorkCount(person);
-  const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
-
-  return (
-    <Space size={[6, 6]} wrap>
-      <button
-        type="button"
-        className={personalQuickChipClass({
-          active: activeFilter === "active_issues",
-          count: activeIssues,
-          critical: true
-        })}
-        onClick={() => onSelect("active_issues")}
-      >
-        {activeIssues} s-1/s0
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({
-          active: activeFilter === "triage",
-          count: person.summary.needsTriageIssues
-        })}
-        onClick={() => onSelect("triage")}
-      >
-        {person.summary.needsTriageIssues} needs triage
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({
-          active: activeFilter === "deferred",
-          count: person.summary.deferredIssues
-        })}
-        onClick={() => onSelect("deferred")}
-      >
-        {person.summary.deferredIssues} deferred
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({ active: activeFilter === "pending_pr", count: pendingPrs })}
-        onClick={() => onSelect("pending_pr")}
-      >
-        {pendingPrs} pending PR
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({ active: activeFilter === "pr_attention", count: attentionPrs })}
-        onClick={() => onSelect("pr_attention")}
-      >
-        {attentionPrs} PR attention
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({ active: activeFilter === "testing", count: testingWork })}
-        onClick={() => onSelect("testing")}
-      >
-        {testingWork} testing
-      </button>
-      <button
-        type="button"
-        className={personalQuickChipClass({ active: activeFilter === "yesterday_pr", count: yesterdayPrs })}
-        onClick={() => onSelect("yesterday_pr")}
-      >
-        {yesterdayPrs} PR yday
-      </button>
-    </Space>
-  );
-}
-
 function PersonalRotationOverview({
   person,
   generatedAt,
@@ -12558,20 +12380,297 @@ function personalOperatingSignalColor(tone: PersonalOperatingSignal["tone"]): st
   return "green";
 }
 
-function PersonalOperatingSignalStrip({
+function maxPrAgeValue(prs: Array<{ ageHours: number }>): number | null {
+  return prs.length === 0 ? null : Math.max(...prs.map((pr) => pr.ageHours));
+}
+
+function personOpsTone(count: number, critical = false): "critical" | "attention" | "normal" | "good" {
+  if (count <= 0) {
+    return "good";
+  }
+  return critical ? "critical" : "attention";
+}
+
+function WatchedPersonOperationsSummary({
+  person,
   signals,
   activeFilter,
   onSelect
 }: {
+  person: PersonalActionView;
   signals: PersonalOperatingSignal[];
   activeFilter: PersonalDrilldownFilter;
   onSelect: (filter: PersonalDrilldownFilter) => void;
 }) {
   const topSignal = [...signals].sort((left, right) => right.priority - left.priority)[0] ?? null;
+  const testingWork = personalTestingWorkCount(person);
+  const staleTestingIssues = person.testingIssues.filter(isTestingIssueStale).length;
+  const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
+
+  return (
+    <section className="person-ops-summary" aria-label={`${person.login} queue summary`}>
+      <div className="person-ops-identity">
+        <span className="person-avatar person-avatar-large" aria-hidden="true">
+          {person.login.slice(0, 1).toUpperCase()}
+        </span>
+        <div>
+          <Title level={4}>{person.login}</Title>
+          <Text type="secondary">
+            yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday} PRs
+          </Text>
+        </div>
+      </div>
+      <div className="person-ops-tiles">
+        <PersonOpsTile
+          label="Active issues"
+          value={person.activeCriticalIssues.length}
+          detail={`oldest ${optionalHours(maxCriticalActiveAge(person.activeCriticalIssues))}`}
+          tone={personOpsTone(person.activeCriticalIssues.length, true)}
+          active={activeFilter === "active_issues"}
+          onClick={() => onSelect("active_issues")}
+        />
+        <PersonOpsTile
+          label="Needs triage"
+          value={person.needsTriageIssues.length}
+          detail="classify, start, or defer"
+          tone={personOpsTone(person.needsTriageIssues.length)}
+          active={activeFilter === "triage"}
+          onClick={() => onSelect("triage")}
+        />
+        <PersonOpsTile
+          label="Deferred"
+          value={person.deferredIssues.length}
+          detail="out of active queue"
+          tone={person.deferredIssues.length > 0 ? "normal" : "good"}
+          active={activeFilter === "deferred"}
+          onClick={() => onSelect("deferred")}
+        />
+        <PersonOpsTile
+          label="PR attention"
+          value={person.attentionPrs.length}
+          detail={`oldest ${optionalHours(maxPrAgeValue(person.attentionPrs))}`}
+          tone={personOpsTone(person.attentionPrs.length)}
+          active={activeFilter === "pr_attention"}
+          onClick={() => onSelect("pr_attention")}
+        />
+        <PersonOpsTile
+          label="Pending PR"
+          value={person.pendingPrs.length}
+          detail={`oldest ${optionalHours(maxPrAgeValue(person.pendingPrs))}`}
+          tone={person.pendingPrs.length > 0 ? "normal" : "good"}
+          active={activeFilter === "pending_pr"}
+          onClick={() => onSelect("pending_pr")}
+        />
+        <PersonOpsTile
+          label="Issue testing"
+          value={testingWork}
+          detail={`${staleTestingIssues} waiting >24h`}
+          tone={staleTestingIssues > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+          active={activeFilter === "testing"}
+          onClick={() => onSelect("testing")}
+        />
+        <PersonOpsTile
+          label="Yesterday PR"
+          value={
+            person.summary.prsCreatedYesterday === 0 && person.summary.prsMergedYesterday === 0
+              ? 0
+              : `${person.summary.prsCreatedYesterday}/${person.summary.prsMergedYesterday}`
+          }
+          detail="created / merged"
+          tone={yesterdayPrs > 0 ? "normal" : "good"}
+          active={activeFilter === "yesterday_pr"}
+          onClick={() => onSelect("yesterday_pr")}
+        />
+      </div>
+      <PersonOpsFirstAction signal={topSignal} onSelect={onSelect} />
+    </section>
+  );
+}
+
+function ObservedPersonOperationsSummary({
+  preview,
+  focus,
+  onFocusChange,
+  onOpenPreview
+}: {
+  preview: ObservedPersonPreview;
+  focus: PersonalDrilldownFilter;
+  onFocusChange: (filter: PersonalDrilldownFilter) => void;
+  onOpenPreview: () => void;
+}) {
+  const attentionPrs = preview.prs.filter((pr) => prAttentionReasons(pr).length > 0);
+  const topFilter: PersonalDrilldownFilter =
+    preview.summary.activeCriticalIssues > 0
+      ? "active_issues"
+      : attentionPrs.length > 0
+        ? "pr_attention"
+        : preview.summary.pendingPrs > 0
+          ? "pending_pr"
+          : "threads";
+
+  return (
+    <section
+      className="person-ops-summary person-ops-summary-observed"
+      aria-label={`${preview.login} observed queue summary`}
+    >
+      <div className="person-ops-identity">
+        <Avatar className="person-avatar-large">{preview.login.slice(0, 1).toUpperCase()}</Avatar>
+        <div>
+          <Title level={5}>{preview.login}</Title>
+          <Text type="secondary">Observed owner from visible active issue and pending PR cache</Text>
+        </div>
+        <Button size="small" icon={<Eye size={14} />} onClick={onOpenPreview}>
+          Preview
+        </Button>
+      </div>
+      <div className="person-ops-tiles">
+        <PersonOpsTile
+          label="Active issues"
+          value={preview.summary.activeCriticalIssues}
+          detail={`${preview.issues.length} issue records`}
+          tone={personOpsTone(preview.summary.activeCriticalIssues, true)}
+          active={focus === "active_issues"}
+          onClick={() => onFocusChange("active_issues")}
+        />
+        <PersonOpsTile
+          label="PR attention"
+          value={attentionPrs.length}
+          detail={`oldest ${optionalHours(maxPrAgeValue(attentionPrs))}`}
+          tone={personOpsTone(attentionPrs.length)}
+          active={focus === "pr_attention"}
+          onClick={() => onFocusChange("pr_attention")}
+        />
+        <PersonOpsTile
+          label="Pending PR"
+          value={preview.summary.pendingPrs}
+          detail={`oldest ${optionalHours(maxPrAgeValue(preview.prs))}`}
+          tone={preview.summary.pendingPrs > 0 ? "normal" : "good"}
+          active={focus === "pending_pr"}
+          onClick={() => onFocusChange("pending_pr")}
+        />
+        <PersonOpsTile
+          label="Threads"
+          value={preview.threads.length}
+          detail="issue and PR flow"
+          tone={preview.threads.length > 0 ? "normal" : "good"}
+          active={focus === "threads"}
+          onClick={() => onFocusChange("threads")}
+        />
+      </div>
+      <div className="person-ops-first person-ops-first-observed">
+        <span>First action</span>
+        <button type="button" onClick={() => onFocusChange(topFilter)}>
+          <strong>{observedPersonFirstActionLabel(topFilter)}</strong>
+          <small>{observedPersonFirstActionDetail(preview, topFilter)}</small>
+          <em>Open {personalDrilldownLabel(topFilter)}</em>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PersonOpsFirstAction({
+  signal,
+  onSelect
+}: {
+  signal: PersonalOperatingSignal | null;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  if (!signal) {
+    return (
+      <div className="person-ops-first person-ops-first-good">
+        <span>First action</span>
+        <div>
+          <strong>No urgent blocker in cached data</strong>
+          <small>Review trend and routine PR movement.</small>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`person-ops-first person-ops-first-${signal.tone}`}>
+      <span>First action</span>
+      <button type="button" onClick={() => onSelect(signal.target)}>
+        <strong>{signal.label}</strong>
+        <small>{signal.detail}</small>
+        <em>Open {personalDrilldownLabel(signal.target)}</em>
+      </button>
+    </div>
+  );
+}
+
+function PersonOpsTile({
+  label,
+  value,
+  detail,
+  tone,
+  active,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`person-ops-tile person-ops-tile-${tone} ${active ? "person-ops-tile-active" : ""}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
+  );
+}
+
+function observedPersonFirstActionLabel(filter: PersonalDrilldownFilter): string {
+  if (filter === "active_issues") {
+    return "Review active s-1/s0 issues";
+  }
+  if (filter === "pr_attention") {
+    return "Unblock PR attention";
+  }
+  if (filter === "pending_pr") {
+    return "Review pending PR movement";
+  }
+  return "Inspect visible work threads";
+}
+
+function observedPersonFirstActionDetail(preview: ObservedPersonPreview, filter: PersonalDrilldownFilter): string {
+  if (filter === "active_issues") {
+    return `${preview.summary.activeCriticalIssues} active issue records from visible cache.`;
+  }
+  if (filter === "pr_attention") {
+    return `${preview.prs.filter((pr) => prAttentionReasons(pr).length > 0).length} PRs need attention.`;
+  }
+  if (filter === "pending_pr") {
+    return `${preview.summary.pendingPrs} pending PRs are visible for this owner.`;
+  }
+  return `${preview.threads.length} issue/PR threads are visible.`;
+}
+
+function PersonalOperatingSignalStrip({
+  signals,
+  activeFilter,
+  onSelect,
+  showFocus = true
+}: {
+  signals: PersonalOperatingSignal[];
+  activeFilter: PersonalDrilldownFilter;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+  showFocus?: boolean;
+}) {
+  const topSignal = [...signals].sort((left, right) => right.priority - left.priority)[0] ?? null;
 
   return (
     <div className="person-signal-panel" aria-label="Personal workflow signals">
-      {topSignal ? (
+      {showFocus && topSignal ? (
         <button
           type="button"
           className={`person-signal-focus person-signal-${topSignal.tone}`}
@@ -12651,24 +12750,29 @@ function SelectedPersonWorkbench({
 
   return (
     <div className="selected-person-workbench">
-      <div className="person-focus-header">
-        <div className="person-focus-title">
-          <span className="person-avatar person-avatar-large" aria-hidden="true">
-            {person.login.slice(0, 1).toUpperCase()}
-          </span>
-          <div>
-            <Title level={4}>{person.login}</Title>
-            <Text type="secondary">
-              yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday} PRs
-            </Text>
-          </div>
-        </div>
+      <WatchedPersonOperationsSummary
+        person={person}
+        signals={operatingSignals}
+        activeFilter={drilldownFilter}
+        onSelect={onDrilldownChange}
+      />
+      <details className="secondary-disclosure person-signal-disclosure">
+        <summary>
+          <span>Signal evidence</span>
+          <Space size={[4, 4]} wrap>
+            <Tag>{operatingSignals.length} signals</Tag>
+            <Tag color={operatingSignals.some((signal) => signal.tone === "critical") ? "red" : "default"}>
+              {operatingSignals.filter((signal) => signal.tone === "critical").length} critical
+            </Tag>
+          </Space>
+        </summary>
         <PersonalOperatingSignalStrip
           signals={operatingSignals}
           activeFilter={drilldownFilter}
           onSelect={onDrilldownChange}
+          showFocus={false}
         />
-      </div>
+      </details>
 
       <PersonalRotationOverview
         person={person}
@@ -16030,18 +16134,6 @@ export default function App() {
                       <Text type="secondary">Observed owner preview from visible cache</Text>
                     ) : null}
                   </div>
-                  <PersonalWorkbenchQuickFilters
-                    person={selectedPersonalView}
-                    observedPreview={selectedObservedPersonPreview}
-                    activeFilter={personalDrilldownFilter}
-                    onSelect={(filter) =>
-                      selectedPersonalView
-                        ? setPersonalDrilldownFilter(filter)
-                        : selectedObservedPersonPreview
-                          ? openObservedPersonalMetric(selectedObservedPersonPreview.login, filter)
-                          : setPersonalDrilldownFilter(filter)
-                    }
-                  />
                 </div>
                 {!data.personalViews.length && observedPeople.length > 0 ? (
                   <>
