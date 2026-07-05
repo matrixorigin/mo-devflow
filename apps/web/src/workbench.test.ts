@@ -38,7 +38,9 @@ import {
   prAttentionReasons,
   sortTestingIssuesForAction,
   sortPeopleByWorkload,
-  teamCommandSignals
+  teamCommandSignals,
+  testingStateBusinessLabel,
+  testingStateHelpText
 } from "./workbench";
 
 describe("person workload summaries", () => {
@@ -292,6 +294,14 @@ describe("work item attention reasons", () => {
       "Merge conflict",
       "Issue test changes requested"
     ]);
+  });
+
+  it("keeps issue testing labels distinct from ignored PR-side test signals", () => {
+    expect(testingStateBusinessLabel("testing")).toBe("issue in testing");
+    expect(testingStateBusinessLabel("test_requested")).toBe("PR-side test signal");
+    expect(testingStateBusinessLabel("not_ready")).toBe("not in issue testing");
+    expect(testingStateHelpText("test_requested")).toContain("PR-side evidence only");
+    expect(testingStateHelpText("testing")).toContain("linked to an issue");
   });
 
   it("includes active s-1/s0 issue blockers before generic evidence", () => {

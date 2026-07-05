@@ -135,6 +135,8 @@ import {
   prAttentionReasons,
   sortTestingIssuesForAction,
   teamCommandSignals,
+  testingStateBusinessLabel,
+  testingStateHelpText,
   testingIssueLinkedBlockerCount,
   testingIssueNeedsAttention,
   sortPeopleByWorkload,
@@ -809,26 +811,12 @@ function testingStateColor(state: TestingFlowState): string {
   return "default";
 }
 
-function testingStateBusinessLabel(state: TestingFlowState): string {
-  if (state === "test_requested") {
-    return "PR evidence only";
-  }
-  if (state === "testing") {
-    return "linked issue in test";
-  }
-  if (state === "dev_done") {
-    return "dev ready signal";
-  }
-  if (state === "test_changes_requested") {
-    return "issue test changes";
-  }
-  if (state === "test_passed") {
-    return "issue test passed";
-  }
-  if (state === "closed_or_merged") {
-    return "closed";
-  }
-  return "not in test";
+function TestingStateTag({ state, label }: { state: TestingFlowState; label?: string }) {
+  return (
+    <Tooltip title={testingStateHelpText(state)}>
+      <Tag color={testingStateColor(state)}>{label ?? testingStateBusinessLabel(state)}</Tag>
+    </Tooltip>
+  );
 }
 
 function testingSignalBusinessLabel(signal: string): string {
@@ -865,16 +853,16 @@ function testingSignalTagLabel(signal: string): string {
     return `issue label: ${issueLabel[2]}`;
   }
   if (signal.startsWith("reviewer:")) {
-    return `PR reviewer: ${signal.slice("reviewer:".length)}`;
+    return `ignored PR reviewer: ${signal.slice("reviewer:".length)}`;
   }
   if (signal.startsWith("assignee:")) {
-    return `PR assignee: ${signal.slice("assignee:".length)}`;
+    return `ignored PR assignee: ${signal.slice("assignee:".length)}`;
   }
   if (signal.startsWith("label:")) {
-    return `PR label: ${signal.slice("label:".length)}`;
+    return `ignored PR label: ${signal.slice("label:".length)}`;
   }
   if (signal.startsWith("comment:")) {
-    return "PR comment signal";
+    return "ignored PR comment";
   }
   return labelText(signal);
 }
@@ -892,7 +880,7 @@ function testingSignalTagColor(signal: string): string {
     signal.startsWith("label:") ||
     signal.startsWith("comment:")
   ) {
-    return "gold";
+    return "default";
   }
   return "default";
 }
@@ -1565,10 +1553,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "linked issue in test";
+    return "issue in testing";
   }
   if (filter === "stale_testing") {
-    return "linked issue test wait";
+    return "issue testing wait";
   }
   if (filter === "testing_evidence_gap") {
     return "issue test evidence gap";
@@ -1583,13 +1571,13 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no linked issue";
+    return "no linked issue after sync";
   }
   if (filter === "issue_link_pending") {
-    return "issue link evidence pending";
+    return "issue link sync pending";
   }
   if (filter === "evidence_pending") {
-    return "PR evidence pending";
+    return "PR detail pending";
   }
   if (filter === "no_action_24h") {
     return "no action 24h";
@@ -1602,7 +1590,7 @@ function prScopeHelp(filter: PrScopeFilter): string | null {
     return "Only PRs with completed PR detail and relationship sync, but no discovered issue relationship, are counted here.";
   }
   if (filter === "issue_link_pending") {
-    return "These PRs are not treated as unlinked yet; relationship evidence is still incomplete.";
+    return "These PRs are not treated as unlinked yet because PR detail or relationship evidence is still incomplete.";
   }
   if (filter === "evidence_pending") {
     return "PR review, CI, merge, or issue-link evidence is still incomplete for these rows.";
@@ -2103,9 +2091,9 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No linked issue", value: "no_issue" },
-            { label: "Link evidence pending", value: "issue_link_pending" },
-            { label: "Evidence pending", value: "evidence_pending" },
+            { label: "No issue after sync", value: "no_issue" },
+            { label: "Issue link syncing", value: "issue_link_pending" },
+            { label: "PR detail pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -3307,9 +3295,7 @@ function TeamPrRiskRow({
               {activeIssues.length} active issue{activeIssues.length === 1 ? "" : "s"}
             </Tag>
           ) : null}
-          {pr.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-          ) : null}
+          {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
           {onPreview ? (
             <Tooltip title="Preview PR">
               <Button
@@ -3528,9 +3514,7 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
                     owner {pr.ownerLogin} | age {hours(pr.ageHours)} | last {formatDate(pr.lastHumanActionAt)}
                   </small>
                   <Space size={[4, 4]} wrap>
-                    {pr.testingState !== "not_ready" ? (
-                      <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-                    ) : null}
+                    {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
                     {pr.attentionFlags.slice(0, 4).map((flag) => (
                       <Tag color={flagColor(flag)} key={flag}>
                         {labelText(flag)}
@@ -3596,9 +3580,7 @@ function TeamPullRequestPreviewModal({
         <Space size={[4, 4]} wrap>
           <Tag>{pr.ownerLogin}</Tag>
           <Tag>{hours(pr.ageHours)}</Tag>
-          {pr.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-          ) : null}
+          {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
           {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
           {pr.reviewDecision ? (
             <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
@@ -3762,7 +3744,7 @@ function PrIssueContextCell({
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <Tag color={testingStateColor(pr.testingState)}>linked issue in test</Tag>
+          <TestingStateTag state={pr.testingState} label="issue in testing" />
           {pr.testingQueueAgeHours !== null ? <Tag>linked issue wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
@@ -4382,7 +4364,7 @@ function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
     return pr.testingTesters.length > 0
       ? `linked issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "linked issue in test";
+      : "issue in testing";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -5595,7 +5577,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="linked issue in test"
+        label="issue in testing"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
@@ -6156,7 +6138,7 @@ function TestingCommandBoard({
             prs={stalePrs}
             visibleLimit={8}
             tone="critical"
-            emptyText="No linked issue in test has waited more than a day"
+            emptyText="No issue in testing has waited more than a day"
           />
           <TestingQueueLane
             title="Linked PR Data Gaps"
@@ -6739,7 +6721,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           <WorkObjectLink href={pr.htmlUrl} icon={<GitPullRequest size={15} aria-hidden="true" />}>
             PR #{pr.number}
           </WorkObjectLink>
-          <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
+          <TestingStateTag state={pr.testingState} />
           <Tag>{testingQueueAgeText(pr)}</Tag>
           {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
         </div>
@@ -7225,7 +7207,7 @@ function ObservedPersonIssuePanel({ title, issues }: { title: string; issues: Cr
               <span className="observed-person-row-tags">
                 {issue.severity ? <Tag color={severityColor(issue.severity)}>{issue.severity}</Tag> : null}
                 <Tag color={issue.isComplete ? "green" : "orange"}>
-                  {issue.isComplete ? "complete cache" : "partial cache"}
+                  {issue.isComplete ? "complete cache" : "incomplete cache"}
                 </Tag>
                 <ExternalLink size={13} aria-hidden="true" />
               </span>
@@ -7609,9 +7591,7 @@ function PullRequestWorkCard({
         {pr.mergeStateStatus ? (
           <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
         ) : null}
-        {isTestingQueuePr(pr) ? (
-          <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-        ) : null}
+        {isTestingQueuePr(pr) ? <TestingStateTag state={pr.testingState} /> : null}
         {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
       </div>
       <div className="work-meta-row">
@@ -8248,7 +8228,7 @@ function PersonalActionQueueItem({
               <Tag color={actionTone}>{item.phase}</Tag>
               {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
               {item.testingState && item.testingState !== "not_ready" ? (
-                <Tag color={testingStateColor(item.testingState)}>{testingStateBusinessLabel(item.testingState)}</Tag>
+                <TestingStateTag state={item.testingState} />
               ) : null}
               {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
               <Tooltip title={`Preview ${objectLabel}`}>
@@ -8313,7 +8293,11 @@ function PersonalActionQueueItem({
                 {reason}
               </Tag>
             ))}
-            {hiddenReasonCount > 0 ? <Tag>+{hiddenReasonCount}</Tag> : null}
+            {hiddenReasonCount > 0 ? (
+              <button type="button" className="linked-overflow-button" onClick={() => onPreview(item)}>
+                +{hiddenReasonCount} more signals
+              </button>
+            ) : null}
             {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
             {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
             {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
@@ -8370,7 +8354,7 @@ function PersonalActivityPreviewModal({ item, onClose }: { item: PersonalActivit
           {item.severity ? <Tag color={severityColor(item.severity)}>{item.severity}</Tag> : null}
           {item.lifecycleState ? <Tag>{labelText(item.lifecycleState)}</Tag> : null}
           {item.testingState && item.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(item.testingState)}>{testingStateBusinessLabel(item.testingState)}</Tag>
+            <TestingStateTag state={item.testingState} />
           ) : null}
           {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
         </Space>
@@ -9141,9 +9125,7 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                     {pr.mergeStateStatus ? (
                       <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
                     ) : null}
-                    {pr.testingState !== "not_ready" ? (
-                      <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-                    ) : null}
+                    {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
                   </Space>
                 </a>
               ))}
@@ -9302,9 +9284,7 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
           {pr.reviewDecision ? (
             <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
           ) : null}
-          {pr.testingState !== "not_ready" ? (
-            <Tag color={testingStateColor(pr.testingState)}>{testingStateBusinessLabel(pr.testingState)}</Tag>
-          ) : null}
+          {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
         </div>
         {linkedIssues.length > 0 ? (
           <div className="flow-pr-links">
@@ -11392,7 +11372,14 @@ export default function App() {
                   </Tag>
                 </Tooltip>
               ))}
-              {issue.linkedPullRequests.length > 4 ? <Tag>+{issue.linkedPullRequests.length - 4}</Tag> : null}
+              {issue.linkedPullRequests.length > 4 ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview issue ${issue.number} with ${issue.linkedPullRequests.length - 4} more linked PRs`}
+                  count={issue.linkedPullRequests.length - 4}
+                  label="more PRs"
+                  onClick={() => setWorkObjectPreview({ objectType: "issue", issue })}
+                />
+              ) : null}
             </Space>
           )
       },
@@ -11411,7 +11398,14 @@ export default function App() {
                   </Tag>
                 </Tooltip>
               ))}
-              {issue.blockers.length > 4 ? <Tag>+{issue.blockers.length - 4}</Tag> : null}
+              {issue.blockers.length > 4 ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview issue ${issue.number} with ${issue.blockers.length - 4} more blockers`}
+                  count={issue.blockers.length - 4}
+                  label="more blockers"
+                  onClick={() => setWorkObjectPreview({ objectType: "issue", issue })}
+                />
+              ) : null}
             </Space>
           )
       },
@@ -11540,7 +11534,20 @@ export default function App() {
                   {reason}
                 </Tag>
               ))}
-              {reasons.length > 4 ? <Tag>+{reasons.length - 4}</Tag> : null}
+              {reasons.length > 4 ? (
+                <LinkedOverflowButton
+                  ariaLabel={`Preview PR ${pr.number} with ${reasons.length - 4} more attention signals`}
+                  count={reasons.length - 4}
+                  label="more signals"
+                  onClick={() =>
+                    setWorkObjectPreview({
+                      objectType: "pull_request",
+                      pr,
+                      activeIssues: criticalIssuesByPr.get(pr.number) ?? []
+                    })
+                  }
+                />
+              ) : null}
             </Space>
           );
         }
@@ -12063,9 +12070,9 @@ export default function App() {
         width: 260,
         render: (_, transition) => (
           <Space size={4} wrap>
-            <Tag>{testingStateBusinessLabel(transition.fromState)}</Tag>
+            <TestingStateTag state={transition.fromState} />
             <Text type="secondary">-&gt;</Text>
-            <Tag color={testingStateColor(transition.toState)}>{testingStateBusinessLabel(transition.toState)}</Tag>
+            <TestingStateTag state={transition.toState} />
           </Space>
         )
       },
@@ -12143,9 +12150,9 @@ export default function App() {
           width: 300,
           render: (_, transition) => (
             <Space size={4} wrap>
-              <Tag>{testingStateBusinessLabel(transition.fromState)}</Tag>
+              <TestingStateTag state={transition.fromState} />
               <Text type="secondary">-&gt;</Text>
-              <Tag color={testingStateColor(transition.toState)}>{testingStateBusinessLabel(transition.toState)}</Tag>
+              <TestingStateTag state={transition.toState} />
             </Space>
           )
         },

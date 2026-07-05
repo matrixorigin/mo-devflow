@@ -815,6 +815,47 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
   return [...new Set(reasons)];
 }
 
+export function testingStateBusinessLabel(state: TestingFlowState): string {
+  if (state === "test_requested") {
+    return "PR-side test signal";
+  }
+  if (state === "testing") {
+    return "issue in testing";
+  }
+  if (state === "dev_done") {
+    return "PR dev-ready signal";
+  }
+  if (state === "test_changes_requested") {
+    return "test changes requested";
+  }
+  if (state === "test_passed") {
+    return "issue test passed";
+  }
+  if (state === "closed_or_merged") {
+    return "closed or merged";
+  }
+  return "not in issue testing";
+}
+
+export function testingStateHelpText(state: TestingFlowState): string {
+  if (state === "testing") {
+    return "This PR is linked to an issue that is currently assigned to configured testers or has the configured issue testing label.";
+  }
+  if (state === "test_requested" || state === "dev_done") {
+    return "This is PR-side evidence only. It does not put an issue into testing unless the linked issue matches configured handoff rules.";
+  }
+  if (state === "test_changes_requested") {
+    return "Testing feedback is visible; the owner should respond before the issue can leave testing.";
+  }
+  if (state === "test_passed") {
+    return "Cached evidence says issue testing passed.";
+  }
+  if (state === "closed_or_merged") {
+    return "The related work is closed or merged in cached evidence.";
+  }
+  return "No configured issue testing handoff is visible in cached evidence.";
+}
+
 export function criticalIssueReasons(issue: CriticalIssueView): string[] {
   const blockers = issue.blockers.filter((blocker) => blocker.severity !== "info").map((blocker) => blocker.message);
   const evidence = [
