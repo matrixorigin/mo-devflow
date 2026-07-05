@@ -42,6 +42,7 @@ export function createDashboardSummaryCache(options: { now?: () => number; ttlMs
   const now = options.now ?? Date.now;
   const ttlMs = Math.max(0, options.ttlMs ?? 15_000);
   const entries = new Map<string, DashboardCacheEntry>();
+  const pendingBuilds = new Map<string, Promise<DashboardSummary>>();
 
   return {
     clear() {
@@ -85,9 +86,43 @@ export function createDashboardSummaryCache(options: { now?: () => number; ttlMs
         };
       }
 
+      const pendingKey = `${key}:${version}`;
+      const pendingBuild = pendingBuilds.get(pendingKey);
+      if (pendingBuild) {
+        try {
+          const pendingSummary = await pendingBuild;
+          if (etagMatches(request.ifNoneMatch, etag)) {
+            return {
+              etag,
+              status: "not-modified",
+              summary: null,
+              version
+            };
+          }
+          return {
+            etag,
+            status: "hit",
+            summary: pendingSummary,
+            version
+          };
+        } catch (error) {
+          if (cached) {
+            return {
+              etag: cached.etag,
+              status: "stale-if-error",
+              summary: cached.summary,
+              version: cached.version
+            };
+          }
+          throw error;
+        }
+      }
+
       let summary: DashboardSummary;
       try {
-        summary = await request.buildSummary();
+        const build = request.buildSummary();
+        pendingBuilds.set(pendingKey, build);
+        summary = await build;
       } catch (error) {
         if (cached) {
           return {
@@ -98,6 +133,8 @@ export function createDashboardSummaryCache(options: { now?: () => number; ttlMs
           };
         }
         throw error;
+      } finally {
+        pendingBuilds.delete(pendingKey);
       }
       if (ttlMs > 0) {
         entries.set(key, {

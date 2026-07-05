@@ -3492,14 +3492,6 @@ export async function getDashboardDataVersion(repoId: number): Promise<string> {
               MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
        FROM github_webhook_deliveries WHERE repo_id = ?
        UNION ALL
-       SELECT 'jobs' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(updated_at) AS max_event_at, MAX(next_run_at) AS max_aux_at
-       FROM jobs
-       UNION ALL
-       SELECT 'worker_heartbeats' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
-              MAX(heartbeat_at) AS max_event_at, MAX(updated_at) AS max_aux_at
-       FROM worker_heartbeats
-       UNION ALL
        SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
        FROM write_action_executions WHERE repo_id = ?
@@ -3533,8 +3525,6 @@ export async function getDashboardSummary(
 ): Promise<DashboardSummary> {
   const pool = getPool();
   const visibleClasses = visibleClassesForDashboard(profile, viewer);
-  const criticalVisibility = dashboardVisibilityFilter("i", profile, viewer);
-  const prVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const issueListVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const allPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const partialIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
@@ -3547,53 +3537,60 @@ export async function getDashboardSummary(
   const attentionPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const driftIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const driftPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
-  const personalIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
-  const personalPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
-  const linkedPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const timelineEventVisibility = dashboardVisibilityFilter("e", profile, viewer);
   const hiddenIssueVisibility = dashboardVisibilityFilter("i", profile, viewer);
   const hiddenPrVisibility = dashboardVisibilityFilter("p", profile, viewer);
   const { start, end } = previousCalendarDayRange(profile.reporting.timezone);
-  const startSql = sqlDate(start) ?? "1970-01-01 00:00:00";
-  const endSql = sqlDate(end) ?? "1970-01-01 00:00:00";
-  const watchedUserPlaceholders = profile.people.watchedUsers.map(() => "?").join(", ");
   const hiddenIssueExpression = `SUM(CASE WHEN ${hiddenIssueVisibility.sql} THEN 0 ELSE 1 END)`;
   const hiddenPrExpression = `SUM(CASE WHEN ${hiddenPrVisibility.sql} THEN 0 ELSE 1 END)`;
   const staleThresholdHours = cacheStaleHoursFromEnv();
   const staleCutoff = sqlDate(new Date(Date.now() - staleThresholdHours * 3_600_000)) ?? "1970-01-01 00:00:00";
-  const criticalSeverityRank = severityRankSql("i.severity", profile.labels.critical);
-  const [criticalRows] = await pool.execute<RowData[]>(
-    `SELECT * FROM issues i
-     WHERE i.repo_id = ?
-       AND i.state = 'open'
-       AND i.severity IN (${profile.labels.critical.map(() => "?").join(", ")})
-       AND ${criticalVisibility.sql}
-     ORDER BY ${criticalSeverityRank}, i.updated_at ASC
-     LIMIT 100`,
-    [repoId, ...profile.labels.critical, ...criticalVisibility.params, ...profile.labels.critical]
-  );
-  const [prRows] = await pool.execute<RowData[]>(
-    `SELECT * FROM pull_requests p
-     WHERE p.repo_id = ? AND p.state = 'open'
-       AND ${prVisibility.sql}
-     ORDER BY updated_at ASC
-     LIMIT 300`,
-    [repoId, ...prVisibility.params]
-  );
+  const rowTime = (row: RowData, column: string): number =>
+    new Date(fromSqlDate(row[column]) ?? "1970-01-01T00:00:00.000Z").getTime();
+  const criticalSeveritySortRank = (row: RowData): number => {
+    const severity = row.severity ? asString(row.severity) : "";
+    const index = profile.labels.critical.indexOf(severity);
+    return index >= 0 ? index : profile.labels.critical.length;
+  };
   const [issueRows] = await pool.execute<RowData[]>(
     `SELECT i.number, i.title, i.html_url, i.owner_login, i.lifecycle_state, i.severity, i.state, i.is_pull_request,
-            i.labels_json, i.assignees_json, i.created_at, i.updated_at, i.closed_at,
+            i.owner_reason, i.ai_effort_label, i.labels_json, i.assignees_json, i.created_at, i.updated_at, i.closed_at,
             i.is_complete, i.sync_error, i.last_synced_at
      FROM issues i
      WHERE i.repo_id = ? AND ${issueListVisibility.sql}`,
     [repoId, ...issueListVisibility.params]
   );
   const [allPrRows] = await pool.execute<RowData[]>(
-    `SELECT *
+    `SELECT p.number, p.title, p.state, p.owner_login, p.html_url, p.created_at, p.updated_at, p.merged_at,
+            p.draft, p.age_hours, p.last_human_action_at, p.review_decision, p.merge_state_status,
+            p.ci_state, p.latest_review_state, p.latest_review_submitted_at, p.latest_commit_at,
+            p.detail_synced_at, p.detail_error, p.testing_state, p.testing_testers_json,
+            p.testing_signals_json, p.testing_queue_age_hours, p.attention_flags_json,
+            p.linked_issue_numbers_json, p.is_complete
      FROM pull_requests p
-     WHERE p.repo_id = ? AND ${allPrVisibility.sql}`,
+     WHERE p.repo_id = ? AND ${allPrVisibility.sql}
+     ORDER BY CASE WHEN p.state = 'open' THEN 0 ELSE 1 END, p.updated_at DESC
+     LIMIT 2000`,
     [repoId, ...allPrVisibility.params]
   );
+  const criticalRows = issueRows
+    .filter(
+      (row) =>
+        asString(row.state) === "open" &&
+        row.severity !== null &&
+        row.severity !== undefined &&
+        profile.labels.critical.includes(asString(row.severity))
+    )
+    .sort(
+      (left, right) =>
+        criticalSeveritySortRank(left) - criticalSeveritySortRank(right) ||
+        rowTime(left, "updated_at") - rowTime(right, "updated_at")
+    )
+    .slice(0, 100);
+  const prRows = allPrRows
+    .filter((row) => asString(row.state) === "open")
+    .sort((left, right) => rowTime(left, "updated_at") - rowTime(right, "updated_at"))
+    .slice(0, 300);
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
             latest.status,
@@ -3854,52 +3851,57 @@ export async function getDashboardSummary(
      LIMIT 100`,
     [repoId, ...driftIssueVisibility.params, ...driftPrVisibility.params]
   );
-  const [personalIssueRows] =
+  const watchedUsers = new Set(profile.people.watchedUsers);
+  const personalIssueRows: RowData[] =
     profile.people.watchedUsers.length === 0
-      ? [[] as RowData[]]
-      : await pool.execute<RowData[]>(
-          `SELECT *
-           FROM issues i
-           WHERE i.repo_id = ?
-             AND i.state = 'open'
-             AND i.owner_login IN (${watchedUserPlaceholders})
-             AND (
-               i.severity IN (${profile.labels.critical.map(() => "?").join(", ")})
-               OR i.lifecycle_state IN ('needs-triage', 'deferred')
-             )
-             AND ${personalIssueVisibility.sql}
-           ORDER BY
-             CASE WHEN i.severity IS NULL THEN 1 ELSE 0 END,
-             ${criticalSeverityRank},
-             CASE i.lifecycle_state WHEN 'needs-triage' THEN 0 WHEN 'deferred' THEN 1 ELSE 2 END,
-             i.updated_at ASC
-           LIMIT 500`,
-          [
-            repoId,
-            ...profile.people.watchedUsers,
-            ...profile.labels.critical,
-            ...personalIssueVisibility.params,
-            ...profile.labels.critical
-          ]
-        );
-  const [personalPrRows] =
+      ? []
+      : issueRows
+          .filter((row) => {
+            const severity = row.severity ? asString(row.severity) : null;
+            return (
+              asString(row.state) === "open" &&
+              watchedUsers.has(asString(row.owner_login)) &&
+              (Boolean(severity && profile.labels.critical.includes(severity)) ||
+                ["needs-triage", "deferred"].includes(asString(row.lifecycle_state)))
+            );
+          })
+          .sort((left, right) => {
+            const severityNullDelta = Number(!left.severity) - Number(!right.severity);
+            if (severityNullDelta !== 0) {
+              return severityNullDelta;
+            }
+            const severityDelta = criticalSeveritySortRank(left) - criticalSeveritySortRank(right);
+            if (severityDelta !== 0) {
+              return severityDelta;
+            }
+            const lifecycleRank = (row: RowData): number => {
+              const lifecycle = asString(row.lifecycle_state);
+              if (lifecycle === "needs-triage") {
+                return 0;
+              }
+              if (lifecycle === "deferred") {
+                return 1;
+              }
+              return 2;
+            };
+            return (
+              lifecycleRank(left) - lifecycleRank(right) || rowTime(left, "updated_at") - rowTime(right, "updated_at")
+            );
+          })
+          .slice(0, 500);
+  const personalPrRows: RowData[] =
     profile.people.watchedUsers.length === 0
-      ? [[] as RowData[]]
-      : await pool.execute<RowData[]>(
-          `SELECT *
-           FROM pull_requests p
-           WHERE p.repo_id = ?
-             AND p.owner_login IN (${watchedUserPlaceholders})
-             AND (
-               p.state = 'open'
-               OR (p.created_at >= ? AND p.created_at < ?)
-               OR (p.merged_at >= ? AND p.merged_at < ?)
-             )
-             AND ${personalPrVisibility.sql}
-           ORDER BY p.updated_at DESC
-           LIMIT 500`,
-          [repoId, ...profile.people.watchedUsers, startSql, endSql, startSql, endSql, ...personalPrVisibility.params]
-        );
+      ? []
+      : allPrRows
+          .filter(
+            (row) =>
+              watchedUsers.has(asString(row.owner_login)) &&
+              (asString(row.state) === "open" ||
+                inRange(row.created_at, start, end) ||
+                inRange(row.merged_at, start, end))
+          )
+          .sort((left, right) => rowTime(right, "updated_at") - rowTime(left, "updated_at"))
+          .slice(0, 500);
   const criticalIssueNumbers = new Set([
     ...criticalRows.map((row) => asNumber(row.number)),
     ...personalIssueRows
@@ -3920,18 +3922,15 @@ export async function getDashboardSummary(
     timelineEventVisibility.sql,
     timelineEventVisibility.params
   );
-  const [linkedPrCandidateRows] =
+  const linkedPrCandidateRows: RowData[] =
     criticalIssueNumbers.size === 0
-      ? [[] as RowData[]]
-      : await pool.execute<RowData[]>(
-          `SELECT *
-           FROM pull_requests p
-           WHERE p.repo_id = ?
-             AND ${linkedPrVisibility.sql}
-           ORDER BY CASE WHEN p.state = 'open' THEN 0 ELSE 1 END, p.updated_at DESC
-           LIMIT 500`,
-          [repoId, ...linkedPrVisibility.params]
-        );
+      ? []
+      : [...allPrRows]
+          .sort((left, right) => {
+            const stateDelta = Number(asString(left.state) !== "open") - Number(asString(right.state) !== "open");
+            return stateDelta || rowTime(right, "updated_at") - rowTime(left, "updated_at");
+          })
+          .slice(0, 500);
   const baseTestingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
   const testingHandoffStartedAtMap = await testingHandoffStartedAtByIssueNumber(
     repoId,

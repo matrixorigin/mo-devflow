@@ -80,7 +80,7 @@ dev-api-start:
 	else \
 		$(ASSERT_DB_READY) || exit 1; \
 		$(ASSERT_PORT_FREE) 127.0.0.1 "$${MO_DEVFLOW_API_PORT:-18081}" API; \
-		$(START_BG) $(API_PID) $(API_LOG) -- npm run start:api; \
+		$(START_BG) $(API_PID) $(API_LOG) -- npm run dev:api; \
 		started=1; \
 		echo "API starting (PID $$(cat $(API_PID)), log $(API_LOG))"; \
 	fi; \

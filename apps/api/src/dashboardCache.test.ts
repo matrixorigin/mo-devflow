@@ -89,6 +89,33 @@ describe("dashboard summary cache", () => {
     expect(buildSummary).toHaveBeenCalledTimes(2);
   });
 
+  test("coalesces concurrent rebuilds for the same dashboard version", async () => {
+    const cache = createDashboardSummaryCache({ now: () => 1_000, ttlMs: 10_000 });
+    let resolveBuild!: (value: DashboardSummary) => void;
+    const buildSummary = vi.fn(
+      () =>
+        new Promise<DashboardSummary>((resolve) => {
+          resolveBuild = resolve;
+        })
+    );
+    const loadVersion = vi.fn().mockResolvedValue("v1");
+
+    const firstPromise = cache.get({ profile, viewer: anonymousViewer, loadVersion, buildSummary });
+    const secondPromise = cache.get({ profile, viewer: anonymousViewer, loadVersion, buildSummary });
+
+    await Promise.resolve();
+    expect(buildSummary).toHaveBeenCalledTimes(1);
+
+    resolveBuild(summary("shared"));
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(first.status).toBe("miss");
+    expect(second.status).toBe("hit");
+    expect(first.summary).toEqual(summary("shared"));
+    expect(second.summary).toEqual(summary("shared"));
+    expect(loadVersion).toHaveBeenCalledTimes(2);
+  });
+
   test("returns not modified when the request etag matches a fresh cached summary", async () => {
     const cache = createDashboardSummaryCache({ now: () => 1_000, ttlMs: 10_000 });
     const buildSummary = vi.fn().mockResolvedValue(summary("first"));

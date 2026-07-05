@@ -180,6 +180,8 @@ const { Paragraph, Text, Title } = Typography;
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 const dashboardAutoRefreshMs = 30_000;
+const dashboardRefreshWatchMs = 90_000;
+const dashboardRefreshWatchPollMs = 3_000;
 const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
 const tablePageSizeOptions = [8, 10, 20, 50, 100];
 
@@ -14789,6 +14791,7 @@ export default function App() {
   const [manualRefreshSaving, setManualRefreshSaving] = useState(false);
   const [manualRefreshResult, setManualRefreshResult] = useState<ManualRefreshResult | null>(null);
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(null);
+  const [refreshWatchUntil, setRefreshWatchUntil] = useState<number | null>(null);
   const [webhookRetrySaving, setWebhookRetrySaving] = useState(false);
   const [webhookRetryResult, setWebhookRetryResult] = useState<WebhookRetryResult | null>(null);
   const [webhookRetryError, setWebhookRetryError] = useState<string | null>(null);
@@ -15244,6 +15247,12 @@ export default function App() {
     setManualRefreshModalOpen(true);
   }
 
+  function startRefreshWatch() {
+    setRefreshWatchUntil(Date.now() + dashboardRefreshWatchMs);
+    void load({ silent: true });
+    void loadApiHealth({ silent: true });
+  }
+
   async function queueManualRefreshForLayers(layers: ManualRefreshLayer[]) {
     if (layers.length === 0) {
       setManualRefreshError("Select at least one refresh layer.");
@@ -15264,8 +15273,7 @@ export default function App() {
       }
       setManualRefreshResult((await response.json()) as ManualRefreshResult);
       setManualRefreshModalOpen(false);
-      void load();
-      void loadApiHealth({ silent: true });
+      startRefreshWatch();
     } catch (err) {
       setManualRefreshError(displayError(err));
     } finally {
@@ -15294,9 +15302,14 @@ export default function App() {
       if (!response.ok) {
         throw new Error(await responseError(response));
       }
-      setWebhookRetryResult((await response.json()) as WebhookRetryResult);
-      void load({ silent: true });
-      void loadApiHealth({ silent: true });
+      const result = (await response.json()) as WebhookRetryResult;
+      setWebhookRetryResult(result);
+      if (result.retriedDeliveries > 0) {
+        startRefreshWatch();
+      } else {
+        void load({ silent: true });
+        void loadApiHealth({ silent: true });
+      }
     } catch (err) {
       setWebhookRetryError(displayError(err));
       void loadSession();
@@ -15452,7 +15465,11 @@ export default function App() {
       if (result.status === "token_unavailable") {
         void loadSession();
       }
-      void load();
+      if (result.postWriteRefresh?.queued) {
+        startRefreshWatch();
+      } else {
+        void load();
+      }
     } catch (err) {
       setPreviewError(displayError(err));
       void loadSession();
@@ -15487,6 +15504,26 @@ export default function App() {
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || refreshWatchUntil === null) {
+      return;
+    }
+    const refreshIfVisible = () => {
+      if (Date.now() >= refreshWatchUntil) {
+        setRefreshWatchUntil(null);
+        return;
+      }
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void load({ silent: true });
+      void loadApiHealth({ silent: true });
+    };
+    refreshIfVisible();
+    const intervalId = window.setInterval(refreshIfVisible, dashboardRefreshWatchPollMs);
+    return () => window.clearInterval(intervalId);
+  }, [refreshWatchUntil]);
 
   useEffect(() => {
     const syncViewFromHash = () => {
@@ -16678,6 +16715,27 @@ export default function App() {
               <Button size="small" onClick={() => selectView("Health")}>
                 Open health
               </Button>
+            }
+            showIcon
+          />
+        ) : null}
+        {refreshWatchUntil !== null ? (
+          <Alert
+            className="band"
+            type="info"
+            title="Tracking refresh progress"
+            description={`Dashboard and health are checking every ${Math.round(
+              dashboardRefreshWatchPollMs / 1000
+            )}s while queued worker jobs update the cache.`}
+            action={
+              <Space size={[8, 8]} wrap>
+                <Button size="small" onClick={() => selectView("Health")}>
+                  Open health
+                </Button>
+                <Button size="small" onClick={() => setRefreshWatchUntil(null)}>
+                  Stop
+                </Button>
+              </Space>
             }
             showIcon
           />
