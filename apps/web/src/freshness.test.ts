@@ -37,6 +37,7 @@ function sync(input: Partial<DashboardSummary["sync"]>): DashboardSummary["sync"
     staleSamples: [],
     partialObjects: 0,
     partialSamples: [],
+    viewLimits: [],
     jobQueue: {
       status: "healthy",
       queueDepth: 0,
@@ -299,6 +300,28 @@ describe("freshness summary", () => {
     expect(summarizeFreshness(sync({ staleObjects: 2, partialObjects: 1 }))).toMatchObject({
       severity: "warning",
       label: "cache needs attention",
+      tagColor: "orange"
+    });
+  });
+
+  test("warns when dashboard read models hit protection limits", () => {
+    expect(
+      summarizeFreshness(
+        sync({
+          viewLimits: [
+            {
+              key: "pending_prs",
+              label: "Pending PR board",
+              returned: 300,
+              limit: 300,
+              message: "Pending PR rows reached the display limit."
+            }
+          ]
+        })
+      )
+    ).toMatchObject({
+      severity: "warning",
+      label: "view may be capped",
       tagColor: "orange"
     });
   });
@@ -615,6 +638,39 @@ describe("cache evidence summary", () => {
       "Skipped sync layers: issue_timeline_backfill (MO_DEVFLOW_ISSUE_TIMELINE_BACKFILL_MAX_ITEMS is 0)"
     );
     expect(summary.recommendedAction).toContain("Enable the skipped backfill layers");
+  });
+
+  test("surfaces capped dashboard read models before visibility-only notes", () => {
+    const summary = summarizeCacheEvidence({
+      sync: sync({
+        viewLimits: [
+          {
+            key: "issue_scan",
+            label: "Issue read model",
+            returned: 5000,
+            limit: 5000,
+            message: "Visible issue rows reached the dashboard protection limit."
+          }
+        ]
+      }),
+      visibility: {
+        scope: "anonymous",
+        visibleClasses: ["anonymous_readable"],
+        hiddenIssues: 2,
+        hiddenPullRequests: 0,
+        hiddenObjects: 2,
+        note: "2 cached GitHub objects are hidden from this view."
+      }
+    });
+
+    expect(summary).toMatchObject({
+      severity: "warning",
+      alertType: "warning",
+      title: "Some dashboard views may be capped"
+    });
+    expect(summary.facts).toContain("Dashboard read limits reached: Issue read model");
+    expect(summary.facts).toContain("2 cached GitHub objects are hidden");
+    expect(summary.affectedConclusions).toContain("personal workload comparison");
   });
 
   test("surfaces visibility filtering as access-scope evidence", () => {

@@ -477,6 +477,12 @@ body {
   justify-content: flex-start;
 }
 
+.freshness-view-limits {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .freshness-update-path {
   display: grid;
   gap: 8px;

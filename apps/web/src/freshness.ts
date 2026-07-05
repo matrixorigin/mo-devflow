@@ -779,6 +779,7 @@ export function recommendCacheRepair(sync: DashboardSummary["sync"]): CacheRepai
 export function summarizeFreshness(sync: DashboardSummary["sync"]): FreshnessSummary {
   const unhealthyLayers = sync.health.filter((item) => item.status !== "success");
   const worstLayerRank = Math.max(1, ...sync.health.map((item) => layerRank(item.status)));
+  const viewLimitRisk = sync.viewLimits.length > 0;
   if (worstLayerRank >= 3) {
     return {
       severity: "critical",
@@ -788,10 +789,10 @@ export function summarizeFreshness(sync: DashboardSummary["sync"]): FreshnessSum
       oldestLayerSuccessAt: oldestIso(sync.health.map((item) => item.lastSuccessfulAt))
     };
   }
-  if (worstLayerRank >= 2 || sync.staleObjects > 0 || sync.partialObjects > 0) {
+  if (worstLayerRank >= 2 || sync.staleObjects > 0 || sync.partialObjects > 0 || viewLimitRisk) {
     return {
       severity: "warning",
-      label: "cache needs attention",
+      label: viewLimitRisk ? "view may be capped" : "cache needs attention",
       tagColor: "orange",
       unhealthyLayers,
       oldestLayerSuccessAt: oldestIso(sync.health.map((item) => item.lastSuccessfulAt))
@@ -821,6 +822,11 @@ export function summarizeCacheEvidence(input: {
   }
   if (input.sync.partialObjects > 0) {
     facts.push(`${input.sync.partialObjects} cached objects are partial`);
+  }
+  if (input.sync.viewLimits.length > 0) {
+    facts.push(
+      `Dashboard read limits reached: ${input.sync.viewLimits.map((limit) => limit.label).join(", ")}`
+    );
   }
   if (input.visibility.hiddenObjects > 0) {
     facts.push(`${input.visibility.hiddenObjects} cached GitHub objects are hidden`);
@@ -893,6 +899,25 @@ export function summarizeCacheEvidence(input: {
         skippedLayers.length > 0
           ? "Enable the skipped backfill layers with a service read token, a personal token, or a non-zero backfill limit, then queue the targeted repair."
           : "Run personal-token or service-token backfill for PR detail, comments, reviews, and timeline data."
+    };
+  }
+
+  if (input.sync.viewLimits.length > 0) {
+    return {
+      severity: "warning",
+      alertType: "warning",
+      title: "Some dashboard views may be capped",
+      description:
+        "The API hit protective read limits while building this dashboard. Visible rows are still sorted by priority, but totals, filters, and charts should be treated as capped until the query scope is narrowed or the backend limit is raised deliberately.",
+      facts,
+      affectedConclusions: [
+        "team totals on capped boards",
+        "personal workload comparison",
+        "issue-to-PR link coverage",
+        "trend completeness for the capped window"
+      ],
+      recommendedAction:
+        "Use board filters to narrow the view, or review backend read limits before treating the capped board as complete."
     };
   }
 

@@ -1022,6 +1022,14 @@ export interface DashboardVisibility {
   note: string | null;
 }
 
+export interface DashboardViewLimit {
+  key: string;
+  label: string;
+  returned: number;
+  limit: number;
+  message: string;
+}
+
 export interface WebhookIngestionHealth {
   pendingDeliveries: number;
   processedDeliveries: number;
@@ -1147,6 +1155,7 @@ export interface DashboardSummary {
     staleSamples: CacheObjectEvidenceView[];
     partialObjects: number;
     partialSamples: CacheObjectEvidenceView[];
+    viewLimits: DashboardViewLimit[];
     jobQueue: JobQueueHealth;
     worker: WorkerHealth;
     manualRefreshRequests: ManualRefreshRequestView[];

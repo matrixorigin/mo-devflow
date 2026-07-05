@@ -12,6 +12,7 @@ import type {
   CriticalOwnerCoverageView,
   DailyMetricPoint,
   DashboardVisibility,
+  DashboardViewLimit,
   DashboardSummary,
   IssueCommentEvidenceSummary,
   MetricSourceCompleteness,
@@ -204,6 +205,14 @@ const latestNotificationDeliveryColumns = [
 ].join(", ");
 
 const dashboardIssueScanLimit = 5000;
+const dashboardPullRequestScanLimit = 2000;
+const dashboardCriticalIssueViewLimit = 100;
+const dashboardPendingPrViewLimit = 300;
+const dashboardPersonalIssueViewLimit = 500;
+const dashboardPersonalPrViewLimit = 500;
+const dashboardLinkedPrCandidateLimit = 500;
+const dashboardSignalViewLimit = 100;
+const dashboardAttentionSummaryLimit = 200;
 const issueCommentEvidenceLimitPerIssue = 200;
 const issueTimelineEventLimitPerIssue = 200;
 const metricsRecomputeRowScanLimit = 20000;
@@ -230,6 +239,23 @@ function uniqueIssueNumbers(values: number[]): number[] {
 
 function metricRowLimit(days: number, people: readonly string[]): number {
   return Math.max(1, Math.ceil(days) * (people.length + 1) + 10);
+}
+
+function dashboardViewLimit(input: {
+  key: string;
+  label: string;
+  returned: number;
+  limit: number;
+  message: string;
+}): DashboardViewLimit | null {
+  if (input.returned < input.limit) {
+    return null;
+  }
+  return input;
+}
+
+function presentDashboardViewLimits(values: Array<DashboardViewLimit | null>): DashboardViewLimit[] {
+  return values.filter((value): value is DashboardViewLimit => value !== null);
 }
 
 function linkedIssueNumbersForPrNumber(prNumber: number, values: number[]): number[] {
@@ -3857,8 +3883,8 @@ export async function getDashboardSummary(
      FROM pull_requests p
      WHERE p.repo_id = ? AND ${allPrVisibility.sql}
      ORDER BY CASE WHEN p.state = 'open' THEN 0 ELSE 1 END, p.updated_at DESC
-     LIMIT 2000`,
-    [repoId, ...allPrVisibility.params]
+     LIMIT ?`,
+    [repoId, ...allPrVisibility.params, dashboardPullRequestScanLimit]
   );
   const criticalRows = issueRows
     .filter(
@@ -3873,11 +3899,11 @@ export async function getDashboardSummary(
         criticalSeveritySortRank(left) - criticalSeveritySortRank(right) ||
         rowTime(left, "updated_at") - rowTime(right, "updated_at")
     )
-    .slice(0, 100);
+    .slice(0, dashboardCriticalIssueViewLimit);
   const prRows = allPrRows
     .filter((row) => asString(row.state) === "open")
     .sort((left, right) => rowTime(left, "updated_at") - rowTime(right, "updated_at"))
-    .slice(0, 300);
+    .slice(0, dashboardPendingPrViewLimit);
   const [syncRows] = await pool.execute<RowData[]>(
     `SELECT latest.sync_layer,
             latest.status,
@@ -4065,8 +4091,8 @@ export async function getDashboardSummary(
      ORDER BY
        CASE v.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        v.last_detected_at DESC
-     LIMIT 100`,
-    [repoId, ...violationIssueVisibility.params, ...violationPrVisibility.params]
+     LIMIT ?`,
+    [repoId, ...violationIssueVisibility.params, ...violationPrVisibility.params, dashboardSignalViewLimit]
   );
   const [attentionItemRows] = await pool.execute<RowData[]>(
     `SELECT a.related_login, a.severity
@@ -4088,16 +4114,17 @@ export async function getDashboardSummary(
      ORDER BY
        CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        a.last_detected_at DESC
-     LIMIT 200`,
-    [repoId, ...attentionIssueVisibility.params, ...attentionPrVisibility.params]
+     LIMIT ?`,
+    [repoId, ...attentionIssueVisibility.params, ...attentionPrVisibility.params, dashboardAttentionSummaryLimit]
   );
+  const dashboardMetricRowLimit = metricRowLimit(analyticsPeriodDays, profile.people.watchedUsers);
   const [metricRows] = await pool.execute<RowData[]>(
     `SELECT ${dashboardMetricColumns}
      FROM daily_metrics
      WHERE repo_id = ? AND metric_date >= ?
      ORDER BY metric_date ASC, scope_type ASC, scope_key ASC
      LIMIT ?`,
-    [repoId, analyticsStartDate, metricRowLimit(analyticsPeriodDays, profile.people.watchedUsers)]
+    [repoId, analyticsStartDate, dashboardMetricRowLimit]
   );
   const [driftRows] = await pool.execute<RowData[]>(
     `SELECT ${aiDriftDashboardColumns},
@@ -4136,8 +4163,8 @@ export async function getDashboardSummary(
        CASE d.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
        d.actual_hours DESC,
        d.last_detected_at DESC
-     LIMIT 100`,
-    [repoId, ...driftIssueVisibility.params, ...driftPrVisibility.params]
+     LIMIT ?`,
+    [repoId, ...driftIssueVisibility.params, ...driftPrVisibility.params, dashboardSignalViewLimit]
   );
   const watchedUsers = new Set(profile.people.watchedUsers);
   const personalIssueRows: RowData[] =
@@ -4176,7 +4203,7 @@ export async function getDashboardSummary(
               lifecycleRank(left) - lifecycleRank(right) || rowTime(left, "updated_at") - rowTime(right, "updated_at")
             );
           })
-          .slice(0, 500);
+          .slice(0, dashboardPersonalIssueViewLimit);
   const personalPrRows: RowData[] =
     profile.people.watchedUsers.length === 0
       ? []
@@ -4189,7 +4216,7 @@ export async function getDashboardSummary(
                 inRange(row.merged_at, start, end))
           )
           .sort((left, right) => rowTime(right, "updated_at") - rowTime(left, "updated_at"))
-          .slice(0, 500);
+          .slice(0, dashboardPersonalPrViewLimit);
   const criticalIssueNumbers = new Set([
     ...criticalRows.map((row) => asNumber(row.number)),
     ...personalIssueRows
@@ -4218,7 +4245,7 @@ export async function getDashboardSummary(
             const stateDelta = Number(asString(left.state) !== "open") - Number(asString(right.state) !== "open");
             return stateDelta || rowTime(right, "updated_at") - rowTime(left, "updated_at");
           })
-          .slice(0, 500);
+          .slice(0, dashboardLinkedPrCandidateLimit);
   const baseTestingIssueContexts = testingIssueContextsByNumber(profile, issueRows);
   const testingHandoffStartedAtMap = await testingHandoffStartedAtByIssueNumber(
     repoId,
@@ -4557,6 +4584,87 @@ export async function getDashboardSummary(
   const rawProfileSetup = profileSetupPlan(profile, rawProfileActions);
   const profileActions = profileActionSuggestionsForViewer(viewer, rawProfileActions);
   const profileSetup = profileSetupPlanForViewer(viewer, rawProfileSetup);
+  const viewLimits = presentDashboardViewLimits([
+    dashboardViewLimit({
+      key: "issue_scan",
+      label: "Issue read model",
+      returned: issueRows.length,
+      limit: dashboardIssueScanLimit,
+      message:
+        "Visible issue rows reached the dashboard protection limit. Active issue, personal issue, and testing issue totals may be capped."
+    }),
+    dashboardViewLimit({
+      key: "pull_request_scan",
+      label: "PR read model",
+      returned: allPrRows.length,
+      limit: dashboardPullRequestScanLimit,
+      message:
+        "Visible PR rows reached the dashboard protection limit. Pending PR, linked PR, and PR attention views may be capped."
+    }),
+    dashboardViewLimit({
+      key: "critical_issues",
+      label: "Active s-1/s0 board",
+      returned: criticalRows.length,
+      limit: dashboardCriticalIssueViewLimit,
+      message: "The active s-1/s0 board reached its display limit. Use filters or inspect cache queries for full coverage."
+    }),
+    dashboardViewLimit({
+      key: "pending_prs",
+      label: "Pending PR board",
+      returned: prRows.length,
+      limit: dashboardPendingPrViewLimit,
+      message: "The pending PR board reached its display limit. Sort and filters operate on the capped read model."
+    }),
+    dashboardViewLimit({
+      key: "personal_issues",
+      label: "Personal issue rows",
+      returned: personalIssueRows.length,
+      limit: dashboardPersonalIssueViewLimit,
+      message: "Personal issue rows reached their display limit. Some watched-user issue queues may be capped."
+    }),
+    dashboardViewLimit({
+      key: "personal_prs",
+      label: "Personal PR rows",
+      returned: personalPrRows.length,
+      limit: dashboardPersonalPrViewLimit,
+      message: "Personal PR rows reached their display limit. Some watched-user PR queues may be capped."
+    }),
+    dashboardViewLimit({
+      key: "linked_pr_candidates",
+      label: "Issue-linked PR candidates",
+      returned: linkedPrCandidateRows.length,
+      limit: dashboardLinkedPrCandidateLimit,
+      message: "Linked PR candidate rows reached their protection limit. Some issue-to-PR links may be absent."
+    }),
+    dashboardViewLimit({
+      key: "workflow_violations",
+      label: "Workflow violations",
+      returned: violationRows.length,
+      limit: dashboardSignalViewLimit,
+      message: "Workflow violation rows reached their display limit. The table shows the highest-priority visible rows."
+    }),
+    dashboardViewLimit({
+      key: "ai_drift",
+      label: "AI drift signals",
+      returned: driftRows.length,
+      limit: dashboardSignalViewLimit,
+      message: "AI drift rows reached their display limit. The table shows the highest-priority visible rows."
+    }),
+    dashboardViewLimit({
+      key: "attention_summary",
+      label: "Attention summary",
+      returned: attentionItemRows.length,
+      limit: dashboardAttentionSummaryLimit,
+      message: "Attention summary rows reached their display limit. Employee mapping hints may be based on a capped sample."
+    }),
+    dashboardViewLimit({
+      key: "analytics_rows",
+      label: "Analytics rows",
+      returned: metricRows.length,
+      limit: dashboardMetricRowLimit,
+      message: "Analytics rows reached their expected window limit. Trend charts may be capped for this profile."
+    })
+  ]);
 
   return {
     repo: {
@@ -4579,6 +4687,7 @@ export async function getDashboardSummary(
       staleSamples: staleSampleRows.map((row) => cacheObjectEvidenceFromRow(row, staleCutoff)),
       partialObjects: asNumber(partialRows[0]?.partial_count),
       partialSamples: partialSampleRows.map((row) => cacheObjectEvidenceFromRow(row, staleCutoff)),
+      viewLimits,
       jobQueue,
       worker,
       manualRefreshRequests

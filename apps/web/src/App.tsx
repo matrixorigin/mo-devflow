@@ -7280,6 +7280,11 @@ function FreshnessStatusBar({
           >
             {sync.partialObjects} incomplete
           </button>
+          {sync.viewLimits.length > 0 ? (
+            <button type="button" className="freshness-chip freshness-chip-attention" onClick={onOpenHealth}>
+              {sync.viewLimits.length} view caps
+            </button>
+          ) : null}
           {problemLayers.length > 0 ? (
             <button type="button" className="freshness-chip freshness-chip-attention" onClick={onOpenHealth}>
               {problemLayers.length} sync warnings
@@ -7343,7 +7348,7 @@ function FreshnessStatusBar({
               <span>Cache snapshot</span>
               <strong>{formatDate(sync.generatedAt)}</strong>
               <small>
-                {sync.staleObjects} stale / {sync.partialObjects} incomplete
+                {sync.staleObjects} stale / {sync.partialObjects} incomplete / {sync.viewLimits.length} caps
               </small>
             </button>
           </div>
@@ -7353,6 +7358,20 @@ function FreshnessStatusBar({
             </Tag>
             <Tag>loaded {formatDate(lastLoadedAt)}</Tag>
           </Space>
+          {sync.viewLimits.length > 0 ? (
+            <div className="freshness-view-limits">
+              <Text type="secondary">Capped read models</Text>
+              <Space size={[4, 4]} wrap>
+                {sync.viewLimits.map((limit) => (
+                  <Tooltip title={limit.message} key={limit.key}>
+                    <Tag color="orange">
+                      {limit.label} {limit.returned}/{limit.limit}
+                    </Tag>
+                  </Tooltip>
+                ))}
+              </Space>
+            </div>
+          ) : null}
           <Space className="freshness-layers" size={[4, 4]} wrap>
             {sync.health.map((item) => (
               <Tooltip title={syncHealthTooltip(item)} key={item.layer}>
