@@ -810,6 +810,27 @@ export interface NotificationDeliveryView {
   acknowledgedBy: string | null;
 }
 
+export interface NotificationQueuedJobView {
+  jobKey: string;
+  jobType: "notifications";
+  status: string;
+  nextRunAt: string | null;
+}
+
+export interface NotificationRetryRequestView {
+  deliveryId: number;
+  retryDeliveryId: number;
+  deliveryStatus: NotificationStatus;
+  requestedAt: string;
+  queuedJobs: NotificationQueuedJobView[];
+}
+
+export interface NotificationAcknowledgementView {
+  deliveryId: number;
+  acknowledgedAt: string;
+  acknowledgedBy: string;
+}
+
 export type NotificationReadinessStatus = "ready" | "degraded" | "action_required" | "disabled";
 
 export interface NotificationReadiness {

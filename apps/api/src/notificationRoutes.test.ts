@@ -243,7 +243,14 @@ describe("notification routes", () => {
       expect(response.json()).toMatchObject({
         deliveryId: 10,
         retryDeliveryId: 11,
-        deliveryStatus: "failed_permanent"
+        deliveryStatus: "failed_permanent",
+        requestedAt: expect.any(String),
+        queuedJobs: [
+          expect.objectContaining({
+            jobKey: "notifications:matrixorigin/matrixone",
+            jobType: "notifications"
+          })
+        ]
       });
     } finally {
       await app.close();

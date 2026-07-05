@@ -38,7 +38,9 @@ import type {
   ManualRefreshResult,
   MetricPeriod,
   NotificationDeliveryView,
+  NotificationAcknowledgementView,
   NotificationStatus,
+  NotificationRetryRequestView,
   NotificationTraceView,
   PendingPrView,
   PersonalActionView,
@@ -11118,6 +11120,8 @@ export default function App() {
   const [notificationAckSavingId, setNotificationAckSavingId] = useState<number | null>(null);
   const [notificationRetrySavingId, setNotificationRetrySavingId] = useState<number | null>(null);
   const [notificationAckError, setNotificationAckError] = useState<string | null>(null);
+  const [notificationAckResult, setNotificationAckResult] = useState<NotificationAcknowledgementView | null>(null);
+  const [notificationRetryResult, setNotificationRetryResult] = useState<NotificationRetryRequestView | null>(null);
   const [notificationTestSaving, setNotificationTestSaving] = useState(false);
   const [notificationTestResult, setNotificationTestResult] = useState<NotificationTestResult | null>(null);
   const dashboardRefreshInFlight = useRef(false);
@@ -11556,6 +11560,8 @@ export default function App() {
     }
     setNotificationAckSavingId(delivery.id);
     setNotificationAckError(null);
+    setNotificationAckResult(null);
+    setNotificationRetryResult(null);
     try {
       const response = await fetch(`/api/notifications/deliveries/${delivery.id}/acknowledge`, {
         method: "POST",
@@ -11565,6 +11571,7 @@ export default function App() {
       if (!response.ok) {
         throw new Error(await responseError(response));
       }
+      setNotificationAckResult((await response.json()) as NotificationAcknowledgementView);
       await load();
     } catch (err) {
       setNotificationAckError(displayError(err));
@@ -11584,6 +11591,8 @@ export default function App() {
     }
     setNotificationRetrySavingId(delivery.id);
     setNotificationAckError(null);
+    setNotificationAckResult(null);
+    setNotificationRetryResult(null);
     try {
       const response = await fetch(`/api/notifications/deliveries/${delivery.id}/retry`, {
         method: "POST",
@@ -11593,6 +11602,7 @@ export default function App() {
       if (!response.ok) {
         throw new Error(await responseError(response));
       }
+      setNotificationRetryResult((await response.json()) as NotificationRetryRequestView);
       await load();
     } catch (err) {
       setNotificationAckError(displayError(err));
@@ -11608,6 +11618,8 @@ export default function App() {
     }
     setNotificationTestSaving(true);
     setNotificationAckError(null);
+    setNotificationAckResult(null);
+    setNotificationRetryResult(null);
     setNotificationTestResult(null);
     try {
       const response = await fetch("/api/notifications/test", {
@@ -12402,7 +12414,11 @@ export default function App() {
           }
           return (
             <Tooltip
-              title={session?.authenticated ? "Retry notification delivery" : "Connect a personal token to retry"}
+              title={
+                session?.authenticated
+                  ? "Queue a notification worker retry for this delivery"
+                  : "Connect a personal token to retry"
+              }
             >
               <span>
                 <Button
@@ -13158,6 +13174,30 @@ export default function App() {
                     type="error"
                     title="Notification action failed"
                     description={notificationAckError}
+                    showIcon
+                  />
+                ) : null}
+                {notificationAckResult ? (
+                  <Alert
+                    className="band"
+                    type="success"
+                    title={`Acknowledged delivery #${notificationAckResult.deliveryId}`}
+                    description={`Recorded by ${notificationAckResult.acknowledgedBy} at ${formatDate(
+                      notificationAckResult.acknowledgedAt
+                    )}.`}
+                    showIcon
+                  />
+                ) : null}
+                {notificationRetryResult ? (
+                  <Alert
+                    className="band"
+                    type="success"
+                    title={`Queued notification retry #${notificationRetryResult.retryDeliveryId}`}
+                    description={`Delivery #${notificationRetryResult.deliveryId} was ${labelText(
+                      notificationRetryResult.deliveryStatus
+                    )}. Queued ${notificationRetryResult.queuedJobs.length} notification worker job${
+                      notificationRetryResult.queuedJobs.length === 1 ? "" : "s"
+                    } at ${formatDate(notificationRetryResult.requestedAt)}.`}
                     showIcon
                   />
                 ) : null}

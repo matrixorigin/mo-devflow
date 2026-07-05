@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import { sendWeComMarkdown } from "@mo-devflow/notifications";
+import type { NotificationAcknowledgementView, NotificationRetryRequestView } from "@mo-devflow/shared";
 import {
   acknowledgeNotificationDelivery,
   enqueueJobsNow,
@@ -145,13 +146,14 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     }
 
     try {
+      const requestedAt = new Date().toISOString();
       const queuedJobs = await enqueueJobsNow([
         {
           jobKey: jobKeyForLayer("notifications", profile.key),
           jobType: "notifications",
           payload: {
             requestedBy: session.githubLogin,
-            requestedAt: new Date().toISOString(),
+            requestedAt,
             trigger: "notification_retry",
             deliveryId: retryRequest.deliveryId,
             retryDeliveryId: retryRequest.retryDeliveryId,
@@ -172,8 +174,14 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
         deliveryId: retryRequest.deliveryId,
         retryDeliveryId: retryRequest.retryDeliveryId,
         deliveryStatus: retryRequest.deliveryStatus,
-        queuedJobs
-      };
+        requestedAt,
+        queuedJobs: queuedJobs.map((job) => ({
+          jobKey: job.jobKey,
+          jobType: "notifications",
+          status: job.status,
+          nextRunAt: job.nextRunAt
+        }))
+      } satisfies NotificationRetryRequestView;
     } catch (error) {
       app.log.error({ error, deliveryId: retryRequest.deliveryId }, "notification retry processing failed");
       return reply.status(500).send({
@@ -244,7 +252,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
       deliveryId: acknowledgement.deliveryId,
       acknowledgedAt: acknowledgement.acknowledgedAt,
       acknowledgedBy: acknowledgement.acknowledgedBy
-    };
+    } satisfies NotificationAcknowledgementView;
   });
 }
 
