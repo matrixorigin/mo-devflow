@@ -23488,8 +23488,8 @@ export default function App() {
                       className="band"
                       type="info"
                       showIcon
-                      title="Showing observed owners, not full personal analytics"
-                      description="Watched users are not configured. This preview only uses active s-1/s0 issue owners and pending PR authors from visible cache. Configure watched users to unlock needs-triage, deferred, yesterday PR, issue testing, and trend analytics."
+                      title="Observed owners from visible cache"
+                      description="Watched users are not configured. This view includes only owners found on active s-1/s0 issues and pending PRs in visible cache, so needs-triage, deferred, yesterday PR, issue testing, and trend analytics are incomplete."
                       action={
                         <Button size="small" onClick={() => selectView("People")}>
                           Open People
@@ -23847,7 +23847,7 @@ export default function App() {
                     type="info"
                     showIcon
                     title="Watched users are not configured"
-                    description="This board is temporarily grouped by owners observed in visible active s-1/s0 issues and pending PRs. Configure watched users to unlock needs-triage, deferred, yesterday PR, testing ownership, and personal analytics."
+                    description="This board shows owners found on visible active s-1/s0 issues and pending PRs. Configure watched users to include needs-triage, deferred, yesterday PR, testing ownership, and personal analytics."
                   />
                 ) : null}
                 <PeopleFilterBar
