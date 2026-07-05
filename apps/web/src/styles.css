@@ -2069,6 +2069,85 @@ button.freshness-path-card:focus-visible {
   min-width: 0;
 }
 
+.critical-flow-command-callout {
+  appearance: none;
+  background: #eff6ff;
+  border: 0;
+  border-bottom: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 11px 12px;
+  text-align: left;
+}
+
+.critical-flow-command-callout:hover,
+.critical-flow-command-callout:focus-visible {
+  background: #dbeafe;
+  outline: none;
+}
+
+.critical-flow-command-callout span,
+.critical-flow-command-callout strong,
+.critical-flow-command-callout small,
+.critical-flow-command-callout em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.critical-flow-command-callout span {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.critical-flow-command-callout strong {
+  color: #111827;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.critical-flow-command-callout small {
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.critical-flow-command-callout em {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.critical-flow-command-callout-critical {
+  background: #fef2f2;
+  border-bottom-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.critical-flow-command-callout-critical span,
+.critical-flow-command-callout-critical em {
+  color: #b91c1c;
+}
+
+.critical-flow-command-callout-attention {
+  background: #fffbeb;
+  border-bottom-color: #fde68a;
+  border-left-color: #d97706;
+}
+
+.critical-flow-command-callout-attention span,
+.critical-flow-command-callout-attention em {
+  color: #92400e;
+}
+
 .critical-flow-funnel {
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;

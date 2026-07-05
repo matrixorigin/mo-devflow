@@ -5723,6 +5723,22 @@ function TeamCriticalFlowPanel({
   const issueTestingRows = rows.filter((row) => row.issue && testingIssueNumbers.has(row.issue.number)).length;
   const prVisibleRows = Math.max(0, rows.length - noVisiblePrRows);
   const efficiency = teamCriticalFlowEfficiency(rows, testingIssues);
+  const commandSummary = teamCriticalFlowCommandSummary(efficiency);
+  const openCommandSummary = () => {
+    if (commandSummary.target === "no_pr") {
+      onOpenNoPrIssues();
+      return;
+    }
+    if (commandSummary.target === "pr_blockers") {
+      onOpenPrRisks();
+      return;
+    }
+    if (commandSummary.target === "testing") {
+      onOpenTestingIssues();
+      return;
+    }
+    onOpenIssues();
+  };
 
   return (
     <section className="team-critical-flow-panel" aria-label="Critical issue and PR flow">
@@ -5758,6 +5774,7 @@ function TeamCriticalFlowPanel({
         </div>
       </div>
 
+      <TeamCriticalFlowCommandCallout summary={commandSummary} onClick={openCommandSummary} />
       <TeamCriticalFlowFunnel
         activeIssues={rows.length}
         prVisibleIssues={prVisibleRows}
@@ -5808,6 +5825,101 @@ function TeamCriticalFlowPanel({
         onChange={pagedRows.onPageChange}
       />
     </section>
+  );
+}
+
+type TeamCriticalFlowCommandTarget = "issues" | "no_pr" | "pr_blockers" | "testing";
+
+export interface TeamCriticalFlowCommandSummary {
+  title: string;
+  detail: string;
+  tone: "critical" | "attention" | "normal";
+  target: TeamCriticalFlowCommandTarget;
+  actionLabel: string;
+}
+
+export function teamCriticalFlowCommandSummary(efficiency: TeamCriticalFlowEfficiency): TeamCriticalFlowCommandSummary {
+  const issuesNotInTesting = Math.max(0, efficiency.activeIssues - efficiency.issuesInTesting);
+  const coverage = `${efficiency.issuesWithPr}/${efficiency.activeIssues} with PR`;
+  const testing = `${efficiency.issuesInTesting}/${efficiency.activeIssues} in issue testing`;
+
+  if (efficiency.activeIssues === 0) {
+    return {
+      title: "No active s-1/s0 issue",
+      detail: "No critical issue flow is visible in cache.",
+      tone: "normal",
+      target: "issues",
+      actionLabel: "Open issues"
+    };
+  }
+
+  if (efficiency.issuesWithoutPr > 0) {
+    return {
+      title: `${efficiency.issuesWithoutPr} active s-1/s0 issues have no visible PR`,
+      detail: `${coverage} | ${testing} | avg to PR ${optionalHours(efficiency.averageActiveToFirstPrHours)}`,
+      tone: "critical",
+      target: "no_pr",
+      actionLabel: "Open no-PR issues"
+    };
+  }
+
+  if (efficiency.blockedPrs > 0) {
+    return {
+      title: `${efficiency.blockedPrs} linked PRs are blocking active issue flow`,
+      detail: `${coverage} | review CI, requested changes, conflicts, or idle PRs`,
+      tone: "critical",
+      target: "pr_blockers",
+      actionLabel: "Open PR blockers"
+    };
+  }
+
+  if (issuesNotInTesting > 0) {
+    return {
+      title: `${issuesNotInTesting} active issues are not in issue testing`,
+      detail: `${testing} | avg to issue testing ${optionalHours(efficiency.averageActiveToTestingHours)}`,
+      tone: "attention",
+      target: "issues",
+      actionLabel: "Open active issues"
+    };
+  }
+
+  if (efficiency.testingCachePendingIssues > 0) {
+    return {
+      title: `${efficiency.testingCachePendingIssues} testing handoffs need cache evidence`,
+      detail: `${testing} | refresh testing issue evidence before judging wait time`,
+      tone: "attention",
+      target: "testing",
+      actionLabel: "Open issue testing"
+    };
+  }
+
+  return {
+    title: "Active s-1/s0 flow has visible PR and issue testing coverage",
+    detail: `${coverage} | ${testing} | avg to issue testing ${optionalHours(efficiency.averageActiveToTestingHours)}`,
+    tone: "normal",
+    target: "issues",
+    actionLabel: "Open flow"
+  };
+}
+
+function TeamCriticalFlowCommandCallout({
+  summary,
+  onClick
+}: {
+  summary: TeamCriticalFlowCommandSummary;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`critical-flow-command-callout critical-flow-command-callout-${summary.tone}`}
+      onClick={onClick}
+    >
+      <span>Team flow health</span>
+      <strong>{summary.title}</strong>
+      <small>{summary.detail}</small>
+      <em>{summary.actionLabel}</em>
+    </button>
   );
 }
 

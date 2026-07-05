@@ -68,6 +68,7 @@ import {
   sortPersonalPrList,
   syncRateLimitSummary,
   syncHealthCursorText,
+  teamCriticalFlowCommandSummary,
   testingIssueEvidenceGapSummary,
   testingIssueHasConfirmedNoLinkedPr,
   testingIssueHasDataGap,
@@ -1052,6 +1053,54 @@ describe("dashboard hash filters", () => {
     });
     expect(personalPrPeriodBlockerDetail(person, "day")).toBe("blockers 2 CI | 1 changes | 3 review | 1 conflict");
     expect(personalPrPeriodBlockerDetail(person, "month")).toBe("blockers -");
+  });
+
+  it("summarizes the team critical flow management action by highest bottleneck", () => {
+    const baseFlow = {
+      activeIssues: 4,
+      issuesWithPr: 4,
+      issuesWithoutPr: 0,
+      issuesInTesting: 4,
+      blockedPrs: 0,
+      averageActiveToFirstPrHours: 18,
+      averageActiveToTestingHours: 60,
+      testingCachePendingIssues: 0
+    };
+
+    expect(teamCriticalFlowCommandSummary({ ...baseFlow, issuesWithPr: 2, issuesWithoutPr: 2 })).toMatchObject({
+      title: "2 active s-1/s0 issues have no visible PR",
+      tone: "critical",
+      target: "no_pr",
+      actionLabel: "Open no-PR issues"
+    });
+    expect(teamCriticalFlowCommandSummary({ ...baseFlow, blockedPrs: 3 })).toMatchObject({
+      title: "3 linked PRs are blocking active issue flow",
+      tone: "critical",
+      target: "pr_blockers"
+    });
+    expect(teamCriticalFlowCommandSummary({ ...baseFlow, issuesInTesting: 1 })).toMatchObject({
+      title: "3 active issues are not in issue testing",
+      tone: "attention",
+      target: "issues",
+      actionLabel: "Open active issues"
+    });
+    expect(teamCriticalFlowCommandSummary({ ...baseFlow, testingCachePendingIssues: 2 })).toMatchObject({
+      title: "2 testing handoffs need cache evidence",
+      tone: "attention",
+      target: "testing"
+    });
+    expect(teamCriticalFlowCommandSummary(baseFlow)).toMatchObject({
+      title: "Active s-1/s0 flow has visible PR and issue testing coverage",
+      tone: "normal",
+      target: "issues"
+    });
+    expect(
+      teamCriticalFlowCommandSummary({ ...baseFlow, activeIssues: 0, issuesWithPr: 0, issuesInTesting: 0 })
+    ).toMatchObject({
+      title: "No active s-1/s0 issue",
+      tone: "normal",
+      target: "issues"
+    });
   });
 
   it("sorts personal PR lists by activity, age, and risk", () => {
