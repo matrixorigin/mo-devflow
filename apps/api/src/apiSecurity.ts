@@ -63,7 +63,14 @@ export function buildCorsOptions(env: Record<string, string | undefined> = proce
     },
     credentials: true,
     methods: ["GET", "POST", "DELETE", "OPTIONS"],
-    allowedHeaders: ["content-type", "x-github-delivery", "x-github-event", "x-hub-signature-256", "x-mo-devflow-csrf"],
+    allowedHeaders: [
+      "content-type",
+      "if-none-match",
+      "x-github-delivery",
+      "x-github-event",
+      "x-hub-signature-256",
+      "x-mo-devflow-csrf"
+    ],
     exposedHeaders: [
       "etag",
       "retry-after",

@@ -101,6 +101,7 @@ describe("API security", () => {
       methods: ["GET", "POST", "DELETE", "OPTIONS"],
       allowedHeaders: [
         "content-type",
+        "if-none-match",
         "x-github-delivery",
         "x-github-event",
         "x-hub-signature-256",
@@ -115,5 +116,29 @@ describe("API security", () => {
       ],
       maxAge: 600
     });
+  });
+
+  test("allows dashboard cache and CSRF headers in CORS preflight", async () => {
+    const app = Fastify();
+    await registerApiSecurity(app, { MO_DEVFLOW_ALLOWED_ORIGINS: "http://localhost:5173" });
+    app.get("/probe", async () => ({ ok: true }));
+
+    try {
+      const response = await app.inject({
+        method: "OPTIONS",
+        url: "/probe",
+        headers: {
+          origin: "http://localhost:5173",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "if-none-match,x-mo-devflow-csrf"
+        }
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(String(response.headers["access-control-allow-headers"])).toContain("if-none-match");
+      expect(String(response.headers["access-control-allow-headers"])).toContain("x-mo-devflow-csrf");
+    } finally {
+      await app.close();
+    }
   });
 });
