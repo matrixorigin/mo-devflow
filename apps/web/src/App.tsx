@@ -1175,6 +1175,22 @@ function TestingStateTag({ state, label }: { state: TestingFlowState; label?: st
   );
 }
 
+function issueTestingStateLabel(state: TestingFlowState): string {
+  if (state === "testing") {
+    return "issue in test";
+  }
+  if (state === "test_changes_requested") {
+    return "changes requested by test";
+  }
+  if (state === "test_passed") {
+    return "issue test passed";
+  }
+  if (state === "closed_or_merged") {
+    return "issue closed";
+  }
+  return "not in test";
+}
+
 function testingSignalBusinessLabel(signal: string): string {
   const issueAssignee = signal.match(/^issue_assignee:#(\d+):(.+)$/);
   if (issueAssignee) {
@@ -2077,10 +2093,10 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "issue in testing";
+    return "linked issue in test";
   }
   if (filter === "stale_testing") {
-    return "issue testing wait";
+    return "linked issue wait";
   }
   if (filter === "testing_evidence_gap") {
     return "issue test evidence gap";
@@ -2095,7 +2111,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no linked issue after sync";
+    return "no visible issue after sync";
   }
   if (filter === "issue_link_pending") {
     return "issue link sync pending";
@@ -2111,7 +2127,7 @@ function prScopeLabel(filter: PrScopeFilter): string {
 
 function prScopeHelp(filter: PrScopeFilter): string | null {
   if (filter === "no_issue") {
-    return "Only PRs with completed PR detail and relationship sync, but no discovered issue relationship, are counted here.";
+    return "Only PRs whose detail and relationship sync has completed and still have no visible issue in cache. If GitHub shows an issue, refresh PR detail and issue-link evidence before treating the PR as unlinked.";
   }
   if (filter === "issue_link_pending") {
     return "These PRs are not treated as unlinked yet because PR detail or relationship evidence is still incomplete.";
@@ -2711,13 +2727,13 @@ function PrFilterBar({
             { label: "All", value: "all" },
             { label: "Active issue", value: "active_issue" },
             { label: "Attention", value: "attention" },
-            { label: "Issue in test", value: "testing" },
-            { label: "Stale test", value: "stale_testing" },
-            { label: "Test evidence gap", value: "testing_evidence_gap" },
+            { label: "Linked issue in test", value: "testing" },
+            { label: "Linked issue wait", value: "stale_testing" },
+            { label: "Issue test evidence gap", value: "testing_evidence_gap" },
             { label: "CI failed", value: "ci_failed" },
             { label: "Request change", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No issue after sync", value: "no_issue" },
+            { label: "No visible issue after sync", value: "no_issue" },
             { label: "Issue link syncing", value: "issue_link_pending" },
             { label: "PR detail pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
@@ -4494,7 +4510,7 @@ function PrIssueContextCell({
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <TestingStateTag state={pr.testingState} label="issue in testing" />
+          <TestingStateTag state={pr.testingState} label="linked issue in test" />
           {pr.testingQueueAgeHours !== null ? <Tag>linked issue wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
@@ -5290,7 +5306,7 @@ function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
     return pr.testingTesters.length > 0
       ? `linked issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "issue in testing";
+      : "linked issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -6643,7 +6659,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="issue in testing"
+        label="linked issue in test"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
@@ -8897,7 +8913,7 @@ function PullRequestCardList({
     { label: "CI", value: "ci" },
     { label: "Review", value: "review" },
     { label: "Merge", value: "merge" },
-    { label: "Issue in test", value: "testing" }
+    { label: "Linked issue in test", value: "testing" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
@@ -13828,13 +13844,13 @@ export default function App() {
           )
         },
         {
-          title: "Test start",
+          title: "Issue test state",
           width: 300,
           render: (_, transition) => (
             <Space size={4} wrap>
-              <TestingStateTag state={transition.fromState} />
+              <TestingStateTag state={transition.fromState} label={issueTestingStateLabel(transition.fromState)} />
               <Text type="secondary">-&gt;</Text>
-              <TestingStateTag state={transition.toState} />
+              <TestingStateTag state={transition.toState} label={issueTestingStateLabel(transition.toState)} />
             </Space>
           )
         },
@@ -13897,7 +13913,7 @@ export default function App() {
           }
         },
         {
-          title: "Started",
+          title: "Changed at",
           dataIndex: "occurredAt",
           width: 148,
           render: (value) => formatDate(value)

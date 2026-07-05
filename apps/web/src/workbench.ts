@@ -1394,18 +1394,18 @@ export function teamOperatingSignals(input: {
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "testing") {
-    return "issue in testing";
+    return "linked issue in test";
   }
   if (state === "test_changes_requested") {
-    return "test changes requested";
+    return "linked issue changes requested";
   }
   if (state === "test_passed") {
-    return "issue test passed";
+    return "linked issue test passed";
   }
   if (state === "closed_or_merged") {
-    return "closed or merged";
+    return "linked work closed";
   }
-  return "not in issue testing";
+  return "no linked issue test";
 }
 
 export function testingStateHelpText(state: TestingFlowState): string {
