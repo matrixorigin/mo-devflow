@@ -12699,6 +12699,11 @@ export default function App() {
                 type="warning"
                 title={`${data.testing.staleQueueIssues} issues have waited on test too long`}
                 description="Some test waits still use cached issue update time until GitHub issue timeline handoff evidence is backfilled."
+                action={
+                  <Button size="small" onClick={() => openPrsWithFilter("stale_testing")}>
+                    Open test queue
+                  </Button>
+                }
                 showIcon
               />
             ) : null}
