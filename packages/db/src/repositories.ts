@@ -2750,6 +2750,20 @@ function applyIssueTestingContextToLinkedPrView(
   };
 }
 
+export function applyIssueTestingContextToLinkedPrViewForIssue(
+  profile: RepoProfile,
+  pr: CriticalIssueLinkedPullRequestView,
+  issueNumber: number,
+  contexts: Map<number, TestingIssueContext>
+): CriticalIssueLinkedPullRequestView {
+  const issueContext = contexts.get(issueNumber);
+  return applyIssueTestingContextToLinkedPrView(
+    profile,
+    pr,
+    issueContext ? new Map([[issueNumber, issueContext]]) : new Map()
+  );
+}
+
 function toCriticalIssueLinkedPullRequestView(
   row: RowData,
   skippedLogins: Set<string>
@@ -2794,12 +2808,9 @@ function linkedPullRequestsByIssueNumber(
     if (matchedNumbers.length === 0) {
       continue;
     }
-    const view = applyIssueTestingContextToLinkedPrView(
-      profile,
-      toCriticalIssueLinkedPullRequestView(row, skippedLogins),
-      testingIssueContexts
-    );
+    const baseView = toCriticalIssueLinkedPullRequestView(row, skippedLogins);
     for (const issueNumber of matchedNumbers) {
+      const view = applyIssueTestingContextToLinkedPrViewForIssue(profile, baseView, issueNumber, testingIssueContexts);
       const existing = linked.get(issueNumber) ?? [];
       if (!existing.some((pr) => pr.number === view.number)) {
         existing.push(view);
@@ -2857,7 +2868,7 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     return {
       key: `pr:${pr.number}:testing_stalled`,
       severity: "warning",
-      message: message(`PR #${pr.number} is stalled in testing handoff.`),
+      message: message(`PR #${pr.number} is linked to an issue stalled in testing handoff.`),
       relatedPrNumber: pr.number
     };
   }

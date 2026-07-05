@@ -10,6 +10,7 @@ import { extractLinkedIssueNumbers } from "@mo-devflow/shared";
 import {
   aggregateMetricPoints,
   applyBacklogSnapshotMetrics,
+  applyIssueTestingContextToLinkedPrViewForIssue,
   attentionItemsToResolve,
   buildSyncHealthSummary,
   cacheStaleHoursFromEnv,
@@ -41,6 +42,7 @@ import {
   testingIssueHandoffToCloseSamplesFromRows,
   testingIssueTransitionsFromQueueIssues,
   testingIssuesForLogin,
+  type TestingIssueContext,
   visibleClassesForDashboard
 } from "./repositories";
 import { workflowFixOperationsFromJson, writeActionExecutionViewFromRow } from "./writeActions";
@@ -983,9 +985,42 @@ describe("critical issue cache blockers", () => {
     expect(blockers).toContainEqual({
       key: "pr:101:testing_stalled",
       severity: "warning",
-      message: "PR #101 is stalled in testing handoff.",
+      message: "PR #101 is linked to an issue stalled in testing handoff.",
       relatedPrNumber: 101
     });
+  });
+
+  test("keeps linked PR testing state scoped to the current issue", () => {
+    const pr = {
+      ...linkedPr,
+      linkedIssueNumbers: [42, 43]
+    };
+    const contexts: Map<number, TestingIssueContext> = new Map([
+      [
+        43,
+        {
+          issueNumber: 43,
+          testers: ["tester-a"],
+          testingLabels: [],
+          signals: ["issue_assignee:#43:tester-a"],
+          queueAgeHours: 32,
+          queueStartedAt: "2026-07-04T00:00:00.000Z",
+          queueAgeEvidence: "issue_assignment_event"
+        }
+      ]
+    ]);
+
+    const issue42Pr = applyIssueTestingContextToLinkedPrViewForIssue(baseProfile, pr, 42, contexts);
+    const issue43Pr = applyIssueTestingContextToLinkedPrViewForIssue(baseProfile, pr, 43, contexts);
+
+    expect(issue42Pr.testingState).toBe("not_ready");
+    expect(issue42Pr.testingTesters).toEqual([]);
+    expect(issue42Pr.testingQueueAgeHours).toBeNull();
+    expect(issue42Pr.attentionFlags).not.toContain("testing_stalled");
+    expect(issue43Pr.testingState).toBe("testing");
+    expect(issue43Pr.testingTesters).toEqual(["tester-a"]);
+    expect(issue43Pr.testingQueueAgeHours).toBe(32);
+    expect(issue43Pr.attentionFlags).toContain("testing_stalled");
   });
 
   test("surfaces stale review requests as linked PR blockers", () => {
