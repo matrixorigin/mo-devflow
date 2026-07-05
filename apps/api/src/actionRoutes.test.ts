@@ -193,7 +193,8 @@ describe("action routes", () => {
 
   test("rejects workflow fix previews without a valid CSRF token", async () => {
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -214,6 +215,7 @@ describe("action routes", () => {
       });
       expect(mocks.loadRepoProfile).not.toHaveBeenCalled();
       expect(mocks.getActiveWorkflowViolation).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -242,7 +244,8 @@ describe("action routes", () => {
     mocks.getCachedIssueByNumber.mockResolvedValue(null);
 
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -273,6 +276,7 @@ describe("action routes", () => {
         viewer: { authenticated: true, userId: 1 }
       });
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -293,7 +297,8 @@ describe("action routes", () => {
     });
 
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -319,6 +324,7 @@ describe("action routes", () => {
       });
       expect(mocks.getActiveWorkflowViolation).not.toHaveBeenCalled();
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -354,7 +360,8 @@ describe("action routes", () => {
     });
 
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -380,6 +387,7 @@ describe("action routes", () => {
         profile: writeBackProfile
       });
       expect(mocks.fetchIssueFreshState).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -387,7 +395,8 @@ describe("action routes", () => {
 
   test("blocks workflow fix confirmation before token access when profile write-back is disabled", async () => {
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -420,6 +429,7 @@ describe("action routes", () => {
       );
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -440,7 +450,8 @@ describe("action routes", () => {
     });
 
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -468,6 +479,7 @@ describe("action routes", () => {
       );
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
       expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -488,7 +500,8 @@ describe("action routes", () => {
     });
 
     const app = Fastify();
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -534,6 +547,7 @@ describe("action routes", () => {
         expect.objectContaining({ jobKey: "ai-drift:matrixorigin/matrixone", jobType: "ai_drift" }),
         expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
       ]);
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -555,7 +569,8 @@ describe("action routes", () => {
     mocks.enqueueJobsNow.mockRejectedValue(new Error("database unavailable"));
 
     const app = Fastify({ logger: false });
-    await registerActionRoutes(app);
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
 
     try {
       const response = await app.inject({
@@ -580,6 +595,7 @@ describe("action routes", () => {
           result: expect.objectContaining({ status: "success" })
         })
       );
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }

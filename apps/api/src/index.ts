@@ -78,7 +78,7 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (request, bo
 await registerApiSecurity(app);
 
 await registerAuthRoutes(app);
-await registerActionRoutes(app);
+await registerActionRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 await registerRefreshRoutes(app, { onDashboardMutated: () => dashboardCache.clear() });
 await registerNotificationRoutes(app);
 await registerWebhookRoutes(app);

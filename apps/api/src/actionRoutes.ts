@@ -42,6 +42,10 @@ const workflowFixConfirmSchema = z.object({
   previewId: z.string().uuid()
 });
 
+interface ActionRouteOptions {
+  onDashboardMutated?: () => void;
+}
+
 function previewTtlMinutesFromEnv(): number {
   const parsed = Number(process.env.MO_DEVFLOW_ACTION_PREVIEW_TTL_MINUTES ?? "10");
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -80,6 +84,7 @@ async function persistExecution(input: {
   preview: WorkflowFixPreview;
   result: WorkflowFixExecutionResult;
   githubResponse?: unknown;
+  onDashboardMutated?: () => void;
 }): Promise<WorkflowFixExecutionResult> {
   await markWorkflowFixPreviewStatus({
     previewId: input.preview.previewId,
@@ -87,10 +92,14 @@ async function persistExecution(input: {
     status: input.result.status
   });
   await recordWorkflowFixExecution(input);
+  input.onDashboardMutated?.();
   return input.result;
 }
 
-export async function registerActionRoutes(app: FastifyInstance): Promise<void> {
+export async function registerActionRoutes(app: FastifyInstance, options: ActionRouteOptions = {}): Promise<void> {
+  const persistRouteExecution = (input: Omit<Parameters<typeof persistExecution>[0], "onDashboardMutated">) =>
+    persistExecution({ ...input, onDashboardMutated: options.onDashboardMutated });
+
   app.post("/api/actions/workflow-fix/preview", async (request, reply) => {
     const session = await getSessionRecordFromRequest(request, reply);
     if (!session) {
@@ -319,7 +328,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         status: "stale_preview",
         message: "Preview has expired. Generate a fresh preview before executing."
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -333,7 +342,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         status: "blocked",
         message: preview.blockedReason ?? "Preview contains no executable operations."
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -355,7 +364,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         status: "blocked",
         message: capability.message
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -377,7 +386,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         status: "token_unavailable",
         message: "A usable GitHub token is not available for this session."
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -404,7 +413,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         message: "Stored GitHub token could not be decrypted.",
         errorMessage: error instanceof Error ? error.message : String(error)
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -420,7 +429,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
           status: "blocked",
           message: issueWritePermission.message
         });
-        return persistExecution({
+        return persistRouteExecution({
           repoId: storedPreview.repoId,
           userId: session.userId,
           githubLogin: session.githubLogin,
@@ -441,7 +450,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
           ? "GitHub state changed since preview; no operation was executed."
           : "Workflow fix executed with the connected personal GitHub token."
       });
-      const persisted = await persistExecution({
+      const persisted = await persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
@@ -492,7 +501,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
           message: failure.message,
           errorMessage: error instanceof Error ? error.message : String(error)
         });
-        return persistExecution({
+        return persistRouteExecution({
           repoId: storedPreview.repoId,
           userId: session.userId,
           githubLogin: session.githubLogin,
@@ -506,7 +515,7 @@ export async function registerActionRoutes(app: FastifyInstance): Promise<void> 
         message: "GitHub rejected or failed the workflow fix execution.",
         errorMessage: error instanceof Error ? error.message : String(error)
       });
-      return persistExecution({
+      return persistRouteExecution({
         repoId: storedPreview.repoId,
         userId: session.userId,
         githubLogin: session.githubLogin,
