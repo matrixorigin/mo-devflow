@@ -1,10 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import {
+  formatSqlGuardViolation,
+  hasWildcardSelect,
+  isUnboundedRowReturningQuery,
+  sqlGuardViolations
+} from "./sqlGuard";
 
 const databaseQueryRoots = ["packages/db/src", "apps/api/src", "apps/worker/src", "scripts"];
-const wildcardSelectPattern = /\bselect\s+(?:distinct\s+)?(?:[`"\w]+\.)?\*/gi;
-const sqlStringPattern = /`([\s\S]*?\bSELECT\b[\s\S]*?)`|"([^"\n]*\bSELECT\b[^"\n]*)"|'([^'\n]*\bSELECT\b[^'\n]*)'/gi;
 
 function collectDatabaseSourceFiles(root: string): string[] {
   const files: string[] = [];
@@ -24,52 +28,42 @@ function collectDatabaseSourceFiles(root: string): string[] {
 }
 
 describe("SQL query guardrails", () => {
-  test("database source code does not use wildcard select projections", () => {
-    const violations = databaseQueryRoots.flatMap(collectDatabaseSourceFiles).flatMap((path) => {
-      const source = readFileSync(path, "utf8");
-      return Array.from(source.matchAll(wildcardSelectPattern), (match) => `${path}: ${match[0]}`);
-    });
+  test("database source code does not use wildcard selects or unbounded row-returning selects", () => {
+    const files = databaseQueryRoots.flatMap(collectDatabaseSourceFiles).map((path) => ({
+      path,
+      source: readFileSync(path, "utf8")
+    }));
 
-    expect(violations).toEqual([]);
+    expect(sqlGuardViolations(files).map(formatSqlGuardViolation)).toEqual([]);
   });
 
-  test("database row-returning queries are explicitly bounded", () => {
-    const violations = databaseQueryRoots.flatMap(collectDatabaseSourceFiles).flatMap((path) => {
-      const source = readFileSync(path, "utf8");
-      return Array.from(source.matchAll(sqlStringPattern))
-        .map((match) => ({
-          query: String(match[1] ?? match[2] ?? match[3] ?? "").replace(/\s+/g, " ").trim(),
-          line: source.slice(0, match.index).split("\n").length
-        }))
-        .filter(({ query }) => isUnboundedRowReturningQuery(query))
-        .map(({ query, line }) => `${path}:${line}: ${query.slice(0, 180)}`);
-    });
+  test("detects wildcard select projections", () => {
+    expect(hasWildcardSelect("SELECT * FROM issues LIMIT 10")).toBe(true);
+    expect(hasWildcardSelect("SELECT i.* FROM issues i LIMIT 10")).toBe(true);
+    expect(hasWildcardSelect("SELECT DISTINCT `i`.* FROM issues i LIMIT 10")).toBe(true);
+    expect(hasWildcardSelect("SELECT id, number FROM issues LIMIT 10")).toBe(false);
+  });
 
-    expect(violations).toEqual([]);
+  test("requires normal row-returning selects to be bounded", () => {
+    expect(isUnboundedRowReturningQuery("SELECT id, number FROM issues WHERE repo_id = ?")).toBe(true);
+    expect(isUnboundedRowReturningQuery("SELECT id, number FROM issues WHERE repo_id = ? LIMIT ?")).toBe(false);
+    expect(isUnboundedRowReturningQuery("SELECT COUNT(*) AS issue_count FROM issues WHERE repo_id = ?")).toBe(false);
+    expect(isUnboundedRowReturningQuery("SELECT 1")).toBe(false);
+    expect(isUnboundedRowReturningQuery("SELECT table_name FROM information_schema.tables")).toBe(false);
+  });
+
+  test("reports source file and line for query guard violations", () => {
+    const source = [
+      "const ok = `SELECT id FROM issues WHERE repo_id = ? LIMIT ?`;",
+      "const wildcard = `SELECT * FROM pull_requests LIMIT 10`;",
+      "const unbounded = `SELECT number FROM pull_requests WHERE repo_id = ?`;"
+    ].join("\n");
+
+    expect(
+      sqlGuardViolations([{ path: "packages/db/src/example.ts", source }]).map(formatSqlGuardViolation)
+    ).toEqual([
+      "packages/db/src/example.ts:2: wildcard_select: SELECT * FROM pull_requests LIMIT 10",
+      "packages/db/src/example.ts:3: unbounded_row_query: SELECT number FROM pull_requests WHERE repo_id = ?"
+    ]);
   });
 });
-
-function isUnboundedRowReturningQuery(query: string): boolean {
-  if (!/\bselect\b/i.test(query) || !/\bfrom\b/i.test(query)) {
-    return false;
-  }
-  if (/\blimit\b/i.test(query)) {
-    return false;
-  }
-  if (/\b(count|sum|min|max|avg)\s*\(|\bgroup\s+by\b|\binformation_schema\b/i.test(query)) {
-    return false;
-  }
-  if (/\$\{hidden(?:Issue|Pr)Expression\}/.test(query)) {
-    return false;
-  }
-  if (/\bselect\s+1\b/i.test(query)) {
-    return false;
-  }
-  if (/\bin\s*\(\$\{[^}]+\}\)/i.test(query)) {
-    return false;
-  }
-  if (query.includes("comment_synced_at") && !query.includes("comment_candidates")) {
-    return false;
-  }
-  return true;
-}
