@@ -11,6 +11,7 @@ import type {
   TestingIssueQueueView
 } from "@mo-devflow/shared";
 import {
+  criticalOwnerFlowSummaries,
   criticalIssueReasons,
   criticalIssueContextsByPullRequest,
   effectiveAiEffortLabel,
@@ -1089,6 +1090,104 @@ describe("testing issue action order", () => {
     ]);
     expect(testingTesterNeedsAttention(testers[0]!)).toBe(true);
     expect(testingTesterNeedsAttention(testingTester({ login: "idle" }))).toBe(false);
+  });
+});
+
+describe("critical owner flow summaries", () => {
+  it("groups active s-1/s0 issue flow by owner with PR and issue-testing bottlenecks", () => {
+    const aliceBlockedPr = pullRequest({
+      number: 101,
+      ownerLogin: "alice",
+      attentionFlags: ["ci_failed"],
+      ciState: "failure",
+      linkedIssueNumbers: [10]
+    });
+    const bobPr = pullRequest({ number: 201, ownerLogin: "bob", linkedIssueNumbers: [20] });
+    const threads = observedOwnerThreads(
+      [
+        criticalIssue({
+          number: 10,
+          ownerLogin: "alice",
+          severity: "severity/s-1",
+          criticalAgeHours: 72,
+          aiEffortLabel: null,
+          linkedPullRequests: [{ ...linkedPullRequest(), number: 101 }]
+        }),
+        criticalIssue({
+          number: 11,
+          ownerLogin: "alice",
+          severity: "severity/s0",
+          criticalAgeHours: 12,
+          linkedPullRequests: []
+        }),
+        criticalIssue({
+          number: 20,
+          ownerLogin: "bob",
+          severity: "severity/s0",
+          criticalAgeHours: 30,
+          linkedPullRequests: [{ ...linkedPullRequest(), number: 201 }]
+        })
+      ],
+      [aliceBlockedPr, bobPr]
+    ).filter((thread) => thread.issue !== null);
+
+    const summaries = criticalOwnerFlowSummaries(threads, [
+      testingIssue({ number: 20, queueAgeHours: 30, syncError: null })
+    ]);
+
+    expect(summaries.map((summary) => summary.ownerLogin)).toEqual(["alice", "bob"]);
+    expect(summaries[0]).toMatchObject({
+      ownerLogin: "alice",
+      activeIssues: 2,
+      sMinusOneIssues: 1,
+      noVisiblePrIssues: 1,
+      issuesWithPrBlockers: 1,
+      blockedPrs: 1,
+      testingIssues: 0,
+      maxCriticalAgeHours: 72,
+      averageCriticalAgeHours: 42,
+      tone: "critical"
+    });
+    expect(summaries[0]?.aiLabels).toContain("ai-easy");
+    expect(summaries[1]).toMatchObject({
+      ownerLogin: "bob",
+      activeIssues: 1,
+      noVisiblePrIssues: 0,
+      issuesWithPrBlockers: 0,
+      testingIssues: 1,
+      staleTestingIssues: 1,
+      tone: "attention"
+    });
+  });
+
+  it("keeps unowned active issues visible as their own management bucket", () => {
+    const summaries = criticalOwnerFlowSummaries(
+      observedOwnerThreads(
+        [
+          criticalIssue({
+            number: 30,
+            ownerLogin: null,
+            ownerScope: "unowned",
+            criticalAgeHours: null,
+            criticalAgeEvidence: "missing_timeline"
+          })
+        ],
+        []
+      )
+    );
+
+    expect(summaries).toEqual([
+      expect.objectContaining({
+        key: "unowned",
+        ownerLogin: null,
+        ownerLabel: "Unowned",
+        activeIssues: 1,
+        noVisiblePrIssues: 1,
+        maxCriticalAgeHours: null,
+        averageCriticalAgeHours: null,
+        tone: "critical"
+      })
+    ]);
   });
 });
 

@@ -2024,6 +2024,256 @@ button.freshness-path-card:focus-visible {
   min-width: 0;
 }
 
+.critical-flow-funnel {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.critical-flow-stage {
+  appearance: none;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  position: relative;
+  text-align: left;
+}
+
+.critical-flow-stage:hover {
+  background: #f8fbff;
+  border-color: #93c5fd;
+}
+
+.critical-flow-stage:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.critical-flow-stage::after {
+  background: #cbd5e1;
+  content: "";
+  height: 1px;
+  left: calc(100% + 1px);
+  position: absolute;
+  top: 50%;
+  width: 8px;
+}
+
+.critical-flow-stage:last-child::after {
+  display: none;
+}
+
+.critical-flow-stage span,
+.critical-flow-stage small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.critical-flow-stage span {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.critical-flow-stage strong {
+  color: #111827;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.critical-flow-stage small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.critical-flow-stage-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.critical-flow-stage-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.critical-owner-flow-board {
+  border-bottom: 1px solid #e5e7eb;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.critical-owner-flow-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.critical-owner-flow-heading > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.critical-owner-flow-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.critical-owner-flow-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.critical-owner-flow-card-critical {
+  border-left: 3px solid #dc2626;
+}
+
+.critical-owner-flow-card-attention {
+  border-left: 3px solid #d97706;
+}
+
+.critical-owner-flow-card-normal {
+  border-left: 3px solid #2563eb;
+}
+
+.critical-owner-flow-card-top {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.critical-owner-flow-card-top > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.critical-owner-flow-card-top .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.critical-owner-flow-primary,
+.critical-owner-flow-metric {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+  text-align: left;
+}
+
+.critical-owner-flow-primary {
+  display: grid;
+  flex: 0 0 58px;
+  gap: 1px;
+  justify-items: end;
+  padding: 6px 8px;
+}
+
+.critical-owner-flow-primary:hover,
+.critical-owner-flow-metric:hover {
+  background: #f8fbff;
+  border-color: #93c5fd;
+}
+
+.critical-owner-flow-primary strong {
+  color: #111827;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.critical-owner-flow-primary span {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.critical-owner-flow-split {
+  color: #4b5563;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.critical-owner-flow-split span {
+  background: #f9fafb;
+  border-radius: 999px;
+  padding: 3px 7px;
+}
+
+.critical-owner-flow-split b {
+  color: #111827;
+}
+
+.critical-owner-flow-actions {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.critical-owner-flow-metric {
+  display: grid;
+  gap: 1px;
+  justify-items: start;
+  padding: 6px 8px;
+}
+
+.critical-owner-flow-metric strong {
+  color: #111827;
+  font-size: 17px;
+  line-height: 1.05;
+}
+
+.critical-owner-flow-metric span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.critical-owner-flow-metric-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.critical-owner-flow-metric-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
 .team-critical-flow-row {
   border-bottom: 1px solid #f3f4f6;
   display: grid;
@@ -9598,6 +9848,18 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .critical-flow-funnel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .critical-flow-stage::after {
+    display: none;
+  }
+
+  .critical-owner-flow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .testing-command-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -9785,6 +10047,14 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .webhook-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .critical-owner-flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .critical-flow-funnel {
     grid-template-columns: 1fr;
   }
 
@@ -10217,6 +10487,20 @@ button.flow-diagnostic-card:focus-visible {
 
   .team-ops-tile strong {
     font-size: 18px;
+  }
+
+  .critical-owner-flow-card-top,
+  .critical-owner-flow-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .critical-owner-flow-primary {
+    justify-items: start;
+  }
+
+  .critical-owner-flow-actions {
+    grid-template-columns: 1fr;
   }
 
   .topbar {

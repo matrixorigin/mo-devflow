@@ -667,6 +667,27 @@ export interface ObservedOwnerThread {
   needsLink: boolean;
 }
 
+export type CriticalOwnerFlowTone = "critical" | "attention" | "normal";
+
+export interface CriticalOwnerFlowSummary {
+  key: string;
+  ownerLogin: string | null;
+  ownerLabel: string;
+  ownerScope: CriticalIssueView["ownerScope"];
+  activeIssues: number;
+  sMinusOneIssues: number;
+  sZeroIssues: number;
+  noVisiblePrIssues: number;
+  issuesWithPrBlockers: number;
+  blockedPrs: number;
+  testingIssues: number;
+  staleTestingIssues: number;
+  maxCriticalAgeHours: number | null;
+  averageCriticalAgeHours: number | null;
+  aiLabels: string[];
+  tone: CriticalOwnerFlowTone;
+}
+
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
@@ -1962,6 +1983,126 @@ export function observedOwnerThreads(issues: CriticalIssueView[], prs: PendingPr
   }
 
   return threads;
+}
+
+export function criticalOwnerFlowSummaries(
+  threads: ObservedOwnerThread[],
+  testingIssues: TestingIssueQueueView[] = []
+): CriticalOwnerFlowSummary[] {
+  const testingIssueByNumber = new Map(testingIssues.map((issue) => [issue.number, issue]));
+  const byOwner = new Map<
+    string,
+    CriticalOwnerFlowSummary & { criticalAgeTotal: number; criticalAgeSamples: number }
+  >();
+
+  for (const thread of threads) {
+    if (!thread.issue) {
+      continue;
+    }
+
+    const issue = thread.issue;
+    const key = issue.ownerLogin ? `owner:${issue.ownerLogin}` : "unowned";
+    const existing =
+      byOwner.get(key) ??
+      ({
+        key,
+        ownerLogin: issue.ownerLogin,
+        ownerLabel: issue.ownerLogin ?? "Unowned",
+        ownerScope: issue.ownerScope,
+        activeIssues: 0,
+        sMinusOneIssues: 0,
+        sZeroIssues: 0,
+        noVisiblePrIssues: 0,
+        issuesWithPrBlockers: 0,
+        blockedPrs: 0,
+        testingIssues: 0,
+        staleTestingIssues: 0,
+        maxCriticalAgeHours: null,
+        averageCriticalAgeHours: null,
+        aiLabels: [],
+        tone: "normal",
+        criticalAgeTotal: 0,
+        criticalAgeSamples: 0
+      } satisfies CriticalOwnerFlowSummary & { criticalAgeTotal: number; criticalAgeSamples: number });
+
+    const prs = observedOwnerThreadPullRequests(thread);
+    const blockedPrNumbers = new Set<number>(
+      prs.filter((pr) => prAttentionReasons(pr as PendingPrView).length > 0).map((pr) => pr.number)
+    );
+    const testingIssue = testingIssueByNumber.get(issue.number) ?? null;
+
+    existing.activeIssues += 1;
+    existing.sMinusOneIssues += issue.severity === "severity/s-1" ? 1 : 0;
+    existing.sZeroIssues += issue.severity === "severity/s0" ? 1 : 0;
+    existing.noVisiblePrIssues += thread.needsLink ? 1 : 0;
+    existing.issuesWithPrBlockers += blockedPrNumbers.size > 0 ? 1 : 0;
+    existing.blockedPrs += blockedPrNumbers.size;
+    existing.testingIssues += testingIssue ? 1 : 0;
+    existing.staleTestingIssues +=
+      testingIssue && ((testingIssue.queueAgeHours ?? 0) >= 24 || testingIssue.syncError) ? 1 : 0;
+    existing.aiLabels = uniqueStrings([...existing.aiLabels, effectiveAiEffortLabel(issue.aiEffortLabel)]);
+
+    if (issue.criticalAgeHours !== null && Number.isFinite(issue.criticalAgeHours)) {
+      existing.criticalAgeTotal += issue.criticalAgeHours;
+      existing.criticalAgeSamples += 1;
+      existing.maxCriticalAgeHours =
+        existing.maxCriticalAgeHours === null
+          ? issue.criticalAgeHours
+          : Math.max(existing.maxCriticalAgeHours, issue.criticalAgeHours);
+      existing.averageCriticalAgeHours = Math.round(existing.criticalAgeTotal / existing.criticalAgeSamples);
+    }
+
+    existing.tone =
+      existing.sMinusOneIssues > 0 || existing.noVisiblePrIssues > 0 || existing.issuesWithPrBlockers > 0
+        ? "critical"
+        : existing.staleTestingIssues > 0 || existing.testingIssues > 0
+          ? "attention"
+          : "normal";
+
+    byOwner.set(key, existing);
+  }
+
+  return [...byOwner.values()]
+    .map(({ criticalAgeTotal: _criticalAgeTotal, criticalAgeSamples: _criticalAgeSamples, ...summary }) => summary)
+    .sort(
+      (left, right) =>
+        criticalOwnerFlowToneRank(right.tone) - criticalOwnerFlowToneRank(left.tone) ||
+        right.sMinusOneIssues - left.sMinusOneIssues ||
+        right.noVisiblePrIssues - left.noVisiblePrIssues ||
+        right.issuesWithPrBlockers - left.issuesWithPrBlockers ||
+        right.staleTestingIssues - left.staleTestingIssues ||
+        (right.maxCriticalAgeHours ?? -1) - (left.maxCriticalAgeHours ?? -1) ||
+        right.activeIssues - left.activeIssues ||
+        left.ownerLabel.localeCompare(right.ownerLabel)
+    );
+}
+
+function criticalOwnerFlowToneRank(tone: CriticalOwnerFlowTone): number {
+  if (tone === "critical") {
+    return 3;
+  }
+  if (tone === "attention") {
+    return 2;
+  }
+  return 1;
+}
+
+function observedOwnerThreadPullRequests(
+  thread: ObservedOwnerThread
+): Array<PendingPrView | CriticalIssueLinkedPullRequestView> {
+  const byNumber = new Map<number, PendingPrView | CriticalIssueLinkedPullRequestView>();
+  for (const pr of thread.issue?.linkedPullRequests ?? []) {
+    byNumber.set(pr.number, pr);
+  }
+  for (const pr of thread.prs) {
+    byNumber.set(pr.number, pr);
+  }
+  return [...byNumber.values()].sort(
+    (left, right) =>
+      right.attentionFlags.length - left.attentionFlags.length ||
+      right.ageHours - left.ageHours ||
+      left.number - right.number
+  );
 }
 
 function sortObservedOwnerPrs(prs: PendingPrView[]): PendingPrView[] {

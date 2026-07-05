@@ -145,6 +145,7 @@ import {
   personalTestingWorkCount,
   personPrimaryReasons,
   personWorkloadStatus,
+  criticalOwnerFlowSummaries,
   personalIssueReasons,
   prAttentionReasons,
   prHasNoVisibleIssue,
@@ -168,6 +169,7 @@ import {
   type FlowEfficiencyDiagnostic,
   type FlowEfficiencyDiagnosticTarget,
   type FlowEfficiencySummary,
+  type CriticalOwnerFlowSummary,
   type ObservedOwnerThread,
   type NotificationDeliveryScopeFilter,
   type PersonalActionQueueFilter,
@@ -4063,12 +4065,20 @@ function TeamRotationOverview({
       <TeamCriticalFlowPanel
         issues={data.criticalIssues}
         rows={criticalFlowRows}
+        testingIssues={data.testing.issues}
         generatedAt={generatedAt}
         aiFilter={criticalAiFilter}
         onAiFilterChange={onCriticalAiFilterChange}
         onOpenIssues={() => onOpenIssuesFilter({})}
         onOpenNoPrIssues={() => onOpenIssuesFilter({ scope: "no_pr" })}
+        onOpenOwnerIssues={(summary) =>
+          onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "all" })
+        }
+        onOpenOwnerNoPrIssues={(summary) =>
+          onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "no_pr" })
+        }
         onOpenPrRisks={() => onOpenPrsFilter("attention")}
+        onOpenTestingIssues={() => onOpenTestingIssueQueue("all")}
         onPreviewIssue={(issue) => setWorkPreview({ objectType: "issue", issue })}
       />
 
@@ -4928,27 +4938,42 @@ function ProductionReadinessGateButton({
 function TeamCriticalFlowPanel({
   issues,
   rows,
+  testingIssues,
   generatedAt,
   aiFilter,
   onAiFilterChange,
   onOpenIssues,
   onOpenNoPrIssues,
+  onOpenOwnerIssues,
+  onOpenOwnerNoPrIssues,
   onOpenPrRisks,
+  onOpenTestingIssues,
   onPreviewIssue
 }: {
   issues: CriticalIssueView[];
   rows: ObservedOwnerThread[];
+  testingIssues: TestingIssueQueueView[];
   generatedAt: string;
   aiFilter: CriticalIssueAiFilter;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onOpenIssues: () => void;
   onOpenNoPrIssues: () => void;
+  onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
   onOpenPrRisks: () => void;
+  onOpenTestingIssues: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
   const pagedRows = usePagedList(rows, 3, rows.map((row) => row.id).join(":"));
+  const ownerSummaries = criticalOwnerFlowSummaries(rows, testingIssues);
+  const testingIssueNumbers = new Set(testingIssues.map((issue) => issue.number));
   const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
   const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
+  const issuesWithPrBlockers = rows.filter((row) =>
+    observedThreadPullRequests(row).some((pr) => prAttentionReasons(pr as PendingPrView).length > 0)
+  ).length;
+  const issueTestingRows = rows.filter((row) => row.issue && testingIssueNumbers.has(row.issue.number)).length;
+  const prVisibleRows = Math.max(0, rows.length - noVisiblePrRows);
 
   return (
     <section className="team-critical-flow-panel" aria-label="Critical issue and PR flow">
@@ -4984,6 +5009,25 @@ function TeamCriticalFlowPanel({
         </div>
       </div>
 
+      <TeamCriticalFlowFunnel
+        activeIssues={rows.length}
+        prVisibleIssues={prVisibleRows}
+        issuesWithPrBlockers={issuesWithPrBlockers}
+        issueTestingIssues={issueTestingRows}
+        onOpenIssues={onOpenIssues}
+        onOpenNoPrIssues={onOpenNoPrIssues}
+        onOpenPrRisks={onOpenPrRisks}
+        onOpenTestingIssues={onOpenTestingIssues}
+      />
+
+      <TeamCriticalOwnerFlowBoard
+        summaries={ownerSummaries}
+        onOpenOwnerIssues={onOpenOwnerIssues}
+        onOpenOwnerNoPrIssues={onOpenOwnerNoPrIssues}
+        onOpenPrRisks={onOpenPrRisks}
+        onOpenTestingIssues={onOpenTestingIssues}
+      />
+
       <div className="team-critical-flow-list">
         {pagedRows.visibleItems.length > 0 ? (
           pagedRows.visibleItems.map((row) => (
@@ -5008,6 +5052,242 @@ function TeamCriticalFlowPanel({
         onChange={pagedRows.onPageChange}
       />
     </section>
+  );
+}
+
+function TeamCriticalFlowFunnel({
+  activeIssues,
+  prVisibleIssues,
+  issuesWithPrBlockers,
+  issueTestingIssues,
+  onOpenIssues,
+  onOpenNoPrIssues,
+  onOpenPrRisks,
+  onOpenTestingIssues
+}: {
+  activeIssues: number;
+  prVisibleIssues: number;
+  issuesWithPrBlockers: number;
+  issueTestingIssues: number;
+  onOpenIssues: () => void;
+  onOpenNoPrIssues: () => void;
+  onOpenPrRisks: () => void;
+  onOpenTestingIssues: () => void;
+}) {
+  const clearPrIssues = Math.max(0, prVisibleIssues - issuesWithPrBlockers);
+  const visibleRate = ratioPercent(prVisibleIssues, activeIssues);
+  const clearRate = ratioPercent(clearPrIssues, activeIssues);
+  const testingRate = ratioPercent(issueTestingIssues, activeIssues);
+
+  return (
+    <section className="critical-flow-funnel" aria-label="Critical issue to PR and testing funnel">
+      <TeamCriticalFlowStage
+        label="Active s-1/s0"
+        value={activeIssues}
+        detail="current severe issues"
+        tone={activeIssues > 0 ? "critical" : "normal"}
+        onClick={onOpenIssues}
+      />
+      <TeamCriticalFlowStage
+        label="PR visible"
+        value={prVisibleIssues}
+        detail={`${visibleRate} of active | ${activeIssues - prVisibleIssues} no PR`}
+        tone={activeIssues - prVisibleIssues > 0 ? "attention" : "normal"}
+        onClick={activeIssues - prVisibleIssues > 0 ? onOpenNoPrIssues : onOpenIssues}
+      />
+      <TeamCriticalFlowStage
+        label="PR clear"
+        value={clearPrIssues}
+        detail={`${clearRate} of active | ${issuesWithPrBlockers} blocked`}
+        tone={issuesWithPrBlockers > 0 ? "attention" : "normal"}
+        onClick={issuesWithPrBlockers > 0 ? onOpenPrRisks : onOpenIssues}
+      />
+      <TeamCriticalFlowStage
+        label="Issue testing"
+        value={issueTestingIssues}
+        detail={`${testingRate} of active handed to testers`}
+        tone={issueTestingIssues > 0 ? "attention" : "normal"}
+        onClick={onOpenTestingIssues}
+      />
+    </section>
+  );
+}
+
+function TeamCriticalFlowStage({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  tone: "critical" | "attention" | "normal";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`critical-flow-stage critical-flow-stage-${tone}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
+  );
+}
+
+function ratioPercent(value: number, total: number): string {
+  if (total <= 0) {
+    return "0%";
+  }
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function TeamCriticalOwnerFlowBoard({
+  summaries,
+  onOpenOwnerIssues,
+  onOpenOwnerNoPrIssues,
+  onOpenPrRisks,
+  onOpenTestingIssues
+}: {
+  summaries: CriticalOwnerFlowSummary[];
+  onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenPrRisks: () => void;
+  onOpenTestingIssues: () => void;
+}) {
+  const pagedSummaries = usePagedList(summaries, 6, summaries.map((summary) => summary.key).join(":"));
+
+  if (summaries.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="critical-owner-flow-board" aria-label="Critical flow by owner">
+      <div className="critical-owner-flow-heading">
+        <div>
+          <Text strong>By person</Text>
+          <Text type="secondary">Active issue ownership, PR visibility, blockers, and issue testing wait.</Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <Tag>{summaries.length} owners</Tag>
+          {pagedSummaries.visibleItems.length < summaries.length ? (
+            <Tag>
+              {pagedSummaries.startIndex + 1}-{pagedSummaries.startIndex + pagedSummaries.visibleItems.length}
+            </Tag>
+          ) : null}
+        </Space>
+      </div>
+      <div className="critical-owner-flow-grid">
+        {pagedSummaries.visibleItems.map((summary) => (
+          <TeamCriticalOwnerFlowCard
+            key={summary.key}
+            summary={summary}
+            onOpenOwnerIssues={onOpenOwnerIssues}
+            onOpenOwnerNoPrIssues={onOpenOwnerNoPrIssues}
+            onOpenPrRisks={onOpenPrRisks}
+            onOpenTestingIssues={onOpenTestingIssues}
+          />
+        ))}
+      </div>
+      <CardListPagination
+        total={summaries.length}
+        page={pagedSummaries.page}
+        pageSize={pagedSummaries.pageSize}
+        defaultPageSize={6}
+        onChange={pagedSummaries.onPageChange}
+      />
+    </section>
+  );
+}
+
+function TeamCriticalOwnerFlowCard({
+  summary,
+  onOpenOwnerIssues,
+  onOpenOwnerNoPrIssues,
+  onOpenPrRisks,
+  onOpenTestingIssues
+}: {
+  summary: CriticalOwnerFlowSummary;
+  onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenPrRisks: () => void;
+  onOpenTestingIssues: () => void;
+}) {
+  const testingTone = summary.staleTestingIssues > 0 ? "critical" : summary.testingIssues > 0 ? "attention" : "normal";
+  const aiLabel = summary.aiLabels.length > 0 ? summary.aiLabels.slice(0, 2).join(", ") : "ai-easy";
+  const hiddenAiLabels = Math.max(0, summary.aiLabels.length - 2);
+
+  return (
+    <article className={`critical-owner-flow-card critical-owner-flow-card-${summary.tone}`}>
+      <div className="critical-owner-flow-card-top">
+        <div>
+          <Text strong>{summary.ownerLabel}</Text>
+          <Space size={[4, 4]} wrap>
+            <Tooltip title={ownerScopeTooltip(summary.ownerScope)}>
+              <Tag color={ownerScopeColor(summary.ownerScope)}>{labelText(summary.ownerScope)}</Tag>
+            </Tooltip>
+            <Tag color="blue">
+              {aiLabel}
+              {hiddenAiLabels > 0 ? ` +${hiddenAiLabels}` : ""}
+            </Tag>
+          </Space>
+        </div>
+        <button type="button" className="critical-owner-flow-primary" onClick={() => onOpenOwnerIssues(summary)}>
+          <strong>{summary.activeIssues}</strong>
+          <span>active</span>
+        </button>
+      </div>
+      <div className="critical-owner-flow-split">
+        <span>
+          <b>{summary.sMinusOneIssues}</b> s-1
+        </span>
+        <span>
+          <b>{summary.sZeroIssues}</b> s0
+        </span>
+        <span>
+          longest <b>{optionalHours(summary.maxCriticalAgeHours)}</b>
+        </span>
+      </div>
+      <div className="critical-owner-flow-actions">
+        <TeamCriticalOwnerFlowMetric
+          label="No PR"
+          value={summary.noVisiblePrIssues}
+          tone={summary.noVisiblePrIssues > 0 ? "critical" : "normal"}
+          onClick={() => onOpenOwnerNoPrIssues(summary)}
+        />
+        <TeamCriticalOwnerFlowMetric
+          label="PR blockers"
+          value={summary.blockedPrs}
+          tone={summary.blockedPrs > 0 ? "attention" : "normal"}
+          onClick={onOpenPrRisks}
+        />
+        <TeamCriticalOwnerFlowMetric
+          label="Issue testing"
+          value={summary.testingIssues}
+          tone={testingTone}
+          onClick={onOpenTestingIssues}
+        />
+      </div>
+    </article>
+  );
+}
+
+function TeamCriticalOwnerFlowMetric({
+  label,
+  value,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: number;
+  tone: "critical" | "attention" | "normal";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`critical-owner-flow-metric critical-owner-flow-metric-${tone}`} onClick={onClick}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </button>
   );
 }
 
