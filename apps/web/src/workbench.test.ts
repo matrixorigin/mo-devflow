@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CriticalIssueView,
   DailyMetricPoint,
+  DashboardSummary,
   NotificationDeliveryView,
   PersonSummary,
   PersonalActionView,
@@ -41,6 +42,8 @@ import {
   sortTestingIssuesForAction,
   sortPeopleByWorkload,
   teamPeopleFocusSummary,
+  teamOperatingSignals,
+  teamTriageSnapshot,
   teamCommandSignals,
   testingStateBusinessLabel,
   testingStateHelpText
@@ -213,6 +216,106 @@ describe("person workload summaries", () => {
       prAttentionPeople: 2,
       testingPeople: 1,
       triagePeople: 1
+    });
+  });
+});
+
+describe("team operating signals", () => {
+  it("deduplicates team triage issue counts across personal views", () => {
+    const issue = personalIssue({ number: 101 });
+
+    expect(
+      teamTriageSnapshot({
+        people: [],
+        personalViews: [
+          personalView({ login: "alice", needsTriageIssues: [issue] }),
+          personalView({ login: "bob", needsTriageIssues: [issue] })
+        ]
+      })
+    ).toEqual({
+      needsTriageIssues: 1,
+      deferredIssues: 0,
+      peopleWithNeedsTriage: 2,
+      peopleWithDeferred: 0
+    });
+  });
+
+  it("collapses issue, PR, testing, and data trust risk into one team strip", () => {
+    const issueWithoutPr = criticalIssue({
+      number: 10,
+      severity: "severity/s-1",
+      criticalAgeHours: 96,
+      linkedPullRequests: []
+    });
+    const linkedIssue = criticalIssue({
+      number: 11,
+      severity: "severity/s0",
+      criticalAgeHours: 12,
+      linkedPullRequests: [linkedPullRequest()]
+    });
+    const blockedPr = pullRequest({
+      number: 20,
+      attentionFlags: ["ci_failed", "no_human_action_24h"],
+      ciState: "failure"
+    });
+    const data = {
+      counts: {
+        criticalIssues: 2,
+        pendingPrs: 3,
+        attentionPrs: 1
+      },
+      criticalIssues: [issueWithoutPr, linkedIssue],
+      pendingPrs: [blockedPr],
+      people: [personSummary({ login: "triage-owner", needsTriageIssues: 4 })],
+      personalViews: [],
+      testing: {
+        queueIssues: 1,
+        staleQueueIssues: 1,
+        averageIssueQueueAgeHours: 30,
+        handoffToCloseSamples: 2,
+        averageHandoffToCloseHours: 48
+      },
+      sync: {
+        staleObjects: 3,
+        partialObjects: 2,
+        worker: {
+          status: "stale"
+        }
+      }
+    } as unknown as DashboardSummary;
+
+    const signals = teamOperatingSignals({
+      data,
+      flowSummary: {
+        averageActiveIssueAgeHours: 54,
+        averagePendingPrAgeHours: 36
+      }
+    });
+
+    expect(signals.map((signal) => signal.key)).toEqual(["issue_flow", "pr_flow", "testing_flow", "data_trust"]);
+    expect(signals.find((signal) => signal.key === "issue_flow")).toMatchObject({
+      value: 2,
+      tone: "critical",
+      target: "critical_without_pr"
+    });
+    expect(signals.find((signal) => signal.key === "issue_flow")?.detail).toContain("1 no PR");
+    expect(signals.find((signal) => signal.key === "pr_flow")).toMatchObject({
+      value: 1,
+      detail: "3 pending | 1 CI | 1 idle | avg 1.5d",
+      tone: "attention",
+      target: "pr_attention"
+    });
+    expect(signals.find((signal) => signal.key === "testing_flow")).toMatchObject({
+      value: 1,
+      detail: "1 >24h | avg wait 1.3d | close 2.0d (2)",
+      tone: "critical",
+      target: "testing_stale"
+    });
+    expect(signals.find((signal) => signal.key === "data_trust")).toMatchObject({
+      value: 5,
+      detail: "3 stale | 2 incomplete | stale",
+      tone: "attention",
+      target: "health"
     });
   });
 });

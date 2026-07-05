@@ -140,7 +140,9 @@ import {
   prVisibleIssueNumbers,
   sortTestingIssuesForAction,
   teamCommandSignals,
+  teamOperatingSignals,
   teamPeopleFocusSummary,
+  teamTriageSnapshot,
   testingStateBusinessLabel,
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
@@ -160,6 +162,7 @@ import {
   type PeopleScopeFilter,
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
+  type TeamOperatingSignal,
   type WorkloadStatus
 } from "./workbench";
 
@@ -2228,6 +2231,7 @@ function TeamRotationOverview({
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
   const productionReadiness = summarizeProductionReadiness({ data, session });
+  const operatingSignals = teamOperatingSignals({ data, flowSummary, triageSnapshot });
   const commandActions = teamCommandActions({
     data,
     sMinusOneIssues,
@@ -2287,20 +2291,13 @@ function TeamRotationOverview({
           </div>
         </div>
         <TeamHealthStrip
-          data={data}
-          flowSummary={flowSummary}
-          triageSnapshot={triageSnapshot}
+          signals={operatingSignals}
+          onNavigate={onNavigate}
           onOpenIssuesFilter={onOpenIssuesFilter}
           onOpenPrsFilter={onOpenPrsFilter}
           onOpenPeopleFilter={onOpenPeopleFilter}
         />
         <TeamCommandQueue actions={commandActions} />
-        <TeamFlowRiskStrip
-          data={data}
-          onNavigate={onNavigate}
-          onOpenIssuesFilter={onOpenIssuesFilter}
-          onOpenPrsFilter={onOpenPrsFilter}
-        />
         <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
         <ProductionReadinessStrip
           summary={productionReadiness}
@@ -2657,226 +2654,73 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
   );
 }
 
-interface TeamTriageSnapshot {
-  needsTriageIssues: number;
-  deferredIssues: number;
-  peopleWithNeedsTriage: number;
-  peopleWithDeferred: number;
-}
-
-function teamTriageSnapshot(data: DashboardSummary): TeamTriageSnapshot {
-  if (data.personalViews.length > 0) {
-    const needsTriageIssues = new Set<number>();
-    const deferredIssues = new Set<number>();
-    let peopleWithNeedsTriage = 0;
-    let peopleWithDeferred = 0;
-
-    for (const person of data.personalViews) {
-      if (person.needsTriageIssues.length > 0) {
-        peopleWithNeedsTriage += 1;
-      }
-      if (person.deferredIssues.length > 0) {
-        peopleWithDeferred += 1;
-      }
-      for (const issue of person.needsTriageIssues) {
-        needsTriageIssues.add(issue.number);
-      }
-      for (const issue of person.deferredIssues) {
-        deferredIssues.add(issue.number);
-      }
-    }
-
-    return {
-      needsTriageIssues: needsTriageIssues.size,
-      deferredIssues: deferredIssues.size,
-      peopleWithNeedsTriage,
-      peopleWithDeferred
-    };
-  }
-
-  return {
-    needsTriageIssues: data.people.reduce((total, person) => total + person.needsTriageIssues, 0),
-    deferredIssues: data.people.reduce((total, person) => total + person.deferredIssues, 0),
-    peopleWithNeedsTriage: data.people.filter((person) => person.needsTriageIssues > 0).length,
-    peopleWithDeferred: data.people.filter((person) => person.deferredIssues > 0).length
-  };
-}
-
-interface TeamPrBlockerSnapshot {
-  ciFailed: number;
-  requestedChanges: number;
-  conflicts: number;
-  idle: number;
-}
-
-function teamPrBlockerSnapshot(prs: PendingPrView[]): TeamPrBlockerSnapshot {
-  return {
-    ciFailed: prs.filter(prHasFailedCi).length,
-    requestedChanges: prs.filter(prHasRequestChanges).length,
-    conflicts: prs.filter(prHasConflict).length,
-    idle: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length
-  };
-}
-
-function teamPrBlockerDetail(snapshot: TeamPrBlockerSnapshot): string {
-  const parts = [
-    snapshot.ciFailed > 0 ? `${snapshot.ciFailed} CI` : null,
-    snapshot.requestedChanges > 0 ? `${snapshot.requestedChanges} changes` : null,
-    snapshot.conflicts > 0 ? `${snapshot.conflicts} conflicts` : null,
-    snapshot.idle > 0 ? `${snapshot.idle} idle` : null
-  ].filter((part): part is string => part !== null);
-  return parts.length === 0 ? "no blockers" : parts.slice(0, 3).join(" | ");
-}
-
 function TeamHealthStrip({
-  data,
-  flowSummary,
-  triageSnapshot,
+  signals,
+  onNavigate,
   onOpenIssuesFilter,
   onOpenPrsFilter,
   onOpenPeopleFilter
 }: {
-  data: DashboardSummary;
-  flowSummary: FlowEfficiencySummary | null;
-  triageSnapshot: TeamTriageSnapshot;
+  signals: TeamOperatingSignal[];
+  onNavigate: (view: DashboardView) => void;
   onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
-  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
-  const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
-  const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
-  const testingCloseText =
-    data.testing.averageHandoffToCloseHours === null
-      ? `${data.testing.handoffToCloseSamples} close samples`
-      : `close ${optionalHours(data.testing.averageHandoffToCloseHours)} (${data.testing.handoffToCloseSamples})`;
-  const triageHeavy = triageSnapshot.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
-
   return (
     <div className="team-health-strip" aria-label="Team workflow health">
-      <TeamMonitorTile
-        label="Issue consumption"
-        value={data.counts.criticalIssues}
-        detail={`${staleActiveIssues.length} >3d | ${issuesWithoutPr.length} no PR | avg ${optionalHours(
-          flowSummary?.averageActiveIssueAgeHours ?? null
-        )}`}
-        tone={staleActiveIssues.length > 0 || issuesWithoutPr.length > 0 ? "critical" : "good"}
-        onClick={() => onOpenIssuesFilter({ scope: issuesWithoutPr.length > 0 ? "no_pr" : "all" })}
-      />
-      <TeamMonitorTile
-        label="PR pushing"
-        value={data.counts.attentionPrs}
-        detail={`${data.counts.pendingPrs} pending | ${teamPrBlockerDetail(prBlockers)} | avg ${optionalHours(
-          flowSummary?.averagePendingPrAgeHours ?? null
-        )}`}
-        tone={data.counts.attentionPrs > 0 ? "attention" : "good"}
-        onClick={() => onOpenPrsFilter(data.counts.attentionPrs > 0 ? "attention" : "all")}
-      />
-      <TeamMonitorTile
-        label="Testing validation"
-        value={data.testing.queueIssues}
-        detail={`${data.testing.staleQueueIssues} >24h | avg wait ${optionalHours(
-          data.testing.averageIssueQueueAgeHours
-        )} | ${testingCloseText}`}
-        tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
-        onClick={() => onOpenPrsFilter(data.testing.staleQueueIssues > 0 ? "stale_testing" : "testing")}
-      />
-      <TeamMonitorTile
-        label="Triage decisions"
-        value={triageSnapshot.needsTriageIssues}
-        detail={`${triageSnapshot.peopleWithNeedsTriage} people | ${data.counts.criticalIssues} active | ${triageSnapshot.deferredIssues} deferred`}
-        tone={triageHeavy || triageSnapshot.needsTriageIssues > 0 ? "attention" : "good"}
-        onClick={() => onOpenPeopleFilter(triageSnapshot.needsTriageIssues > 0 ? "triage" : "deferred")}
-      />
+      {signals.map((signal) => (
+        <TeamMonitorTile
+          key={signal.key}
+          label={signal.label}
+          value={signal.value}
+          detail={signal.detail}
+          tone={signal.tone}
+          onClick={() =>
+            openTeamOperatingSignal(signal, onNavigate, onOpenIssuesFilter, onOpenPrsFilter, onOpenPeopleFilter)
+          }
+        />
+      ))}
     </div>
   );
 }
 
-function TeamFlowRiskStrip({
-  data,
-  onNavigate,
-  onOpenIssuesFilter,
-  onOpenPrsFilter
-}: {
-  data: DashboardSummary;
-  onNavigate: (view: DashboardView) => void;
-  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
-  onOpenPrsFilter: (scope: PrScopeFilter) => void;
-}) {
-  const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
-  const prBlockers = data.pendingPrs.filter(
-    (pr) =>
-      prHasFailedCi(pr) ||
-      prHasRequestChanges(pr) ||
-      prHasConflict(pr) ||
-      pr.attentionFlags.includes("no_human_action_24h")
-  );
-  const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
-  const dataRiskTone = data.sync.worker.status === "failed" || data.sync.staleObjects > 0 ? "attention" : "normal";
-
-  return (
-    <div className="team-flow-risk-strip" aria-label="Team flow risk shortcuts">
-      <TeamFlowRiskCard
-        label="Highest priority"
-        value={sMinusOneIssues.length}
-        detail={`oldest ${optionalHours(maxCriticalActiveAge(sMinusOneIssues))}`}
-        tone={sMinusOneIssues.length > 0 ? "critical" : "good"}
-        action="Open s-1"
-        onClick={() => onOpenIssuesFilter({ scope: "s-1" })}
-      />
-      <TeamFlowRiskCard
-        label="PR blockers"
-        value={prBlockers.length}
-        detail={`${data.counts.pendingPrs} pending | oldest ${optionalHours(maxPendingPrAge(prBlockers))}`}
-        tone={prBlockers.length > 0 ? "attention" : "good"}
-        action="Open PR risks"
-        onClick={() => onOpenPrsFilter("attention")}
-      />
-      <TeamFlowRiskCard
-        label="Issue test waits"
-        value={data.testing.staleQueueIssues}
-        detail={`${data.testing.queueIssues} issues in test | max ${optionalHours(maxTestingIssueAge(data.testing.issues))}`}
-        tone={data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good"}
-        action="Open test queue"
-        onClick={() => onOpenPrsFilter("stale_testing")}
-      />
-      <TeamFlowRiskCard
-        label="Data risk"
-        value={dataRiskCount}
-        detail={`${data.sync.staleObjects} stale | ${data.sync.partialObjects} incomplete | ${labelText(
-          data.sync.worker.status
-        )}`}
-        tone={dataRiskCount > 0 || data.sync.worker.status !== "active" ? dataRiskTone : "good"}
-        action="Open health"
-        onClick={() => onNavigate("Health")}
-      />
-    </div>
-  );
-}
-
-function TeamFlowRiskCard({
-  label,
-  value,
-  detail,
-  tone,
-  action,
-  onClick
-}: {
-  label: string;
-  value: string | number;
-  detail: string;
-  tone: "critical" | "attention" | "normal" | "good";
-  action: string;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className={`team-flow-risk-card team-flow-risk-${tone}`} onClick={onClick}>
-      <span className="team-flow-risk-label">{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-      <span className="team-flow-risk-action">{action}</span>
-    </button>
-  );
+function openTeamOperatingSignal(
+  signal: TeamOperatingSignal,
+  onNavigate: (view: DashboardView) => void,
+  onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void,
+  onOpenPrsFilter: (scope: PrScopeFilter) => void,
+  onOpenPeopleFilter: (scope: PeopleScopeFilter) => void
+): void {
+  if (signal.target === "critical_without_pr") {
+    onOpenIssuesFilter({ scope: "no_pr" });
+    return;
+  }
+  if (signal.target === "critical_issues") {
+    onOpenIssuesFilter({ scope: "all" });
+    return;
+  }
+  if (signal.target === "triage") {
+    onOpenPeopleFilter("triage");
+    return;
+  }
+  if (signal.target === "pr_attention") {
+    onOpenPrsFilter("attention");
+    return;
+  }
+  if (signal.target === "all_prs") {
+    onOpenPrsFilter("all");
+    return;
+  }
+  if (signal.target === "testing_stale") {
+    onOpenPrsFilter("stale_testing");
+    return;
+  }
+  if (signal.target === "testing") {
+    onOpenPrsFilter("testing");
+    return;
+  }
+  onNavigate("Health");
 }
 
 function TeamUpdatePipelineStrip({
@@ -3283,13 +3127,6 @@ function maxCriticalActiveAge(issues: CriticalIssueView[]): number | null {
 
 function maxPendingPrAge(prs: PendingPrView[]): number | null {
   return prs.length === 0 ? null : Math.max(...prs.map((pr) => pr.ageHours));
-}
-
-function maxTestingPrAge(prs: PendingPrView[]): number | null {
-  const values = prs
-    .map((pr) => pr.testingQueueAgeHours)
-    .filter((value): value is number => value !== null && Number.isFinite(value));
-  return values.length === 0 ? null : Math.max(...values);
 }
 
 function maxTestingIssueAge(issues: TestingIssueQueueView[]): number | null {

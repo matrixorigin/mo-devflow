@@ -71,6 +71,31 @@ export interface TeamPeopleFocusSummary {
   testingPeople: number;
   triagePeople: number;
 }
+export interface TeamTriageSnapshot {
+  needsTriageIssues: number;
+  deferredIssues: number;
+  peopleWithNeedsTriage: number;
+  peopleWithDeferred: number;
+}
+export type TeamOperatingSignalKey = "issue_flow" | "pr_flow" | "testing_flow" | "data_trust";
+export type TeamOperatingSignalTone = "critical" | "attention" | "good";
+export type TeamOperatingSignalTarget =
+  | "critical_issues"
+  | "critical_without_pr"
+  | "pr_attention"
+  | "all_prs"
+  | "testing_stale"
+  | "testing"
+  | "health"
+  | "triage";
+export interface TeamOperatingSignal {
+  key: TeamOperatingSignalKey;
+  label: string;
+  value: number;
+  detail: string;
+  tone: TeamOperatingSignalTone;
+  target: TeamOperatingSignalTarget;
+}
 export type TeamCommandSignalTarget = "violations" | "drift" | "notifications";
 export type TeamCommandSignalTone = "critical" | "attention" | "normal";
 export type NotificationDeliveryScopeFilter = "all" | "attention" | "failed" | "ack_pending" | "digest";
@@ -782,6 +807,44 @@ export function peopleBoardScopeCounts(
   }, {} as PeopleBoardScopeCounts);
 }
 
+export function teamTriageSnapshot(data: Pick<DashboardSummary, "personalViews" | "people">): TeamTriageSnapshot {
+  if (data.personalViews.length > 0) {
+    const needsTriageIssues = new Set<number>();
+    const deferredIssues = new Set<number>();
+    let peopleWithNeedsTriage = 0;
+    let peopleWithDeferred = 0;
+
+    for (const person of data.personalViews) {
+      if (person.needsTriageIssues.length > 0) {
+        peopleWithNeedsTriage += 1;
+      }
+      if (person.deferredIssues.length > 0) {
+        peopleWithDeferred += 1;
+      }
+      for (const issue of person.needsTriageIssues) {
+        needsTriageIssues.add(issue.number);
+      }
+      for (const issue of person.deferredIssues) {
+        deferredIssues.add(issue.number);
+      }
+    }
+
+    return {
+      needsTriageIssues: needsTriageIssues.size,
+      deferredIssues: deferredIssues.size,
+      peopleWithNeedsTriage,
+      peopleWithDeferred
+    };
+  }
+
+  return {
+    needsTriageIssues: data.people.reduce((total, person) => total + person.needsTriageIssues, 0),
+    deferredIssues: data.people.reduce((total, person) => total + person.deferredIssues, 0),
+    peopleWithNeedsTriage: data.people.filter((person) => person.needsTriageIssues > 0).length,
+    peopleWithDeferred: data.people.filter((person) => person.deferredIssues > 0).length
+  };
+}
+
 export function teamPeopleFocusSummary(
   people: PersonSummary[],
   personalViews: PersonalActionView[]
@@ -903,6 +966,110 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
   }
 
   return [...new Set(reasons)];
+}
+
+interface TeamPrBlockerSnapshot {
+  ciFailed: number;
+  requestedChanges: number;
+  conflicts: number;
+  idle: number;
+}
+
+function teamPrBlockerSnapshot(prs: PendingPrView[]): TeamPrBlockerSnapshot {
+  return {
+    ciFailed: prs.filter((pr) => pr.ciState !== null && failedCiStates.has(pr.ciState)).length,
+    requestedChanges: prs.filter((pr) => pr.reviewDecision === "changes_requested").length,
+    conflicts: prs.filter((pr) => pr.mergeStateStatus === "dirty").length,
+    idle: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length
+  };
+}
+
+function teamPrBlockerDetail(snapshot: TeamPrBlockerSnapshot): string {
+  const parts = [
+    snapshot.ciFailed > 0 ? `${snapshot.ciFailed} CI` : null,
+    snapshot.requestedChanges > 0 ? `${snapshot.requestedChanges} changes` : null,
+    snapshot.conflicts > 0 ? `${snapshot.conflicts} conflicts` : null,
+    snapshot.idle > 0 ? `${snapshot.idle} idle` : null
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? "no blockers" : parts.slice(0, 3).join(" | ");
+}
+
+export function teamOperatingSignals(input: {
+  data: DashboardSummary;
+  flowSummary: Pick<FlowEfficiencySummary, "averageActiveIssueAgeHours" | "averagePendingPrAgeHours"> | null;
+  triageSnapshot?: TeamTriageSnapshot;
+}): TeamOperatingSignal[] {
+  const { data, flowSummary } = input;
+  const triage = input.triageSnapshot ?? teamTriageSnapshot(data);
+  const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
+  const staleActiveIssues = data.criticalIssues.filter((issue) => (issue.criticalAgeHours ?? issue.ageHours) >= 72);
+  const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const triageHeavy = triage.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1;
+  const prBlockers = teamPrBlockerSnapshot(data.pendingPrs);
+  const dataRiskCount = data.sync.staleObjects + data.sync.partialObjects;
+  const dataRiskTone =
+    data.sync.worker.status === "failed" || data.sync.worker.status === "offline"
+      ? "critical"
+      : dataRiskCount > 0 || data.sync.worker.status === "stale"
+        ? "attention"
+        : "good";
+  const testingCloseText =
+    data.testing.averageHandoffToCloseHours === null
+      ? `${data.testing.handoffToCloseSamples} close samples`
+      : `close ${diagnosticDuration(data.testing.averageHandoffToCloseHours)} (${data.testing.handoffToCloseSamples})`;
+
+  return [
+    {
+      key: "issue_flow",
+      label: "Issue flow",
+      value: data.counts.criticalIssues,
+      detail: `${staleActiveIssues.length} >3d | ${issuesWithoutPr.length} no PR | ${
+        triage.needsTriageIssues
+      } triage | avg ${diagnosticDuration(flowSummary?.averageActiveIssueAgeHours ?? null)}`,
+      tone:
+        sMinusOneIssues > 0 || staleActiveIssues.length > 0 || issuesWithoutPr.length > 0
+          ? "critical"
+          : triageHeavy || data.counts.criticalIssues > 0 || triage.needsTriageIssues > 0
+            ? "attention"
+            : "good",
+      target:
+        issuesWithoutPr.length > 0
+          ? "critical_without_pr"
+          : data.counts.criticalIssues > 0
+            ? "critical_issues"
+            : triage.needsTriageIssues > 0
+              ? "triage"
+              : "critical_issues"
+    },
+    {
+      key: "pr_flow",
+      label: "PR flow",
+      value: data.counts.attentionPrs,
+      detail: `${data.counts.pendingPrs} pending | ${teamPrBlockerDetail(prBlockers)} | avg ${diagnosticDuration(
+        flowSummary?.averagePendingPrAgeHours ?? null
+      )}`,
+      tone: data.counts.attentionPrs > 0 ? "attention" : "good",
+      target: data.counts.attentionPrs > 0 ? "pr_attention" : "all_prs"
+    },
+    {
+      key: "testing_flow",
+      label: "Testing",
+      value: data.testing.queueIssues,
+      detail: `${data.testing.staleQueueIssues} >24h | avg wait ${diagnosticDuration(
+        data.testing.averageIssueQueueAgeHours
+      )} | ${testingCloseText}`,
+      tone: data.testing.staleQueueIssues > 0 ? "critical" : data.testing.queueIssues > 0 ? "attention" : "good",
+      target: data.testing.staleQueueIssues > 0 ? "testing_stale" : "testing"
+    },
+    {
+      key: "data_trust",
+      label: "Data trust",
+      value: dataRiskCount,
+      detail: `${data.sync.staleObjects} stale | ${data.sync.partialObjects} incomplete | ${data.sync.worker.status}`,
+      tone: dataRiskTone,
+      target: "health"
+    }
+  ];
 }
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {

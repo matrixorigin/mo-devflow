@@ -777,70 +777,11 @@ body {
   white-space: nowrap;
 }
 
-.team-flow-risk-strip {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-width: 0;
-}
-
 .team-health-strip {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   min-width: 0;
-}
-
-.team-flow-risk-card {
-  appearance: none;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-left: 3px solid #94a3b8;
-  border-radius: 8px;
-  cursor: pointer;
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 10px;
-  text-align: left;
-}
-
-.team-flow-risk-card:hover {
-  border-color: #93c5fd;
-}
-
-.team-flow-risk-card strong {
-  color: #111827;
-  font-size: 22px;
-  line-height: 1.1;
-}
-
-.team-flow-risk-card small,
-.team-flow-risk-label,
-.team-flow-risk-action {
-  color: #6b7280;
-  font-size: 12px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.team-flow-risk-action {
-  color: #1d4ed8;
-  font-weight: 650;
-}
-
-.team-flow-risk-critical {
-  border-left-color: #dc2626;
-}
-
-.team-flow-risk-attention {
-  border-left-color: #d97706;
-}
-
-.team-flow-risk-good {
-  border-left-color: #16a34a;
 }
 
 .update-pipeline-strip {
@@ -5765,10 +5706,6 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .team-flow-risk-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .team-health-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5924,10 +5861,6 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-monitor-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .team-flow-risk-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -6278,10 +6211,6 @@ button.flow-diagnostic-card:focus-visible {
 
   .team-monitor-grid {
     grid-template-columns: 1fr;
-  }
-
-  .team-flow-risk-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .team-health-strip {
