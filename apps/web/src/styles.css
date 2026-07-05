@@ -3720,7 +3720,7 @@ button.testing-board-stat:focus-visible {
 .personal-rotation-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
   min-width: 0;
 }
 
@@ -3734,10 +3734,15 @@ button.testing-board-stat:focus-visible {
 
 .personal-rotation-lane-critical {
   border-left: 3px solid #dc2626;
+  grid-row: span 3;
 }
 
 .personal-rotation-lane-attention {
   border-left: 3px solid #d97706;
+}
+
+.personal-rotation-lane-triage {
+  border-left: 3px solid #ca8a04;
 }
 
 .personal-thread-row {
@@ -5666,6 +5671,14 @@ button.flow-diagnostic-card:focus-visible {
 
   .personal-monitor-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .personal-rotation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-rotation-lane-critical {
+    grid-row: auto;
   }
 
   .team-rotation-grid {

@@ -9401,6 +9401,15 @@ function PersonalRotationOverview({
             </button>
             <button
               type="button"
+              className={`inline-filter-chip ${
+                person.needsTriageIssues.length > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "triage" ? "inline-filter-chip-active" : ""}`}
+              onClick={() => onDrilldownChange("triage")}
+            >
+              {person.needsTriageIssues.length} needs triage
+            </button>
+            <button
+              type="button"
               className={`inline-filter-chip ${attentionItems.length > 0 ? "" : "inline-filter-chip-muted"} ${
                 drilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""
               }`}
@@ -9453,7 +9462,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="Active issues"
             value={person.activeCriticalIssues.length}
-            detail={criticalActivitySummary(criticalItems)}
+            detail={activeIssueHealthText(person, criticalItems)}
             tone={person.activeCriticalIssues.length > 0 ? "critical" : "good"}
             onClick={() => onDrilldownChange("active_issues")}
           />
@@ -9467,7 +9476,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="PR blockers"
             value={blockedPrItems.length}
-            detail="review, CI, merge, idle, test"
+            detail={prBlockerBreakdownText(person.attentionPrs)}
             tone={blockedPrItems.length > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("pr_attention")}
           />
@@ -9481,7 +9490,7 @@ function PersonalRotationOverview({
           <TeamMonitorTile
             label="Triage"
             value={person.needsTriageIssues.length}
-            detail={`${person.deferredIssues.length} deferred`}
+            detail={triageHealthText(person)}
             tone={person.needsTriageIssues.length > 0 ? "attention" : "good"}
             onClick={() => onDrilldownChange("triage")}
           />
@@ -9516,6 +9525,40 @@ function PersonalRotationOverview({
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible personal work threads" />
             ) : (
               focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} onPreview={setPreviewThread} />)
+            )}
+          </div>
+        </section>
+
+        <section className="personal-rotation-lane personal-rotation-lane-triage">
+          <div className="team-rotation-lane-heading">
+            <Space size={[6, 6]} wrap>
+              <Text strong>Triage & Deferred</Text>
+              <button
+                type="button"
+                className={`team-lane-count ${person.needsTriageIssues.length > 0 ? "team-lane-count-attention" : ""}`}
+                onClick={() => onDrilldownChange("triage")}
+              >
+                {person.needsTriageIssues.length}
+              </button>
+            </Space>
+            <Text type="secondary">{triageHealthText(person)}</Text>
+          </div>
+          <div className="team-rotation-list">
+            {person.needsTriageIssues.length === 0 && person.deferredIssues.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No triage or deferred backlog" />
+            ) : (
+              <>
+                <IssueCardList
+                  issues={person.needsTriageIssues.slice(0, 4)}
+                  emptyText="No needs-triage issues"
+                  onPreview={(_issue) => onDrilldownChange("triage")}
+                />
+                {person.deferredIssues.length > 0 ? (
+                  <button type="button" className="critical-lane-more" onClick={() => onDrilldownChange("deferred")}>
+                    Open {person.deferredIssues.length} deferred issues
+                  </button>
+                ) : null}
+              </>
             )}
           </div>
         </section>
@@ -9720,6 +9763,52 @@ function oldestPersonalPrText(prs: PersonalPullRequestView[]): string {
     return "no pending PR";
   }
   return `oldest ${hours(Math.max(...prs.map((pr) => pr.ageHours)))}`;
+}
+
+function oldestPersonalIssueText(issues: PersonalIssueView[]): string {
+  if (issues.length === 0) {
+    return "no issue backlog";
+  }
+  return `oldest ${hours(Math.max(...issues.map((issue) => issue.ageHours)))}`;
+}
+
+function activeIssueHealthText(person: PersonalActionView, criticalItems: PersonalActivityItem[]): string {
+  if (person.activeCriticalIssues.length === 0) {
+    return "no active s-1/s0";
+  }
+  const noLinkedPrs = person.activeCriticalIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const staleCritical = criticalItems.filter((item) => (item.durationHours ?? 0) >= 72).length;
+  return `${criticalActivitySummary(criticalItems)} | ${staleCritical} >3d | ${noLinkedPrs} no PR`;
+}
+
+function triageHealthText(person: PersonalActionView): string {
+  if (person.needsTriageIssues.length === 0) {
+    return `${person.deferredIssues.length} deferred`;
+  }
+  const activeCount = person.activeCriticalIssues.length;
+  const backlogBalance =
+    person.needsTriageIssues.length > activeCount && activeCount <= 1 ? "triage-heavy" : `${activeCount} active`;
+  return `${oldestPersonalIssueText(person.needsTriageIssues)} | ${backlogBalance} | ${person.deferredIssues.length} deferred`;
+}
+
+function prBlockerBreakdownText(prs: PersonalPullRequestView[]): string {
+  if (prs.length === 0) {
+    return "no PR blockers";
+  }
+  const reasonText = prs.flatMap(prAttentionReasons).join(" ").toLowerCase();
+  const ci = (reasonText.match(/ci failed/g) ?? []).length;
+  const review = (reasonText.match(/review waiting/g) ?? []).length;
+  const changes = (reasonText.match(/changes requested/g) ?? []).length;
+  const conflict = (reasonText.match(/merge conflict/g) ?? []).length;
+  const idle = (reasonText.match(/no human action/g) ?? []).length;
+  const parts = [
+    ci > 0 ? `${ci} CI` : null,
+    review > 0 ? `${review} review` : null,
+    changes > 0 ? `${changes} changes` : null,
+    conflict > 0 ? `${conflict} conflict` : null,
+    idle > 0 ? `${idle} idle` : null
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" | ") : `${prs.length} attention PR`;
 }
 
 function oldestPersonalTestingText(prs: PersonalPullRequestView[], issues: TestingIssueQueueView[] = []): string {
