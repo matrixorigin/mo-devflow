@@ -207,6 +207,30 @@ describe("API health status", () => {
     ]);
   });
 
+  test("reports GitHub rate limit as a dedicated operational finding", () => {
+    const rateLimitedOperational = {
+      ...operational,
+      status: "degraded" as const,
+      recommendedAction:
+        "GitHub API rate limit is exhausted for pr_backfill; wait until 2026-07-05T10:00:00.000Z before queueing more GitHub sync or backfill work.",
+      sync: {
+        health: [],
+        unhealthyLayers: [],
+        rateLimitedLayers: ["pr_backfill" as const]
+      }
+    };
+
+    expect(apiHealthStatus({ worker, jobQueue, operational: rateLimitedOperational })).toBe("degraded");
+    expect(apiHealthFindings({ worker, jobQueue, operational: rateLimitedOperational })).toEqual([
+      {
+        key: "github_rate_limit",
+        severity: "critical",
+        message:
+          "GitHub API rate limit is exhausted for pr_backfill; wait until 2026-07-05T10:00:00.000Z before queueing more GitHub sync or backfill work."
+      }
+    ]);
+  });
+
   test("reports recommended refresh layers for degraded job queue and stale cache findings", () => {
     const findings = apiHealthFindings({
       worker,

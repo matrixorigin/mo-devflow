@@ -34,12 +34,18 @@ describe("operational health summary", () => {
     expect(cacheHealthStatus({ staleObjects: 0, partialObjects: 0 })).toBe("healthy");
   });
 
-  test("marks stale cache, failed sync, notification failures, and webhook failures as degraded", () => {
+  test("marks stale cache, failed sync, rate limits, notification failures, and webhook failures as degraded", () => {
     expect(operationalHealthStatus({ ...healthyInput, staleObjects: 1 })).toBe("degraded");
     expect(
       operationalHealthStatus({
         ...healthyInput,
         syncHealth: [layer({ layer: "github_sync", status: "blocked", errorMessage: "permission denied" })]
+      })
+    ).toBe("degraded");
+    expect(
+      operationalHealthStatus({
+        ...healthyInput,
+        syncHealth: [layer({ layer: "github_sync", rateLimitRemaining: 0 })]
       })
     ).toBe("degraded");
     expect(operationalHealthStatus({ ...healthyInput, notificationFailures: 1 })).toBe("degraded");
@@ -81,6 +87,25 @@ describe("operational health summary", () => {
         latestWebhookFailure: "delivery-1: bad payload"
       })
     ).toContain("github_sync");
+
+    expect(
+      operationalHealthRecommendedAction({
+        syncHealth: [
+          layer({
+            layer: "pr_backfill",
+            rateLimitRemaining: 0,
+            rateLimitResetAt: "2026-07-05T10:00:00.000Z"
+          })
+        ],
+        staleObjects: 2,
+        notificationFailures: 1,
+        webhookFailures: 1,
+        staleWebhookProcessing: 1,
+        latestWebhookFailure: "delivery-1: bad payload"
+      })
+    ).toBe(
+      "GitHub API rate limit is exhausted for pr_backfill; wait until 2026-07-05T10:00:00.000Z before queueing more GitHub sync or backfill work."
+    );
 
     expect(
       operationalHealthRecommendedAction({

@@ -40,6 +40,10 @@ export function cacheHealthStatus(input: { staleObjects: number; partialObjects:
   return "healthy";
 }
 
+function rateLimitedSyncHealth(syncHealth: SyncHealth[]): SyncHealth[] {
+  return syncHealth.filter((item) => item.rateLimitRemaining !== null && item.rateLimitRemaining <= 0);
+}
+
 export function operationalHealthStatus(input: {
   syncHealth: SyncHealth[];
   staleObjects: number;
@@ -48,8 +52,10 @@ export function operationalHealthStatus(input: {
   staleWebhookProcessing: number;
 }): OperationalHealthStatus {
   const unhealthySync = input.syncHealth.some((item) => item.status === "failed" || item.status === "blocked");
+  const rateLimitedSync = rateLimitedSyncHealth(input.syncHealth).length > 0;
   if (
     unhealthySync ||
+    rateLimitedSync ||
     input.staleObjects > 0 ||
     input.notificationFailures > 0 ||
     input.webhookFailures > 0 ||
@@ -69,8 +75,19 @@ export function operationalHealthRecommendedAction(input: {
   latestWebhookFailure: string | null;
 }): string | null {
   const failedSync = input.syncHealth.find((item) => item.status === "failed" || item.status === "blocked");
+  const rateLimitedSync = rateLimitedSyncHealth(input.syncHealth);
   if (failedSync) {
     return `Sync layer ${failedSync.layer} is ${failedSync.status}: ${failedSync.errorMessage ?? "inspect sync runs"}.`;
+  }
+  if (rateLimitedSync.length > 0) {
+    const layers = rateLimitedSync.map((item) => item.layer).join(", ");
+    const resetAt = rateLimitedSync
+      .map((item) => item.rateLimitResetAt)
+      .filter((value): value is string => value !== null)
+      .sort()[0];
+    return `GitHub API rate limit is exhausted for ${layers}; wait${
+      resetAt ? ` until ${resetAt}` : " for reset"
+    } before queueing more GitHub sync or backfill work.`;
   }
   if (input.staleObjects > 0) {
     return `${input.staleObjects} cached GitHub objects are stale; queue a targeted refresh or inspect sync jobs.`;
@@ -173,9 +190,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
   const unhealthyLayers = syncHealth
     .filter((item) => item.status === "failed" || item.status === "blocked")
     .map((item) => item.layer);
-  const rateLimitedLayers = syncHealth
-    .filter((item) => item.rateLimitRemaining !== null && item.rateLimitRemaining <= 0)
-    .map((item) => item.layer);
+  const rateLimitedLayers = rateLimitedSyncHealth(syncHealth).map((item) => item.layer);
   const status = operationalHealthStatus({
     syncHealth,
     staleObjects,

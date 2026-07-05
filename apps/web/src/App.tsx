@@ -7465,6 +7465,9 @@ function apiHealthFindingLabel(key: string): string {
   if (key === "partial_cache") {
     return "Incomplete Cache";
   }
+  if (key === "github_rate_limit") {
+    return "GitHub Rate Limit";
+  }
   if (key === "github_oauth") {
     return "GitHub Login";
   }

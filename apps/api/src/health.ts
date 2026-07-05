@@ -107,6 +107,20 @@ function operationalRepairLayers(operational: OperationalHealthSummary): ManualR
   return orderedLayers(layers);
 }
 
+function operationalHasNonRateLimitDegradation(operational: OperationalHealthSummary): boolean {
+  const hasConcreteNonRateLimitSignal =
+    operational.sync.unhealthyLayers.length > 0 ||
+    operational.cache.staleObjects > 0 ||
+    operational.notifications.failedDeliveries > 0 ||
+    operational.webhooks.failedDeliveries > 0 ||
+    operational.webhooks.normalizationFailedDeliveries > 0 ||
+    operational.webhooks.staleProcessingDeliveries > 0;
+  if (hasConcreteNonRateLimitSignal) {
+    return true;
+  }
+  return operational.sync.rateLimitedLayers.length === 0 && operational.recommendedAction !== null;
+}
+
 export function apiHealthStatus(input: {
   worker: WorkerHealth;
   jobQueue: JobQueueHealth;
@@ -175,6 +189,20 @@ export function apiHealthFindings(input: {
   }
 
   if (input.operational?.status === "degraded") {
+    if (input.operational.sync.rateLimitedLayers.length > 0) {
+      findings.push({
+        key: "github_rate_limit",
+        severity: "critical",
+        message:
+          input.operational.recommendedAction ??
+          `GitHub API rate limit is exhausted for ${input.operational.sync.rateLimitedLayers.join(
+            ", "
+          )}. Wait for reset before queueing more GitHub sync or backfill work.`
+      });
+    }
+  }
+
+  if (input.operational?.status === "degraded" && operationalHasNonRateLimitDegradation(input.operational)) {
     const recommendedLayers = operationalRepairLayers(input.operational);
     findings.push({
       key: "operational",
