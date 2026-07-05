@@ -13,6 +13,7 @@ import {
   driftSignalFilterFromHash,
   manualRefreshPresetLayers,
   notificationDeliveryScopeFilterFromHash,
+  peopleRiskSummary,
   peopleScopeFilterFromHash,
   peopleSortLabel,
   peopleSortFromHash,
@@ -361,6 +362,73 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("pr_throughput")).toBe("PR volume");
     expect(peopleSortLabel("flow_gap")).toBe("flow gap");
     expect(peopleSortLabel("testing_wait")).toBe("testing wait");
+  });
+
+  it("summarizes people risks for management shortcuts", () => {
+    const people = [
+      {
+        login: "alice",
+        activeCriticalIssues: 1,
+        attentionPrs: 1,
+        needsTriageIssues: 2,
+        deferredIssues: 0,
+        pendingPrs: 2,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0
+      },
+      {
+        login: "bob",
+        activeCriticalIssues: 1,
+        attentionPrs: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        pendingPrs: 1,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0
+      }
+    ] as any;
+    const personalViews = [
+      {
+        login: "alice",
+        activeCriticalIssues: [
+          {
+            linkedPullRequests: [],
+            criticalAgeHours: 48,
+            aiEffortLabel: null
+          }
+        ],
+        attentionPrs: [personalPr({ number: 10, ageHours: 24, createdAt: "2026-07-01T00:00:00Z", mergedAt: null })],
+        testingIssues: [{ queueAgeHours: 36 }],
+        needsTriageIssues: [{ number: 1 }]
+      },
+      {
+        login: "bob",
+        activeCriticalIssues: [
+          {
+            linkedPullRequests: [
+              {
+                ageHours: 12,
+                testingQueueAgeHours: 2,
+                testingState: "testing"
+              }
+            ],
+            criticalAgeHours: 24,
+            aiEffortLabel: "ai-medium"
+          }
+        ],
+        attentionPrs: [],
+        testingIssues: [{ queueAgeHours: 8 }],
+        needsTriageIssues: []
+      }
+    ] as any;
+
+    expect(peopleRiskSummary(people, personalViews)).toEqual({
+      activeWithoutPrPeople: 1,
+      prBlockerPeople: 1,
+      staleTestingPeople: 1,
+      triageBacklogPeople: 1,
+      criticalFlowGapPeople: 1
+    });
   });
 
   it("summarizes personal flow thread evidence compactly", () => {

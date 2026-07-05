@@ -10550,75 +10550,205 @@ function PeopleBoardSummary({
   personalViews,
   filteredPeople,
   scopeFilter,
-  onScopeFilterChange
+  sort,
+  onScopeFilterChange,
+  onRiskSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   filteredPeople: PersonSummary[];
   scopeFilter: PeopleScopeFilter;
+  sort: PeopleBoardSort;
   onScopeFilterChange: (value: PeopleScopeFilter) => void;
+  onRiskSelect: (scope: PeopleScopeFilter, sort: PeopleBoardSort) => void;
 }) {
   const counts = peopleBoardScopeCounts(people, personalViews);
+  const risks = peopleRiskSummary(people, personalViews);
 
   return (
-    <div className="critical-board-summary people-board-summary" aria-label="People summary">
-      <CriticalBoardStat
-        label="shown"
-        value={filteredPeople.length}
-        tone={filteredPeople.length > 0 ? "attention" : "good"}
-        active={scopeFilter === "all"}
-        onClick={() => onScopeFilterChange("all")}
+    <section className="people-board-summary-stack" aria-label="People summary">
+      <div className="critical-board-summary people-board-summary">
+        <CriticalBoardStat
+          label="shown"
+          value={filteredPeople.length}
+          tone={filteredPeople.length > 0 ? "attention" : "good"}
+          active={scopeFilter === "all"}
+          onClick={() => onScopeFilterChange("all")}
+        />
+        <CriticalBoardStat
+          label="s-1/s0"
+          value={counts.critical}
+          tone={counts.critical > 0 ? "critical" : "good"}
+          active={scopeFilter === "critical"}
+          onClick={() => onScopeFilterChange("critical")}
+        />
+        <CriticalBoardStat
+          label="PR attention"
+          value={counts.attention}
+          tone={counts.attention > 0 ? "attention" : "good"}
+          active={scopeFilter === "attention"}
+          onClick={() => onScopeFilterChange("attention")}
+        />
+        <CriticalBoardStat
+          label="triage"
+          value={counts.triage}
+          tone={counts.triage > 0 ? "attention" : "good"}
+          active={scopeFilter === "triage"}
+          onClick={() => onScopeFilterChange("triage")}
+        />
+        <CriticalBoardStat
+          label="deferred"
+          value={counts.deferred}
+          tone={counts.deferred > 0 ? "attention" : "good"}
+          active={scopeFilter === "deferred"}
+          onClick={() => onScopeFilterChange("deferred")}
+        />
+        <CriticalBoardStat
+          label="pending PR"
+          value={counts.pending_pr}
+          tone={counts.pending_pr > 0 ? "attention" : "good"}
+          active={scopeFilter === "pending_pr"}
+          onClick={() => onScopeFilterChange("pending_pr")}
+        />
+        <CriticalBoardStat
+          label="issue testing"
+          value={counts.testing}
+          tone={counts.testing > 0 ? "attention" : "good"}
+          active={scopeFilter === "testing"}
+          onClick={() => onScopeFilterChange("testing")}
+        />
+        <CriticalBoardStat
+          label="yesterday PR"
+          value={counts.yesterday_pr}
+          tone={counts.yesterday_pr > 0 ? "attention" : "good"}
+          active={scopeFilter === "yesterday_pr"}
+          onClick={() => onScopeFilterChange("yesterday_pr")}
+        />
+      </div>
+      <PeopleRiskSummaryStrip risks={risks} scopeFilter={scopeFilter} sort={sort} onRiskSelect={onRiskSelect} />
+    </section>
+  );
+}
+
+export interface PeopleRiskSummaryCounts {
+  activeWithoutPrPeople: number;
+  prBlockerPeople: number;
+  staleTestingPeople: number;
+  triageBacklogPeople: number;
+  criticalFlowGapPeople: number;
+}
+
+export function peopleRiskSummary(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[]
+): PeopleRiskSummaryCounts {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+
+  return {
+    activeWithoutPrPeople: people.filter((person) =>
+      personalByLogin.get(person.login)?.activeCriticalIssues.some((issue) => issue.linkedPullRequests.length === 0)
+    ).length,
+    prBlockerPeople: people.filter((person) => {
+      const personal = personalByLogin.get(person.login);
+      return personal ? personal.attentionPrs.length > 0 : person.attentionPrs > 0;
+    }).length,
+    staleTestingPeople: people.filter((person) => {
+      const personal = personalByLogin.get(person.login);
+      return personal ? personalTestingStaleCount(personal) > 0 : false;
+    }).length,
+    triageBacklogPeople: people.filter((person) => person.needsTriageIssues > 0).length,
+    criticalFlowGapPeople: people.filter((person) => {
+      const personal = personalByLogin.get(person.login);
+      if (!personal) {
+        return false;
+      }
+      const flow = personalCriticalFlowEfficiency(personal);
+      return (
+        flow.activeIssues > 0 && (flow.issuesWithPr < flow.activeIssues || flow.issuesInTesting < flow.activeIssues)
+      );
+    }).length
+  };
+}
+
+function PeopleRiskSummaryStrip({
+  risks,
+  scopeFilter,
+  sort,
+  onRiskSelect
+}: {
+  risks: PeopleRiskSummaryCounts;
+  scopeFilter: PeopleScopeFilter;
+  sort: PeopleBoardSort;
+  onRiskSelect: (scope: PeopleScopeFilter, sort: PeopleBoardSort) => void;
+}) {
+  const openPeopleRisk = (scope: PeopleScopeFilter, nextSort: PeopleBoardSort): void => {
+    onRiskSelect(scope, nextSort);
+  };
+
+  return (
+    <div className="people-risk-summary" aria-label="People risk shortcuts">
+      <PeopleRiskButton
+        label="Flow gap"
+        value={risks.criticalFlowGapPeople}
+        detail={`${risks.activeWithoutPrPeople} people have s-1/s0 without PR`}
+        tone={risks.criticalFlowGapPeople > 0 ? "critical" : "good"}
+        active={scopeFilter === "critical" && sort === "flow_gap"}
+        onClick={() => openPeopleRisk("critical", "flow_gap")}
       />
-      <CriticalBoardStat
-        label="s-1/s0"
-        value={counts.critical}
-        tone={counts.critical > 0 ? "critical" : "good"}
-        active={scopeFilter === "critical"}
-        onClick={() => onScopeFilterChange("critical")}
+      <PeopleRiskButton
+        label="PR blockers"
+        value={risks.prBlockerPeople}
+        detail="people with attention PRs"
+        tone={risks.prBlockerPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "attention" && sort === "pr_attention"}
+        onClick={() => openPeopleRisk("attention", "pr_attention")}
       />
-      <CriticalBoardStat
-        label="PR attention"
-        value={counts.attention}
-        tone={counts.attention > 0 ? "attention" : "good"}
-        active={scopeFilter === "attention"}
-        onClick={() => onScopeFilterChange("attention")}
+      <PeopleRiskButton
+        label="Testing >24h"
+        value={risks.staleTestingPeople}
+        detail="people with stale testing queue"
+        tone={risks.staleTestingPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "testing" && sort === "testing_wait"}
+        onClick={() => openPeopleRisk("testing", "testing_wait")}
       />
-      <CriticalBoardStat
-        label="triage"
-        value={counts.triage}
-        tone={counts.triage > 0 ? "attention" : "good"}
-        active={scopeFilter === "triage"}
-        onClick={() => onScopeFilterChange("triage")}
-      />
-      <CriticalBoardStat
-        label="deferred"
-        value={counts.deferred}
-        tone={counts.deferred > 0 ? "attention" : "good"}
-        active={scopeFilter === "deferred"}
-        onClick={() => onScopeFilterChange("deferred")}
-      />
-      <CriticalBoardStat
-        label="pending PR"
-        value={counts.pending_pr}
-        tone={counts.pending_pr > 0 ? "attention" : "good"}
-        active={scopeFilter === "pending_pr"}
-        onClick={() => onScopeFilterChange("pending_pr")}
-      />
-      <CriticalBoardStat
-        label="issue testing"
-        value={counts.testing}
-        tone={counts.testing > 0 ? "attention" : "good"}
-        active={scopeFilter === "testing"}
-        onClick={() => onScopeFilterChange("testing")}
-      />
-      <CriticalBoardStat
-        label="yesterday PR"
-        value={counts.yesterday_pr}
-        tone={counts.yesterday_pr > 0 ? "attention" : "good"}
-        active={scopeFilter === "yesterday_pr"}
-        onClick={() => onScopeFilterChange("yesterday_pr")}
+      <PeopleRiskButton
+        label="Triage backlog"
+        value={risks.triageBacklogPeople}
+        detail="people with needs-triage issues"
+        tone={risks.triageBacklogPeople > 0 ? "attention" : "good"}
+        active={scopeFilter === "triage" && sort === "triage"}
+        onClick={() => openPeopleRisk("triage", "triage")}
       />
     </div>
+  );
+}
+
+function PeopleRiskButton({
+  label,
+  value,
+  detail,
+  tone,
+  active,
+  onClick
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  tone: "critical" | "attention" | "good";
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`people-risk-button people-risk-button-${tone} ${active ? "people-risk-button-active" : ""}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
@@ -19684,6 +19814,14 @@ export default function App() {
     }
   }
 
+  function changePeopleScopeAndSort(scope: PeopleScopeFilter, sort: PeopleBoardSort) {
+    setPeopleScopeFilter(scope);
+    setPeopleSort(sort);
+    if (view === "People") {
+      replaceDashboardHash("People", selectedPerson, { peopleScopeFilter: scope, peopleSort: sort });
+    }
+  }
+
   function changePersonalDrilldownFilter(value: PersonalDrilldownFilter) {
     setPersonalDrilldownFilter(value);
     if (view === "Personal") {
@@ -22360,7 +22498,9 @@ export default function App() {
                   personalViews={data.personalViews}
                   filteredPeople={filteredPeople}
                   scopeFilter={peopleScopeFilter}
+                  sort={peopleSort}
                   onScopeFilterChange={changePeopleScopeFilter}
+                  onRiskSelect={changePeopleScopeAndSort}
                 />
                 {filteredPeople.length > 0 ? (
                   <PeopleFocusQueue

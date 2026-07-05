@@ -5410,6 +5410,71 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.people-board-summary-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.people-risk-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.people-risk-button {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #9ca3af;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.people-risk-button:hover,
+.people-risk-button:focus-visible,
+.people-risk-button-active {
+  background: #f8fafc;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.people-risk-button span,
+.people-risk-button small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-risk-button strong {
+  color: #111827;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.people-risk-button-critical {
+  border-left-color: #dc2626;
+}
+
+.people-risk-button-attention {
+  border-left-color: #d97706;
+}
+
+.people-risk-button-good {
+  border-left-color: #16a34a;
+}
+
 .people-focus-row > .person-queue-rhythm {
   grid-column: 3;
 }
@@ -10283,6 +10348,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
   }
 
+  .people-risk-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .people-focus-metrics {
     grid-column: 1 / -1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -10445,6 +10514,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-ops-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .people-risk-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -11071,6 +11144,10 @@ button.flow-diagnostic-card:focus-visible {
 
   .critical-board-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .people-risk-summary {
+    grid-template-columns: 1fr;
   }
 
   .testing-command-summary {
