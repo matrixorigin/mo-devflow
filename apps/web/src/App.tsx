@@ -3882,12 +3882,37 @@ function TeamRotationOverview({
         onPreviewIssue={(issue) => setWorkPreview({ objectType: "issue", issue })}
       />
 
-      <div className="team-rotation-grid">
-        <div className="team-rotation-main">
+      <details className="secondary-disclosure team-active-issue-disclosure">
+        <summary>
+          <span>Filtered active issue cards</span>
+          <Space size={[4, 4]} wrap>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                criticalIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              }`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenIssuesFilter({});
+              }}
+            >
+              {criticalIssues.length} active issues
+            </button>
+            <span className="secondary-summary-note">
+              {criticalIssueTableSummary(
+                criticalIssues.length,
+                criticalScopeFilter,
+                criticalAiFilter,
+                criticalOwnerFilter,
+                criticalIssueSort
+              )}
+            </span>
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
           <TeamRotationLane
-            title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalIssueOwnerFilterLabel(
-              criticalOwnerFilter
-            )}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
+            title="Active Issue Cards"
             count={criticalIssues.length}
             visibleCount={criticalLanePage.visibleItems.length}
             startIndex={criticalLanePage.startIndex}
@@ -3921,6 +3946,11 @@ function TeamRotationOverview({
               />
             ))}
           </TeamRotationLane>
+        </div>
+      </details>
+
+      <div className="team-rotation-grid">
+        <div className="team-rotation-main">
           <TeamRotationLane
             title="PR Rotation Risks"
             count={prRisks.length}
