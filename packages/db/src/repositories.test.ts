@@ -19,6 +19,7 @@ import {
   criticalIssueOwnershipCounts,
   criticalIssueOwnerScope,
   dateKeyInTimezone,
+  deferredIssueTransitionMetricEventsFromRows,
   dashboardVisibilityFilter,
   isPersonalNeedsTriageIssue,
   issueTimelineBackfillCandidatesFromRows,
@@ -1377,6 +1378,48 @@ describe("metric aggregation", () => {
         detailError: "mergeability check failed"
       })
     ).toBe("partial_cache");
+  });
+
+  test("counts deferred issues from deferred label timeline events", () => {
+    expect(
+      deferredIssueTransitionMetricEventsFromRows(
+        {
+          ...baseProfile,
+          reporting: { timezone: "Asia/Shanghai", weekStart: "Monday" }
+        },
+        [
+          { number: 42, owner_login: "alice" },
+          { number: 43, owner_login: "bob" }
+        ],
+        [
+          {
+            issue_number: 42,
+            event_type: "labeled",
+            label_name: "deferred",
+            occurred_at: "2026-07-04 15:00:00"
+          },
+          {
+            issue_number: 42,
+            event_type: "unlabeled",
+            label_name: "deferred",
+            occurred_at: "2026-07-05 15:00:00"
+          },
+          {
+            issue_number: 43,
+            event_type: "labeled",
+            label_name: "needs-triage",
+            occurred_at: "2026-07-04 16:00:00"
+          }
+        ]
+      )
+    ).toEqual([
+      {
+        issueNumber: 42,
+        ownerLogin: "alice",
+        occurredAt: "2026-07-04T15:00:00Z",
+        date: "2026-07-04"
+      }
+    ]);
   });
 
   const points: DailyMetricPoint[] = [

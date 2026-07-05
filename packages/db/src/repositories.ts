@@ -2840,6 +2840,45 @@ export function metricSourceCompletenessForObject(input: {
   return "complete_cache";
 }
 
+export interface DeferredIssueTransitionMetricEvent {
+  issueNumber: number;
+  ownerLogin: string | null;
+  occurredAt: string;
+  date: string;
+}
+
+export function deferredIssueTransitionMetricEventsFromRows(
+  profile: RepoProfile,
+  issueRows: ReadonlyArray<Record<string, unknown>>,
+  timelineRows: ReadonlyArray<Record<string, unknown>>
+): DeferredIssueTransitionMetricEvent[] {
+  const issueOwnerByNumber = new Map(
+    issueRows.map((row) => [asNumber(row.number), row.owner_login ? asString(row.owner_login) : null] as const)
+  );
+  return timelineRows
+    .filter(
+      (row) =>
+        asString(row.event_type) === "labeled" &&
+        row.label_name !== null &&
+        asString(row.label_name) === profile.labels.deferred
+    )
+    .map((row) => {
+      const issueNumber = asNumber(row.issue_number);
+      const occurredAt = fromSqlDate(row.occurred_at);
+      const date = dateKeyInTimezone(occurredAt, profile.reporting.timezone);
+      if (!issueNumber || !occurredAt || !date || !issueOwnerByNumber.has(issueNumber)) {
+        return null;
+      }
+      return {
+        issueNumber,
+        ownerLogin: issueOwnerByNumber.get(issueNumber) ?? null,
+        occurredAt,
+        date
+      };
+    })
+    .filter((event): event is DeferredIssueTransitionMetricEvent => event !== null);
+}
+
 function markMetricPartial(
   metrics: Map<string, DailyMetricPoint>,
   dateKeys: Set<string>,
@@ -3294,9 +3333,6 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     const issueCompleteness = rowMetricCompleteness(row);
     bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesOpened");
     bumpMetric(metrics, keySet, closedDate, "team", "all", "issuesClosed");
-    if (row.lifecycle_state === "deferred") {
-      bumpMetric(metrics, keySet, createdDate, "team", "all", "issuesDeferred");
-    }
     if (issueCompleteness === "partial_cache") {
       markMetricPartial(metrics, keySet, createdDate, "team", "all");
       markMetricPartial(metrics, keySet, closedDate, "team", "all");
@@ -3304,13 +3340,25 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
     if (people.includes(owner)) {
       bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesOpened");
       bumpMetric(metrics, keySet, closedDate, "person", owner, "issuesClosed");
-      if (row.lifecycle_state === "deferred") {
-        bumpMetric(metrics, keySet, createdDate, "person", owner, "issuesDeferred");
-      }
       if (issueCompleteness === "partial_cache") {
         markMetricPartial(metrics, keySet, createdDate, "person", owner);
         markMetricPartial(metrics, keySet, closedDate, "person", owner);
       }
+    }
+  }
+
+  const [deferredTimelineRows] = await pool.execute<RowData[]>(
+    `SELECT issue_number, event_type, label_name, occurred_at
+     FROM issue_timeline_events
+     WHERE repo_id = ?
+       AND event_type = 'labeled'
+       AND label_name = ?`,
+    [repoId, profile.labels.deferred]
+  );
+  for (const event of deferredIssueTransitionMetricEventsFromRows(profile, issueRows, deferredTimelineRows)) {
+    bumpMetric(metrics, keySet, event.date, "team", "all", "issuesDeferred");
+    if (event.ownerLogin && people.includes(event.ownerLogin)) {
+      bumpMetric(metrics, keySet, event.date, "person", event.ownerLogin, "issuesDeferred");
     }
   }
 
