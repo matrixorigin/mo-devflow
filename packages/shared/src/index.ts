@@ -738,7 +738,7 @@ export interface DailyMetricPoint {
   requestedChangePrs: number;
   reviewWaitingPrs: number;
   mergeConflictPrs: number;
-  testingQueuePrs: number;
+  testingQueueIssues: number;
   averageTestingQueueAgeHours: number | null;
   sourceCompleteness: MetricSourceCompleteness;
   generatedAt: string;

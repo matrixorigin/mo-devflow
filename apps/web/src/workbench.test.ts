@@ -1835,7 +1835,7 @@ function metricPoint(input: Partial<DailyMetricPoint>): DailyMetricPoint {
     requestedChangePrs: input.requestedChangePrs ?? 0,
     reviewWaitingPrs: input.reviewWaitingPrs ?? 0,
     mergeConflictPrs: input.mergeConflictPrs ?? 0,
-    testingQueuePrs: input.testingQueuePrs ?? 0,
+    testingQueueIssues: input.testingQueueIssues ?? 0,
     averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: input.sourceCompleteness ?? "complete_cache",
     generatedAt: input.generatedAt ?? "2026-07-04T00:00:00Z"
@@ -1903,7 +1903,7 @@ describe("trend momentum summary", () => {
         activeCriticalIssues: 1,
         attentionPrs: 1,
         pendingPrs: 3,
-        testingQueuePrs: 1,
+        testingQueueIssues: 1,
         averageTestingQueueAgeHours: 8,
         needsTriageIssues: 1,
         deferredIssues: 2
@@ -1919,7 +1919,7 @@ describe("trend momentum summary", () => {
         averageActiveCriticalIssueAgeHours: 80,
         attentionPrs: 3,
         pendingPrs: 5,
-        testingQueuePrs: 2,
+        testingQueueIssues: 2,
         averageTestingQueueAgeHours: 30,
         needsTriageIssues: 4,
         deferredIssues: 1

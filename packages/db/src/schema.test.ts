@@ -32,6 +32,8 @@ describe("schema contract", () => {
     expect(expected.get("daily_metrics")).toContain("requested_change_prs");
     expect(expected.get("daily_metrics")).toContain("review_waiting_prs");
     expect(expected.get("daily_metrics")).toContain("merge_conflict_prs");
+    expect(expected.get("daily_metrics")).toContain("testing_queue_issues");
+    expect(expected.get("daily_metrics")).not.toContain("testing_queue_prs");
     expect(expected.get("workflow_violations")).not.toContain("UNIQUE");
 
     const specs = expectedSchemaColumnSpecsFromStatements();

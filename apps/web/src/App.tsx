@@ -8137,7 +8137,7 @@ function TrendChart({ points, actions = {} }: { points: TrendMetricPoint[]; acti
           title="Issue Testing Flow"
           points={points}
           series={[
-            { name: "Issues in test", type: "bar", color: "#2563eb", data: (point) => point.testingQueuePrs },
+            { name: "Issues in test", type: "bar", color: "#2563eb", data: (point) => point.testingQueueIssues },
             {
               name: "Issue wait h",
               type: "line",
@@ -8212,8 +8212,8 @@ function TrendChartReadout({ points, actions }: { points: TrendMetricPoint[]; ac
       key: "testing_wait",
       label: "Testing wait",
       value: optionalHours(testingWait),
-      detail: `${latest.testingQueuePrs} issues in test`,
-      tone: testingWait !== null && testingWait >= 24 ? "critical" : latest.testingQueuePrs > 0 ? "normal" : "good",
+      detail: `${latest.testingQueueIssues} issues in test`,
+      tone: testingWait !== null && testingWait >= 24 ? "critical" : latest.testingQueueIssues > 0 ? "normal" : "good",
       onClick: actions.testingQueue
     }
   ];

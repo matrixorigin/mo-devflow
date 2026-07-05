@@ -299,8 +299,7 @@ describe("sync health summary", () => {
             status: "failed",
             started_at: "2026-07-04 10:00:00",
             finished_at: "2026-07-04 10:01:00",
-            cursor_value:
-              '{"mode":"updated_desc_window","issuesOldestUpdatedAt":"2026-07-04T09:00:00Z"}',
+            cursor_value: '{"mode":"updated_desc_window","issuesOldestUpdatedAt":"2026-07-04T09:00:00Z"}',
             error_message: "rate limited",
             rate_limit_remaining: 0,
             raw_json: null,
@@ -1389,11 +1388,7 @@ describe("pull request rule inputs", () => {
 });
 
 describe("metric aggregation", () => {
-  function metricPoint(
-    date: string,
-    scopeType: DailyMetricPoint["scopeType"],
-    scopeKey: string
-  ): DailyMetricPoint {
+  function metricPoint(date: string, scopeType: DailyMetricPoint["scopeType"], scopeKey: string): DailyMetricPoint {
     return {
       date,
       scopeType,
@@ -1417,7 +1412,7 @@ describe("metric aggregation", () => {
       requestedChangePrs: 0,
       reviewWaitingPrs: 0,
       mergeConflictPrs: 0,
-      testingQueuePrs: 0,
+      testingQueueIssues: 0,
       averageTestingQueueAgeHours: null,
       sourceCompleteness: "complete_cache",
       generatedAt: "2026-07-04T00:00:00.000Z"
@@ -1625,15 +1620,15 @@ describe("metric aggregation", () => {
     });
 
     expect(metrics.get(`${date}:team:all`)).toMatchObject({
-      testingQueuePrs: 1,
+      testingQueueIssues: 1,
       averageTestingQueueAgeHours: 40
     });
     expect(metrics.get(`${date}:person:alice`)).toMatchObject({
-      testingQueuePrs: 1,
+      testingQueueIssues: 1,
       averageTestingQueueAgeHours: 40
     });
     expect(metrics.get(`${date}:person:bob`)).toMatchObject({
-      testingQueuePrs: 0,
+      testingQueueIssues: 0,
       averageTestingQueueAgeHours: null
     });
   });
@@ -1662,7 +1657,7 @@ describe("metric aggregation", () => {
       requestedChangePrs: 1,
       reviewWaitingPrs: 1,
       mergeConflictPrs: 0,
-      testingQueuePrs: 0,
+      testingQueueIssues: 0,
       averageTestingQueueAgeHours: null,
       sourceCompleteness: "complete_cache",
       generatedAt: "2026-07-04T00:00:00Z"
@@ -1690,7 +1685,7 @@ describe("metric aggregation", () => {
       requestedChangePrs: 0,
       reviewWaitingPrs: 2,
       mergeConflictPrs: 0,
-      testingQueuePrs: 1,
+      testingQueueIssues: 1,
       averageTestingQueueAgeHours: 9,
       sourceCompleteness: "partial_cache",
       generatedAt: "2026-07-04T00:01:00Z"
@@ -1718,7 +1713,7 @@ describe("metric aggregation", () => {
       requestedChangePrs: 1,
       reviewWaitingPrs: 3,
       mergeConflictPrs: 1,
-      testingQueuePrs: 2,
+      testingQueueIssues: 2,
       averageTestingQueueAgeHours: 11,
       sourceCompleteness: "complete_cache",
       generatedAt: "2026-07-04T00:02:00Z"

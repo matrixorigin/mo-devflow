@@ -366,7 +366,7 @@ const schemaStatements = [
     requested_change_prs INT NOT NULL,
     review_waiting_prs INT NOT NULL,
     merge_conflict_prs INT NOT NULL,
-    testing_queue_prs INT NOT NULL,
+    testing_queue_issues INT NOT NULL,
     avg_testing_queue_age_hours DOUBLE,
     source_completeness VARCHAR(64) NOT NULL,
     generated_at DATETIME NOT NULL,
@@ -525,7 +525,7 @@ const migrations: SchemaMigration[] = [
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN pending_prs INT NOT NULL DEFAULT 0");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_pending_pr_age_hours DOUBLE");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN attention_prs INT NOT NULL DEFAULT 0");
-        await connection.query("ALTER TABLE daily_metrics ADD COLUMN testing_queue_prs INT NOT NULL DEFAULT 0");
+        await connection.query("ALTER TABLE daily_metrics ADD COLUMN testing_queue_issues INT NOT NULL DEFAULT 0");
         await connection.query("ALTER TABLE daily_metrics ADD COLUMN avg_testing_queue_age_hours DOUBLE");
       }
     }
@@ -597,8 +597,58 @@ const migrations: SchemaMigration[] = [
         await executeIgnoringDuplicateIndex(connection, statement);
       }
     }
+  },
+  {
+    version: "0010",
+    name: "rename_testing_metric_to_issue_queue",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("daily_metrics")) {
+        await executeIgnoringDuplicateColumn(
+          connection,
+          "ALTER TABLE daily_metrics ADD COLUMN testing_queue_issues INT NOT NULL DEFAULT 0"
+        );
+        await executeIgnoringMissingColumn(connection, "ALTER TABLE daily_metrics DROP COLUMN testing_queue_prs");
+      }
+    }
+  },
+  {
+    version: "0011",
+    name: "drop_legacy_testing_queue_pr_metric",
+    async run(connection, context) {
+      if (context.tablesExistedBeforeCreate.has("daily_metrics")) {
+        await executeIgnoringMissingColumn(connection, "ALTER TABLE daily_metrics DROP COLUMN testing_queue_prs");
+      }
+    }
   }
 ];
+
+async function executeIgnoringMissingColumn(connection: mysql.Connection, statement: string): Promise<void> {
+  try {
+    await connection.query(statement);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    if (
+      !normalized.includes("unknown column") &&
+      !normalized.includes("check that column/key exists") &&
+      !normalized.includes("doesn't exist") &&
+      !normalized.includes("does not exist")
+    ) {
+      throw error;
+    }
+  }
+}
+
+async function executeIgnoringDuplicateColumn(connection: mysql.Connection, statement: string): Promise<void> {
+  try {
+    await connection.query(statement);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes("duplicate") && !message.toLowerCase().includes("already exists")) {
+      throw error;
+    }
+  }
+}
 
 async function executeIgnoringDuplicateIndex(connection: mysql.Connection, statement: string): Promise<void> {
   try {

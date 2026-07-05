@@ -206,7 +206,7 @@ type TrendMomentumPoint = Pick<
   | "deferredIssues"
   | "pendingPrs"
   | "attentionPrs"
-  | "testingQueuePrs"
+  | "testingQueueIssues"
   | "averageTestingQueueAgeHours"
   | "generatedAt"
 > & { label?: string };
@@ -276,7 +276,7 @@ export function trendMomentumSummary(points: ReadonlyArray<TrendMomentumPoint>):
   const previousPrOpenDelta = previous ? previous.prsCreated - previous.prsMerged : null;
   const activeCriticalDelta = nullableDelta(latest.activeCriticalIssues, previous?.activeCriticalIssues ?? null);
   const prAttentionDelta = nullableDelta(latest.attentionPrs, previous?.attentionPrs ?? null);
-  const testingQueueDelta = nullableDelta(latest.testingQueuePrs, previous?.testingQueuePrs ?? null);
+  const testingQueueDelta = nullableDelta(latest.testingQueueIssues, previous?.testingQueueIssues ?? null);
   const triageDelta = nullableDelta(latest.needsTriageIssues, previous?.needsTriageIssues ?? null);
   const testingWaitDelta = nullableDelta(
     latest.averageTestingQueueAgeHours,
@@ -293,7 +293,7 @@ export function trendMomentumSummary(points: ReadonlyArray<TrendMomentumPoint>):
   const testingTone =
     latest.averageTestingQueueAgeHours !== null && latest.averageTestingQueueAgeHours >= 24
       ? "critical"
-      : lowerIsBetterTone(latest.testingQueuePrs, testingQueueDelta);
+      : lowerIsBetterTone(latest.testingQueueIssues, testingQueueDelta);
 
   return {
     latestLabel: trendMomentumPointLabel(latest),
@@ -338,8 +338,8 @@ export function trendMomentumSummary(points: ReadonlyArray<TrendMomentumPoint>):
       trendMomentumItem({
         key: "testing_queue",
         label: "Issue testing",
-        value: latest.testingQueuePrs,
-        previousValue: previous?.testingQueuePrs ?? null,
+        value: latest.testingQueueIssues,
+        previousValue: previous?.testingQueueIssues ?? null,
         detail: `${maybeHoursDetail("avg wait", latest.averageTestingQueueAgeHours)}${
           testingWaitDelta !== null ? `, wait delta ${signedHours(testingWaitDelta)}` : ""
         }`,

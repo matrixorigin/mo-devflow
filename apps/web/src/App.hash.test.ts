@@ -611,7 +611,7 @@ function metricPoint(input: {
     requestedChangePrs: 0,
     reviewWaitingPrs: 0,
     mergeConflictPrs: 0,
-    testingQueuePrs: 0,
+    testingQueueIssues: 0,
     averageTestingQueueAgeHours: null,
     sourceCompleteness: "complete_cache",
     generatedAt: "2026-07-05T00:00:00Z"

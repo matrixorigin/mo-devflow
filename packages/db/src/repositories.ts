@@ -157,7 +157,7 @@ const dashboardMetricColumns = [
   "requested_change_prs",
   "review_waiting_prs",
   "merge_conflict_prs",
-  "testing_queue_prs",
+  "testing_queue_issues",
   "avg_testing_queue_age_hours",
   "source_completeness",
   "generated_at"
@@ -3089,7 +3089,7 @@ function newMetricPoint(date: string, scopeType: "team" | "person", scopeKey: st
     requestedChangePrs: 0,
     reviewWaitingPrs: 0,
     mergeConflictPrs: 0,
-    testingQueuePrs: 0,
+    testingQueueIssues: 0,
     averageTestingQueueAgeHours: null,
     sourceCompleteness: "complete_cache",
     generatedAt: new Date().toISOString()
@@ -3320,7 +3320,7 @@ function copyMetricSnapshot(target: DailyMetricPoint, source: DailyMetricPoint):
   target.requestedChangePrs = source.requestedChangePrs;
   target.reviewWaitingPrs = source.reviewWaitingPrs;
   target.mergeConflictPrs = source.mergeConflictPrs;
-  target.testingQueuePrs = source.testingQueuePrs;
+  target.testingQueueIssues = source.testingQueueIssues;
   target.averageTestingQueueAgeHours = source.averageTestingQueueAgeHours;
 }
 
@@ -3399,10 +3399,10 @@ export function applyBacklogSnapshotMetrics(input: {
         if (testingContext) {
           const testingAge = testingIssueQueueAgeHoursAt(testingContext, asOf);
           if (testingAge !== null) {
-            point.testingQueuePrs += 1;
+            point.testingQueueIssues += 1;
             testingQueueAges.push(testingAge);
           } else if (!testingContext.queueStartedAt) {
-            point.testingQueuePrs += 1;
+            point.testingQueueIssues += 1;
             point.sourceCompleteness = "partial_cache";
           }
           if (testingContext.queueAgeEvidence === "issue_cache_timestamp") {
@@ -3989,7 +3989,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
         deferred_issues, avg_deferred_issue_age_hours,
         pending_prs, avg_pending_pr_age_hours, attention_prs,
         ci_failed_prs, requested_change_prs, review_waiting_prs, merge_conflict_prs,
-        testing_queue_prs, avg_testing_queue_age_hours,
+        testing_queue_issues, avg_testing_queue_age_hours,
         source_completeness, generated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -4016,7 +4016,7 @@ export async function recomputeDailyMetricsFromCache(repoId: number, profile: Re
         point.requestedChangePrs,
         point.reviewWaitingPrs,
         point.mergeConflictPrs,
-        point.testingQueuePrs,
+        point.testingQueueIssues,
         point.averageTestingQueueAgeHours,
         point.sourceCompleteness,
         generatedAt
@@ -4728,7 +4728,7 @@ export async function getDashboardSummary(
     requestedChangePrs: asNumber(row.requested_change_prs),
     reviewWaitingPrs: asNumber(row.review_waiting_prs),
     mergeConflictPrs: asNumber(row.merge_conflict_prs),
-    testingQueuePrs: asNumber(row.testing_queue_prs),
+    testingQueueIssues: asNumber(row.testing_queue_issues),
     averageTestingQueueAgeHours:
       row.avg_testing_queue_age_hours === null || row.avg_testing_queue_age_hours === undefined
         ? null
