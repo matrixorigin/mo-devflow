@@ -56,7 +56,11 @@ import { createHash } from "node:crypto";
 import { activeCacheStaleSummarySql } from "./cacheHealthSql";
 import { fromSqlDate, getPool, nowSql, sqlDate } from "./client";
 import { getJobQueueHealth, listManualRefreshRequestsForDashboard } from "./jobs";
-import { getNotificationHealth, notificationRecipientScope } from "./notifications";
+import {
+  getNotificationHealth,
+  notificationDeliveryVisibilityWhereSql,
+  notificationRecipientScope
+} from "./notifications";
 import { addDaysToDateKey, calendarDayRangeInTimezone, dateKeyInTimezone, previousCalendarDayRange } from "./time";
 import { dashboardVisibilityFilter, visibleClassesForDashboard, type DashboardViewer } from "./visibility";
 import { getWebhookIngestionHealth } from "./webhooks";
@@ -4051,6 +4055,13 @@ interface DashboardDataVersionFilters {
   issueComments: SqlFilter;
   issueTimelineEvents: SqlFilter;
   issueTimelineSyncs: SqlFilter;
+  workflowViolations: SqlFilter;
+  aiDriftSignals: SqlFilter;
+  dailyMetrics: SqlFilter;
+  notificationDeliveries: SqlFilter;
+  notificationAcknowledgements: SqlFilter;
+  writeActionExecutions: SqlFilter;
+  attentionItems: SqlFilter;
 }
 
 function unrestrictedDashboardDataVersionFilters(): DashboardDataVersionFilters {
@@ -4061,7 +4072,104 @@ function unrestrictedDashboardDataVersionFilters(): DashboardDataVersionFilters 
     issueCommentSyncs: all,
     issueComments: all,
     issueTimelineEvents: all,
-    issueTimelineSyncs: all
+    issueTimelineSyncs: all,
+    workflowViolations: all,
+    aiDriftSignals: all,
+    dailyMetrics: all,
+    notificationDeliveries: all,
+    notificationAcknowledgements: all,
+    writeActionExecutions: all,
+    attentionItems: all
+  };
+}
+
+function dashboardIssueOrPullRequestObjectVersionFilter(
+  alias: string,
+  profile: RepoProfile,
+  viewer: DashboardViewer,
+  allowMissingObjectNumber = false
+): SqlFilter {
+  const issueVisibility = dashboardVisibilityFilter(`${alias}_i`, profile, viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter(`${alias}_p`, profile, viewer);
+  const clauses = [
+    allowMissingObjectNumber ? `${alias}.object_number IS NULL` : null,
+    `(${alias}.object_type = 'issue' AND EXISTS (
+       SELECT 1 FROM issues ${alias}_i
+       WHERE ${alias}_i.repo_id = ${alias}.repo_id
+         AND ${alias}_i.number = ${alias}.object_number
+         AND ${issueVisibility.sql}
+     ))`,
+    `(${alias}.object_type = 'pull_request' AND EXISTS (
+       SELECT 1 FROM pull_requests ${alias}_p
+       WHERE ${alias}_p.repo_id = ${alias}.repo_id
+         AND ${alias}_p.number = ${alias}.object_number
+         AND ${pullRequestVisibility.sql}
+     ))`
+  ].filter((clause): clause is string => clause !== null);
+  return {
+    sql: `(${clauses.join(" OR ")})`,
+    params: [...issueVisibility.params, ...pullRequestVisibility.params]
+  };
+}
+
+function dashboardDailyMetricsVersionFilter(profile: RepoProfile, viewer: DashboardViewer): SqlFilter {
+  const issueVisibility = dashboardVisibilityFilter("dm_i", profile, viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("dm_p", profile, viewer);
+  return {
+    sql: `(NOT EXISTS (
+       SELECT 1 FROM issues dm_i
+       WHERE dm_i.repo_id = dm.repo_id
+         AND NOT (${issueVisibility.sql})
+     ) AND NOT EXISTS (
+       SELECT 1 FROM pull_requests dm_p
+       WHERE dm_p.repo_id = dm.repo_id
+         AND NOT (${pullRequestVisibility.sql})
+     ))`,
+    params: [...issueVisibility.params, ...pullRequestVisibility.params]
+  };
+}
+
+function dashboardNotificationAcknowledgementVersionFilter(
+  profile: RepoProfile,
+  viewer: DashboardViewer
+): SqlFilter {
+  const deliveryVisibility = notificationDeliveryVisibilityWhereSql("d", profile, viewer);
+  return {
+    sql: `EXISTS (
+       SELECT 1 FROM notification_deliveries d
+       WHERE d.id = na.notification_delivery_id
+         AND d.repo_id = na.repo_id
+         AND ${deliveryVisibility.sql}
+     )`,
+    params: deliveryVisibility.params
+  };
+}
+
+function dashboardWriteActionExecutionVersionFilter(profile: RepoProfile, viewer: DashboardViewer): SqlFilter {
+  const issueVisibility = dashboardVisibilityFilter("wae_i", profile, viewer);
+  const pullRequestVisibility = dashboardVisibilityFilter("wae_p", profile, viewer);
+  const notificationVisibility = notificationDeliveryVisibilityWhereSql("d", profile, viewer);
+  return {
+    sql: `(wae.object_type = 'notification_probe'
+       OR (wae.object_type = 'issue' AND EXISTS (
+         SELECT 1 FROM issues wae_i
+         WHERE wae_i.repo_id = wae.repo_id
+           AND wae_i.number = wae.object_number
+           AND ${issueVisibility.sql}
+       ))
+       OR (wae.object_type = 'pull_request' AND EXISTS (
+         SELECT 1 FROM pull_requests wae_p
+         WHERE wae_p.repo_id = wae.repo_id
+           AND wae_p.number = wae.object_number
+           AND ${pullRequestVisibility.sql}
+       ))
+       OR (wae.object_type = 'notification_delivery' AND EXISTS (
+         SELECT 1 FROM notification_deliveries d
+         WHERE d.id = wae.object_number
+           AND d.repo_id = wae.repo_id
+           AND ${notificationVisibility.sql}
+       )))`,
+    params: [...issueVisibility.params, ...pullRequestVisibility.params, ...notificationVisibility.params]
   };
 }
 
@@ -4075,7 +4183,14 @@ function dashboardDataVersionFilters(profile?: RepoProfile, viewer?: DashboardVi
     issueCommentSyncs: dashboardVisibilityFilter("ics", profile, viewer),
     issueComments: dashboardVisibilityFilter("c", profile, viewer),
     issueTimelineEvents: dashboardVisibilityFilter("e", profile, viewer),
-    issueTimelineSyncs: dashboardVisibilityFilter("its", profile, viewer)
+    issueTimelineSyncs: dashboardVisibilityFilter("its", profile, viewer),
+    workflowViolations: dashboardIssueOrPullRequestObjectVersionFilter("wv", profile, viewer),
+    aiDriftSignals: dashboardIssueOrPullRequestObjectVersionFilter("ad", profile, viewer),
+    dailyMetrics: dashboardDailyMetricsVersionFilter(profile, viewer),
+    notificationDeliveries: notificationDeliveryVisibilityWhereSql("d", profile, viewer),
+    notificationAcknowledgements: dashboardNotificationAcknowledgementVersionFilter(profile, viewer),
+    writeActionExecutions: dashboardWriteActionExecutionVersionFilter(profile, viewer),
+    attentionItems: dashboardIssueOrPullRequestObjectVersionFilter("a", profile, viewer, true)
   };
 }
 
@@ -4114,23 +4229,23 @@ export function dashboardDataVersionSql(
        UNION ALL
        SELECT 'workflow_violations' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
-       FROM workflow_violations WHERE repo_id = ?
+       FROM workflow_violations wv WHERE wv.repo_id = ? AND ${filters.workflowViolations.sql}
        UNION ALL
        SELECT 'ai_drift_signals' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
-       FROM ai_drift_signals WHERE repo_id = ?
+       FROM ai_drift_signals ad WHERE ad.repo_id = ? AND ${filters.aiDriftSignals.sql}
        UNION ALL
        SELECT 'daily_metrics' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(generated_at) AS max_event_at, MAX(generated_at) AS max_aux_at
-       FROM daily_metrics WHERE repo_id = ?
+       FROM daily_metrics dm WHERE dm.repo_id = ? AND ${filters.dailyMetrics.sql}
        UNION ALL
        SELECT 'notification_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(attempted_at) AS max_event_at, MAX(attempted_at) AS max_aux_at
-       FROM notification_deliveries WHERE repo_id = ?
+       FROM notification_deliveries d WHERE d.repo_id = ? AND ${filters.notificationDeliveries.sql}
        UNION ALL
        SELECT 'notification_acknowledgements' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(acknowledged_at) AS max_event_at, MAX(acknowledged_at) AS max_aux_at
-       FROM notification_acknowledgements WHERE repo_id = ?
+       FROM notification_acknowledgements na WHERE na.repo_id = ? AND ${filters.notificationAcknowledgements.sql}
        UNION ALL
             SELECT 'github_webhook_deliveries' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
                    MAX(received_at) AS max_event_at, MAX(processed_at) AS max_aux_at
@@ -4170,7 +4285,7 @@ export function dashboardDataVersionSql(
             UNION ALL
             SELECT 'write_action_executions' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
                    MAX(started_at) AS max_event_at, MAX(finished_at) AS max_aux_at
-            FROM write_action_executions WHERE repo_id = ?
+            FROM write_action_executions wae WHERE wae.repo_id = ? AND ${filters.writeActionExecutions.sql}
        UNION ALL
        SELECT 'manual_refresh_requests' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(created_at) AS max_event_at, MAX(created_at) AS max_aux_at
@@ -4178,7 +4293,7 @@ export function dashboardDataVersionSql(
        UNION ALL
        SELECT 'attention_items' AS source_name, COUNT(*) AS row_count, MAX(id) AS max_id,
               MAX(last_detected_at) AS max_event_at, MAX(resolved_at) AS max_aux_at
-            FROM attention_items WHERE repo_id = ?
+            FROM attention_items a WHERE a.repo_id = ? AND ${filters.attentionItems.sql}
           ) version_sources
           ORDER BY source_name`;
 }
@@ -4208,7 +4323,23 @@ export function dashboardDataVersionQuery(
       ...filters.issueTimelineEvents.params,
       repoId,
       ...filters.issueTimelineSyncs.params,
-      ...Array.from({ length: dashboardDataVersionRepoIdParameterCount() - 6 }, () => repoId)
+      repoId,
+      repoId,
+      ...filters.workflowViolations.params,
+      repoId,
+      ...filters.aiDriftSignals.params,
+      repoId,
+      ...filters.dailyMetrics.params,
+      repoId,
+      ...filters.notificationDeliveries.params,
+      repoId,
+      ...filters.notificationAcknowledgements.params,
+      ...Array.from({ length: 9 }, () => repoId),
+      repoId,
+      ...filters.writeActionExecutions.params,
+      repoId,
+      repoId,
+      ...filters.attentionItems.params
     ]
   };
 }

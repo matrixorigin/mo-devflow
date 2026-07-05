@@ -276,6 +276,9 @@ describe("dashboard data version", () => {
     expect(dashboardDataVersionRepoIdParameterCount()).toBe(placeholders.length);
     expect(dashboardDataVersionRepoIdParameterCount()).toBe(names.length);
     expect(new Set(names).size).toBe(names.length);
+    expect(dashboardDataVersionQuery(7).params).toEqual(
+      Array.from({ length: dashboardDataVersionRepoIdParameterCount() }, () => 7)
+    );
   });
 
   test("tracks webhook in-place status, attempt, and duplicate updates", () => {
@@ -316,6 +319,19 @@ describe("dashboard data version", () => {
     expect(query.sql).toContain(
       "FROM issue_timeline_syncs its WHERE its.repo_id = ? AND its.visibility_class IN ('anonymous_readable')"
     );
+    expect(query.sql).toContain("FROM workflow_violations wv WHERE wv.repo_id = ? AND");
+    expect(query.sql).toContain("wv_i.visibility_class IN ('anonymous_readable')");
+    expect(query.sql).toContain("FROM ai_drift_signals ad WHERE ad.repo_id = ? AND");
+    expect(query.sql).toContain("ad_p.visibility_class IN ('anonymous_readable')");
+    expect(query.sql).toContain("FROM daily_metrics dm WHERE dm.repo_id = ? AND (NOT EXISTS");
+    expect(query.sql).toContain("AND NOT (dm_i.visibility_class IN ('anonymous_readable'))");
+    expect(query.sql).toContain("FROM notification_deliveries d WHERE d.repo_id = ? AND");
+    expect(query.sql).toContain("d.object_type = 'issue'");
+    expect(query.sql).toContain("FROM notification_acknowledgements na WHERE na.repo_id = ? AND EXISTS");
+    expect(query.sql).toContain("FROM write_action_executions wae WHERE wae.repo_id = ? AND");
+    expect(query.sql).toContain("wae.object_type = 'notification_probe'");
+    expect(query.sql).toContain("FROM attention_items a WHERE a.repo_id = ? AND");
+    expect(query.sql).toContain("a.object_number IS NULL");
     expect(query.params).toEqual(Array.from({ length: dashboardDataVersionRepoIdParameterCount() }, () => 7));
   });
 
@@ -331,7 +347,14 @@ describe("dashboard data version", () => {
     expect(query.sql).toContain(
       "(ics.visibility_class IN ('anonymous_readable', 'logged_in_readable') OR (ics.visibility_class = 'token_owner_only' AND ics.source_user_id = ?))"
     );
+    expect(query.sql).toContain("wv_i.source_user_id = ?");
+    expect(query.sql).toContain("ad_p.source_user_id = ?");
+    expect(query.sql).toContain("dm_i.source_user_id = ?");
+    expect(query.sql).toContain("d.source_type IN ('daily_digest', 'weekly_digest', 'monthly_digest')");
+    expect(query.sql).toContain("wae_i.source_user_id = ?");
+    expect(query.sql).toContain("a_p.source_user_id = ?");
     expect(query.params.slice(0, 12)).toEqual([7, 42, 7, 42, 7, 42, 7, 42, 7, 42, 7, 42]);
+    expect(query.params.filter((param) => param === 42).length).toBe(22);
   });
 });
 
