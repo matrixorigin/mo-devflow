@@ -1514,6 +1514,11 @@ body {
   color: #1d4ed8;
 }
 
+.team-critical-flow-more-muted {
+  background: #ffffff;
+  color: #6b7280;
+}
+
 .team-monitor-grid {
   display: grid;
   gap: 8px;
@@ -1758,6 +1763,11 @@ button.team-monitor-tile:hover,
 .team-rotation-more:hover {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.team-rotation-more-muted {
+  background: #ffffff;
+  color: #6b7280;
 }
 
 .team-rotation-more:focus-visible {

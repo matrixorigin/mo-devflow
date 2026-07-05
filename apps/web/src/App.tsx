@@ -179,6 +179,7 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 
 const dashboardAutoRefreshMs = 30_000;
 const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
+const boardRevealStep = 4;
 
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
@@ -397,6 +398,28 @@ function hours(value: number): string {
 
 function optionalHours(value: number | null): string {
   return value === null ? "-" : hours(value);
+}
+
+function useLazyVisibleCount(total: number, initialLimit?: number, resetKey: string | number = "") {
+  const baseline = Math.min(total, initialLimit ?? total);
+  const [visibleCount, setVisibleCount] = useState(baseline);
+
+  useEffect(() => {
+    setVisibleCount(baseline);
+  }, [baseline, resetKey]);
+
+  const cappedVisibleCount = Math.min(visibleCount, total);
+  const hiddenCount = Math.max(0, total - cappedVisibleCount);
+  const revealCount = Math.min(boardRevealStep, hiddenCount);
+
+  return {
+    visibleCount: cappedVisibleCount,
+    hiddenCount,
+    revealCount,
+    canCollapse: initialLimit !== undefined && cappedVisibleCount > baseline,
+    showMore: () => setVisibleCount((current) => Math.min(total, current + boardRevealStep)),
+    reset: () => setVisibleCount(baseline)
+  };
 }
 
 function percentText(value: number | null): string {
@@ -2572,7 +2595,7 @@ function TeamRotationOverview({
   });
   const peopleSource = data.people.length > 0 ? data.people : observedPeople;
   const peopleSourceIsObserved = data.people.length === 0 && observedPeople.length > 0;
-  const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews).slice(0, 6);
+  const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews);
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const triageSnapshot = teamTriageSnapshot(data);
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
@@ -2593,6 +2616,13 @@ function TeamRotationOverview({
     onOpenPrsFilter,
     onOpenPeopleFilter
   });
+  const criticalLaneLazy = useLazyVisibleCount(
+    criticalIssues.length,
+    6,
+    `${criticalScopeFilter}:${criticalAiFilter}:${criticalIssueSort}`
+  );
+  const prRiskLaneLazy = useLazyVisibleCount(prRisks.length, 6, prSort);
+  const testingLaneLazy = useLazyVisibleCount(testingIssues.length, 5, data.testing.queueIssues);
   const [workPreview, setWorkPreview] = useState<TeamWorkPreview | null>(null);
   const [testingPreviewIssue, setTestingPreviewIssue] = useState<TestingIssueQueueView | null>(null);
 
@@ -2667,11 +2697,13 @@ function TeamRotationOverview({
           <TeamRotationLane
             title={`Critical Issue Rotation (${criticalScopeLabel(criticalScopeFilter)}, ${criticalAiFilter === "all" ? "all AI" : criticalAiFilter})`}
             count={criticalIssues.length}
-            visibleCount={Math.min(criticalIssues.length, 6)}
+            visibleCount={criticalLaneLazy.visibleCount}
             overflowLabel={criticalOverflowLabel(criticalScopeFilter)}
             actionLabel="Open Issues"
             tone="critical"
             onAction={() => onOpenIssuesFilter({})}
+            onShowMore={criticalLaneLazy.hiddenCount > 0 ? criticalLaneLazy.showMore : undefined}
+            onCollapse={criticalLaneLazy.canCollapse ? criticalLaneLazy.reset : undefined}
             controls={
               <CriticalIssueFilterBar
                 issues={data.criticalIssues}
@@ -2684,25 +2716,27 @@ function TeamRotationOverview({
               />
             }
           >
-            {criticalIssues.slice(0, 6).map((issue) => (
+            {criticalIssues.slice(0, criticalLaneLazy.visibleCount).map((issue) => (
               <TeamCriticalIssueRow issue={issue} key={issue.number} onPreview={setWorkPreview} />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
             title="PR Rotation Risks"
             count={data.counts.attentionPrs}
-            visibleCount={Math.min(prRisks.length, 6)}
+            visibleCount={prRiskLaneLazy.visibleCount}
             overflowLabel="PRs needing attention"
             actionLabel="Open PRs"
             tone="attention"
             onAction={() => onOpenPrsFilter("attention")}
+            onShowMore={prRiskLaneLazy.hiddenCount > 0 ? prRiskLaneLazy.showMore : undefined}
+            onCollapse={prRiskLaneLazy.canCollapse ? prRiskLaneLazy.reset : undefined}
             controls={
               <div className="board-filter-bar team-sort-filter-bar" aria-label="PR rotation sort">
                 <PrSortControl sort={prSort} onSortChange={onPrSortChange} />
               </div>
             }
           >
-            {prRisks.slice(0, 6).map((pr) => (
+            {prRisks.slice(0, prRiskLaneLazy.visibleCount).map((pr) => (
               <TeamPrRiskRow
                 activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
                 pr={pr}
@@ -2714,13 +2748,15 @@ function TeamRotationOverview({
           <TeamRotationLane
             title="Issues Waiting For Test"
             count={data.testing.queueIssues}
-            visibleCount={Math.min(testingIssues.length, 5)}
+            visibleCount={testingLaneLazy.visibleCount}
             overflowLabel="issues in test"
             actionLabel="Open Testing"
             tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
             onAction={() => onOpenPrsFilter("testing")}
+            onShowMore={testingLaneLazy.hiddenCount > 0 ? testingLaneLazy.showMore : undefined}
+            onCollapse={testingLaneLazy.canCollapse ? testingLaneLazy.reset : undefined}
           >
-            {testingIssues.slice(0, 5).map((issue) => (
+            {testingIssues.slice(0, testingLaneLazy.visibleCount).map((issue) => (
               <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
             ))}
           </TeamRotationLane>
@@ -3211,8 +3247,8 @@ function TeamCriticalFlowPanel({
   onOpenPrRisks: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
-  const visibleRows = rows.slice(0, 7);
-  const hiddenRows = Math.max(0, rows.length - visibleRows.length);
+  const lazy = useLazyVisibleCount(rows.length, 7, rows.map((row) => row.id).join(":"));
+  const visibleRows = rows.slice(0, lazy.visibleCount);
   const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
   const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
 
@@ -3249,10 +3285,17 @@ function TeamCriticalFlowPanel({
         )}
       </div>
 
-      {hiddenRows > 0 ? (
-        <button type="button" className="team-critical-flow-more" onClick={onOpenIssues}>
-          <span>{hiddenRows} more active issues match this filter</span>
-          <strong>Open Issues</strong>
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="team-critical-flow-more" onClick={lazy.showMore}>
+          <span>
+            +{lazy.revealCount} more active issues ({lazy.hiddenCount} hidden)
+          </span>
+          <strong>Show more</strong>
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="team-critical-flow-more team-critical-flow-more-muted" onClick={lazy.reset}>
+          <span>{rows.length} active issues are visible</span>
+          <strong>Show compact list</strong>
         </button>
       ) : null}
     </section>
@@ -3538,6 +3581,8 @@ function TeamRotationLane({
   actionLabel,
   tone,
   onAction,
+  onShowMore,
+  onCollapse,
   children,
   controls
 }: {
@@ -3548,6 +3593,8 @@ function TeamRotationLane({
   actionLabel: string;
   tone: "critical" | "attention";
   onAction: () => void;
+  onShowMore?: () => void;
+  onCollapse?: () => void;
   children: ReactNode;
   controls?: ReactNode;
 }) {
@@ -3571,11 +3618,18 @@ function TeamRotationLane({
       </div>
       <div className="team-rotation-list">{children}</div>
       {hiddenCount > 0 ? (
-        <button type="button" className="team-rotation-more" onClick={onAction}>
+        <button type="button" className="team-rotation-more" onClick={onShowMore ?? onAction}>
           <span>
-            {hiddenCount} more {overflowLabel ?? "items"} match this filter
+            {onShowMore
+              ? `+${Math.min(boardRevealStep, hiddenCount)} more ${overflowLabel ?? "items"} (${hiddenCount} hidden)`
+              : `${hiddenCount} more ${overflowLabel ?? "items"} match this filter`}
           </span>
-          <strong>{actionLabel}</strong>
+          <strong>{onShowMore ? "Show more" : actionLabel}</strong>
+        </button>
+      ) : onCollapse ? (
+        <button type="button" className="team-rotation-more team-rotation-more-muted" onClick={onCollapse}>
+          <span>Showing all {overflowLabel ?? "items"}</span>
+          <strong>Compact</strong>
         </button>
       ) : null}
     </section>
@@ -4251,6 +4305,8 @@ function TeamPeopleFocus({
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const summary = teamPeopleFocusSummary(people, personalViews);
+  const lazy = useLazyVisibleCount(people.length, 6, people.map((person) => person.login).join(":"));
+  const visiblePeople = people.slice(0, lazy.visibleCount);
 
   return (
     <section className="team-side-panel">
@@ -4271,7 +4327,7 @@ function TeamPeopleFocus({
             description={observedMode ? "No active owners observed" : "No watched people with active risk"}
           />
         ) : (
-          people.map((person) => {
+          visiblePeople.map((person) => {
             const testingWork = testingCountForPerson(person.login, personalViews);
             const focus = personCardFocus(person, personalByLogin.get(person.login));
             return (
@@ -4306,6 +4362,19 @@ function TeamPeopleFocus({
           })
         )}
       </div>
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="team-rotation-more" onClick={lazy.showMore}>
+          <span>
+            +{lazy.revealCount} more people ({lazy.hiddenCount} hidden)
+          </span>
+          <strong>Show more</strong>
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="team-rotation-more team-rotation-more-muted" onClick={lazy.reset}>
+          <span>{people.length} people are visible</span>
+          <strong>Show compact list</strong>
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -6310,10 +6379,8 @@ function CriticalIssueLane({
   visibleLimit?: number;
   onPreview?: (issue: CriticalIssueView) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasOverflow = visibleLimit !== undefined && issues.length > visibleLimit;
-  const visibleIssues = hasOverflow && !expanded ? issues.slice(0, visibleLimit) : issues;
-  const hiddenCount = Math.max(0, issues.length - visibleIssues.length);
+  const lazy = useLazyVisibleCount(issues.length, visibleLimit);
+  const visibleIssues = issues.slice(0, lazy.visibleCount);
 
   return (
     <section className={`critical-lane critical-lane-${tone}`}>
@@ -6333,19 +6400,15 @@ function CriticalIssueLane({
           ))}
         </div>
       )}
-      {hiddenCount > 0 ? (
-        <button type="button" className="critical-lane-more" onClick={() => setExpanded(true)}>
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
           <ChevronDown size={14} aria-hidden="true" />
           <span>
-            Show {hiddenCount} more {overflowLabel}
+            +{lazy.revealCount} more {overflowLabel} ({lazy.hiddenCount} hidden)
           </span>
         </button>
-      ) : hasOverflow && expanded ? (
-        <button
-          type="button"
-          className="critical-lane-more critical-lane-more-muted"
-          onClick={() => setExpanded(false)}
-        >
+      ) : lazy.canCollapse ? (
+        <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
           <ChevronUp size={14} aria-hidden="true" />
           <span>Show compact list</span>
         </button>
@@ -6771,7 +6834,6 @@ function TestingIssueQueuePanel({
   issues: TestingIssueQueueView[];
   onFilterChange: (filter: TestingIssueQueueFilter) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [sort, setSort] = useState<TestingIssueQueueSort>("priority");
   const [previewIssue, setPreviewIssue] = useState<TestingIssueQueueView | null>(null);
   const visibleLimit = 8;
@@ -6786,15 +6848,13 @@ function TestingIssueQueuePanel({
     issues.filter((issue) => testingIssueMatchesFilter(issue, filter)),
     sort
   );
-  const visibleIssues = expanded ? sortedIssues : sortedIssues.slice(0, visibleLimit);
-  const hiddenCount = Math.max(0, sortedIssues.length - visibleIssues.length);
+  const lazy = useLazyVisibleCount(sortedIssues.length, visibleLimit, `${filter}:${sort}`);
+  const visibleIssues = sortedIssues.slice(0, lazy.visibleCount);
   const changeFilter = (nextFilter: TestingIssueQueueFilter) => {
     onFilterChange(nextFilter);
-    setExpanded(false);
   };
   const changeSort = (nextSort: TestingIssueQueueSort) => {
     setSort(nextSort);
-    setExpanded(false);
   };
 
   if (issues.length === 0) {
@@ -6873,16 +6933,12 @@ function TestingIssueQueuePanel({
           <Text type="secondary">No issues match this filter</Text>
         </div>
       )}
-      {hiddenCount > 0 ? (
-        <button type="button" className="testing-issue-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} more issues in test. Show all
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="testing-issue-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more issues in test ({lazy.hiddenCount} hidden)
         </button>
-      ) : sortedIssues.length > visibleLimit && expanded ? (
-        <button
-          type="button"
-          className="testing-issue-more testing-issue-more-muted"
-          onClick={() => setExpanded(false)}
-        >
+      ) : lazy.canCollapse ? (
+        <button type="button" className="testing-issue-more testing-issue-more-muted" onClick={lazy.reset}>
           Show compact queue
         </button>
       ) : null}
@@ -7212,10 +7268,8 @@ function TestingQueueLane({
   emptyText: string;
   visibleLimit?: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasOverflow = visibleLimit !== undefined && prs.length > visibleLimit;
-  const visiblePrs = hasOverflow && !expanded ? prs.slice(0, visibleLimit) : prs;
-  const hiddenCount = Math.max(0, prs.length - visiblePrs.length);
+  const lazy = useLazyVisibleCount(prs.length, visibleLimit);
+  const visiblePrs = prs.slice(0, lazy.visibleCount);
 
   return (
     <section className={`testing-queue-lane testing-queue-lane-${tone}`}>
@@ -7237,16 +7291,12 @@ function TestingQueueLane({
           <Text type="secondary">{emptyText}</Text>
         </div>
       )}
-      {hiddenCount > 0 ? (
-        <button type="button" className="testing-queue-more" onClick={() => setExpanded(true)}>
-          +{hiddenCount} more PRs. Show all in this lane
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="testing-queue-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
         </button>
-      ) : hasOverflow && expanded ? (
-        <button
-          type="button"
-          className="testing-queue-more testing-queue-more-muted"
-          onClick={() => setExpanded(false)}
-        >
+      ) : lazy.canCollapse ? (
+        <button type="button" className="testing-queue-more testing-queue-more-muted" onClick={lazy.reset}>
           Show compact list
         </button>
       ) : null}
@@ -7494,8 +7544,8 @@ function PersonWorkloadBoard({
 type ObservedThreadPullRequest = CriticalIssueLinkedPullRequestView | PendingPrView;
 
 function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[] }) {
-  const visibleThreads = threads.slice(0, 8);
-  const hiddenThreads = Math.max(0, threads.length - visibleThreads.length);
+  const lazy = useLazyVisibleCount(threads.length, 8);
+  const visibleThreads = threads.slice(0, lazy.visibleCount);
 
   return (
     <section className="observed-thread-panel" aria-label="Observed issue and PR flow">
@@ -7513,8 +7563,14 @@ function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[]
           visibleThreads.map((thread) => <ObservedPersonThreadRow thread={thread} key={thread.id} />)
         )}
       </div>
-      {hiddenThreads > 0 ? (
-        <Text type="secondary">{hiddenThreads} more rows are available in the detail lists below.</Text>
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more rows ({lazy.hiddenCount} hidden)
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
+          Show compact flow
+        </button>
       ) : null}
     </section>
   );
@@ -7524,6 +7580,7 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
   const action = observedThreadAction(thread);
   const prs = observedThreadPullRequests(thread);
   const sourceUrl = thread.issue?.htmlUrl ?? prs[0]?.htmlUrl ?? null;
+  const prLazy = useLazyVisibleCount(prs.length, 4, thread.id);
 
   return (
     <article className={`observed-thread-row observed-thread-row-${thread.tone}`}>
@@ -7548,7 +7605,7 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
       </div>
       <div className="observed-thread-links">
         {prs.length > 0 ? (
-          prs.slice(0, 4).map((pr) => {
+          prs.slice(0, prLazy.visibleCount).map((pr) => {
             const reasons = prAttentionReasons(pr as PendingPrView);
             return (
               <a className="observed-thread-pr" href={pr.htmlUrl} target="_blank" rel="noreferrer" key={pr.number}>
@@ -7566,7 +7623,15 @@ function ObservedPersonThreadRow({ thread }: { thread: ObservedOwnerThread }) {
         ) : (
           <Text type="secondary">No visible PR linked to this active issue</Text>
         )}
-        {prs.length > 4 ? <Tag>{prs.length - 4} more PRs</Tag> : null}
+        {prLazy.hiddenCount > 0 ? (
+          <button type="button" className="linked-overflow-button" onClick={prLazy.showMore}>
+            +{prLazy.revealCount} more PRs
+          </button>
+        ) : prLazy.canCollapse ? (
+          <button type="button" className="linked-overflow-button" onClick={prLazy.reset}>
+            Show fewer PRs
+          </button>
+        ) : null}
         {!thread.issue && thread.linkedIssueNumbers.length > 0 && sourceUrl ? (
           <span className="observed-thread-issues">
             {thread.linkedIssueNumbers.slice(0, 3).map((number) => (
@@ -8218,17 +8283,21 @@ function WorkLane({
 function IssueCardList({
   issues,
   emptyText,
+  initialLimit,
   onPreview
 }: {
   issues: Array<CriticalIssueView | PersonalIssueView>;
   emptyText: string;
+  initialLimit?: number;
   onPreview?: (issue: CriticalIssueView | PersonalIssueView) => void;
 }) {
   const [aiFilter, setAiFilter] = useState("all");
   const [sort, setSort] = useState<IssueListSort>("priority");
   const aiOptions = Array.from(new Set(issues.map(issueAiFilterLabel))).sort();
   const filteredIssues = aiFilter === "all" ? issues : issues.filter((issue) => issueAiFilterLabel(issue) === aiFilter);
-  const visibleIssues = sortIssueList(filteredIssues, sort);
+  const sortedIssues = sortIssueList(filteredIssues, sort);
+  const lazy = useLazyVisibleCount(sortedIssues.length, initialLimit, `${aiFilter}:${sort}`);
+  const visibleIssues = sortedIssues.slice(0, lazy.visibleCount);
 
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
@@ -8271,6 +8340,15 @@ function IssueCardList({
           ))}
         </div>
       )}
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more issues ({lazy.hiddenCount} hidden)
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
+          Show compact list
+        </button>
+      ) : null}
     </>
   );
 }
@@ -8279,11 +8357,13 @@ function PullRequestCardList({
   prs,
   emptyText,
   emphasized = false,
+  initialLimit,
   onPreview
 }: {
   prs: PersonalPullRequestView[];
   emptyText: string;
   emphasized?: boolean;
+  initialLimit?: number;
   onPreview?: (pr: PersonalPullRequestView) => void;
 }) {
   const [filter, setFilter] = useState<PullRequestListFilter>("all");
@@ -8299,10 +8379,12 @@ function PullRequestCardList({
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
   );
-  const visiblePrs = sortPullRequestList(
+  const sortedPrs = sortPullRequestList(
     prs.filter((pr) => pullRequestMatchesListFilter(pr, filter)),
     sort
   );
+  const lazy = useLazyVisibleCount(sortedPrs.length, initialLimit, `${filter}:${sort}`);
+  const visiblePrs = sortedPrs.slice(0, lazy.visibleCount);
 
   if (prs.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
@@ -8339,6 +8421,15 @@ function PullRequestCardList({
           ))}
         </div>
       )}
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="critical-lane-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more PRs ({lazy.hiddenCount} hidden)
+        </button>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={lazy.reset}>
+          Show compact list
+        </button>
+      ) : null}
     </>
   );
 }
@@ -8686,10 +8777,8 @@ function ActionQueueSection({
   visibleLimit?: number;
   onPreview: (item: PersonalActivityItem) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasOverflow = visibleLimit !== undefined && items.length > visibleLimit;
-  const visibleItems = hasOverflow && !expanded ? items.slice(0, visibleLimit) : items;
-  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+  const lazy = useLazyVisibleCount(items.length, visibleLimit, title);
+  const visibleItems = items.slice(0, lazy.visibleCount);
 
   if (items.length === 0) {
     return null;
@@ -8702,7 +8791,7 @@ function ActionQueueSection({
           <Text strong>{title}</Text>
           <Text type="secondary">{description}</Text>
         </div>
-        <ActionQueueSectionStats hiddenCount={hiddenCount} items={visibleItems} tone={tone} />
+        <ActionQueueSectionStats hiddenCount={lazy.hiddenCount} items={visibleItems} tone={tone} />
       </div>
       {visibleItems.length > 0 ? (
         <div className="action-queue-section-list" role="list">
@@ -8711,12 +8800,12 @@ function ActionQueueSection({
           ))}
         </div>
       ) : null}
-      {hiddenCount > 0 ? (
-        <button type="button" className="action-queue-more" onClick={() => setExpanded(true)}>
-          {hiddenCount} more {title.toLowerCase()} items. Show all
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="action-queue-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more {title.toLowerCase()} items ({lazy.hiddenCount} hidden)
         </button>
-      ) : hasOverflow && expanded ? (
-        <button type="button" className="action-queue-more action-queue-more-muted" onClick={() => setExpanded(false)}>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="action-queue-more action-queue-more-muted" onClick={lazy.reset}>
           Show compact queue
         </button>
       ) : null}
@@ -9311,10 +9400,8 @@ function FlowThreadSection({
   visibleLimit?: number;
   onPreview: (row: PersonalGanttRow) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasOverflow = visibleLimit !== undefined && rows.length > visibleLimit;
-  const visibleRows = hasOverflow && !expanded ? rows.slice(0, visibleLimit) : rows;
-  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+  const lazy = useLazyVisibleCount(rows.length, visibleLimit, title);
+  const visibleRows = rows.slice(0, lazy.visibleCount);
 
   if (rows.length === 0) {
     return null;
@@ -9336,12 +9423,12 @@ function FlowThreadSection({
           ))}
         </div>
       ) : null}
-      {hiddenCount > 0 ? (
-        <button type="button" className="flow-thread-more" onClick={() => setExpanded(true)}>
-          {hiddenCount} more {title.toLowerCase()}. Show all
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="flow-thread-more" onClick={lazy.showMore}>
+          +{lazy.revealCount} more {title.toLowerCase()} ({lazy.hiddenCount} hidden)
         </button>
-      ) : hasOverflow && expanded ? (
-        <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={() => setExpanded(false)}>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="flow-thread-more flow-thread-more-muted" onClick={lazy.reset}>
           Show compact list
         </button>
       ) : null}
@@ -9363,9 +9450,8 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const visibleSignals = reasons.slice(0, 4);
   const hiddenSignalCount = Math.max(0, reasons.length - visibleSignals.length);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [expandedPrs, setExpandedPrs] = useState(false);
-  const visiblePrs = expandedPrs ? row.prs : row.prs.slice(0, 6);
-  const hiddenPrCount = Math.max(0, row.prs.length - visiblePrs.length);
+  const prLazy = useLazyVisibleCount(row.prs.length, 6, row.id);
+  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
   const issueNodeLabel =
     row.issue.number !== null
       ? `Issue #${row.issue.number}`
@@ -9375,9 +9461,9 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
   const prNodeLabel = row.prs.length === 0 ? "No visible PR" : `${row.prs.length} visible PRs`;
   const visibleTopologyPrs = row.prs.slice(0, 4);
   const hiddenTopologyPrCount = Math.max(0, row.prs.length - visibleTopologyPrs.length);
-  const showAllPrs = (): void => {
+  const showMorePrs = (): void => {
     setDetailsOpen(true);
-    setExpandedPrs(true);
+    prLazy.showMore();
   };
 
   return (
@@ -9463,7 +9549,7 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                 </a>
               ))}
               {hiddenTopologyPrCount > 0 ? (
-                <button type="button" onClick={showAllPrs}>
+                <button type="button" onClick={showMorePrs}>
                   +{hiddenTopologyPrCount}
                 </button>
               ) : null}
@@ -9545,16 +9631,12 @@ function PersonalFlowThread({ row, onPreview }: { row: PersonalGanttRow; onPrevi
                 {visiblePrs.map((pr) => (
                   <FlowPrRow pr={pr} key={pr.number} />
                 ))}
-                {hiddenPrCount > 0 ? (
-                  <button type="button" className="flow-pr-more" onClick={() => setExpandedPrs(true)}>
-                    +{hiddenPrCount} more PRs. Show all
+                {prLazy.hiddenCount > 0 ? (
+                  <button type="button" className="flow-pr-more" onClick={showMorePrs}>
+                    +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
                   </button>
-                ) : row.prs.length > 6 && expandedPrs ? (
-                  <button
-                    type="button"
-                    className="flow-pr-more flow-pr-more-muted"
-                    onClick={() => setExpandedPrs(false)}
-                  >
+                ) : prLazy.canCollapse ? (
+                  <button type="button" className="flow-pr-more flow-pr-more-muted" onClick={prLazy.reset}>
                     Show compact PR list
                   </button>
                 ) : null}
@@ -9967,7 +10049,10 @@ function PersonalRotationOverview({
   const testingIssueRows = sortTestingIssueQueue(person.testingIssues, "priority").slice(0, 4);
   const testingPrRows = sortTestingQueuePrs(person.testingPrs).slice(0, Math.max(0, 4 - testingIssueRows.length));
   const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
-  const focusRows = filteredRows.slice(0, 6);
+  const threadLazy = useLazyVisibleCount(filteredRows.length, 6, aiFilter);
+  const focusRows = filteredRows.slice(0, threadLazy.visibleCount);
+  const prLazy = useLazyVisibleCount(person.attentionPrs.length, 5, person.login);
+  const visibleAttentionPrs = person.attentionPrs.slice(0, prLazy.visibleCount);
   const primaryFocus = personalPrimaryFocus(person, chart, blockedPrItems.length, staleTestingWorkCount);
   const criticalIssuesByPr = useMemo(
     () => criticalIssueContextsByPullRequest(person.activeCriticalIssues, person.pendingPrs),
@@ -10123,6 +10208,15 @@ function PersonalRotationOverview({
               focusRows.map((row) => <PersonalRotationThreadRow row={row} key={row.id} onPreview={setPreviewThread} />)
             )}
           </div>
+          {threadLazy.hiddenCount > 0 ? (
+            <button type="button" className="critical-lane-more" onClick={threadLazy.showMore}>
+              +{threadLazy.revealCount} more threads ({threadLazy.hiddenCount} hidden)
+            </button>
+          ) : threadLazy.canCollapse ? (
+            <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={threadLazy.reset}>
+              Show compact threads
+            </button>
+          ) : null}
         </section>
 
         <section className="personal-rotation-lane personal-rotation-lane-triage">
@@ -10145,8 +10239,9 @@ function PersonalRotationOverview({
             ) : (
               <>
                 <IssueCardList
-                  issues={person.needsTriageIssues.slice(0, 4)}
+                  issues={person.needsTriageIssues}
                   emptyText="No needs-triage issues"
+                  initialLimit={4}
                   onPreview={(_issue) => onDrilldownChange("triage")}
                 />
                 {person.deferredIssues.length > 0 ? (
@@ -10173,18 +10268,25 @@ function PersonalRotationOverview({
             {person.attentionPrs.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No PR blockers" />
             ) : (
-              person.attentionPrs
-                .slice(0, 5)
-                .map((pr) => (
-                  <TeamPrRiskRow
-                    activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
-                    pr={pr}
-                    key={pr.number}
-                    onPreview={setPrPreview}
-                  />
-                ))
+              visibleAttentionPrs.map((pr) => (
+                <TeamPrRiskRow
+                  activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+                  pr={pr}
+                  key={pr.number}
+                  onPreview={setPrPreview}
+                />
+              ))
             )}
           </div>
+          {prLazy.hiddenCount > 0 ? (
+            <button type="button" className="critical-lane-more" onClick={prLazy.showMore}>
+              +{prLazy.revealCount} more PR blockers ({prLazy.hiddenCount} hidden)
+            </button>
+          ) : prLazy.canCollapse ? (
+            <button type="button" className="critical-lane-more critical-lane-more-muted" onClick={prLazy.reset}>
+              Show compact PR list
+            </button>
+          ) : null}
         </section>
 
         <section className="personal-rotation-lane personal-rotation-lane-attention">
