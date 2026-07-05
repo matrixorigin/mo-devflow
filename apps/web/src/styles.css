@@ -885,6 +885,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+.team-command-board {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .team-command-queue {
   display: grid;
   gap: 8px;
@@ -979,6 +985,43 @@ body {
   line-height: 1;
   padding: 5px 7px;
   white-space: nowrap;
+}
+
+.team-command-more {
+  align-items: center;
+  appearance: none;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  justify-content: center;
+  line-height: 1.2;
+  min-height: 36px;
+  padding: 8px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.team-command-more strong {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.team-command-more:hover,
+.team-command-more:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  outline: none;
+}
+
+.team-command-more-muted {
+  background: #ffffff;
+  color: #6b7280;
 }
 
 .team-health-strip {

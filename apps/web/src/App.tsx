@@ -3001,7 +3001,7 @@ function teamCommandActions({
     });
   }
 
-  return actions.sort((left, right) => right.priority - left.priority).slice(0, 4);
+  return actions.sort((left, right) => right.priority - left.priority);
 }
 
 function teamCommandSignalActionLabel(target: TeamCommandSignalTarget): string {
@@ -3025,24 +3025,42 @@ function teamCommandSignalTargetView(target: TeamCommandSignalTarget): Dashboard
 }
 
 function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
+  const lazy = useLazyVisibleCount(actions.length, 4, actions.map((action) => action.key).join(":"));
+  const visibleActions = actions.slice(0, lazy.visibleCount);
+
   return (
-    <div className="team-command-queue" aria-label="Team command queue">
-      {actions.map((action, index) => (
-        <button
-          type="button"
-          className={`team-command-action team-command-action-${action.tone}`}
-          onClick={action.onClick}
-          key={action.key}
-        >
-          <span className="team-command-action-rank">{index + 1}</span>
-          <span className="team-command-action-copy">
-            <strong>{action.title}</strong>
-            <small>{action.detail}</small>
+    <section className="team-command-board" aria-label="Team command queue">
+      <div className="team-command-queue">
+        {visibleActions.map((action, index) => (
+          <button
+            type="button"
+            className={`team-command-action team-command-action-${action.tone}`}
+            onClick={action.onClick}
+            key={action.key}
+          >
+            <span className="team-command-action-rank">{index + 1}</span>
+            <span className="team-command-action-copy">
+              <strong>{action.title}</strong>
+              <small>{action.detail}</small>
+            </span>
+            <span className="team-command-action-open">{action.actionLabel}</span>
+          </button>
+        ))}
+      </div>
+      {lazy.hiddenCount > 0 ? (
+        <button type="button" className="team-command-more" onClick={lazy.showMore}>
+          <span>
+            +{lazy.revealCount} more command items ({lazy.hiddenCount} hidden)
           </span>
-          <span className="team-command-action-open">{action.actionLabel}</span>
+          <strong>Show more</strong>
         </button>
-      ))}
-    </div>
+      ) : lazy.canCollapse ? (
+        <button type="button" className="team-command-more team-command-more-muted" onClick={lazy.reset}>
+          <span>{actions.length} command items are visible</span>
+          <strong>Show compact list</strong>
+        </button>
+      ) : null}
+    </section>
   );
 }
 
