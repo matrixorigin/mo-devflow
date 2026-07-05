@@ -4163,6 +4163,31 @@ button.testing-board-stat:focus-visible {
   border-left: 3px solid #ca8a04;
 }
 
+.personal-testing-subsection {
+  border-bottom: 1px solid #f3f4f6;
+  display: grid;
+  min-width: 0;
+}
+
+.personal-testing-subsection:last-child {
+  border-bottom: 0;
+}
+
+.personal-testing-subheading {
+  align-items: center;
+  background: #f9fafb;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.personal-testing-empty {
+  padding: 10px 12px;
+}
+
 .personal-thread-row {
   border-bottom: 1px solid #f3f4f6;
   display: grid;

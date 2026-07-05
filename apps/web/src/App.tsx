@@ -10106,8 +10106,12 @@ function PersonalRotationOverview({
   const testingStaleIssues = person.testingIssues.filter(isTestingIssueStale);
   const testingWorkCount = personalTestingWorkCount(person);
   const staleTestingWorkCount = testingStaleIssues.length;
-  const testingIssueRows = sortTestingIssueQueue(person.testingIssues, "priority").slice(0, 4);
-  const testingPrRows = sortTestingQueuePrs(person.testingPrs).slice(0, Math.max(0, 4 - testingIssueRows.length));
+  const sortedTestingIssueRows = sortTestingIssueQueue(person.testingIssues, "priority");
+  const sortedTestingPrRows = sortTestingQueuePrs(person.testingPrs);
+  const testingIssueLazy = useLazyVisibleCount(sortedTestingIssueRows.length, 4, person.login);
+  const testingPrLazy = useLazyVisibleCount(sortedTestingPrRows.length, 4, person.login);
+  const testingIssueRows = sortedTestingIssueRows.slice(0, testingIssueLazy.visibleCount);
+  const testingPrRows = sortedTestingPrRows.slice(0, testingPrLazy.visibleCount);
   const filteredRows = chart.rows.filter((row) => personalThreadMatchesAi(row, aiFilter));
   const threadLazy = useLazyVisibleCount(filteredRows.length, 6, aiFilter);
   const focusRows = filteredRows.slice(0, threadLazy.visibleCount);
@@ -10364,21 +10368,73 @@ function PersonalRotationOverview({
             <Text type="secondary">issue handoff status and linked PR evidence</Text>
           </div>
           <div className="team-rotation-list">
-            {testingWorkCount === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues in testing" />
+            {testingWorkCount === 0 && person.testingPrs.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issue testing evidence" />
             ) : (
               <>
-                {testingIssueRows.map((issue) => (
-                  <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
-                ))}
-                {testingPrRows.map((pr) => (
-                  <TeamPrRiskRow
-                    activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
-                    pr={pr}
-                    key={pr.number}
-                    onPreview={setPrPreview}
-                  />
-                ))}
+                <div className="personal-testing-subsection">
+                  <div className="personal-testing-subheading">
+                    <Text strong>Issue handoff</Text>
+                    <Tag color={staleTestingWorkCount > 0 ? "red" : testingWorkCount > 0 ? "blue" : "default"}>
+                      {testingWorkCount}
+                    </Tag>
+                  </div>
+                  {testingIssueRows.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No issues assigned to testing" />
+                  ) : (
+                    testingIssueRows.map((issue) => (
+                      <TeamTestingIssueRow issue={issue} key={issue.number} onPreview={setTestingPreviewIssue} />
+                    ))
+                  )}
+                  {testingIssueLazy.hiddenCount > 0 ? (
+                    <button type="button" className="critical-lane-more" onClick={testingIssueLazy.showMore}>
+                      +{testingIssueLazy.revealCount} more testing issues ({testingIssueLazy.hiddenCount} hidden)
+                    </button>
+                  ) : testingIssueLazy.canCollapse ? (
+                    <button
+                      type="button"
+                      className="critical-lane-more critical-lane-more-muted"
+                      onClick={testingIssueLazy.reset}
+                    >
+                      Show compact issue list
+                    </button>
+                  ) : null}
+                </div>
+                <div className="personal-testing-subsection">
+                  <div className="personal-testing-subheading">
+                    <Text strong>Linked PR evidence</Text>
+                    <Tag color={person.testingPrs.some(isTestingStalePr) ? "orange" : "default"}>
+                      {person.testingPrs.length}
+                    </Tag>
+                  </div>
+                  {testingPrRows.length === 0 ? (
+                    <Text type="secondary" className="personal-testing-empty">
+                      No linked PR evidence is visible for current issue testing.
+                    </Text>
+                  ) : (
+                    testingPrRows.map((pr) => (
+                      <TeamPrRiskRow
+                        activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
+                        pr={pr}
+                        key={pr.number}
+                        onPreview={setPrPreview}
+                      />
+                    ))
+                  )}
+                  {testingPrLazy.hiddenCount > 0 ? (
+                    <button type="button" className="critical-lane-more" onClick={testingPrLazy.showMore}>
+                      +{testingPrLazy.revealCount} more linked PRs ({testingPrLazy.hiddenCount} hidden)
+                    </button>
+                  ) : testingPrLazy.canCollapse ? (
+                    <button
+                      type="button"
+                      className="critical-lane-more critical-lane-more-muted"
+                      onClick={testingPrLazy.reset}
+                    >
+                      Show compact PR evidence
+                    </button>
+                  ) : null}
+                </div>
               </>
             )}
           </div>
