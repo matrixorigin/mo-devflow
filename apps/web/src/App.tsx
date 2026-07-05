@@ -2075,12 +2075,29 @@ function FlowEfficiencyDiagnostics({
   diagnostics: FlowEfficiencyDiagnostic[];
   actions: FlowEfficiencyActions;
 }) {
+  const diagnosticLazy = useLazyVisibleCount(
+    diagnostics.length,
+    4,
+    diagnostics.map((diagnostic) => diagnostic.key).join(":")
+  );
+  const visibleDiagnostics = diagnostics.slice(0, diagnosticLazy.visibleCount);
+
   return (
     <div className="flow-diagnostic-board" aria-label="Flow diagnostics">
-      {diagnostics.slice(0, 4).map((diagnostic) => {
+      {visibleDiagnostics.map((diagnostic) => {
         const onClick = flowEfficiencyDiagnosticAction(diagnostic.target, actions);
         return <FlowEfficiencyDiagnosticCard diagnostic={diagnostic} onClick={onClick} key={diagnostic.key} />;
       })}
+      <LazyListToggle
+        hiddenCount={diagnosticLazy.hiddenCount}
+        revealCount={diagnosticLazy.revealCount}
+        canCollapse={diagnosticLazy.canCollapse}
+        itemLabel="diagnostics"
+        className="flow-diagnostic-more"
+        collapsedLabel="Show fewer diagnostics"
+        onShowMore={diagnosticLazy.showMore}
+        onCollapse={diagnosticLazy.reset}
+      />
     </div>
   );
 }
@@ -4743,30 +4760,7 @@ function TeamIssuePreviewModal({
           {linkedPrs.length > 0 ? (
             <div className="team-object-preview-list">
               {linkedPrs.map((pr) => (
-                <a
-                  className="team-object-preview-linked"
-                  href={pr.htmlUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  key={pr.number}
-                >
-                  <span>
-                    <GitPullRequest size={14} aria-hidden="true" />
-                    PR #{pr.number}
-                  </span>
-                  <strong>{pr.title}</strong>
-                  <small>
-                    owner {pr.ownerLogin} | age {hours(pr.ageHours)} | last {formatDate(pr.lastHumanActionAt)}
-                  </small>
-                  <Space size={[4, 4]} wrap>
-                    {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
-                    {pr.attentionFlags.slice(0, 4).map((flag) => (
-                      <Tag color={flagColor(flag)} key={flag}>
-                        {labelText(flag)}
-                      </Tag>
-                    ))}
-                  </Space>
-                </a>
+                <TeamIssuePreviewLinkedPr pr={pr} key={pr.number} />
               ))}
               <LazyListToggle
                 hiddenCount={hiddenLinkedPrCount}
@@ -4785,6 +4779,46 @@ function TeamIssuePreviewModal({
         </section>
       </div>
     </Modal>
+  );
+}
+
+function TeamIssuePreviewLinkedPr({ pr }: { pr: CriticalIssueLinkedPullRequestView }) {
+  const flagLazy = useLazyVisibleCount(pr.attentionFlags.length, 4, `${pr.number}:${pr.attentionFlags.join("|")}`);
+  const visibleFlags = pr.attentionFlags.slice(0, flagLazy.visibleCount);
+
+  return (
+    <div className="team-object-preview-linked">
+      <a className="team-object-preview-linked-object" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+        <span>
+          <GitPullRequest size={14} aria-hidden="true" />
+          PR #{pr.number}
+        </span>
+        <strong>{pr.title}</strong>
+        <small>
+          owner {pr.ownerLogin} | age {hours(pr.ageHours)} | last {formatDate(pr.lastHumanActionAt)}
+        </small>
+      </a>
+      {pr.testingState !== "not_ready" || pr.attentionFlags.length > 0 ? (
+        <Space className="team-object-preview-flags" size={[4, 4]} wrap>
+          {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
+          {visibleFlags.map((flag) => (
+            <Tag color={flagColor(flag)} key={flag}>
+              {labelText(flag)}
+            </Tag>
+          ))}
+          <LazyListToggle
+            hiddenCount={flagLazy.hiddenCount}
+            revealCount={flagLazy.revealCount}
+            canCollapse={flagLazy.canCollapse}
+            itemLabel="flags"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer flags"
+            onShowMore={flagLazy.showMore}
+            onCollapse={flagLazy.reset}
+          />
+        </Space>
+      ) : null}
+    </div>
   );
 }
 
