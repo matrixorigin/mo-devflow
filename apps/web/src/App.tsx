@@ -107,6 +107,7 @@ import {
   type ProductionReadinessGate,
   type ProductionReadinessSummary,
   type ProductionReadinessTarget,
+  type UpdatePipelineTone,
   type UpdatePipelineSummary,
   type UpdatePipelineTile,
   type WebhookReadinessSummary
@@ -7758,6 +7759,22 @@ function FreshnessStatusBar({
           <Tag>generated {formatDate(sync.generatedAt)}</Tag>
           <button
             type="button"
+            className={`freshness-chip freshness-chip-${freshnessWorkerChipTone(sync.worker)}`}
+            title={workerStatusDescription(sync.worker)}
+            onClick={onOpenHealth}
+          >
+            {freshnessWorkerChipLabel(sync.worker)}
+          </button>
+          <button
+            type="button"
+            className={`freshness-chip freshness-chip-${freshnessQueueChipTone(sync.jobQueue)}`}
+            title={freshnessQueueChipTitle(sync.jobQueue)}
+            onClick={onOpenHealth}
+          >
+            {freshnessQueueChipLabel(sync.jobQueue)}
+          </button>
+          <button
+            type="button"
             className={`freshness-chip freshness-chip-${webhookReadiness.tone}`}
             title={webhookReadiness.description}
             onClick={onOpenWebhooks}
@@ -7898,6 +7915,67 @@ function FreshnessStatusBar({
       ) : null}
     </section>
   );
+}
+
+function freshnessWorkerChipTone(worker: DashboardSummary["sync"]["worker"]): UpdatePipelineTone {
+  if (worker.status === "failed" || worker.status === "offline") {
+    return "critical";
+  }
+  if (worker.status === "stale") {
+    return "attention";
+  }
+  return "good";
+}
+
+function freshnessWorkerChipLabel(worker: DashboardSummary["sync"]["worker"]): string {
+  if (worker.status !== "active") {
+    return `worker: ${worker.status}`;
+  }
+  return `worker: ${labelText(worker.phase ?? "active")}`;
+}
+
+function freshnessQueueChipTone(queue: DashboardSummary["sync"]["jobQueue"]): UpdatePipelineTone {
+  if (queue.failedJobs > 0 || queue.blockedJobs > 0 || queue.staleLeases > 0) {
+    return "critical";
+  }
+  if (queue.status === "attention" || queue.queueDepth > 0 || queue.runningJobs > 0) {
+    return "attention";
+  }
+  return "good";
+}
+
+function freshnessQueueChipLabel(queue: DashboardSummary["sync"]["jobQueue"]): string {
+  if (queue.failedJobs > 0) {
+    return `queue: ${queue.failedJobs} failed`;
+  }
+  if (queue.blockedJobs > 0) {
+    return `queue: ${queue.blockedJobs} blocked`;
+  }
+  if (queue.staleLeases > 0) {
+    return `queue: ${queue.staleLeases} stale`;
+  }
+  if (queue.runningJobs > 0) {
+    return `queue: ${queue.runningJobs} running`;
+  }
+  if (queue.queueDepth > 0) {
+    return `queue: ${queue.queueDepth} queued`;
+  }
+  return "queue: idle";
+}
+
+function freshnessQueueChipTitle(queue: DashboardSummary["sync"]["jobQueue"]): string {
+  if (queue.recommendedAction) {
+    return queue.recommendedAction;
+  }
+  if (queue.latestFailure) {
+    return queue.latestFailure;
+  }
+  if (queue.oldestPendingAgeHours !== null) {
+    return `${queue.queueDepth} queued, ${queue.runningJobs} running, oldest pending ${hours(
+      queue.oldestPendingAgeHours
+    )}.`;
+  }
+  return `${queue.queueDepth} queued, ${queue.runningJobs} running, next ${formatDate(queue.nextRunAt)}.`;
 }
 
 function webhookStatusChipLabel(readiness: WebhookReadinessSummary): string {
