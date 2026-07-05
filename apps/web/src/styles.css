@@ -8047,6 +8047,96 @@ button.testing-board-stat:focus-visible {
   padding: 12px;
 }
 
+.personal-throughput-focus {
+  align-items: center;
+  appearance: none;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(110px, 0.18fr) minmax(220px, 0.42fr) minmax(260px, 1fr) auto;
+  min-width: 0;
+  padding: 9px 11px;
+  text-align: left;
+}
+
+.personal-throughput-focus:hover,
+.personal-throughput-focus:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.personal-throughput-focus:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.personal-throughput-focus span,
+.personal-throughput-focus small,
+.personal-throughput-focus em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-throughput-focus strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-throughput-focus em {
+  color: #1d4ed8;
+  font-weight: 750;
+  justify-self: end;
+}
+
+.personal-throughput-focus-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.personal-throughput-focus-critical em,
+.personal-throughput-focus-critical span {
+  color: #b91c1c;
+}
+
+.personal-throughput-focus-attention {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  border-left-color: #d97706;
+}
+
+.personal-throughput-focus-attention em,
+.personal-throughput-focus-attention span {
+  color: #c2410c;
+}
+
+.personal-throughput-focus-good {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  border-left-color: #16a34a;
+}
+
+.personal-throughput-focus-good em,
+.personal-throughput-focus-good span {
+  color: #15803d;
+}
+
 .personal-throughput-grid {
   display: grid;
   gap: 8px;
@@ -11239,6 +11329,14 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .personal-throughput-focus {
+    grid-template-columns: minmax(110px, 0.2fr) minmax(0, 1fr);
+  }
+
+  .personal-throughput-focus em {
+    justify-self: start;
+  }
+
   .personal-flow-efficiency-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -11608,6 +11706,16 @@ button.flow-diagnostic-card:focus-visible {
 
   .personal-throughput-grid {
     grid-template-columns: 1fr;
+  }
+
+  .personal-throughput-focus {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .personal-throughput-focus strong,
+  .personal-throughput-focus small {
+    white-space: normal;
   }
 
   .person-ops-pr-periods {

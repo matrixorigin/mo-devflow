@@ -18595,6 +18595,24 @@ export interface PersonalPrThroughputSelection {
   period: MetricPeriod;
 }
 
+type PersonalPrWorkbenchFocusTone = "critical" | "attention" | "normal" | "good";
+
+interface PersonalPrWorkbenchFocus {
+  title: string;
+  detail: string;
+  tone: PersonalPrWorkbenchFocusTone;
+  actionLabel: string;
+  target:
+    | {
+        kind: "drilldown";
+        filter: PersonalDrilldownFilter;
+      }
+    | {
+        kind: "throughput";
+        selection: PersonalPrThroughputSelection;
+      };
+}
+
 interface PersonalThroughputRequest {
   login: string;
   selection: PersonalPrThroughputSelection;
@@ -18919,14 +18937,90 @@ export function personalPrThroughputSelectionForPeriod(
   };
 }
 
-function initialPersonalPrThroughputSelection(person: PersonalActionView): PersonalPrThroughputSelection {
+export function initialPersonalPrThroughputSelection(person: PersonalActionView): PersonalPrThroughputSelection {
   if (person.attentionPrs.length > 0) {
     return { period: "day", scope: "attention" };
   }
   if (person.pendingPrs.length > 0) {
     return { period: "day", scope: "pending" };
   }
-  return { period: "day", scope: "period_all" };
+  return { period: "week", scope: "period_all" };
+}
+
+export function personalPrWorkbenchFocus(
+  person: PersonalActionView,
+  flow: PersonalCriticalFlowEfficiency = personalCriticalFlowEfficiency(person)
+): PersonalPrWorkbenchFocus {
+  const oldestPendingPr = maxPrAgeValue(person.pendingPrs);
+  const weekSelection = personalPrThroughputSelectionForPeriod(person, "week");
+  const weekList = personalPrPeriodListForPeriod(person, "week");
+  const weekPrs = personalPrVisibleUniqueTotalForPeriod(person, "week");
+  const weekCreated = weekList?.totalCreatedPrs ?? 0;
+  const weekMerged = weekList?.totalMergedPrs ?? 0;
+
+  if (person.attentionPrs.length > 0) {
+    const count = person.attentionPrs.length;
+    return {
+      title: `${count} PR${count === 1 ? "" : "s"} ${count === 1 ? "needs" : "need"} attention`,
+      detail: personalCurrentBlockerDetail(person),
+      tone: "critical",
+      actionLabel: "Open PR blockers",
+      target: { kind: "drilldown", filter: "pr_attention" }
+    };
+  }
+
+  if (flow.issuesWithoutPr > 0) {
+    return {
+      title: `${flow.issuesWithoutPr} active s-1/s0 issue${flow.issuesWithoutPr === 1 ? "" : "s"} without PR`,
+      detail: personalCriticalFlowManagementDetail(flow),
+      tone: "critical",
+      actionLabel: "Open no-PR issues",
+      target: { kind: "drilldown", filter: "active_no_pr" }
+    };
+  }
+
+  if (flow.slowEasyIssues > 0 || flow.issuesNotInTesting > 0) {
+    return {
+      title:
+        flow.slowEasyIssues > 0
+          ? `${flow.slowEasyIssues} ai-easy issue${flow.slowEasyIssues === 1 ? " is" : "s are"} slow`
+          : `${flow.issuesNotInTesting} active issue${flow.issuesNotInTesting === 1 ? "" : "s"} not in issue testing`,
+      detail: personalCriticalFlowManagementDetail(flow),
+      tone: flow.slowEasyIssues > 0 ? "critical" : "attention",
+      actionLabel: "Open flow gaps",
+      target: { kind: "drilldown", filter: "active_not_testing" }
+    };
+  }
+
+  if (person.pendingPrs.length > 0) {
+    return {
+      title: `${person.pendingPrs.length} pending PR${person.pendingPrs.length === 1 ? "" : "s"}`,
+      detail: `oldest ${optionalHours(oldestPendingPr)} | sort by age or last action`,
+      tone: oldestPendingPr !== null && oldestPendingPr >= 24 ? "attention" : "normal",
+      actionLabel: "Open pending PRs",
+      target: { kind: "drilldown", filter: "pending_pr" }
+    };
+  }
+
+  if (weekPrs > 0 || weekCreated > 0 || weekMerged > 0) {
+    return {
+      title: `This week PRs ${weekCreated}/${weekMerged}`,
+      detail: `${weekPrs} unique PR${weekPrs === 1 ? "" : "s"} in list | avg ${personalPrPeriodAverageDurationText(
+        weekList
+      )}`,
+      tone: "normal",
+      actionLabel: "Open this week PR list",
+      target: { kind: "throughput", selection: weekSelection }
+    };
+  }
+
+  return {
+    title: "No current PR movement visible",
+    detail: "This week list is empty in cache; review active issues before judging throughput.",
+    tone: "good",
+    actionLabel: "Open this week PR list",
+    target: { kind: "throughput", selection: weekSelection }
+  };
 }
 
 function PersonalPrThroughputPanel({
@@ -18971,6 +19065,14 @@ function PersonalPrThroughputPanel({
   const visibleTotalLabel = listScope === "period_all" ? "unique PRs" : "PRs";
   const periodActivitySummary = personalPrPeriodActivitySummary(selectedPeriodList);
   const selectedPeriodCapDetail = personalPrPeriodCapDetail(selectedPeriodList, prPeriodLimit);
+  const focus = personalPrWorkbenchFocus(person, flow);
+  const openFocus = (): void => {
+    if (focus.target.kind === "throughput") {
+      onSelectionChange(focus.target.selection);
+      return;
+    }
+    onDrilldownChange(focus.target.filter);
+  };
 
   return (
     <section
@@ -18999,6 +19101,17 @@ function PersonalPrThroughputPanel({
           </button>
         </Space>
       </div>
+
+      <button
+        type="button"
+        className={`personal-throughput-focus personal-throughput-focus-${focus.tone}`}
+        onClick={openFocus}
+      >
+        <span>Suggested view</span>
+        <strong>{focus.title}</strong>
+        <small>{focus.detail}</small>
+        <em>{focus.actionLabel}</em>
+      </button>
 
       <div className="personal-throughput-grid">
         {rows.map((row) => {

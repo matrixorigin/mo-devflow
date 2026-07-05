@@ -20,6 +20,7 @@ import {
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
   filterManualRefreshLayersForQuota,
+  initialPersonalPrThroughputSelection,
   manualRefreshLayerBlockedByQuota,
   manualRefreshPresetLayers,
   manualRefreshPresetLayersForQuota,
@@ -47,6 +48,7 @@ import {
   personalPrPeriodBlockerDetail,
   personalPrPeriodRiskDetail,
   personalPrPeriodThroughputDetail,
+  personalPrWorkbenchFocus,
   personalPrListForScope,
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
@@ -1169,6 +1171,104 @@ describe("dashboard hash filters", () => {
     expect(personalPrPeriodBlockerDetail(person, "month")).toBe("blockers -");
   });
 
+  it("defaults the personal PR panel to this week when there is no PR blocker or pending PR", () => {
+    const clearPerson = personalPrFocusPerson();
+    const attentionPerson = personalPrFocusPerson({
+      attentionPrs: [personalPr({ number: 30, ageHours: 12, createdAt: "2026-07-05T09:00:00.000Z", mergedAt: null })]
+    });
+    const pendingPerson = personalPrFocusPerson({
+      pendingPrs: [personalPr({ number: 31, ageHours: 12, createdAt: "2026-07-05T09:00:00.000Z", mergedAt: null })]
+    });
+
+    expect(initialPersonalPrThroughputSelection(clearPerson)).toEqual({ period: "week", scope: "period_all" });
+    expect(initialPersonalPrThroughputSelection(attentionPerson)).toEqual({ period: "day", scope: "attention" });
+    expect(initialPersonalPrThroughputSelection(pendingPerson)).toEqual({ period: "day", scope: "pending" });
+  });
+
+  it("recommends the highest-value personal PR and s-1/s0 flow view", () => {
+    const attentionFocus = personalPrWorkbenchFocus(
+      personalPrFocusPerson({
+        attentionPrs: [
+          personalPr({
+            number: 40,
+            ageHours: 30,
+            createdAt: "2026-07-04T09:00:00.000Z",
+            mergedAt: null,
+            ciState: "failure"
+          })
+        ],
+        pendingPrs: [personalPr({ number: 40, ageHours: 30, createdAt: "2026-07-04T09:00:00.000Z", mergedAt: null })]
+      })
+    );
+    const noPrFocus = personalPrWorkbenchFocus(
+      personalPrFocusPerson({
+        pendingPrs: [personalPr({ number: 41, ageHours: 48, createdAt: "2026-07-03T09:00:00.000Z", mergedAt: null })],
+        activeCriticalIssues: [
+          {
+            number: 900,
+            severity: "severity/s0",
+            aiEffortLabel: null,
+            criticalAgeHours: 60,
+            linkedPullRequests: []
+          }
+        ]
+      })
+    );
+    const pendingFocus = personalPrWorkbenchFocus(
+      personalPrFocusPerson({
+        pendingPrs: [personalPr({ number: 42, ageHours: 48, createdAt: "2026-07-03T09:00:00.000Z", mergedAt: null })]
+      })
+    );
+    const weekFocus = personalPrWorkbenchFocus(
+      personalPrFocusPerson({
+        prPeriodLists: [
+          {
+            period: "week",
+            label: "07-06-07-12",
+            periodStart: "2026-07-06",
+            periodEnd: "2026-07-13",
+            totalCreatedPrs: 2,
+            totalMergedPrs: 1,
+            createdPrs: [
+              personalPr({ number: 43, ageHours: 8, createdAt: "2026-07-06T09:00:00.000Z", mergedAt: null })
+            ],
+            mergedPrs: [
+              personalPr({
+                number: 44,
+                ageHours: 20,
+                createdAt: "2026-07-05T09:00:00.000Z",
+                mergedAt: "2026-07-06T12:00:00.000Z"
+              })
+            ],
+            truncated: false
+          }
+        ]
+      })
+    );
+
+    expect(attentionFocus).toMatchObject({
+      title: "1 PR needs attention",
+      tone: "critical",
+      actionLabel: "Open PR blockers",
+      target: { kind: "drilldown", filter: "pr_attention" }
+    });
+    expect(noPrFocus).toMatchObject({
+      title: "1 active s-1/s0 issue without PR",
+      tone: "critical",
+      target: { kind: "drilldown", filter: "active_no_pr" }
+    });
+    expect(pendingFocus).toMatchObject({
+      title: "1 pending PR",
+      tone: "attention",
+      target: { kind: "drilldown", filter: "pending_pr" }
+    });
+    expect(weekFocus).toMatchObject({
+      title: "This week PRs 2/1",
+      tone: "normal",
+      target: { kind: "throughput", selection: { period: "week", scope: "period_all" } }
+    });
+  });
+
   it("summarizes the team critical flow management action by highest bottleneck", () => {
     const baseFlow = {
       activeIssues: 4,
@@ -1518,6 +1618,35 @@ function teamFocusData(input: Record<string, any> = {}) {
     sync: {
       generatedAt: "2026-07-06T00:00:00.000Z"
     }
+  } as any;
+}
+
+function personalPrFocusPerson(input: Record<string, any> = {}) {
+  return {
+    login: "alice",
+    activeCriticalIssues: [],
+    needsTriageIssues: [],
+    deferredIssues: [],
+    pendingPrs: [],
+    attentionPrs: [],
+    testingIssues: [],
+    testingPrs: [],
+    prsCreatedYesterday: [],
+    prsMergedYesterday: [],
+    analytics: [],
+    analyticsWeekly: [],
+    analyticsMonthly: [],
+    prPeriodLists: [],
+    summary: {
+      activeCriticalIssues: 0,
+      needsTriageIssues: 0,
+      deferredIssues: 0,
+      prsCreatedYesterday: 0,
+      prsMergedYesterday: 0,
+      pendingPrs: 0,
+      attentionPrs: 0
+    },
+    ...input
   } as any;
 }
 
