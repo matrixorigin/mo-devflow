@@ -1460,14 +1460,14 @@ function SessionModelPanel({
           </strong>
           <small>
             {githubOAuthConfigured
-              ? "OAuth creates only this browser session for the validated GitHub ID."
-              : "Set GitHub OAuth env vars before team members can sign in."}
+              ? "OAuth creates the signed-in account session for this browser."
+              : "Set GitHub OAuth env vars before team members can log in."}
           </small>
         </div>
         <div>
           <span>Service source</span>
           <strong>{serviceReadTokenConfigured ? "configured" : "not configured"}</strong>
-          <small>Server polling/backfill uses deployment config, not a leader session.</small>
+          <small>Server polling and backfill use deployment config, not a user's login.</small>
         </div>
       </div>
       <div className="session-model-foot">
@@ -1498,19 +1498,19 @@ function personalTokenStatus(user: NonNullable<SessionView["user"]> | null): {
 } {
   if (!user) {
     return {
-      label: "sign in first",
-      detail: "GitHub OAuth creates the browser session. A personal token is connected afterward for confirmed writes."
+      label: "login first",
+      detail: "GitHub OAuth is the login. A personal token is connected afterward only for confirmed writes."
     };
   }
   if (!hasSavedPersonalToken(user)) {
     return {
-      label: "token removed",
-      detail: "Browser session remains, but GitHub writes are disabled until this user reconnects."
+      label: "writes disabled",
+      detail: "The account is logged in, but GitHub write actions are disabled until this user connects a personal token."
     };
   }
   return {
-    label: `repo: ${user.tokenRepoPermission}`,
-    detail: `Token checked ${formatDate(user.tokenLastValidatedAt)}.`
+    label: `writes: ${user.tokenRepoPermission}`,
+    detail: `Personal write token checked ${formatDate(user.tokenLastValidatedAt)}.`
   };
 }
 
@@ -1518,23 +1518,23 @@ function personalTokenActionLabel(user: NonNullable<SessionView["user"]> | null)
   if (!user) {
     return "Sign in with GitHub";
   }
-  return hasSavedPersonalToken(user) ? "Update saved token" : "Reconnect personal token";
+  return hasSavedPersonalToken(user) ? "Update write token" : "Connect write token";
 }
 
 function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Sign In Required";
+    return "GitHub Login Required";
   }
   return hasSavedPersonalToken(user)
-    ? `Update saved GitHub token for ${user.githubLogin}`
-    : `Reconnect GitHub token for ${user.githubLogin}`;
+    ? `Update personal write token for ${user.githubLogin}`
+    : `Connect personal write token for ${user.githubLogin}`;
 }
 
 function tokenModalOkText(user: NonNullable<SessionView["user"]> | null): string {
   if (!user) {
-    return "Sign in first";
+    return "Login first";
   }
-  return hasSavedPersonalToken(user) ? "Update token" : "Reconnect token";
+  return hasSavedPersonalToken(user) ? "Update write token" : "Connect write token";
 }
 
 function teamSignInActivityText(teamSignIn: SessionView["teamSignIn"]): string {
@@ -1574,7 +1574,7 @@ function ConnectedUsersPanel({
                 <Text strong>{user.githubLogin}</Text>
                 {user.isCurrentUser ? <Tag color="blue">current browser</Tag> : null}
                 <Tag color={user.tokenConnected ? repoPermissionColor(user.tokenRepoPermission) : "default"}>
-                  {user.tokenConnected ? `repo: ${user.tokenRepoPermission}` : "token removed"}
+                  {user.tokenConnected ? `writes: ${user.tokenRepoPermission}` : "writes disabled"}
                 </Tag>
               </Space>
               <Text type="secondary">
@@ -1651,7 +1651,7 @@ function AccountControl({
           <strong>{authenticatedUser ? authenticatedUser.githubLogin : "none"}</strong>
         </div>
         <div>
-          <span>Personal token</span>
+          <span>Write token</span>
           <strong>{tokenStatus.label}</strong>
         </div>
         <div>
@@ -1661,10 +1661,10 @@ function AccountControl({
       </div>
       <Text type="secondary" className="account-session-copy">
         {authenticatedUser
-          ? `${tokenStatus.detail} Multiple teammates can use this deployment at the same time. Another browser or machine signs in again with GitHub to create its own session for the same GitHub user.`
+          ? `${tokenStatus.detail} Multiple teammates use the same deployment by logging in with their own GitHub account. Another browser or machine logs in again with GitHub for the same user.`
           : githubOAuthConfigured
-            ? "Anonymous users only observe cached data. Sign in with GitHub to create a browser session; connect a personal token later only when GitHub write actions are needed."
-            : "Anonymous users only observe cached data. Configure GitHub OAuth on the API server before team members can sign in."}
+            ? "Anonymous users only observe cached data. Log in with GitHub to get a personal session; connect a personal token later only when write actions are needed."
+            : "Anonymous users only observe cached data. Configure GitHub OAuth on the API server before team members can log in."}
       </Text>
       <SessionModelPanel
         authenticatedUser={authenticatedUser}
@@ -1704,7 +1704,7 @@ function AccountControl({
           {teamSignInActivityText(teamSignIn)}
         </Text>
       </div>
-      {authenticatedUser ? <ConnectedUsersPanel users={connectedUsers} title="Connected GitHub users" /> : null}
+      {authenticatedUser ? <ConnectedUsersPanel users={connectedUsers} title="Team GitHub accounts" /> : null}
       {capability ? <TokenCapabilityPanel capability={capability} /> : null}
       <Space size={[8, 8]} wrap>
         {authenticatedUser ? (
@@ -1731,7 +1731,7 @@ function AccountControl({
         <Tooltip
           title={
             githubOAuthConfigured
-              ? "Sign in with GitHub. Personal token connection is a separate step for confirmed write actions."
+              ? "Sign in with GitHub. Personal write token connection is a separate step for confirmed write actions."
               : "GitHub OAuth is not configured. Set the API OAuth client ID and secret before sign-in is available."
           }
         >
@@ -1774,7 +1774,7 @@ function AccountControl({
         )}
         <span className="account-control-copy">
           <span>{authenticatedUser ? authenticatedUser.githubLogin : "Observer"}</span>
-          <small>{authenticatedUser ? "signed in" : "read only"}</small>
+          <small>{authenticatedUser ? "GitHub login" : "read only"}</small>
         </span>
         <Tag color={statusColor}>{statusLabel}</Tag>
         <Tag color={serviceTokenColor}>{serviceTokenLabel}</Tag>
@@ -2991,10 +2991,10 @@ export function prScopeLabel(filter: PrScopeFilter): string {
     return "PR attention";
   }
   if (filter === "testing") {
-    return "linked issue testing";
+    return "issue in test";
   }
   if (filter === "stale_testing") {
-    return "linked issue wait";
+    return "issue test wait";
   }
   if (filter === "testing_evidence_gap") {
     return "issue test evidence gap";
@@ -3962,9 +3962,10 @@ function TeamRotationOverview({
       <section className="team-command-panel">
         <div className="team-command-heading">
           <div>
-            <Title level={4}>Team Flow Monitor</Title>
+            <Title level={4}>Management Board</Title>
             <Text type="secondary">
-              Generated {formatDate(data.sync.generatedAt)} | {data.repo.timezone}
+              Active issue, PR, and testing rotation. Generated {formatDate(data.sync.generatedAt)} |{" "}
+              {data.repo.timezone}
             </Text>
           </div>
           <Space size={[6, 6]} wrap>
@@ -4008,7 +4009,7 @@ function TeamRotationOverview({
         <TeamCommandQueue actions={commandActions} />
         <details className="team-evidence-disclosure">
           <summary>
-            <span>System evidence</span>
+            <span>Sync and access evidence</span>
             <Tag color={productionReadiness.blockers.length > 0 ? "orange" : "green"}>
               {productionReadiness.blockers.length > 0
                 ? `${productionReadiness.blockers.length} blockers`
@@ -4560,7 +4561,7 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
       <div className="team-command-board-heading">
         <div>
           <Text strong>Priority queue</Text>
-          <Text type="secondary">Start at #1. Click a row to open its filtered board.</Text>
+          <Text type="secondary">Manager action order. Click a row to open its filtered board.</Text>
         </div>
         <Tag>{actions.length} actions</Tag>
       </div>
@@ -5991,8 +5992,8 @@ function PrIssueContextCell({ activeIssues = [], pr }: { activeIssues?: PrCritic
       ) : null}
       {isTestingQueuePr(pr) ? (
         <Space size={[4, 4]} wrap>
-          <TestingStateTag state={pr.testingState} label="linked issue testing" />
-          {pr.testingQueueAgeHours !== null ? <Tag>linked issue wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
+          <TestingStateTag state={pr.testingState} label="issue in test" />
+          {pr.testingQueueAgeHours !== null ? <Tag>issue test wait {hours(pr.testingQueueAgeHours)}</Tag> : null}
         </Space>
       ) : null}
     </Space>
@@ -7125,8 +7126,8 @@ function prActiveIssueRiskScore(activeIssues: PrCriticalIssueContext[]): number 
 function prActionContext(pr: PendingPrView): string {
   if (isTestingQueuePr(pr)) {
     return pr.testingTesters.length > 0
-      ? `linked issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
-      : "linked issue testing";
+      ? `issue testers ${pr.testingTesters.slice(0, 3).join(", ")}`
+      : "issue in test";
   }
   if (pr.linkedIssueNumbers.length > 0) {
     return `${pr.linkedIssueNumbers.length} linked issue${pr.linkedIssueNumbers.length === 1 ? "" : "s"}`;
@@ -8247,7 +8248,7 @@ function CacheEvidenceBanner({
                     ))}
                     {hiddenImpactItems > 0 ? (
                       <button type="button" className="evidence-impact-more" onClick={() => onExpandedChange(true)}>
-                        +{hiddenImpactItems} more board impacts
+                        Show {hiddenImpactItems} more board impacts
                       </button>
                     ) : null}
                   </div>
@@ -9120,14 +9121,14 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("attention")}
       />
       <CriticalBoardStat
-        label="linked issue testing"
+        label="issue in test"
         value={testingPrs}
         tone={testingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "testing"}
         onClick={() => onScopeFilterChange("testing")}
       />
       <CriticalBoardStat
-        label="linked issue wait >24h"
+        label="issue test wait >24h"
         value={staleTestingPrs}
         tone={staleTestingPrs > 0 ? "critical" : "good"}
         active={scopeFilter === "stale_testing"}
@@ -15144,7 +15145,7 @@ function PersonalExecutionTimeline({
       )}
       {hiddenPrCount > 0 ? (
         <button type="button" className="flow-timeline-overflow" onClick={() => onPreview(row)}>
-          +{hiddenPrCount} more PRs
+          Preview {hiddenPrCount} more PRs
         </button>
       ) : null}
     </div>
@@ -16034,14 +16035,6 @@ function SelectedPersonWorkbench({
         </div>
       </details>
 
-      <PersonalActionSnapshot
-        items={activityItems}
-        counts={activityCounts}
-        activeDrilldownFilter={drilldownFilter}
-        onDrilldownChange={onDrilldownChange}
-        onPreview={setObjectPreviewItem}
-      />
-
       <PersonalDrilldownBoard
         person={person}
         chart={gantt}
@@ -16113,6 +16106,13 @@ function SelectedPersonWorkbench({
             <Title level={5}>Execution Queue</Title>
             <Text type="secondary">{personalActionQueueDisclosureSummary(activityCounts)}</Text>
           </div>
+          <PersonalActionSnapshot
+            items={activityItems}
+            counts={activityCounts}
+            activeDrilldownFilter={drilldownFilter}
+            onDrilldownChange={onDrilldownChange}
+            onPreview={setObjectPreviewItem}
+          />
           <PersonalActionQueue
             activeDrilldownFilter={drilldownFilter}
             items={activityItems}
@@ -17384,7 +17384,7 @@ export default function App() {
 
   async function connectGitHubToken() {
     if (!session?.authenticated) {
-      setTokenError("Sign in with GitHub before connecting a personal token.");
+      setTokenError("Log in with GitHub before connecting a personal write token.");
       return;
     }
     setTokenSaving(true);
@@ -17449,12 +17449,12 @@ export default function App() {
 
   function confirmRemoveConnectedToken(githubLogin: string) {
     Modal.confirm({
-      title: `Remove saved GitHub token for ${githubLogin}?`,
+      title: `Remove personal write token for ${githubLogin}?`,
       content:
-        "This keeps the current browser signed in, but disables GitHub writes until this user signs in with a token again.",
-      okText: "Remove token",
+        "This keeps the current browser logged in, but disables GitHub writes until this user connects a write token again.",
+      okText: "Remove write token",
       okButtonProps: { danger: true },
-      cancelText: "Keep token",
+      cancelText: "Keep write token",
       onOk: () => removeConnectedGitHubToken()
     });
   }
@@ -18857,7 +18857,7 @@ export default function App() {
                     className="linked-overflow-button"
                     aria-label={`View ${hiddenOperations.length} more operations`}
                   >
-                    +{hiddenOperations.length} more operations
+                    View {hiddenOperations.length} more operations
                   </button>
                 </Popover>
               ) : null}
@@ -19030,7 +19030,7 @@ export default function App() {
                       className="linked-overflow-button"
                       aria-label={`View ${hiddenSignals.length} more handoff signals`}
                     >
-                      +{hiddenSignals.length} more handoff signals
+                      View {hiddenSignals.length} more handoff signals
                     </button>
                   </Popover>
                 ) : null}
@@ -20570,14 +20570,14 @@ export default function App() {
             title={
               authenticatedUser
                 ? hasSavedPersonalToken(authenticatedUser)
-                  ? `This updates only ${authenticatedUser.githubLogin}'s saved token.`
-                  : `This reconnects only ${authenticatedUser.githubLogin}'s personal token.`
-                : "Sign in with GitHub before connecting a personal token."
+                  ? `This updates only ${authenticatedUser.githubLogin}'s personal write token.`
+                  : `This connects only ${authenticatedUser.githubLogin}'s personal write token.`
+                : "Log in with GitHub before connecting a personal write token."
             }
             description={
               authenticatedUser
-                ? "The token must belong to the same GitHub identity as this browser session. It is used only for confirmed writes and user-scoped GitHub reads."
-                : "GitHub OAuth creates the browser session. Personal tokens are connected afterward only when this user needs GitHub write capability."
+                ? "The token must belong to the same GitHub identity as this logged-in browser session. It is used only for confirmed writes and user-scoped GitHub reads."
+                : "GitHub OAuth creates the login session. Personal write tokens are connected afterward only when this user needs GitHub write capability."
             }
             showIcon
           />
@@ -20597,7 +20597,7 @@ export default function App() {
           {session?.connectedUsers?.length ? (
             <ConnectedUsersPanel
               users={session.connectedUsers}
-              title="Connected GitHub users"
+              title="Team GitHub accounts"
               tag="visible after sign-in"
             />
           ) : null}
@@ -20618,7 +20618,7 @@ export default function App() {
                   <strong>
                     {hasSavedPersonalToken(authenticatedUser)
                       ? labelText(authenticatedUser.tokenRepoPermission)
-                      : "token removed"}
+                      : "writes disabled"}
                   </strong>
                 </div>
                 <div>
@@ -20637,7 +20637,7 @@ export default function App() {
                 loading={tokenRevoking}
                 onClick={() => confirmRemoveConnectedToken(authenticatedUser.githubLogin)}
               >
-                Remove saved token
+                Remove write token
               </Button>
             </div>
           ) : null}
@@ -20648,31 +20648,31 @@ export default function App() {
               type="info"
               title={
                 authenticatedUser
-                  ? "Reconnect a personal token with repo or public_repo scope plus triage, write, maintain, or admin repository permission."
-                  : "Sign in with GitHub first. Personal token connection is only available after login."
+                  ? "Connect a personal token with repo or public_repo scope plus triage, write, maintain, or admin repository permission."
+                  : "Log in with GitHub first. Personal write token connection is only available after login."
               }
               showIcon
             />
           )}
           <Input.Password
-            aria-label="GitHub token"
+            aria-label="Personal GitHub write token"
             value={tokenInput}
             autoComplete="off"
-            placeholder="GitHub token"
+            placeholder="Personal GitHub write token"
             disabled={tokenEncryptionUnavailable || tokenRetryActive}
             onChange={(event) => setTokenInput(event.target.value)}
           />
           {tokenRetryActive ? (
             <Alert
               type="warning"
-              title={`GitHub token connect is rate limited. Retry in ${retryDelayText(tokenRetryRemainingSeconds)}.`}
+              title={`Personal write token connect is rate limited. Retry in ${retryDelayText(tokenRetryRemainingSeconds)}.`}
               showIcon
             />
           ) : null}
           {tokenError ? (
             <Alert
               type={tokenRetryActive ? "warning" : "error"}
-              title="GitHub token connect failed"
+              title="Personal write token connect failed"
               description={<ActionErrorDescription context="token" message={tokenError} />}
               showIcon
             />

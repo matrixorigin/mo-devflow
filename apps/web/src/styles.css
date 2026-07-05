@@ -1075,12 +1075,13 @@ button.freshness-path-card:focus-visible {
 
 .team-command-panel {
   background: #ffffff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
   display: grid;
   gap: 12px;
   min-width: 0;
   padding: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 .team-command-heading {
@@ -1867,11 +1868,12 @@ button.freshness-path-card:focus-visible {
 
 .team-critical-flow-panel {
   background: #ffffff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #cbd5e1;
   border-left: 3px solid #dc2626;
   border-radius: 8px;
   min-width: 0;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 .team-critical-flow-heading {
@@ -2183,10 +2185,11 @@ button.team-monitor-tile:hover,
 .team-rotation-lane,
 .team-side-panel {
   background: #ffffff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
   min-width: 0;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .team-rotation-lane-critical {
@@ -6093,6 +6096,26 @@ button.testing-board-stat:focus-visible {
 .person-active-work-actions {
   justify-content: flex-end;
   min-width: 0;
+}
+
+.personal-filtered-board {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.personal-filtered-board-critical {
+  border-left-color: #dc2626;
+}
+
+.personal-filtered-board-attention {
+  border-left-color: #d97706;
 }
 
 .person-signal-disclosure {

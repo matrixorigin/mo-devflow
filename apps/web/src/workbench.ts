@@ -1638,34 +1638,34 @@ export function teamOperatingSignals(input: {
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "testing") {
-    return "linked issue testing";
+    return "issue in test";
   }
   if (state === "test_changes_requested") {
-    return "linked issue tester feedback";
+    return "tester feedback";
   }
   if (state === "test_passed") {
-    return "linked issue test passed";
+    return "issue test passed";
   }
   if (state === "closed_or_merged") {
     return "linked work closed";
   }
-  return "no linked issue test";
+  return "not in issue test";
 }
 
 export function testingStateHelpText(state: TestingFlowState): string {
   if (state === "testing") {
-    return "This PR is linked to an issue that is currently assigned to configured testers or has the configured issue testing label.";
+    return "A linked issue is assigned to the configured test team or has the configured issue testing label. PR reviewer or assignee is not used as the testing handoff.";
   }
   if (state === "test_changes_requested") {
-    return "Testing feedback is visible; the owner should respond before the issue can leave testing.";
+    return "Testing feedback is visible on the linked issue; the owner should respond before the issue leaves testing.";
   }
   if (state === "test_passed") {
-    return "Cached evidence says issue testing passed.";
+    return "Cached linked-issue evidence says testing passed.";
   }
   if (state === "closed_or_merged") {
-    return "The related work is closed or merged in cached evidence.";
+    return "The linked issue or PR is closed or merged in cached evidence.";
   }
-  return "No configured issue testing handoff is visible in cached evidence.";
+  return "No issue-scoped testing handoff is visible. PR reviewer or assignee alone does not mean testing.";
 }
 
 export function criticalIssueReasons(issue: CriticalIssueView): string[] {
