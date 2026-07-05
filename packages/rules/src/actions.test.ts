@@ -220,6 +220,78 @@ describe("workflow fix previews", () => {
     expect(deferredPreview.proposedState.aiEffortLabel).toBe("ai-easy");
   });
 
+  test("previews adding a deferred explanation comment without changing labels", () => {
+    const deferredExplanationPreview = buildWorkflowFixPreview({
+      profile,
+      issue: {
+        ...issue,
+        labels: ["kind/bug", "deferred"],
+        lifecycleState: "deferred",
+        commentEvidence: {
+          isComplete: true,
+          lastSyncedAt: "2026-07-03T00:00:00.000Z",
+          syncError: null,
+          comments: []
+        }
+      },
+      violation: {
+        ...violation,
+        ruleKey: "deferred_missing_explanation_comment",
+        evidenceSummary: "Deferred issue #42 has no cached comment explaining why it was deferred.",
+        suggestedAction: "Add a deferred explanation comment with the reason and promotion signal."
+      },
+      actionKey: "add_deferred_explanation_comment",
+      previewId: "preview-5b",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(deferredExplanationPreview.blockedReason).toBeNull();
+    expect(deferredExplanationPreview.operations).toEqual([
+      {
+        type: "add_comment",
+        body: "Deferred by mo-devflow workflow fix.\n\nReason: Deferred issue #42 has no cached comment explaining why it was deferred.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label."
+      }
+    ]);
+    expect(deferredExplanationPreview.proposedState.labels).toEqual(["kind/bug", "deferred"]);
+    expect(deferredExplanationPreview.proposedState.lifecycleState).toBe("deferred");
+  });
+
+  test("blocks deferred explanation comment when a cached explanation already exists", () => {
+    const deferredExplanationPreview = buildWorkflowFixPreview({
+      profile,
+      issue: {
+        ...issue,
+        labels: ["kind/bug", "deferred"],
+        lifecycleState: "deferred",
+        commentEvidence: {
+          isComplete: true,
+          lastSyncedAt: "2026-07-03T00:00:00.000Z",
+          syncError: null,
+          comments: [
+            {
+              authorLogin: "alice",
+              body: "Deferred for now.\n\nReason: needs upstream confirmation.",
+              createdAt: "2026-07-03T00:00:00.000Z",
+              updatedAt: "2026-07-03T00:00:00.000Z"
+            }
+          ]
+        }
+      },
+      violation: {
+        ...violation,
+        ruleKey: "deferred_missing_explanation_comment"
+      },
+      actionKey: "add_deferred_explanation_comment",
+      previewId: "preview-5c",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:10:00.000Z"
+    });
+
+    expect(deferredExplanationPreview.operations).toEqual([]);
+    expect(deferredExplanationPreview.blockedReason).toBe("Issue already has a cached deferred explanation comment.");
+  });
+
   test("blocks deferred preview when issue is already deferred", () => {
     const deferredPreview = buildWorkflowFixPreview({
       profile,

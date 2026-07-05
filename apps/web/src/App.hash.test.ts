@@ -67,6 +67,7 @@ import {
   violationSignalFilterFromHash,
   webhookScopeFilterFromHash,
   writeAuditScopeFilterFromHash,
+  workflowFixActionForViolation,
   workflowPostWriteRefreshSummary,
   workflowViolationMatchesSignalFilter
 } from "./App";
@@ -734,6 +735,18 @@ describe("dashboard hash filters", () => {
     expect(workflowViolationMatchesSignalFilter(violation, "ack_pending")).toBe(true);
     expect(workflowViolationMatchesSignalFilter(failedViolation, "notification_failed")).toBe(true);
     expect(workflowViolationMatchesSignalFilter(failedViolation, "critical")).toBe(false);
+  });
+
+  it("maps fixable workflow violations to safe preview actions", () => {
+    const violation = {
+      objectType: "issue",
+      ruleKey: "deferred_missing_explanation_comment",
+      fixable: true
+    } as any;
+
+    expect(workflowFixActionForViolation(violation)).toBe("add_deferred_explanation_comment");
+    expect(workflowFixActionForViolation({ ...violation, fixable: false })).toBeNull();
+    expect(workflowFixActionForViolation({ ...violation, objectType: "pull_request" })).toBeNull();
   });
 
   it("filters AI drift by ai-easy default, partial evidence, and notification state", () => {

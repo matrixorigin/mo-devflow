@@ -1090,9 +1090,15 @@ describe("rules", () => {
       }
     };
 
-    expect(workflowViolationsForIssue(profile, issue).map((item) => item.ruleKey)).toContain(
-      "deferred_missing_explanation_comment"
+    const violation = workflowViolationsForIssue(profile, issue).find(
+      (item) => item.ruleKey === "deferred_missing_explanation_comment"
     );
+
+    expect(violation).toMatchObject({
+      ruleKey: "deferred_missing_explanation_comment",
+      fixable: true,
+      suggestedAction: "Add a deferred explanation comment with the reason and the signal needed to promote it later."
+    });
   });
 
   test("accepts deferred issues with an explanation comment", () => {

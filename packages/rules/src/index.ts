@@ -611,7 +611,7 @@ export function workflowViolationsForIssue(profile: RepoProfile, issue: Normaliz
         evidenceSummary: `Deferred issue #${issue.number} has no cached comment explaining why it was deferred.`,
         suggestedAction:
           "Add a deferred explanation comment with the reason and the signal needed to promote it later.",
-        fixable: false
+        fixable: true
       })
     );
   }

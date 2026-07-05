@@ -253,6 +253,9 @@ export async function applyWorkflowFixPreview(input: {
   if (input.preview.actionKey === "move_to_deferred") {
     return applyMoveToDeferredWorkflowFix(input);
   }
+  if (input.preview.actionKey === "add_deferred_explanation_comment") {
+    return applyDeferredExplanationCommentWorkflowFix(input);
+  }
   throw new Error("Unsupported workflow fix action.");
 }
 
@@ -446,6 +449,86 @@ async function applyMoveToDeferredWorkflowFix(input: {
   };
 }
 
+async function applyDeferredExplanationCommentWorkflowFix(input: {
+  token: string;
+  profile: RepoProfile;
+  preview: WorkflowFixPreview;
+}): Promise<GitHubWorkflowFixApplyResult> {
+  if (input.preview.ruleKey !== "deferred_missing_explanation_comment") {
+    throw new Error("Only deferred issues missing explanation comments can receive deferred comment fixes.");
+  }
+  const unsupportedOperation = input.preview.operations.find((operation) => operation.type !== "add_comment");
+  if (unsupportedOperation) {
+    throw new Error(`Unsupported workflow fix operation: ${unsupportedOperation.type}`);
+  }
+  const freshState = await fetchIssueFreshState({
+    token: input.token,
+    profile: input.profile,
+    issueNumber: input.preview.objectNumber
+  });
+  const beforeState = stateSnapshotFromFreshIssue(freshState);
+  const staleBaselineReason = previewBaselineStaleReason(input.preview, freshState);
+  if (staleBaselineReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleBaselineReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
+  const staleReason = deferredExplanationCommentStaleReason(input.profile, input.preview, freshState);
+  if (staleReason) {
+    return {
+      freshState,
+      appliedOperations: [],
+      beforeState,
+      afterState: beforeState,
+      response: { skipped: staleReason },
+      rateLimitRemaining: freshState.rateLimitRemaining
+    };
+  }
+
+  const octokit = createUserGitHubClient(input.token);
+  const appliedOperations: WorkflowFixOperation[] = [];
+  const responses: unknown[] = [];
+  let rateLimitRemaining = freshState.rateLimitRemaining;
+  const commentOperations = input.preview.operations.filter(
+    (operation): operation is Extract<WorkflowFixOperation, { type: "add_comment" }> =>
+      operation.type === "add_comment"
+  );
+
+  for (const operation of commentOperations) {
+    const response = await octokit.rest.issues.createComment({
+      owner: input.profile.repo.owner,
+      repo: input.profile.repo.name,
+      issue_number: input.preview.objectNumber,
+      body: operation.body
+    });
+    rateLimitRemaining = readRateLimit(response.headers) ?? rateLimitRemaining;
+    appliedOperations.push(operation);
+    responses.push({
+      type: operation.type,
+      status: response.status,
+      url: response.data.html_url
+    });
+  }
+
+  return {
+    freshState,
+    appliedOperations,
+    beforeState,
+    afterState: {
+      ...beforeState,
+      lifecycleState: "deferred",
+      updatedAt: null
+    },
+    response: { operations: responses },
+    rateLimitRemaining
+  };
+}
+
 function previewBaselineStaleReason(preview: WorkflowFixPreview, freshState: GitHubIssueFreshState): string | null {
   if (preview.currentState.source !== "github" || !preview.currentState.updatedAt) {
     return "preview_state_not_fresh";
@@ -531,6 +614,23 @@ function moveToDeferredStaleReason(
     )
   ) {
     return "missing_deferred_label_operation";
+  }
+  if (!preview.operations.some((operation) => operation.type === "add_comment" && operation.body.trim().length > 0)) {
+    return "missing_deferred_comment_operation";
+  }
+  return null;
+}
+
+function deferredExplanationCommentStaleReason(
+  profile: RepoProfile,
+  preview: WorkflowFixPreview,
+  freshState: GitHubIssueFreshState
+): string | null {
+  if (freshState.state !== "open") {
+    return "issue_closed";
+  }
+  if (!freshState.labels.includes(profile.labels.deferred)) {
+    return "issue_not_deferred";
   }
   if (!preview.operations.some((operation) => operation.type === "add_comment" && operation.body.trim().length > 0)) {
     return "missing_deferred_comment_operation";

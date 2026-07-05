@@ -45,6 +45,11 @@ export function buildWorkflowFixPreview(input: BuildWorkflowFixPreviewInput): Wo
     blockedReason = result.blockedReason;
     operations.push(...result.operations);
     proposedState = result.proposedState;
+  } else if (input.actionKey === "add_deferred_explanation_comment") {
+    const result = buildDeferredExplanationCommentPreview(input.profile, input.issue, input.violation, proposedState);
+    blockedReason = result.blockedReason;
+    operations.push(...result.operations);
+    proposedState = result.proposedState;
   } else {
     blockedReason = "Unsupported workflow fix action.";
   }
@@ -177,6 +182,43 @@ function buildMoveToDeferredPreview(
   };
 }
 
+function buildDeferredExplanationCommentPreview(
+  profile: RepoProfile,
+  issue: NormalizedIssue,
+  violation: WorkflowViolationView,
+  proposedState: WorkflowFixStateSnapshot
+): { blockedReason: string | null; operations: WorkflowFixOperation[]; proposedState: WorkflowFixStateSnapshot } {
+  if (violation.ruleKey !== "deferred_missing_explanation_comment") {
+    return {
+      blockedReason: "This action only applies to deferred issues missing an explanation comment.",
+      operations: [],
+      proposedState
+    };
+  }
+  if (!issue.labels.includes(profile.labels.deferred)) {
+    return {
+      blockedReason: `Issue no longer has ${profile.labels.deferred}.`,
+      operations: [],
+      proposedState
+    };
+  }
+  if (hasDeferredExplanationComment(issue)) {
+    return {
+      blockedReason: "Issue already has a cached deferred explanation comment.",
+      operations: [],
+      proposedState
+    };
+  }
+  return {
+    blockedReason: null,
+    operations: [{ type: "add_comment", body: deferredCommentBody(profile, violation) }],
+    proposedState: {
+      ...proposedState,
+      lifecycleState: "deferred"
+    }
+  };
+}
+
 function deferredCommentBody(profile: RepoProfile, violation: WorkflowViolationView): string {
   return [
     "Deferred by mo-devflow workflow fix.",
@@ -185,6 +227,19 @@ function deferredCommentBody(profile: RepoProfile, violation: WorkflowViolationV
     "",
     `If this issue becomes urgent or broad-impact again, remove \`${profile.labels.deferred}\` and apply the appropriate severity label.`
   ].join("\n");
+}
+
+function hasDeferredExplanationComment(issue: NormalizedIssue): boolean {
+  const evidence = issue.commentEvidence;
+  if (!evidence?.isComplete) {
+    return false;
+  }
+  return evidence.comments.some((comment) => isDeferredExplanationComment(comment.body));
+}
+
+function isDeferredExplanationComment(body: string): boolean {
+  const normalized = body.toLowerCase();
+  return normalized.includes("defer") && normalized.includes("reason:");
 }
 
 function appendUnique(values: string[], value: string): string[] {

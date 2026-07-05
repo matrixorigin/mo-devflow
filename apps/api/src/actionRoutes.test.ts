@@ -424,6 +424,95 @@ describe("action routes", () => {
     }
   });
 
+  test("previews a deferred explanation comment workflow fix", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveWorkflowViolation.mockResolvedValue({
+      objectType: "issue",
+      objectNumber: 42,
+      title: "panic on insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+      ruleKey: "deferred_missing_explanation_comment",
+      severity: "warning",
+      relatedLogin: "alice",
+      evidenceSummary: "Deferred issue #42 has no cached comment explaining why it was deferred.",
+      suggestedAction: "Add a deferred explanation comment.",
+      fixable: true,
+      firstDetectedAt: "2026-07-04T00:00:00.000Z",
+      lastDetectedAt: "2026-07-04T00:00:00.000Z"
+    });
+    mocks.getCachedIssueByNumber.mockResolvedValue({
+      number: 42,
+      title: "panic on insert",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/42",
+      state: "open",
+      labels: ["kind/bug", "deferred"],
+      assignees: [],
+      lifecycleState: "deferred",
+      severity: null,
+      aiEffortLabel: null,
+      updatedAt: "2026-07-04T00:00:00.000Z",
+      isComplete: true,
+      commentEvidence: {
+        isComplete: true,
+        lastSyncedAt: "2026-07-04T00:00:00.000Z",
+        syncError: null,
+        comments: []
+      }
+    });
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(encryptedStoredToken());
+    mocks.fetchIssueFreshState.mockResolvedValue({
+      state: "open",
+      labels: ["kind/bug", "deferred"],
+      updatedAt: "2026-07-04T00:00:00.000Z",
+      rateLimitRemaining: 99
+    });
+
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/preview",
+        headers: csrfHeaders,
+        payload: {
+          actionKey: "add_deferred_explanation_comment",
+          objectType: "issue",
+          objectNumber: 42,
+          ruleKey: "deferred_missing_explanation_comment"
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        actionKey: "add_deferred_explanation_comment",
+        ruleKey: "deferred_missing_explanation_comment",
+        objectType: "issue",
+        objectNumber: 42,
+        operations: [
+          {
+            type: "add_comment",
+            body: "Deferred by mo-devflow workflow fix.\n\nReason: Deferred issue #42 has no cached comment explaining why it was deferred.\n\nIf this issue becomes urgent or broad-impact again, remove `deferred` and apply the appropriate severity label."
+          }
+        ],
+        blockedReason: null
+      });
+      expect(mocks.fetchIssueFreshState).toHaveBeenCalledWith({
+        token: "test-user-token",
+        profile: writeBackProfile,
+        issueNumber: 42
+      });
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("blocks workflow fix confirmation before token access when profile write-back is disabled", async () => {
     const app = Fastify();
     const onDashboardMutated = vi.fn();

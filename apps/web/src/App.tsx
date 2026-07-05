@@ -2206,7 +2206,7 @@ function flagColor(flag: string): string {
   return "blue";
 }
 
-function workflowFixActionForViolation(violation: WorkflowViolationView): WorkflowFixActionKey | null {
+export function workflowFixActionForViolation(violation: WorkflowViolationView): WorkflowFixActionKey | null {
   if (!violation.fixable || violation.objectType !== "issue") {
     return null;
   }
@@ -2215,6 +2215,9 @@ function workflowFixActionForViolation(violation: WorkflowViolationView): Workfl
   }
   if (violation.ruleKey === "needs_triage_stale" || violation.ruleKey === "premature_active_severity") {
     return "move_to_deferred";
+  }
+  if (violation.ruleKey === "deferred_missing_explanation_comment") {
+    return "add_deferred_explanation_comment";
   }
   return null;
 }
@@ -3767,7 +3770,11 @@ function writeAuditMatchesScope(action: WriteActionExecutionView, filter: WriteA
     return action.status === "success";
   }
   if (filter === "workflow_fix") {
-    return action.actionKey === "add_needs_triage" || action.actionKey === "move_to_deferred";
+    return (
+      action.actionKey === "add_needs_triage" ||
+      action.actionKey === "move_to_deferred" ||
+      action.actionKey === "add_deferred_explanation_comment"
+    );
   }
   if (filter === "notification") {
     return (

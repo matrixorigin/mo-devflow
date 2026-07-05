@@ -138,6 +138,20 @@ const deferredPreview: WorkflowFixPreview = {
   ]
 };
 
+const deferredExplanationPreview: WorkflowFixPreview = {
+  ...preview,
+  previewId: "eb9c9c9d-47ce-4e3e-a5c6-b4e2d2bdf9a1",
+  actionKey: "add_deferred_explanation_comment",
+  ruleKey: "deferred_missing_explanation_comment",
+  reason: "Deferred issue #42 has no cached comment explaining why it was deferred.",
+  currentState: stateSnapshot(["kind/bug", "deferred"]),
+  proposedState: {
+    ...stateSnapshot(["kind/bug", "deferred"]),
+    lifecycleState: "deferred"
+  },
+  operations: [{ type: "add_comment", body: deferredComment }]
+};
+
 function stateSnapshot(
   labels: string[],
   source: WorkflowFixStateSnapshot["source"] = "github"
@@ -373,6 +387,46 @@ describe("workflow fix execution", () => {
 
     expect(octokitMocks.issuesRemoveLabel).not.toHaveBeenCalled();
     expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
+    expect(result.appliedOperations).toEqual([]);
+    expect(result.response).toEqual({ skipped: "issue_labels_changed" });
+  });
+
+  test("adds a deferred explanation comment without changing labels", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "deferred"]));
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: deferredExplanationPreview
+    });
+
+    expect(octokitMocks.issuesRemoveLabel).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesAddLabels).not.toHaveBeenCalled();
+    expect(octokitMocks.issuesCreateComment).toHaveBeenCalledWith({
+      owner: "matrixorigin",
+      repo: "matrixone",
+      issue_number: 42,
+      body: deferredComment
+    });
+    expect(result.appliedOperations).toEqual(deferredExplanationPreview.operations);
+    expect(result.beforeState.labels).toEqual(["kind/bug", "deferred"]);
+    expect(result.afterState).toMatchObject({
+      labels: ["kind/bug", "deferred"],
+      lifecycleState: "deferred",
+      updatedAt: null
+    });
+  });
+
+  test("does not add deferred explanation comments after the issue leaves deferred", async () => {
+    octokitMocks.issuesGet.mockResolvedValue(issueResponse(["kind/bug", "needs-triage"]));
+
+    const result = await applyWorkflowFixPreview({
+      token: "test-user-token",
+      profile,
+      preview: deferredExplanationPreview
+    });
+
     expect(octokitMocks.issuesCreateComment).not.toHaveBeenCalled();
     expect(result.appliedOperations).toEqual([]);
     expect(result.response).toEqual({ skipped: "issue_labels_changed" });
