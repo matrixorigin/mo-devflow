@@ -38,6 +38,8 @@ export interface QueuedJobNow {
   nextRunAt: string | null;
 }
 
+type ManualRefreshJobStatusByKey = Map<string, Pick<QueuedJobNow, "status" | "nextRunAt">>;
+
 const leasedJobColumns = [
   "id",
   "job_key",
@@ -228,13 +230,50 @@ function parseQueuedJobs(value: unknown): ManualRefreshResult["queuedJobs"] {
   });
 }
 
-export function manualRefreshRequestViewFromRow(row: RowData): ManualRefreshRequestView {
+export function manualRefreshRequestStatusFromJobs(persistedStatus: string, jobs: QueuedJobNow[]): string {
+  if (jobs.length === 0) {
+    return persistedStatus;
+  }
+  const statuses = new Set(jobs.map((job) => job.status));
+  if (statuses.has("blocked")) {
+    return "blocked";
+  }
+  if (statuses.has("failed")) {
+    return "failed";
+  }
+  if (statuses.has("running")) {
+    return "running";
+  }
+  if (statuses.has("pending")) {
+    return "queued";
+  }
+  if (Array.from(statuses).every((status) => status === "complete" || status === "success")) {
+    return "complete";
+  }
+  return persistedStatus;
+}
+
+export function manualRefreshRequestViewFromRow(
+  row: RowData,
+  currentJobsByKey: ManualRefreshJobStatusByKey = new Map()
+): ManualRefreshRequestView {
+  const queuedJobs = parseQueuedJobs(row.queued_jobs_json).map((job) => {
+    const current = currentJobsByKey.get(job.jobKey);
+    return current
+      ? {
+          ...job,
+          status: current.status,
+          nextRunAt: current.nextRunAt
+        }
+      : job;
+  });
+  const persistedStatus = asString(row.status);
   return {
     requestId: asNumber(row.id),
     githubLogin: asString(row.github_login),
     requestedLayers: parseManualRefreshLayers(row.requested_layers_json),
-    queuedJobs: parseQueuedJobs(row.queued_jobs_json),
-    status: asString(row.status),
+    queuedJobs,
+    status: manualRefreshRequestStatusFromJobs(persistedStatus, queuedJobs),
     requestedAt: fromSqlDate(row.created_at) ?? new Date(0).toISOString()
   };
 }
@@ -252,7 +291,28 @@ export async function listManualRefreshRequestsForDashboard(
      LIMIT ${safeLimit}`,
     [repoId]
   );
-  return rows.map(manualRefreshRequestViewFromRow);
+  const baseViews = rows.map((row) => manualRefreshRequestViewFromRow(row));
+  const jobKeys = Array.from(new Set(baseViews.flatMap((view) => view.queuedJobs.map((job) => job.jobKey))));
+  if (jobKeys.length === 0) {
+    return baseViews;
+  }
+  const placeholders = jobKeys.map(() => "?").join(", ");
+  const [jobRows] = await getPool().execute<RowData[]>(
+    `SELECT job_key, status, next_run_at
+     FROM jobs
+     WHERE job_key IN (${placeholders})`,
+    jobKeys
+  );
+  const currentJobsByKey: ManualRefreshJobStatusByKey = new Map(
+    jobRows.map((row) => [
+      asString(row.job_key),
+      {
+        status: asString(row.status),
+        nextRunAt: fromSqlDate(row.next_run_at)
+      }
+    ])
+  );
+  return rows.map((row) => manualRefreshRequestViewFromRow(row, currentJobsByKey));
 }
 
 export async function claimNextDueJob(input: { leaseOwner: string; leaseSeconds: number }): Promise<LeasedJob | null> {
