@@ -191,6 +191,7 @@ interface DashboardReadModelMeta {
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
 type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing" | "skipped";
 type CriticalIssueAiFilter = "all" | string;
+type CriticalIssueSort = "risk" | "active_age" | "last_action" | "number";
 type PrScopeFilter =
   | "all"
   | "active_issue"
@@ -205,6 +206,7 @@ type PrScopeFilter =
   | "issue_link_pending"
   | "evidence_pending"
   | "no_action_24h";
+type PrSort = "risk" | "age" | "last_action" | "testing_wait" | "number";
 type PrBoardTab = "rotation" | "testing";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
@@ -2291,18 +2293,47 @@ function observedPersonPreview(data: DashboardSummary, login: string): ObservedP
   };
 }
 
+function CriticalIssueSortControl({
+  sort,
+  onSortChange
+}: {
+  sort: CriticalIssueSort;
+  onSortChange: (value: CriticalIssueSort) => void;
+}) {
+  return (
+    <div className="board-filter-group">
+      <Text type="secondary">Sort</Text>
+      <Segmented
+        size="small"
+        value={sort}
+        onChange={(value) => onSortChange(value as CriticalIssueSort)}
+        options={[
+          { label: "Risk", value: "risk" },
+          { label: "Active age", value: "active_age" },
+          { label: "Last action", value: "last_action" },
+          { label: "Issue #", value: "number" }
+        ]}
+      />
+    </div>
+  );
+}
+
 function CriticalIssueFilterBar({
   issues,
   aiFilter,
   scopeFilter,
+  sort,
   onAiFilterChange,
-  onScopeFilterChange
+  onScopeFilterChange,
+  onSortChange
 }: {
   issues: CriticalIssueView[];
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
+  sort: CriticalIssueSort;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onSortChange: (value: CriticalIssueSort) => void;
 }) {
   return (
     <div className="board-filter-bar" aria-label="Critical issue filters">
@@ -2332,16 +2363,41 @@ function CriticalIssueFilterBar({
           options={criticalIssueAiOptions(issues)}
         />
       </div>
+      <CriticalIssueSortControl sort={sort} onSortChange={onSortChange} />
+    </div>
+  );
+}
+
+function PrSortControl({ sort, onSortChange }: { sort: PrSort; onSortChange: (value: PrSort) => void }) {
+  return (
+    <div className="board-filter-group">
+      <Text type="secondary">Sort</Text>
+      <Segmented
+        size="small"
+        value={sort}
+        onChange={(value) => onSortChange(value as PrSort)}
+        options={[
+          { label: "Risk", value: "risk" },
+          { label: "PR age", value: "age" },
+          { label: "Last action", value: "last_action" },
+          { label: "Test wait", value: "testing_wait" },
+          { label: "PR #", value: "number" }
+        ]}
+      />
     </div>
   );
 }
 
 function PrFilterBar({
   scopeFilter,
-  onScopeFilterChange
+  sort,
+  onScopeFilterChange,
+  onSortChange
 }: {
   scopeFilter: PrScopeFilter;
+  sort: PrSort;
   onScopeFilterChange: (value: PrScopeFilter) => void;
+  onSortChange: (value: PrSort) => void;
 }) {
   const scopeHelp = prScopeHelp(scopeFilter);
 
@@ -2370,6 +2426,7 @@ function PrFilterBar({
           ]}
         />
       </div>
+      <PrSortControl sort={sort} onSortChange={onSortChange} />
       {scopeHelp ? (
         <Text type="secondary" className="board-filter-help">
           {scopeHelp}
@@ -2422,8 +2479,12 @@ function TeamRotationOverview({
   onPersonSelect,
   criticalAiFilter,
   criticalScopeFilter,
+  criticalIssueSort,
+  prSort,
   onCriticalAiFilterChange,
   onCriticalScopeFilterChange,
+  onCriticalIssueSortChange,
+  onPrSortChange,
   onOpenIssuesFilter,
   onOpenPrsFilter,
   onOpenPeopleFilter
@@ -2439,20 +2500,29 @@ function TeamRotationOverview({
   onPersonSelect: (login: string) => void;
   criticalAiFilter: CriticalIssueAiFilter;
   criticalScopeFilter: CriticalIssueScopeFilter;
+  criticalIssueSort: CriticalIssueSort;
+  prSort: PrSort;
   onCriticalAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onCriticalScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onCriticalIssueSortChange: (value: CriticalIssueSort) => void;
+  onPrSortChange: (value: PrSort) => void;
   onOpenIssuesFilter: (filters: Partial<{ ai: CriticalIssueAiFilter; scope: CriticalIssueScopeFilter }>) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
-  const criticalIssues = sortCriticalIssuesForAction(
-    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter)
+  const criticalIssues = sortCriticalIssuesForDisplay(
+    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter),
+    criticalIssueSort
   );
   const criticalIssuesByPr = useMemo(
     () => criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs),
     [data.criticalIssues, data.pendingPrs]
   );
-  const prRisks = sortPendingPrsForAction(data.pendingPrs, criticalIssuesByPr);
+  const prRisks = sortPendingPrsForDisplay(
+    filterPendingPrs(data.pendingPrs, "attention", criticalIssuesByPr),
+    prSort,
+    criticalIssuesByPr
+  );
   const criticalIssueOrder = new Map(criticalIssues.map((issue, index) => [issue.number, index]));
   const criticalFlowRows = observedOwnerThreads(criticalIssues, data.pendingPrs)
     .filter((thread) => thread.issue !== null)
@@ -2573,8 +2643,10 @@ function TeamRotationOverview({
                 issues={data.criticalIssues}
                 aiFilter={criticalAiFilter}
                 scopeFilter={criticalScopeFilter}
+                sort={criticalIssueSort}
                 onAiFilterChange={onCriticalAiFilterChange}
                 onScopeFilterChange={onCriticalScopeFilterChange}
+                onSortChange={onCriticalIssueSortChange}
               />
             }
           >
@@ -2590,6 +2662,11 @@ function TeamRotationOverview({
             actionLabel="Open PRs"
             tone="attention"
             onAction={() => onOpenPrsFilter("attention")}
+            controls={
+              <div className="board-filter-bar team-sort-filter-bar" aria-label="PR rotation sort">
+                <PrSortControl sort={prSort} onSortChange={onPrSortChange} />
+              </div>
+            }
           >
             {prRisks.slice(0, 6).map((pr) => (
               <TeamPrRiskRow
@@ -4625,6 +4702,11 @@ function maxPrAge(prs: PendingPrView[]): number | null {
   return Math.max(...prs.map((pr) => pr.ageHours));
 }
 
+function sortableTime(value: string | null | undefined): number {
+  const parsed = Date.parse(value ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function sortPendingPrsForAction(
   prs: PendingPrView[],
   criticalIssuesByPr: Map<number, PrCriticalIssueContext[]> = new Map()
@@ -4638,6 +4720,34 @@ function sortPendingPrsForAction(
     }
     return right.ageHours - left.ageHours || left.number - right.number;
   });
+}
+
+function sortPendingPrsForDisplay(
+  prs: PendingPrView[],
+  sort: PrSort,
+  criticalIssuesByPr: Map<number, PrCriticalIssueContext[]> = new Map()
+): PendingPrView[] {
+  if (sort === "risk") {
+    return sortPendingPrsForAction(prs, criticalIssuesByPr);
+  }
+  if (sort === "last_action") {
+    return [...prs].sort(
+      (left, right) =>
+        sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt) || right.number - left.number
+    );
+  }
+  if (sort === "testing_wait") {
+    return [...prs].sort(
+      (left, right) =>
+        (right.testingQueueAgeHours ?? -1) - (left.testingQueueAgeHours ?? -1) ||
+        right.ageHours - left.ageHours ||
+        right.number - left.number
+    );
+  }
+  if (sort === "number") {
+    return [...prs].sort((left, right) => right.number - left.number);
+  }
+  return [...prs].sort((left, right) => right.ageHours - left.ageHours || right.number - left.number);
 }
 
 function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): number {
@@ -5728,6 +5838,27 @@ function sortCriticalIssuesForAction(issues: CriticalIssueView[]): CriticalIssue
   });
 }
 
+function sortCriticalIssuesForDisplay(issues: CriticalIssueView[], sort: CriticalIssueSort): CriticalIssueView[] {
+  if (sort === "risk") {
+    return sortCriticalIssuesForAction(issues);
+  }
+  if (sort === "last_action") {
+    return [...issues].sort(
+      (left, right) =>
+        sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt) || right.number - left.number
+    );
+  }
+  if (sort === "number") {
+    return [...issues].sort((left, right) => right.number - left.number);
+  }
+  return [...issues].sort(
+    (left, right) =>
+      (right.criticalAgeHours ?? -1) - (left.criticalAgeHours ?? -1) ||
+      criticalIssueRiskScore(right) - criticalIssueRiskScore(left) ||
+      right.number - left.number
+  );
+}
+
 function criticalIssueNextAction(issue: CriticalIssueView): string {
   if (issue.ownerScope === "unowned") {
     return "Assign an owner";
@@ -5751,27 +5882,36 @@ function CriticalIssueBoard({
   issues,
   aiFilter,
   scopeFilter,
+  sort,
   onAiFilterChange,
   onScopeFilterChange,
+  onSortChange,
   onPreview
 }: {
   issues: CriticalIssueView[];
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
+  sort: CriticalIssueSort;
   onAiFilterChange: (value: CriticalIssueAiFilter) => void;
   onScopeFilterChange: (value: CriticalIssueScopeFilter) => void;
+  onSortChange: (value: CriticalIssueSort) => void;
   onPreview: (preview: TeamWorkPreview) => void;
 }) {
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
   }
   const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter);
-  const sMinusOneIssues = sortCriticalIssuesForAction(
-    filteredIssues.filter((issue) => issue.severity === "severity/s-1")
+  const sMinusOneIssues = sortCriticalIssuesForDisplay(
+    filteredIssues.filter((issue) => issue.severity === "severity/s-1"),
+    sort
   );
-  const sZeroIssues = sortCriticalIssuesForAction(filteredIssues.filter((issue) => issue.severity === "severity/s0"));
-  const otherCriticalIssues = sortCriticalIssuesForAction(
-    filteredIssues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0")
+  const sZeroIssues = sortCriticalIssuesForDisplay(
+    filteredIssues.filter((issue) => issue.severity === "severity/s0"),
+    sort
+  );
+  const otherCriticalIssues = sortCriticalIssuesForDisplay(
+    filteredIssues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0"),
+    sort
   );
   const missingTimeline = issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length;
   const noLinkedPr = issues.filter((issue) => issue.linkedPullRequests.length === 0).length;
@@ -5784,8 +5924,10 @@ function CriticalIssueBoard({
         issues={issues}
         aiFilter={aiFilter}
         scopeFilter={scopeFilter}
+        sort={sort}
         onAiFilterChange={onAiFilterChange}
         onScopeFilterChange={onScopeFilterChange}
+        onSortChange={onSortChange}
       />
       <div className="critical-board-summary" aria-label="Active critical issue summary">
         <CriticalBoardStat
@@ -7810,7 +7952,7 @@ function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullR
 function sortPullRequestList(prs: PersonalPullRequestView[], sort: PullRequestListSort): PersonalPullRequestView[] {
   return [...prs].sort((left, right) => {
     if (sort === "last_action") {
-      return Date.parse(left.lastHumanActionAt) - Date.parse(right.lastHumanActionAt) || right.number - left.number;
+      return sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt) || right.number - left.number;
     }
     if (sort === "number") {
       return right.number - left.number;
@@ -11239,7 +11381,9 @@ export default function App() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState<MetricPeriod>("day");
   const [criticalIssueAiFilter, setCriticalIssueAiFilter] = useState<CriticalIssueAiFilter>("all");
   const [criticalIssueScopeFilter, setCriticalIssueScopeFilter] = useState<CriticalIssueScopeFilter>("all");
+  const [criticalIssueSort, setCriticalIssueSort] = useState<CriticalIssueSort>("risk");
   const [prScopeFilter, setPrScopeFilter] = useState<PrScopeFilter>("all");
+  const [prSort, setPrSort] = useState<PrSort>("risk");
   const [prBoardTab, setPrBoardTab] = useState<PrBoardTab>("rotation");
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
@@ -11987,6 +12131,7 @@ export default function App() {
         title: "Issue",
         dataIndex: "number",
         width: 92,
+        sorter: (left, right) => left.number - right.number,
         render: (_, issue) => (
           <a href={issue.htmlUrl} target="_blank" rel="noreferrer">
             #{issue.number}
@@ -12098,6 +12243,7 @@ export default function App() {
         title: "Owner",
         dataIndex: "ownerLogin",
         width: 216,
+        sorter: (left, right) => (left.ownerLogin ?? "").localeCompare(right.ownerLogin ?? ""),
         render: (owner, issue) => (
           <Space size={[4, 4]} wrap>
             {owner ? (
@@ -12120,6 +12266,7 @@ export default function App() {
         title: "s-1/s0 Duration",
         dataIndex: "criticalAgeHours",
         width: 140,
+        sorter: (left, right) => (left.criticalAgeHours ?? -1) - (right.criticalAgeHours ?? -1),
         render: (value, issue) => (
           <Tooltip
             title={
@@ -12138,6 +12285,7 @@ export default function App() {
         title: "Last action",
         dataIndex: "lastHumanActionAt",
         width: 168,
+        sorter: (left, right) => sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt),
         render: (value, issue) => (
           <Tooltip
             title={
@@ -12163,6 +12311,7 @@ export default function App() {
         title: "PR",
         dataIndex: "number",
         width: 360,
+        sorter: (left, right) => left.number - right.number,
         render: (_, pr) => (
           <Space orientation="vertical" size={2} className="table-title-cell">
             <Space size={6} wrap>
@@ -12198,16 +12347,24 @@ export default function App() {
           </Tooltip>
         )
       },
-      { title: "Owner", dataIndex: "ownerLogin", width: 136, render: (owner) => <Tag>{owner}</Tag> },
+      {
+        title: "Owner",
+        dataIndex: "ownerLogin",
+        width: 136,
+        sorter: (left, right) => left.ownerLogin.localeCompare(right.ownerLogin),
+        render: (owner) => <Tag>{owner}</Tag>
+      },
       {
         title: "Age",
         dataIndex: "ageHours",
         width: 104,
+        sorter: (left, right) => left.ageHours - right.ageHours,
         render: (age) => <Tag color={age >= 24 ? "orange" : "default"}>{hours(age)}</Tag>
       },
       {
         title: "Attention",
         width: 250,
+        sorter: (left, right) => prAttentionReasons(left).length - prAttentionReasons(right).length,
         render: (_, pr) => {
           const reasons = prAttentionReasons(pr);
           return reasons.length === 0 ? (
@@ -12304,6 +12461,7 @@ export default function App() {
         title: "Last human action",
         dataIndex: "lastHumanActionAt",
         width: 168,
+        sorter: (left, right) => sortableTime(left.lastHumanActionAt) - sortableTime(right.lastHumanActionAt),
         render: (value) => formatDate(value)
       }
     ],
@@ -12849,11 +13007,16 @@ export default function App() {
   const teamTriage = data ? teamTriageSnapshot(data) : null;
   const personalTrendPoints = selectedPersonalView ? personalMetricPoints(selectedPersonalView, analyticsPeriod) : [];
   const filteredPendingPrs = data
-    ? sortPendingPrsForAction(filterPendingPrs(data.pendingPrs, prScopeFilter, criticalIssuesByPr), criticalIssuesByPr)
+    ? sortPendingPrsForDisplay(
+        filterPendingPrs(data.pendingPrs, prScopeFilter, criticalIssuesByPr),
+        prSort,
+        criticalIssuesByPr
+      )
     : [];
   const filteredCriticalIssuesForTable = data
-    ? sortCriticalIssuesForAction(
-        filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter)
+    ? sortCriticalIssuesForDisplay(
+        filterCriticalIssues(data.criticalIssues, criticalIssueAiFilter, criticalIssueScopeFilter),
+        criticalIssueSort
       )
     : [];
   const filteredPeople = data ? filterPeopleByScope(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
@@ -13131,8 +13294,12 @@ export default function App() {
                 onPersonSelect={openPersonWorkbench}
                 criticalAiFilter={criticalIssueAiFilter}
                 criticalScopeFilter={criticalIssueScopeFilter}
+                criticalIssueSort={criticalIssueSort}
+                prSort={prSort}
                 onCriticalAiFilterChange={setCriticalIssueAiFilter}
                 onCriticalScopeFilterChange={setCriticalIssueScopeFilter}
+                onCriticalIssueSortChange={setCriticalIssueSort}
+                onPrSortChange={setPrSort}
                 onOpenIssuesFilter={openIssuesWithFilter}
                 onOpenPrsFilter={openPrsWithFilter}
                 onOpenPeopleFilter={openPeopleWithFilter}
@@ -13627,12 +13794,14 @@ export default function App() {
                   <>
                     <PrFilterBar
                       scopeFilter={prScopeFilter}
+                      sort={prSort}
                       onScopeFilterChange={(scope) => {
                         setPrScopeFilter(scope);
                         if (isTestingPrScope(scope)) {
                           setPrBoardTab("testing");
                         }
                       }}
+                      onSortChange={setPrSort}
                     />
                     <PrBoardSummary
                       prs={data.pendingPrs}
@@ -13938,8 +14107,10 @@ export default function App() {
                   issues={data.criticalIssues}
                   aiFilter={criticalIssueAiFilter}
                   scopeFilter={criticalIssueScopeFilter}
+                  sort={criticalIssueSort}
                   onAiFilterChange={setCriticalIssueAiFilter}
                   onScopeFilterChange={setCriticalIssueScopeFilter}
+                  onSortChange={setCriticalIssueSort}
                   onPreview={setWorkObjectPreview}
                 />
                 {criticalOwnerCoverageRows.length > 0 ? (

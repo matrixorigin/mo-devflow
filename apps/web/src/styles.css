@@ -1666,6 +1666,12 @@ button.team-monitor-tile:hover,
   padding: 8px;
 }
 
+.team-sort-filter-bar {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
 .board-filter-group {
   align-items: center;
   display: flex;
