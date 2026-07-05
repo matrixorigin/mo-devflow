@@ -12757,6 +12757,7 @@ export default function App() {
   const [prTestingTablePage, setPrTestingTablePage] = useState(1);
   const [prTestingTablePageSize, setPrTestingTablePageSize] = useState(prTestingTableDefaultPageSize);
   const [testingIssueQueueFilter, setTestingIssueQueueFilter] = useState<TestingIssueQueueFilter>("all");
+  const [testingEvidenceOpen, setTestingEvidenceOpen] = useState(false);
   const [peopleScopeFilter, setPeopleScopeFilter] = useState<PeopleScopeFilter>("all");
   const [peopleSort, setPeopleSort] = useState<PeopleBoardSort>("workload");
   const [webhookScopeFilter, setWebhookScopeFilter] = useState<WebhookDeliveryScopeFilter>("failed");
@@ -14310,12 +14311,47 @@ export default function App() {
       {
         title: "Queue Issues",
         dataIndex: "queueIssues",
-        render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>)
+        render: (value) =>
+          value > 0 ? (
+            <button
+              type="button"
+              className="table-count-button"
+              onClick={() => {
+                setTestingIssueQueueFilter("all");
+                window.setTimeout(
+                  () => document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth" }),
+                  0
+                );
+              }}
+            >
+              {value}
+            </button>
+          ) : (
+            <Tag>0</Tag>
+          )
       },
       {
         title: "Linked PRs",
         dataIndex: "queuePrs",
-        render: (value) => (value > 0 ? <Tag color="blue">{value}</Tag> : <Tag>0</Tag>)
+        render: (value) =>
+          value > 0 ? (
+            <button
+              type="button"
+              className="table-count-button"
+              onClick={() => {
+                setPrScopeFilter("testing");
+                setPrBoardTab("testing");
+                window.setTimeout(
+                  () => document.getElementById("testing-pr-table-panel")?.scrollIntoView({ behavior: "smooth" }),
+                  0
+                );
+              }}
+            >
+              {value}
+            </button>
+          ) : (
+            <Tag>0</Tag>
+          )
       },
       {
         title: "Average Issue Wait",
@@ -14542,10 +14578,17 @@ export default function App() {
   const scrollTestingIssueQueueIntoView = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  const scrollTestingEvidenceIntoView = () => {
+    document.getElementById("testing-evidence-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const openTestingIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
     setTestingIssueQueueFilter(nextFilter);
     setPrBoardTab("testing");
     window.setTimeout(scrollTestingIssueQueueIntoView, 0);
+  };
+  const openTestingEvidencePanel = () => {
+    setTestingEvidenceOpen(true);
+    window.setTimeout(scrollTestingEvidenceIntoView, 0);
   };
   const criticalOwnerCoverageRows = data
     ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped)
@@ -15270,13 +15313,25 @@ export default function App() {
                       onTestingIssueFilterChange={setTestingIssueQueueFilter}
                       onOpenPrsFilter={openPrsWithFilter}
                     />
-                    <div className="testing-pr-table-panel" aria-label="Issue testing PR table">
+                    <div
+                      className="testing-pr-table-panel"
+                      id="testing-pr-table-panel"
+                      aria-label="Issue testing PR table"
+                    >
                       <div className="subsection-heading subsection-heading-compact">
                         <span className="testing-pr-table-heading-copy">
                           <Text strong>Issue testing PR table</Text>
                           <Text type="secondary">Paginated linked PR rows for issues currently in testing.</Text>
                         </span>
-                        <Tag>{testingPendingPrsForTable.length} PRs</Tag>
+                        <button
+                          type="button"
+                          className={`inline-filter-chip ${
+                            testingPendingPrsForTable.length > 0 ? "" : "inline-filter-chip-muted"
+                          }`}
+                          onClick={() => openPrsWithFilter(testingPrTableScope)}
+                        >
+                          {testingPendingPrsForTable.length} PRs
+                        </button>
                       </div>
                       <PrFilterBar
                         scopeFilter={testingPrTableScope}
@@ -15300,12 +15355,41 @@ export default function App() {
                         locale={{ emptyText: <Empty description="No issue testing PRs in cache" /> }}
                       />
                     </div>
-                    <details className="secondary-disclosure pr-diagnostic-disclosure">
+                    <details
+                      className="secondary-disclosure pr-diagnostic-disclosure"
+                      id="testing-evidence-panel"
+                      open={testingEvidenceOpen}
+                      onToggle={(event) => setTestingEvidenceOpen(event.currentTarget.open)}
+                    >
                       <summary>
                         <span>Issue testing evidence</span>
                         <Space size={[4, 4]} wrap>
-                          <Tag>{data.testing.testers.length} testers</Tag>
-                          <Tag>{data.testing.recentIssueTransitions.length} issue events</Tag>
+                          <button
+                            type="button"
+                            className={`inline-filter-chip ${
+                              data.testing.testers.length > 0 ? "" : "inline-filter-chip-muted"
+                            }`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openTestingEvidencePanel();
+                            }}
+                          >
+                            {data.testing.testers.length} testers
+                          </button>
+                          <button
+                            type="button"
+                            className={`inline-filter-chip ${
+                              data.testing.recentIssueTransitions.length > 0 ? "" : "inline-filter-chip-muted"
+                            }`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openTestingEvidencePanel();
+                            }}
+                          >
+                            {data.testing.recentIssueTransitions.length} issue events
+                          </button>
                         </Space>
                       </summary>
                       <div className="secondary-disclosure-body">
