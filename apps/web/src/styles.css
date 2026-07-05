@@ -5924,6 +5924,11 @@ button.testing-board-stat:focus-visible {
   line-height: 1.15;
 }
 
+.action-queue-focus-actions {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .action-queue-sections {
   display: grid;
   gap: 12px;
@@ -8457,6 +8462,10 @@ button.flow-diagnostic-card:focus-visible {
   .action-queue-focus-strip .ant-btn,
   .flow-thread-focus-strip .ant-btn {
     justify-self: start;
+  }
+
+  .action-queue-focus-actions {
+    justify-content: flex-start;
   }
 
   .action-queue-decision-row {

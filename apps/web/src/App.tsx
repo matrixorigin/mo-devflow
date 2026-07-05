@@ -83,6 +83,7 @@ import {
   GitPullRequest,
   Eye,
   KeyRound,
+  ListFilter,
   LogOut,
   RefreshCcw,
   RefreshCw,
@@ -11040,7 +11041,15 @@ function sortPersonalActionItemsForDisplay(
   return items;
 }
 
-function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
+function PersonalActionQueue({
+  items,
+  activeDrilldownFilter,
+  onDrilldownChange
+}: {
+  items: PersonalActivityItem[];
+  activeDrilldownFilter: PersonalDrilldownFilter;
+  onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
+}) {
   const [queueFilter, setQueueFilter] = useState<PersonalActionQueueFilter>("all");
   const [queueSort, setQueueSort] = useState<PersonalActionQueueSort>("risk");
   const [previewItem, setPreviewItem] = useState<PersonalActivityItem | null>(null);
@@ -11072,6 +11081,13 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
     queueSort
   );
   const selectedTone = actionQueueToneForItems(selectedItems);
+  const selectQueueFilter = (filter: PersonalActionQueueFilter): void => {
+    setQueueFilter(filter);
+    onDrilldownChange(personalDrilldownForActionQueueFilter(filter));
+  };
+  const openActivityBoard = (filter: PersonalDrilldownFilter): void => {
+    onDrilldownChange(filter);
+  };
 
   return (
     <div className="activity-command-center">
@@ -11082,7 +11098,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail="all work"
           tone="normal"
           active={queueFilter === "all"}
-          onSelect={() => setQueueFilter("all")}
+          onSelect={() => selectQueueFilter("all")}
         />
         <ActivitySummaryTile
           label="s-1/s0"
@@ -11090,7 +11106,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail={criticalActivitySummary(criticalItems)}
           tone="critical"
           active={queueFilter === "critical"}
-          onSelect={() => setQueueFilter("critical")}
+          onSelect={() => selectQueueFilter("critical")}
         />
         <ActivitySummaryTile
           label="Issues"
@@ -11104,7 +11120,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
                 : "normal"
           }
           active={queueFilter === "issues"}
-          onSelect={() => setQueueFilter("issues")}
+          onSelect={() => selectQueueFilter("issues")}
         />
         <ActivitySummaryTile
           label="PRs"
@@ -11112,7 +11128,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail={`${blockedPrItems.length} blocked`}
           tone={blockedPrItems.length > 0 ? "attention" : "normal"}
           active={queueFilter === "prs"}
-          onSelect={() => setQueueFilter("prs")}
+          onSelect={() => selectQueueFilter("prs")}
         />
         <ActivitySummaryTile
           label="Blocked PRs"
@@ -11120,7 +11136,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail="CI/review/merge/test"
           tone="attention"
           active={queueFilter === "pr_blockers"}
-          onSelect={() => setQueueFilter("pr_blockers")}
+          onSelect={() => selectQueueFilter("pr_blockers")}
         />
         <ActivitySummaryTile
           label="Issue testing"
@@ -11128,7 +11144,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail={optionalHours(maxTestingAge(testingItems))}
           tone="normal"
           active={queueFilter === "testing"}
-          onSelect={() => setQueueFilter("testing")}
+          onSelect={() => selectQueueFilter("testing")}
         />
         <ActivitySummaryTile
           label="Missing links"
@@ -11136,12 +11152,13 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           detail="missing issue/PR links"
           tone={counts.needs_link > 0 ? "attention" : "muted"}
           active={queueFilter === "needs_link"}
-          onSelect={() => setQueueFilter("needs_link")}
+          onSelect={() => selectQueueFilter("needs_link")}
         />
       </div>
       <div className="action-queue-toolbar">
         <Text type="secondary">
-          Showing {selectedItems.length} of {items.length} objects for {actionQueueFilterLabel(queueFilter)}
+          Showing {selectedItems.length} of {items.length} objects for {actionQueueFilterLabel(queueFilter)}. Board:{" "}
+          {personalDrilldownLabel(activeDrilldownFilter)}
         </Text>
         <Segmented
           size="small"
@@ -11154,7 +11171,9 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
           ]}
         />
       </div>
-      {selectedItems.length > 0 ? <ActionQueueFocusStrip item={selectedItems[0]} onPreview={setPreviewItem} /> : null}
+      {selectedItems.length > 0 ? (
+        <ActionQueueFocusStrip item={selectedItems[0]} onOpenBoard={openActivityBoard} onPreview={setPreviewItem} />
+      ) : null}
       {queueFilter === "all" ? (
         <div className="action-queue-sections" role="list" aria-label="Personal action queue">
           <ActionQueueSection
@@ -11163,6 +11182,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             items={criticalItems}
             offset={0}
             tone="critical"
+            onOpenBoard={openActivityBoard}
             onPreview={setPreviewItem}
           />
           <ActionQueueSection
@@ -11172,6 +11192,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={criticalItems.length}
             tone="attention"
             visibleLimit={8}
+            onOpenBoard={openActivityBoard}
             onPreview={setPreviewItem}
           />
           <ActionQueueSection
@@ -11181,6 +11202,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={criticalItems.length + attentionItems.length}
             tone="normal"
             visibleLimit={6}
+            onOpenBoard={openActivityBoard}
             onPreview={setPreviewItem}
           />
         </div>
@@ -11197,6 +11219,7 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
             offset={0}
             tone={selectedTone}
             visibleLimit={10}
+            onOpenBoard={openActivityBoard}
             onPreview={setPreviewItem}
           />
         </div>
@@ -11208,13 +11231,16 @@ function PersonalActionQueue({ items }: { items: PersonalActivityItem[] }) {
 
 function ActionQueueFocusStrip({
   item,
+  onOpenBoard,
   onPreview
 }: {
   item: PersonalActivityItem;
+  onOpenBoard: (filter: PersonalDrilldownFilter) => void;
   onPreview: (item: PersonalActivityItem) => void;
 }) {
   const objectLabel = item.objectType === "pull_request" ? `PR #${item.number}` : `Issue #${item.number}`;
   const nextAction = personalActivityNextAction(item);
+  const boardFilter = personalDrilldownForActivityItem(item);
   const duration = personalDurationText(item);
   const linkCount = item.linkedIssueNumbers.length + item.linkedPullRequestNumbers.length;
   const linkSummary =
@@ -11249,9 +11275,14 @@ function ActionQueueFocusStrip({
           <small>last action</small>
         </span>
       </div>
-      <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(item)}>
-        Preview
-      </Button>
+      <Space className="action-queue-focus-actions" size={[6, 6]} wrap>
+        <Button size="small" icon={<ListFilter size={14} />} onClick={() => onOpenBoard(boardFilter)}>
+          Open board
+        </Button>
+        <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(item)}>
+          Preview
+        </Button>
+      </Space>
     </section>
   );
 }
@@ -11343,6 +11374,44 @@ function actionQueueFilterDescription(filter: PersonalActionQueueFilter): string
   return "All visible action objects.";
 }
 
+function personalDrilldownForActionQueueFilter(filter: PersonalActionQueueFilter): PersonalDrilldownFilter {
+  if (filter === "critical") {
+    return "active_issues";
+  }
+  if (filter === "pr_blockers") {
+    return "pr_attention";
+  }
+  if (filter === "testing") {
+    return "testing";
+  }
+  if (filter === "prs") {
+    return "pending_pr";
+  }
+  return "threads";
+}
+
+function personalDrilldownForActivityItem(item: PersonalActivityItem): PersonalDrilldownFilter {
+  if (item.objectType === "pull_request") {
+    if (item.phase === "Created yesterday" || item.phase === "Merged yesterday") {
+      return "yesterday_pr";
+    }
+    return personalActivityHasBlockingSignal(item) ? "pr_attention" : "pending_pr";
+  }
+  if (item.durationKind === "critical_active") {
+    return "active_issues";
+  }
+  if (item.durationKind === "testing_queue" || item.testingQueueAgeHours !== null) {
+    return "testing";
+  }
+  if (item.lifecycleState === "needs-triage") {
+    return "triage";
+  }
+  if (item.lifecycleState === "deferred") {
+    return "deferred";
+  }
+  return "threads";
+}
+
 function ActionQueueSection({
   title,
   description,
@@ -11350,6 +11419,7 @@ function ActionQueueSection({
   offset,
   tone,
   visibleLimit,
+  onOpenBoard,
   onPreview
 }: {
   title: string;
@@ -11358,6 +11428,7 @@ function ActionQueueSection({
   offset: number;
   tone: "critical" | "attention" | "normal";
   visibleLimit?: number;
+  onOpenBoard: (filter: PersonalDrilldownFilter) => void;
   onPreview: (item: PersonalActivityItem) => void;
 }) {
   const defaultPageSize = visibleLimit ?? cardListDefaultPageSize;
@@ -11383,6 +11454,7 @@ function ActionQueueSection({
               index={offset + pagedItems.startIndex + index + 1}
               item={item}
               key={item.id}
+              onOpenBoard={onOpenBoard}
               onPreview={onPreview}
             />
           ))}
@@ -11440,10 +11512,12 @@ function ActionQueueSectionStats({
 function PersonalActionQueueItem({
   item,
   index,
+  onOpenBoard,
   onPreview
 }: {
   item: PersonalActivityItem;
   index: number;
+  onOpenBoard: (filter: PersonalDrilldownFilter) => void;
   onPreview: (item: PersonalActivityItem) => void;
 }) {
   const icon =
@@ -11465,6 +11539,7 @@ function PersonalActionQueueItem({
   const primarySignal = personalActivityPrimarySignal(item);
   const actionTone = item.tone === "critical" ? "red" : item.tone === "attention" ? "orange" : "blue";
   const duration = personalDurationText(item);
+  const boardFilter = personalDrilldownForActivityItem(item);
   const reasonLazy = useLazyVisibleCount(item.reasons.length, 4, item.id);
   const visibleReasons = item.reasons.slice(0, reasonLazy.visibleCount);
 
@@ -11488,6 +11563,14 @@ function PersonalActionQueueItem({
                 <TestingStateTag state={item.testingState} />
               ) : null}
               {!item.isComplete ? <Tag color="gold">cache sync pending</Tag> : null}
+              <Tooltip title={`Open ${personalDrilldownLabel(boardFilter)}`}>
+                <Button
+                  aria-label={`Open ${personalDrilldownLabel(boardFilter)} for ${objectLabel}`}
+                  icon={<ListFilter size={14} />}
+                  size="small"
+                  onClick={() => onOpenBoard(boardFilter)}
+                />
+              </Tooltip>
               <Tooltip title={`Preview ${objectLabel}`}>
                 <Button
                   aria-label={`Preview ${objectLabel}`}
@@ -13845,7 +13928,11 @@ function SelectedPersonWorkbench({
             <Tag>{gantt.rows.length} threads</Tag>
           </Space>
         </div>
-        <PersonalActionQueue items={activityItems} />
+        <PersonalActionQueue
+          activeDrilldownFilter={drilldownFilter}
+          items={activityItems}
+          onDrilldownChange={onDrilldownChange}
+        />
       </section>
 
       <PersonalDrilldownBoard
