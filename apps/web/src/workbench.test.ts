@@ -13,6 +13,7 @@ import {
   criticalIssueContextsByPullRequest,
   effectiveAiEffortLabel,
   filterPeopleByScope,
+  flowEfficiencyDiagnostics,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
   flowThreadStatusCounts,
@@ -415,6 +416,69 @@ describe("flow efficiency summary", () => {
 
     expect(summary.testingQueuePrs).toBe(2);
     expect(summary.averageTestingQueueAgeHours).toBe(18);
+  });
+
+  it("prioritizes actionable flow diagnostics from rotation metrics", () => {
+    const diagnostics = flowEfficiencyDiagnostics({
+      prsCreated: 8,
+      prsMerged: 3,
+      prOpenDelta: 5,
+      prMergeRatePercent: 38,
+      issuesOpened: 6,
+      issuesResolved: 3,
+      issueOpenDelta: 3,
+      issueDrainRatePercent: 50,
+      workflowViolations: 2,
+      pendingPrs: 4,
+      averagePendingPrAgeHours: 30,
+      attentionPrs: 3,
+      prAttentionRatePercent: 75,
+      activeCriticalIssues: 2,
+      averageActiveIssueAgeHours: 96,
+      testingQueuePrs: 2,
+      averageTestingQueueAgeHours: 28
+    });
+
+    expect(diagnostics.slice(0, 4).map((diagnostic) => diagnostic.target)).toEqual([
+      "active_critical_age",
+      "pr_attention",
+      "testing_queue",
+      "issue_drain"
+    ]);
+    expect(diagnostics[0]).toMatchObject({
+      title: "2 active s-1/s0 issues are aging",
+      tone: "critical"
+    });
+  });
+
+  it("reports a healthy flow diagnostic when no bottleneck is visible", () => {
+    expect(
+      flowEfficiencyDiagnostics({
+        prsCreated: 2,
+        prsMerged: 3,
+        prOpenDelta: -1,
+        prMergeRatePercent: 150,
+        issuesOpened: 1,
+        issuesResolved: 2,
+        issueOpenDelta: -1,
+        issueDrainRatePercent: 200,
+        workflowViolations: 0,
+        pendingPrs: 1,
+        averagePendingPrAgeHours: 4,
+        attentionPrs: 0,
+        prAttentionRatePercent: 0,
+        activeCriticalIssues: 0,
+        averageActiveIssueAgeHours: null,
+        testingQueuePrs: 0,
+        averageTestingQueueAgeHours: null
+      })
+    ).toEqual([
+      expect.objectContaining({
+        key: "flow-clear",
+        tone: "good",
+        target: "pr_flow"
+      })
+    ]);
   });
 });
 

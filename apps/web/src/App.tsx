@@ -107,6 +107,7 @@ import {
   criticalIssueReasons,
   effectiveAiEffortLabel,
   filterPeopleByScope,
+  flowEfficiencyDiagnostics,
   flowThreadDurationWarnings,
   flowThreadNextAction,
   flowThreadStatusCounts,
@@ -134,6 +135,8 @@ import {
   testingIssueLinkedBlockerCount,
   testingIssueNeedsAttention,
   sortPeopleByWorkload,
+  type FlowEfficiencyDiagnostic,
+  type FlowEfficiencyDiagnosticTarget,
   type FlowEfficiencySummary,
   type ObservedOwnerThread,
   type PersonalActionQueueFilter,
@@ -1256,6 +1259,7 @@ type FlowEfficiencyActions = Partial<{
   prAttention: () => void;
   activeCriticalAge: () => void;
   testingQueue: () => void;
+  workflowViolations: () => void;
 }>;
 
 function FlowEfficiencyStrip({
@@ -1265,64 +1269,138 @@ function FlowEfficiencyStrip({
   summary: FlowEfficiencySummary;
   actions?: FlowEfficiencyActions;
 }) {
+  const diagnostics = flowEfficiencyDiagnostics(summary);
+
   return (
-    <div className="flow-efficiency-strip" aria-label="Flow efficiency summary">
-      <FlowEfficiencyItem
-        label="PR flow"
-        value={`${summary.prsMerged}/${summary.prsCreated}`}
-        detail={`${percentText(summary.prMergeRatePercent)} merged | open delta ${signedNumber(summary.prOpenDelta)}`}
-        tone={summary.prOpenDelta > 0 ? "attention" : "good"}
-        actionLabel="Open PRs"
-        onClick={actions.prFlow}
-      />
-      <FlowEfficiencyItem
-        label="Issue drain"
-        value={`${summary.issuesResolved}/${summary.issuesOpened}`}
-        detail={`${percentText(summary.issueDrainRatePercent)} resolved | open delta ${signedNumber(
-          summary.issueOpenDelta
-        )}`}
-        tone={summary.issueOpenDelta > 0 ? "attention" : "good"}
-        actionLabel="Open issues"
-        onClick={actions.issueDrain}
-      />
-      <FlowEfficiencyItem
-        label="Pending PR age"
-        value={String(summary.pendingPrs)}
-        detail={`avg ${optionalHours(summary.averagePendingPrAgeHours)} | ${summary.attentionPrs} need attention`}
-        tone={
-          summary.averagePendingPrAgeHours !== null && summary.averagePendingPrAgeHours >= 24 ? "attention" : "normal"
-        }
-        actionLabel="Open pending"
-        onClick={actions.pendingPrAge}
-      />
-      <FlowEfficiencyItem
-        label="PR attention"
-        value={percentText(summary.prAttentionRatePercent)}
-        detail={`${summary.attentionPrs}/${summary.pendingPrs} pending PRs`}
-        tone={summary.attentionPrs > 0 ? "attention" : "good"}
-        actionLabel="Open risks"
-        onClick={actions.prAttention}
-      />
-      <FlowEfficiencyItem
-        label="Active s-1/s0 age"
-        value={String(summary.activeCriticalIssues)}
-        detail={`avg ${optionalHours(summary.averageActiveIssueAgeHours)} | highest priority`}
-        tone={summary.activeCriticalIssues > 0 ? "critical" : "good"}
-        actionLabel="Open issues"
-        onClick={actions.activeCriticalAge}
-      />
-      <FlowEfficiencyItem
-        label="Issues in test"
-        value={String(summary.testingQueuePrs)}
-        detail={`avg wait ${optionalHours(summary.averageTestingQueueAgeHours)} | workflow violations ${
-          summary.workflowViolations
-        }`}
-        tone={summary.testingQueuePrs > 0 ? "attention" : "normal"}
-        actionLabel="Open testing"
-        onClick={actions.testingQueue}
-      />
+    <>
+      <div className="flow-efficiency-strip" aria-label="Flow efficiency summary">
+        <FlowEfficiencyItem
+          label="PR flow"
+          value={`${summary.prsMerged}/${summary.prsCreated}`}
+          detail={`${percentText(summary.prMergeRatePercent)} merged | open delta ${signedNumber(summary.prOpenDelta)}`}
+          tone={summary.prOpenDelta > 0 ? "attention" : "good"}
+          actionLabel="Open PRs"
+          onClick={actions.prFlow}
+        />
+        <FlowEfficiencyItem
+          label="Issue drain"
+          value={`${summary.issuesResolved}/${summary.issuesOpened}`}
+          detail={`${percentText(summary.issueDrainRatePercent)} resolved | open delta ${signedNumber(
+            summary.issueOpenDelta
+          )}`}
+          tone={summary.issueOpenDelta > 0 ? "attention" : "good"}
+          actionLabel="Open issues"
+          onClick={actions.issueDrain}
+        />
+        <FlowEfficiencyItem
+          label="Pending PR age"
+          value={String(summary.pendingPrs)}
+          detail={`avg ${optionalHours(summary.averagePendingPrAgeHours)} | ${summary.attentionPrs} need attention`}
+          tone={
+            summary.averagePendingPrAgeHours !== null && summary.averagePendingPrAgeHours >= 24 ? "attention" : "normal"
+          }
+          actionLabel="Open pending"
+          onClick={actions.pendingPrAge}
+        />
+        <FlowEfficiencyItem
+          label="PR attention"
+          value={percentText(summary.prAttentionRatePercent)}
+          detail={`${summary.attentionPrs}/${summary.pendingPrs} pending PRs`}
+          tone={summary.attentionPrs > 0 ? "attention" : "good"}
+          actionLabel="Open risks"
+          onClick={actions.prAttention}
+        />
+        <FlowEfficiencyItem
+          label="Active s-1/s0 age"
+          value={String(summary.activeCriticalIssues)}
+          detail={`avg ${optionalHours(summary.averageActiveIssueAgeHours)} | highest priority`}
+          tone={summary.activeCriticalIssues > 0 ? "critical" : "good"}
+          actionLabel="Open issues"
+          onClick={actions.activeCriticalAge}
+        />
+        <FlowEfficiencyItem
+          label="Issues in test"
+          value={String(summary.testingQueuePrs)}
+          detail={`avg wait ${optionalHours(summary.averageTestingQueueAgeHours)} | workflow violations ${
+            summary.workflowViolations
+          }`}
+          tone={summary.testingQueuePrs > 0 ? "attention" : "normal"}
+          actionLabel="Open testing"
+          onClick={actions.testingQueue}
+        />
+      </div>
+      <FlowEfficiencyDiagnostics diagnostics={diagnostics} actions={actions} />
+    </>
+  );
+}
+
+function FlowEfficiencyDiagnostics({
+  diagnostics,
+  actions
+}: {
+  diagnostics: FlowEfficiencyDiagnostic[];
+  actions: FlowEfficiencyActions;
+}) {
+  return (
+    <div className="flow-diagnostic-board" aria-label="Flow diagnostics">
+      {diagnostics.slice(0, 4).map((diagnostic) => {
+        const onClick = flowEfficiencyDiagnosticAction(diagnostic.target, actions);
+        return <FlowEfficiencyDiagnosticCard diagnostic={diagnostic} onClick={onClick} key={diagnostic.key} />;
+      })}
     </div>
   );
+}
+
+function flowEfficiencyDiagnosticAction(
+  target: FlowEfficiencyDiagnosticTarget,
+  actions: FlowEfficiencyActions
+): (() => void) | undefined {
+  if (target === "pr_flow") {
+    return actions.prFlow;
+  }
+  if (target === "issue_drain") {
+    return actions.issueDrain;
+  }
+  if (target === "pending_pr_age") {
+    return actions.pendingPrAge;
+  }
+  if (target === "pr_attention") {
+    return actions.prAttention;
+  }
+  if (target === "active_critical_age") {
+    return actions.activeCriticalAge;
+  }
+  if (target === "testing_queue") {
+    return actions.testingQueue;
+  }
+  return actions.workflowViolations;
+}
+
+function FlowEfficiencyDiagnosticCard({
+  diagnostic,
+  onClick
+}: {
+  diagnostic: FlowEfficiencyDiagnostic;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <span className="flow-diagnostic-label">Diagnosis</span>
+      <strong>{diagnostic.title}</strong>
+      <small>{diagnostic.detail}</small>
+      {onClick ? <span className="flow-diagnostic-action">Open</span> : null}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" className={`flow-diagnostic-card flow-diagnostic-${diagnostic.tone}`} onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={`flow-diagnostic-card flow-diagnostic-${diagnostic.tone}`}>{content}</div>;
 }
 
 function FlowEfficiencyItem({
@@ -2295,7 +2373,8 @@ function TeamRotationOverview({
               pendingPrAge: () => onOpenPrsFilter("all"),
               prAttention: () => onOpenPrsFilter("attention"),
               activeCriticalAge: () => onOpenIssuesFilter({}),
-              testingQueue: () => onOpenPrsFilter("testing")
+              testingQueue: () => onOpenPrsFilter("testing"),
+              workflowViolations: () => onNavigate("Violations")
             }}
           />
         ) : null}
@@ -9750,6 +9829,8 @@ function SelectedPersonWorkbench({
           summary={flowSummary}
           actions={{
             pendingPrAge: () => onDrilldownChange("pending_pr"),
+            prFlow: () => onDrilldownChange("pending_pr"),
+            issueDrain: () => onDrilldownChange("active_issues"),
             prAttention: () => onDrilldownChange("pr_attention"),
             activeCriticalAge: () => onDrilldownChange("active_issues"),
             testingQueue: () => onDrilldownChange("testing")
@@ -12756,7 +12837,8 @@ export default function App() {
                       pendingPrAge: () => openPrsWithFilter("all"),
                       prAttention: () => openPrsWithFilter("attention"),
                       activeCriticalAge: () => openIssuesWithFilter({}),
-                      testingQueue: () => openPrsWithFilter("testing")
+                      testingQueue: () => openPrsWithFilter("testing"),
+                      workflowViolations: () => selectView("Violations")
                     }}
                   />
                 ) : null}

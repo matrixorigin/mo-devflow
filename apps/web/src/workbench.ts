@@ -180,6 +180,24 @@ export interface FlowEfficiencySummary {
   averageTestingQueueAgeHours: number | null;
 }
 
+export type FlowEfficiencyDiagnosticTarget =
+  | "pr_flow"
+  | "issue_drain"
+  | "pending_pr_age"
+  | "pr_attention"
+  | "active_critical_age"
+  | "testing_queue"
+  | "workflow_violations";
+
+export interface FlowEfficiencyDiagnostic {
+  key: string;
+  title: string;
+  detail: string;
+  target: FlowEfficiencyDiagnosticTarget;
+  tone: "critical" | "attention" | "normal" | "good";
+  priority: number;
+}
+
 export interface FlowThreadStatusCounts {
   prs: number;
   blockedPrs: number;
@@ -286,6 +304,118 @@ export function flowEfficiencySummary(input: {
     averageTestingQueueAgeHours:
       input.averageTestingQueueAgeHours !== undefined ? input.averageTestingQueueAgeHours : average(testingWaits)
   };
+}
+
+export function flowEfficiencyDiagnostics(summary: FlowEfficiencySummary): FlowEfficiencyDiagnostic[] {
+  const diagnostics: FlowEfficiencyDiagnostic[] = [];
+
+  if (summary.activeCriticalIssues > 0) {
+    diagnostics.push({
+      key: "active-critical-age",
+      title:
+        summary.averageActiveIssueAgeHours !== null && summary.averageActiveIssueAgeHours >= 72
+          ? `${summary.activeCriticalIssues} active s-1/s0 issues are aging`
+          : `${summary.activeCriticalIssues} active s-1/s0 issues need rotation`,
+      detail: `avg active ${diagnosticDuration(summary.averageActiveIssueAgeHours)}; verify owner, linked PR, and blocker state`,
+      target: "active_critical_age",
+      tone:
+        summary.averageActiveIssueAgeHours !== null && summary.averageActiveIssueAgeHours >= 72
+          ? "critical"
+          : "attention",
+      priority: summary.averageActiveIssueAgeHours !== null && summary.averageActiveIssueAgeHours >= 72 ? 980 : 900
+    });
+  }
+
+  if (summary.attentionPrs > 0) {
+    diagnostics.push({
+      key: "pr-attention",
+      title: `${summary.attentionPrs} pending PRs need attention`,
+      detail: `${percentDiagnostic(summary.prAttentionRatePercent)} of pending PRs; review CI, requested changes, conflict, or idle state`,
+      target: "pr_attention",
+      tone: summary.prAttentionRatePercent !== null && summary.prAttentionRatePercent >= 50 ? "critical" : "attention",
+      priority: summary.prAttentionRatePercent !== null && summary.prAttentionRatePercent >= 50 ? 940 : 840
+    });
+  }
+
+  if (summary.testingQueuePrs > 0) {
+    diagnostics.push({
+      key: "testing-queue",
+      title:
+        summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
+          ? `${summary.testingQueuePrs} issues are waiting in test`
+          : `${summary.testingQueuePrs} issues are in testing`,
+      detail: `avg wait ${diagnosticDuration(summary.averageTestingQueueAgeHours)}; check issue assignment and linked PR evidence`,
+      target: "testing_queue",
+      tone:
+        summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
+          ? "critical"
+          : "attention",
+      priority: summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24 ? 920 : 720
+    });
+  }
+
+  if (summary.issueOpenDelta > 0) {
+    diagnostics.push({
+      key: "issue-drain",
+      title: `Issue backlog grew by ${summary.issueOpenDelta}`,
+      detail: `${summary.issuesResolved}/${summary.issuesOpened} resolved; drain rate ${percentDiagnostic(
+        summary.issueDrainRatePercent
+      )}`,
+      target: "issue_drain",
+      tone: "attention",
+      priority: 700 + summary.issueOpenDelta
+    });
+  }
+
+  if (summary.prOpenDelta > 0) {
+    diagnostics.push({
+      key: "pr-flow",
+      title: `PR queue grew by ${summary.prOpenDelta}`,
+      detail: `${summary.prsMerged}/${summary.prsCreated} merged; merge rate ${percentDiagnostic(
+        summary.prMergeRatePercent
+      )}`,
+      target: "pr_flow",
+      tone: "attention",
+      priority: 680 + summary.prOpenDelta
+    });
+  }
+
+  if (summary.averagePendingPrAgeHours !== null && summary.averagePendingPrAgeHours >= 24) {
+    diagnostics.push({
+      key: "pending-pr-age",
+      title: `${summary.pendingPrs} pending PRs are aging`,
+      detail: `avg age ${diagnosticDuration(summary.averagePendingPrAgeHours)}; reduce review and CI wait`,
+      target: "pending_pr_age",
+      tone: "attention",
+      priority: 660
+    });
+  }
+
+  if (summary.workflowViolations > 0) {
+    diagnostics.push({
+      key: "workflow-violations",
+      title: `${summary.workflowViolations} workflow violations detected`,
+      detail: "review triage, defer reasons, AI labels, and stale workflow evidence",
+      target: "workflow_violations",
+      tone: "attention",
+      priority: 620 + summary.workflowViolations
+    });
+  }
+
+  if (diagnostics.length === 0) {
+    return [
+      {
+        key: "flow-clear",
+        title: "No flow bottleneck in cached data",
+        detail: "throughput, issue drain, PR attention, and testing waits are within current thresholds",
+        target: "pr_flow",
+        tone: "good",
+        priority: 0
+      }
+    ];
+  }
+
+  return diagnostics.sort((left, right) => right.priority - left.priority);
 }
 
 export function sortTestingIssuesForAction(issues: TestingIssueQueueView[]): TestingIssueQueueView[] {
@@ -1581,6 +1711,14 @@ function durationHoursText(value: number): string {
     return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
   }
   return `${(value / 24).toFixed(1)}d`;
+}
+
+function diagnosticDuration(value: number | null): string {
+  return value === null ? "unknown" : durationHoursText(value);
+}
+
+function percentDiagnostic(value: number | null): string {
+  return value === null ? "n/a" : `${value}%`;
 }
 
 function severityPriority(severity: string | null): number {
