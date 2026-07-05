@@ -43,6 +43,7 @@ import {
   prIssueLinkEvidencePending,
   sortPeopleForBoard,
   sortTestingIssuesForAction,
+  sortTestingTestersForManagement,
   sortPeopleByWorkload,
   teamPeopleFocusSummary,
   teamOperatingSignals,
@@ -50,6 +51,7 @@ import {
   teamCommandSignals,
   testingStateBusinessLabel,
   testingStateHelpText,
+  testingTesterNeedsAttention,
   trendEvidenceSummary,
   trendMomentumSummary
 } from "./workbench";
@@ -1055,6 +1057,39 @@ describe("testing issue action order", () => {
 
     expect(sorted.map((issue) => issue.number)).toEqual([10, 20, 30]);
   });
+
+  it("sorts tester efficiency by management attention and explicit dimensions", () => {
+    const testers = [
+      testingTester({ login: "alice", queueIssues: 1, queuePrs: 1, averageIssueQueueAgeHours: 8 }),
+      testingTester({
+        login: "bob",
+        queueIssues: 0,
+        queuePrs: 0,
+        averageIssueQueueAgeHours: 0,
+        handoffToCloseSamples: 2,
+        averageHandoffToCloseHours: 72
+      }),
+      testingTester({ login: "carol", queueIssues: 2, queuePrs: 3, averageIssueQueueAgeHours: 36 })
+    ];
+
+    expect(sortTestingTestersForManagement(testers, "attention").map((tester) => tester.login)).toEqual([
+      "carol",
+      "bob",
+      "alice"
+    ]);
+    expect(sortTestingTestersForManagement(testers, "queue").map((tester) => tester.login)).toEqual([
+      "carol",
+      "alice",
+      "bob"
+    ]);
+    expect(sortTestingTestersForManagement(testers, "handoff").map((tester) => tester.login)).toEqual([
+      "bob",
+      "alice",
+      "carol"
+    ]);
+    expect(testingTesterNeedsAttention(testers[0]!)).toBe(true);
+    expect(testingTesterNeedsAttention(testingTester({ login: "idle" }))).toBe(false);
+  });
 });
 
 describe("personal activity feed", () => {
@@ -1934,6 +1969,20 @@ function testingIssue(input: Partial<TestingIssueQueueView>): TestingIssueQueueV
     isComplete: input.isComplete ?? true,
     syncError: input.syncError ?? null,
     lastSyncedAt: input.lastSyncedAt ?? "2026-07-04T01:00:00Z"
+  };
+}
+
+function testingTester(
+  input: Partial<DashboardSummary["testing"]["testers"][number]> & { login: string }
+): DashboardSummary["testing"]["testers"][number] {
+  return {
+    login: input.login,
+    queueIssues: input.queueIssues ?? 0,
+    queuePrs: input.queuePrs ?? 0,
+    averageIssueQueueAgeHours: input.averageIssueQueueAgeHours ?? null,
+    averageQueueAgeHours: input.averageQueueAgeHours ?? input.averageIssueQueueAgeHours ?? null,
+    handoffToCloseSamples: input.handoffToCloseSamples ?? 0,
+    averageHandoffToCloseHours: input.averageHandoffToCloseHours ?? null
   };
 }
 

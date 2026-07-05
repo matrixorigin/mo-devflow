@@ -4531,9 +4531,31 @@ button.testing-board-stat:focus-visible {
 }
 
 .testing-tester-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   display: grid;
   gap: 8px;
   min-width: 0;
+  padding: 10px;
+}
+
+.testing-tester-panel-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.testing-tester-panel-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+}
+
+.testing-tester-panel-heading .ant-typography {
+  margin-bottom: 0;
 }
 
 .testing-tester-strip {
@@ -4553,6 +4575,11 @@ button.testing-board-stat:focus-visible {
   gap: 3px;
   min-width: 0;
   padding: 9px 10px;
+}
+
+.testing-tester-card-attention {
+  background: #fffbeb;
+  border-color: #f59e0b;
 }
 
 .testing-tester-card > div {
@@ -4579,6 +4606,12 @@ button.testing-board-stat:focus-visible {
 .testing-tester-card small {
   color: #6b7280;
   font-size: 12px;
+}
+
+.testing-tester-card span {
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .testing-command-lanes {

@@ -153,6 +153,7 @@ import {
   prVisibleIssueNumbers,
   sortPeopleForBoard,
   sortTestingIssuesForAction,
+  sortTestingTestersForManagement,
   teamCommandSignals,
   teamOperatingSignals,
   teamPeopleFocusSummary,
@@ -163,6 +164,7 @@ import {
   testingStateHelpText,
   testingIssueLinkedBlockerCount,
   testingIssueNeedsAttention,
+  testingTesterNeedsAttention,
   type FlowEfficiencyDiagnostic,
   type FlowEfficiencyDiagnosticTarget,
   type FlowEfficiencySummary,
@@ -181,6 +183,7 @@ import {
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
   type TeamOperatingSignal,
+  type TestingTesterSort,
   type TrendMomentumItem,
   type TrendMomentumSummary,
   type WorkloadStatus
@@ -10253,6 +10256,14 @@ function testingRiskColor(risk: string): string {
   return "orange";
 }
 
+const testingTesterSortOptions: Array<{ label: string; value: TestingTesterSort }> = [
+  { label: "Attention", value: "attention" },
+  { label: "Queue", value: "queue" },
+  { label: "Wait", value: "wait" },
+  { label: "Close", value: "handoff" },
+  { label: "Login", value: "login" }
+];
+
 function TestingCommandBoard({
   pendingPrs,
   testing,
@@ -10274,16 +10285,19 @@ function TestingCommandBoard({
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
   const hasTurnoverHistory = testing.issueTransitionEvents > 0 || testing.handoffToCloseSamples > 0;
-  const testerRows = [...testing.testers].sort((left, right) => {
-    const queueDelta = right.queueIssues - left.queueIssues;
-    if (queueDelta !== 0) {
-      return queueDelta;
-    }
-    return (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0);
-  });
-  const pagedTesterRows = usePagedList(testerRows, 8, testerRows.map((tester) => tester.login).join(":"));
+  const [testerSort, setTesterSort] = useState<TestingTesterSort>("attention");
+  const testerRows = sortTestingTestersForManagement(testing.testers, testerSort);
+  const testerAttentionCount = testing.testers.filter(testingTesterNeedsAttention).length;
+  const pagedTesterRows = usePagedList(
+    testerRows,
+    8,
+    `${testerSort}:${testerRows.map((tester) => tester.login).join(":")}`
+  );
   const scrollToIssueQueue = () => {
     document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const scrollToTesterPanel = () => {
+    document.getElementById("testing-tester-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const openIssueQueueFilter = (nextFilter: TestingIssueQueueFilter) => {
     onTestingIssueFilterChange(nextFilter);
@@ -10342,9 +10356,9 @@ function TestingCommandBoard({
         <TestingBoardStat
           label="testers"
           value={testing.testers.length}
-          tone="normal"
+          tone={testerAttentionCount > 0 ? "attention" : "normal"}
           actionLabel="View"
-          onClick={scrollToIssueQueue}
+          onClick={testing.testers.length > 0 ? scrollToTesterPanel : undefined}
         />
         <TestingBoardStat
           label="issue handoffs"
@@ -10394,9 +10408,31 @@ function TestingCommandBoard({
 
       {pagedTesterRows.visibleItems.length > 0 ? (
         <div className="testing-tester-panel" id="testing-tester-queue" aria-label="Tester queue ownership">
+          <div className="testing-tester-panel-heading">
+            <div>
+              <Text strong>Tester Efficiency</Text>
+              <Text type="secondary">
+                Current issue queue and cached handoff-to-close samples by configured tester.
+              </Text>
+            </div>
+            <Space size={[6, 6]} wrap>
+              <Tag color={testerAttentionCount > 0 ? "gold" : "green"}>{testerAttentionCount} need attention</Tag>
+              <Segmented
+                size="small"
+                value={testerSort}
+                options={testingTesterSortOptions}
+                onChange={(value) => setTesterSort(value as TestingTesterSort)}
+              />
+            </Space>
+          </div>
           <div className="testing-tester-strip">
             {pagedTesterRows.visibleItems.map((tester) => (
-              <article className="testing-tester-card" key={tester.login}>
+              <article
+                className={`testing-tester-card ${
+                  testingTesterNeedsAttention(tester) ? "testing-tester-card-attention" : ""
+                }`}
+                key={tester.login}
+              >
                 <div>
                   <Text strong>{tester.login}</Text>
                   <Text type="secondary">{tester.queuePrs} linked PRs</Text>
@@ -10405,6 +10441,10 @@ function TestingCommandBoard({
                   {tester.averageIssueQueueAgeHours === null ? "-" : hours(tester.averageIssueQueueAgeHours)}
                 </strong>
                 <small>{tester.queueIssues} issues | avg wait</small>
+                <span>
+                  close {tester.averageHandoffToCloseHours === null ? "-" : hours(tester.averageHandoffToCloseHours)}
+                  {tester.handoffToCloseSamples > 0 ? ` (${tester.handoffToCloseSamples})` : " (0)"}
+                </span>
               </article>
             ))}
           </div>
@@ -19432,75 +19472,6 @@ export default function App() {
     []
   );
 
-  const testerColumns: ColumnsType<DashboardSummary["testing"]["testers"][number]> = useMemo(
-    () => [
-      { title: "Tester", dataIndex: "login", render: (login) => <Tag>{login}</Tag> },
-      {
-        title: "Queue Issues",
-        dataIndex: "queueIssues",
-        render: (value) =>
-          value > 0 ? (
-            <button
-              type="button"
-              className="table-count-button"
-              onClick={() => {
-                setTestingIssueQueueFilter("all");
-                setPrBoardTab("testing");
-                if (view === "PRs") {
-                  replaceDashboardHash("PRs", selectedPerson, { prBoardTab: "testing" });
-                }
-                window.setTimeout(
-                  () => document.getElementById("testing-issue-queue")?.scrollIntoView({ behavior: "smooth" }),
-                  0
-                );
-              }}
-            >
-              {value}
-            </button>
-          ) : (
-            <Tag>0</Tag>
-          )
-      },
-      {
-        title: "Linked PRs",
-        dataIndex: "queuePrs",
-        render: (value) =>
-          value > 0 ? (
-            <button
-              type="button"
-              className="table-count-button"
-              onClick={() => {
-                changePrScopeFilter("testing");
-                window.setTimeout(
-                  () => document.getElementById("testing-pr-table-panel")?.scrollIntoView({ behavior: "smooth" }),
-                  0
-                );
-              }}
-            >
-              {value}
-            </button>
-          ) : (
-            <Tag>0</Tag>
-          )
-      },
-      {
-        title: "Average Issue Wait",
-        dataIndex: "averageIssueQueueAgeHours",
-        render: (value) => (value === null ? "-" : hours(value))
-      },
-      {
-        title: "Handoff To Close",
-        dataIndex: "averageHandoffToCloseHours",
-        render: (value, row) =>
-          value === null ? (
-            <Text type="secondary">{row.handoffToCloseSamples} samples</Text>
-          ) : (
-            `${hours(value)} (${row.handoffToCloseSamples})`
-          )
-      }
-    ],
-    [changePrScopeFilter, selectedPerson, view]
-  );
   const testingIssueTransitionColumns: ColumnsType<DashboardSummary["testing"]["recentIssueTransitions"][number]> =
     useMemo(
       () => [
@@ -20556,19 +20527,6 @@ export default function App() {
                           <button
                             type="button"
                             className={`inline-filter-chip ${
-                              data.testing.testers.length > 0 ? "" : "inline-filter-chip-muted"
-                            }`}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openTestingEvidencePanel();
-                            }}
-                          >
-                            {data.testing.testers.length} testers
-                          </button>
-                          <button
-                            type="button"
-                            className={`inline-filter-chip ${
                               data.testing.recentIssueTransitions.length > 0 ? "" : "inline-filter-chip-muted"
                             }`}
                             onClick={(event) => {
@@ -20582,15 +20540,6 @@ export default function App() {
                         </Space>
                       </summary>
                       <div className="secondary-disclosure-body">
-                        <Table
-                          rowKey="login"
-                          size="middle"
-                          columns={testerColumns}
-                          dataSource={data.testing.testers}
-                          scroll={{ x: 760 }}
-                          pagination={tablePagination(data.testing.testers.length, 8)}
-                          locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
-                        />
                         {testingHasIssueTransitions ? (
                           <Table
                             className="testing-transition-table"

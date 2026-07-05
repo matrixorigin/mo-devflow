@@ -131,6 +131,7 @@ export interface TeamOperatingSignal {
 export type TeamCommandSignalTarget = "violations" | "drift" | "notifications";
 export type TeamCommandSignalTone = "critical" | "attention" | "normal";
 export type NotificationDeliveryScopeFilter = "all" | "attention" | "failed" | "ack_pending" | "digest";
+export type TestingTesterSort = "attention" | "queue" | "wait" | "handoff" | "login";
 
 export interface TeamCommandSignal {
   key: string;
@@ -951,6 +952,69 @@ export function testingIssueLinkedBlockerCount(issue: TestingIssueQueueView): nu
       (pr.ciState !== null &&
         ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState))
   ).length;
+}
+
+type TestingTesterRow = DashboardSummary["testing"]["testers"][number];
+
+function testingTesterAttentionScore(tester: TestingTesterRow): number {
+  const wait = tester.averageIssueQueueAgeHours ?? 0;
+  const close = tester.averageHandoffToCloseHours ?? 0;
+  return (
+    (wait >= 24 ? 10_000 : 0) +
+    (close >= 48 ? 5_000 : 0) +
+    tester.queueIssues * 200 +
+    tester.queuePrs * 40 +
+    Math.min(wait, 240) +
+    Math.min(close, 240) / 4
+  );
+}
+
+export function testingTesterNeedsAttention(tester: TestingTesterRow): boolean {
+  return (
+    tester.queueIssues > 0 ||
+    tester.queuePrs > 0 ||
+    (tester.averageIssueQueueAgeHours ?? 0) >= 24 ||
+    (tester.averageHandoffToCloseHours ?? 0) >= 48
+  );
+}
+
+export function sortTestingTestersForManagement(
+  testers: TestingTesterRow[],
+  sort: TestingTesterSort
+): TestingTesterRow[] {
+  return [...testers].sort((left, right) => {
+    if (sort === "queue") {
+      return (
+        right.queueIssues - left.queueIssues ||
+        right.queuePrs - left.queuePrs ||
+        (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0) ||
+        left.login.localeCompare(right.login)
+      );
+    }
+    if (sort === "wait") {
+      return (
+        (right.averageIssueQueueAgeHours ?? -1) - (left.averageIssueQueueAgeHours ?? -1) ||
+        right.queueIssues - left.queueIssues ||
+        left.login.localeCompare(right.login)
+      );
+    }
+    if (sort === "handoff") {
+      return (
+        (right.averageHandoffToCloseHours ?? -1) - (left.averageHandoffToCloseHours ?? -1) ||
+        right.handoffToCloseSamples - left.handoffToCloseSamples ||
+        left.login.localeCompare(right.login)
+      );
+    }
+    if (sort === "login") {
+      return left.login.localeCompare(right.login);
+    }
+    return (
+      testingTesterAttentionScore(right) - testingTesterAttentionScore(left) ||
+      right.queueIssues - left.queueIssues ||
+      (right.averageIssueQueueAgeHours ?? 0) - (left.averageIssueQueueAgeHours ?? 0) ||
+      left.login.localeCompare(right.login)
+    );
+  });
 }
 
 export function personWorkloadScore(person: PersonSummary): number {
