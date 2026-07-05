@@ -10022,7 +10022,12 @@ function PersonWorkloadBoard({
     12,
     `${sort}:${mode}:${compact}:${people.map((person) => person.login).join(",")}`
   );
-  const visiblePeople = compact ? sortedPeople : pagedPeople.visibleItems;
+  const compactPeople = useLazyVisibleCount(
+    sortedPeople.length,
+    compact ? 6 : undefined,
+    `${sort}:${mode}:${selectedLogin ?? ""}:${people.map((person) => person.login).join(",")}`
+  );
+  const visiblePeople = compact ? sortedPeople.slice(0, compactPeople.visibleCount) : pagedPeople.visibleItems;
 
   if (sortedPeople.length === 0) {
     return (
@@ -10174,6 +10179,16 @@ function PersonWorkloadBoard({
           );
         })}
       </div>
+      <LazyListToggle
+        hiddenCount={compactPeople.hiddenCount}
+        revealCount={compactPeople.revealCount}
+        canCollapse={compactPeople.canCollapse}
+        itemLabel="people"
+        className="person-board-more"
+        collapsedLabel="Show fewer people"
+        onShowMore={compactPeople.showMore}
+        onCollapse={compactPeople.reset}
+      />
     </div>
   );
 }
