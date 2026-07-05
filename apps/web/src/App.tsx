@@ -2464,6 +2464,16 @@ function notificationStatusColor(value: NotificationStatus): string {
   return "default";
 }
 
+function notificationDeliveryDisplayTitle(delivery: NotificationDeliveryView): string {
+  if (delivery.title?.trim()) {
+    return delivery.title;
+  }
+  if (delivery.objectNumber) {
+    return `${labelText(delivery.objectType)} #${delivery.objectNumber}`;
+  }
+  return labelText(delivery.ruleKey);
+}
+
 function notificationReadinessColor(value: DashboardSummary["notifications"]["readiness"]["status"]): string {
   if (value === "ready") {
     return "green";
@@ -22004,14 +22014,23 @@ export default function App() {
       },
       {
         title: "Source",
-        width: 172,
-        render: (_, delivery) => (
-          <Space size={[4, 4]} wrap>
-            <Tag>{labelText(delivery.sourceType)}</Tag>
-            <Tag color="blue">{labelText(delivery.ruleKey)}</Tag>
-            {!delivery.sourceActive ? <Tag color="default">source resolved</Tag> : null}
-          </Space>
-        )
+        width: 284,
+        render: (_, delivery) => {
+          const title = notificationDeliveryDisplayTitle(delivery);
+          return (
+            <Space orientation="vertical" size={4} className="full-width">
+              <Space size={[4, 4]} wrap>
+                <Tag>{labelText(delivery.sourceType)}</Tag>
+                <Tag color="blue">{labelText(delivery.ruleKey)}</Tag>
+                {!delivery.sourceActive ? <Tag color="default">source resolved</Tag> : null}
+              </Space>
+              <Text strong ellipsis={{ tooltip: title }}>
+                {title}
+              </Text>
+              {delivery.relatedLogin ? <Tag icon={<UserRound size={12} />}>github {delivery.relatedLogin}</Tag> : null}
+            </Space>
+          );
+        }
       },
       {
         title: "Object",
@@ -23178,7 +23197,7 @@ export default function App() {
                   size="middle"
                   columns={notificationColumns}
                   dataSource={filteredNotificationDeliveries}
-                  scroll={{ x: 1340 }}
+                  scroll={{ x: 1460 }}
                   pagination={tablePagination(filteredNotificationDeliveries.length, 8)}
                   locale={{
                     emptyText: (

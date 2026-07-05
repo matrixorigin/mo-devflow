@@ -322,6 +322,7 @@ const notificationDeliveryHealthColumns = [
   "d.object_type",
   "d.object_number",
   "d.dashboard_url",
+  "d.payload_json",
   "d.recipient",
   "d.channel",
   "d.status",
@@ -360,6 +361,32 @@ export function notificationDeliveryCooldownHours(
     return configuredCooldownHours;
   }
   return null;
+}
+
+export function notificationDeliveryPayloadSummary(
+  payloadJson: unknown
+): Pick<NotificationDeliveryView, "title" | "relatedLogin"> {
+  if (typeof payloadJson !== "string" || payloadJson.trim().length === 0) {
+    return { title: null, relatedLogin: null };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson);
+  } catch {
+    return { title: null, relatedLogin: null };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { title: null, relatedLogin: null };
+  }
+  const candidate = (parsed as Record<string, unknown>).candidate;
+  if (!candidate || typeof candidate !== "object") {
+    return { title: null, relatedLogin: null };
+  }
+  const record = candidate as Record<string, unknown>;
+  return {
+    title: typeof record.title === "string" && record.title.trim() ? record.title : null,
+    relatedLogin: typeof record.relatedLogin === "string" && record.relatedLogin.trim() ? record.relatedLogin : null
+  };
 }
 
 export function notificationReadiness(input: {
@@ -1573,22 +1600,27 @@ export async function getNotificationHealth(input: {
     [input.repoId, input.repoId, escalationCutoff, ...escalationVisibility.params]
   );
 
-  const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
-    id: asNumber(row.id),
-    sourceType: asString(row.source_type) as NotificationDeliveryView["sourceType"],
-    sourceActive: asNumber(row.source_active) === 1,
-    ruleKey: asString(row.rule_key),
-    objectType: asString(row.object_type),
-    objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
-    dashboardUrl: asString(row.dashboard_url),
-    recipientScope: notificationRecipientScope(input.profile, row.recipient),
-    channel: asString(row.channel),
-    status: asString(row.status) as NotificationDeliveryView["status"],
-    errorMessage: row.error_message ? asString(row.error_message) : null,
-    attemptedAt: fromSqlDate(row.attempted_at) ?? new Date().toISOString(),
-    acknowledgedAt: fromSqlDate(row.acknowledged_at),
-    acknowledgedBy: row.acknowledged_by ? asString(row.acknowledged_by) : null
-  }));
+  const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => {
+    const payloadSummary = notificationDeliveryPayloadSummary(row.payload_json);
+    return {
+      id: asNumber(row.id),
+      sourceType: asString(row.source_type) as NotificationDeliveryView["sourceType"],
+      sourceActive: asNumber(row.source_active) === 1,
+      ruleKey: asString(row.rule_key),
+      objectType: asString(row.object_type),
+      objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),
+      title: payloadSummary.title,
+      dashboardUrl: asString(row.dashboard_url),
+      relatedLogin: payloadSummary.relatedLogin,
+      recipientScope: notificationRecipientScope(input.profile, row.recipient),
+      channel: asString(row.channel),
+      status: asString(row.status) as NotificationDeliveryView["status"],
+      errorMessage: row.error_message ? asString(row.error_message) : null,
+      attemptedAt: fromSqlDate(row.attempted_at) ?? new Date().toISOString(),
+      acknowledgedAt: fromSqlDate(row.acknowledged_at),
+      acknowledgedBy: row.acknowledged_by ? asString(row.acknowledged_by) : null
+    };
+  });
 
   return {
     enabled: input.profile.notifications.wecom.enabled,

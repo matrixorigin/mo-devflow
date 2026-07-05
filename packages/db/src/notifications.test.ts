@@ -19,6 +19,7 @@ import {
   notificationDashboardBaseUrlFromEnv,
   notificationDashboardUrl,
   notificationDeliveryCooldownHours,
+  notificationDeliveryPayloadSummary,
   notificationReadiness,
   notificationSourceObjectVisibilityWhereSql,
   PERMANENT_NOTIFICATION_FAILURE_COOLDOWN_HOURS,
@@ -455,6 +456,30 @@ describe("notification acknowledgement health", () => {
     );
     expect(notificationDeliveryCooldownHours([{ status: "retry_requested" }], 12)).toBeNull();
     expect(notificationDeliveryCooldownHours([{ status: "skipped_quiet_hours" }], 12)).toBeNull();
+  });
+
+  test("extracts only safe notification delivery summary fields from stored payloads", () => {
+    expect(
+      notificationDeliveryPayloadSummary(
+        JSON.stringify({
+          markdown: "provider message should stay server-side",
+          candidate: {
+            title: "Daily digest for alice on 2026-07-03",
+            relatedLogin: "alice",
+            recipient: "alice-wecom",
+            evidenceSummary: "full evidence should stay server-side"
+          }
+        })
+      )
+    ).toEqual({
+      title: "Daily digest for alice on 2026-07-03",
+      relatedLogin: "alice"
+    });
+    expect(notificationDeliveryPayloadSummary("{bad json")).toEqual({ title: null, relatedLogin: null });
+    expect(notificationDeliveryPayloadSummary(JSON.stringify({ candidate: { recipient: "alice-wecom" } }))).toEqual({
+      title: null,
+      relatedLogin: null
+    });
   });
 
   test("summarizes notification readiness for disabled WeCom delivery", () => {

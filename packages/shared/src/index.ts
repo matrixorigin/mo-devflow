@@ -592,10 +592,7 @@ export interface WorkflowViolationView extends WorkflowViolation {
 }
 
 export type WorkflowFixActionKey =
-  | "add_needs_triage"
-  | "move_to_deferred"
-  | "add_deferred_explanation_comment"
-  | "update_ai_effort_label";
+  "add_needs_triage" | "move_to_deferred" | "add_deferred_explanation_comment" | "update_ai_effort_label";
 
 export type WorkflowFixOperation =
   | {
@@ -823,7 +820,9 @@ export interface NotificationDeliveryView {
   ruleKey: string;
   objectType: string;
   objectNumber: number | null;
+  title: string | null;
   dashboardUrl: string;
+  relatedLogin: string | null;
   recipientScope: NotificationRecipientScope;
   channel: string;
   status: NotificationStatus;
