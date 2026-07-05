@@ -108,12 +108,32 @@ describe("API health status", () => {
       { key: "worker", severity: "warning", message: "Restart the worker." },
       { key: "job_queue", severity: "critical", message: "A running lease is stale." },
       { key: "operational_summary", severity: "warning", message: "Operational probe failed." },
-      { key: "operational", severity: "warning", message: "Cache objects are stale." },
+      {
+        key: "operational",
+        severity: "warning",
+        message: "Cache objects are stale.",
+        recommendedLayers: [
+          "pr_backfill",
+          "issue_timeline_backfill",
+          "comment_backfill",
+          "rules",
+          "metrics",
+          "ai_drift"
+        ]
+      },
       {
         key: "partial_cache",
         severity: "warning",
         message:
-          "3 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final."
+          "3 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final.",
+        recommendedLayers: [
+          "pr_backfill",
+          "issue_timeline_backfill",
+          "comment_backfill",
+          "rules",
+          "metrics",
+          "ai_drift"
+        ]
       }
     ]);
   });
@@ -130,8 +150,72 @@ describe("API health status", () => {
         key: "partial_cache",
         severity: "warning",
         message:
-          "5 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final."
+          "5 cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final.",
+        recommendedLayers: [
+          "pr_backfill",
+          "issue_timeline_backfill",
+          "comment_backfill",
+          "rules",
+          "metrics",
+          "ai_drift"
+        ]
       }
     ]);
+  });
+
+  test("reports recommended refresh layers for degraded job queue and stale cache findings", () => {
+    const findings = apiHealthFindings({
+      worker,
+      jobQueue: {
+        ...jobQueue,
+        status: "attention",
+        failedJobs: 2,
+        byType: [
+          {
+            jobType: "rules",
+            status: "attention",
+            queueDepth: 0,
+            runningJobs: 0,
+            failedJobs: 2,
+            blockedJobs: 0,
+            staleLeases: 0,
+            oldestPendingAgeHours: null,
+            nextRunAt: null,
+            latestFailure: "rules failed",
+            recommendedAction: "Retry rules."
+          },
+          {
+            jobType: "unknown_job",
+            status: "attention",
+            queueDepth: 0,
+            runningJobs: 0,
+            failedJobs: 1,
+            blockedJobs: 0,
+            staleLeases: 0,
+            oldestPendingAgeHours: null,
+            nextRunAt: null,
+            latestFailure: "unknown failed",
+            recommendedAction: "Inspect worker logs."
+          }
+        ]
+      },
+      operational: {
+        ...operational,
+        status: "degraded",
+        sync: {
+          health: [],
+          unhealthyLayers: ["webhooks"],
+          rateLimitedLayers: []
+        },
+        cache: { ...operational.cache, status: "stale", staleObjects: 7 }
+      }
+    });
+
+    expect(findings.find((finding) => finding.key === "job_queue")).toMatchObject({
+      recommendedLayers: ["rules"]
+    });
+    expect(findings.find((finding) => finding.key === "operational")).toMatchObject({
+      recommendedLayers: ["github_sync", "webhooks", "rules", "metrics", "ai_drift"]
+    });
   });
 });
