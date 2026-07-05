@@ -214,7 +214,8 @@ type PrSort = "risk" | "age" | "last_action" | "testing_wait" | "number";
 type PrBoardTab = "rotation" | "testing";
 type PersonalDrilldownFilter =
   "active_issues" | "pr_attention" | "pending_pr" | "testing" | "triage" | "deferred" | "yesterday_pr" | "threads";
-type WebhookDeliveryScopeFilter = "all" | "pending" | "failed" | "processed" | "ignored" | "duplicates";
+type WebhookDeliveryScopeFilter =
+  "all" | "pending" | "failed" | "processed" | "ignored" | "connectivity_probe" | "duplicates";
 type WriteAuditScopeFilter =
   "all" | "attention" | "failed" | "stale_preview" | "token_unavailable" | "success" | "workflow_fix" | "notification";
 
@@ -2082,7 +2083,10 @@ function webhookScopeLabel(filter: WebhookDeliveryScopeFilter): string {
     return "processed";
   }
   if (filter === "ignored") {
-    return "ignored";
+    return "other ignored";
+  }
+  if (filter === "connectivity_probe") {
+    return "webhook ping";
   }
   if (filter === "duplicates") {
     return "duplicates";
@@ -2101,7 +2105,10 @@ function webhookDeliveryMatchesScope(delivery: GitHubWebhookDeliveryView, filter
     return delivery.status === "processed";
   }
   if (filter === "ignored") {
-    return delivery.status === "ignored";
+    return delivery.status === "ignored" && delivery.eventName !== "ping";
+  }
+  if (filter === "connectivity_probe") {
+    return delivery.eventName === "ping";
   }
   if (filter === "duplicates") {
     return delivery.duplicateCount > 0;
@@ -11440,6 +11447,7 @@ function WebhookIngestionBoard({
   const failedDeliveries = data.webhooks.failedDeliveries;
   const duplicateDeliveries = data.webhooks.duplicateDeliveries;
   const connectivityProbeDeliveries = data.webhooks.connectivityProbeDeliveries;
+  const otherIgnoredDeliveries = Math.max(0, data.webhooks.ignoredDeliveries - connectivityProbeDeliveries);
   const eventSummaryByName = new Map(data.webhooks.eventSummaries.map((summary) => [summary.eventName, summary]));
   const observedUnsupportedEvents = data.webhooks.eventSummaries.filter(
     (summary) =>
@@ -11585,9 +11593,9 @@ function WebhookIngestionBoard({
             onClick={() => onScopeFilterChange("processed")}
           />
           <CriticalBoardStat
-            label="ignored"
-            value={data.webhooks.ignoredDeliveries}
-            tone={data.webhooks.ignoredDeliveries > 0 ? "muted" : "good"}
+            label="other ignored"
+            value={otherIgnoredDeliveries}
+            tone={otherIgnoredDeliveries > 0 ? "muted" : "good"}
             active={scopeFilter === "ignored"}
             onClick={() => onScopeFilterChange("ignored")}
           />
@@ -11595,8 +11603,8 @@ function WebhookIngestionBoard({
             label="ping"
             value={connectivityProbeDeliveries}
             tone={connectivityProbeDeliveries > 0 ? "good" : "muted"}
-            active={scopeFilter === "ignored"}
-            onClick={() => onScopeFilterChange("ignored")}
+            active={scopeFilter === "connectivity_probe"}
+            onClick={() => onScopeFilterChange("connectivity_probe")}
           />
           <CriticalBoardStat
             label="duplicates"
