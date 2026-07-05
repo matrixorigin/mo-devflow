@@ -3095,7 +3095,7 @@ export function currentMetricPeriodLabel(period: MetricPeriod): string {
 }
 
 export function currentMetricPeriodScopeText(timezone: string): string {
-  return `Current calendar periods in ${timezone}.`;
+  return `Today, this week, and this month use current calendar periods in ${timezone}; rolling windows are trend-only.`;
 }
 
 function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {

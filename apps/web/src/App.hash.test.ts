@@ -290,7 +290,9 @@ describe("dashboard hash filters", () => {
     expect(analyticsPeriodFromHash("#analytics?period=week")).toBe("week");
     expect(analyticsPeriodScopeText("week", 30)).toBe("Rolling 30-day trend, grouped by weekly periods");
     expect(currentMetricPeriodLabel("month")).toBe("This Month");
-    expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe("Current calendar periods in Asia/Shanghai.");
+    expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe(
+      "Today, this week, and this month use current calendar periods in Asia/Shanghai; rolling windows are trend-only."
+    );
   });
 
   it("round-trips workflow signal filters without hiding source deep links", () => {
