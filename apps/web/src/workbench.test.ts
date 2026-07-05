@@ -34,6 +34,7 @@ import {
   personalActivityNextAction,
   personalDurationText,
   personalIssueReasons,
+  personalOperatingSignals,
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
@@ -1050,6 +1051,86 @@ describe("personal activity feed", () => {
     );
 
     expect(personalActivityNextAction(items[0]!)).toBe("Check issue test status");
+  });
+});
+
+describe("personal operating signals", () => {
+  it("summarizes the person's active issue, PR blocker, testing, triage, and pending PR risks", () => {
+    const activeIssue = criticalIssue({
+      number: 10,
+      criticalAgeHours: 96,
+      linkedPullRequests: []
+    });
+    const blockedPr = pullRequest({
+      number: 20,
+      ageHours: 36,
+      attentionFlags: ["ci_failed", "no_human_action_24h"],
+      ciState: "failure"
+    });
+    const routinePr = pullRequest({ number: 21, ageHours: 12 });
+    const person = personalView({
+      activeCriticalIssues: [activeIssue],
+      pendingPrs: [blockedPr, routinePr],
+      attentionPrs: [blockedPr],
+      testingIssues: [testingIssue({ number: 30, queueAgeHours: 30 })],
+      needsTriageIssues: [personalIssue({ number: 40, ageHours: 72 })],
+      deferredIssues: [personalIssue({ number: 41, lifecycleState: "deferred" })]
+    });
+
+    const signals = personalOperatingSignals(person);
+
+    expect(signals.map((signal) => signal.key)).toEqual([
+      "active_issues",
+      "pr_blockers",
+      "testing",
+      "triage",
+      "pending_pr"
+    ]);
+    expect(signals.find((signal) => signal.key === "active_issues")).toMatchObject({
+      value: 1,
+      detail: "4.0d active | 1 no PR | 0 timeline missing",
+      tone: "critical",
+      target: "active_issues"
+    });
+    expect(signals.find((signal) => signal.key === "pr_blockers")).toMatchObject({
+      value: 1,
+      detail: "1 CI | 1 idle",
+      tone: "attention",
+      target: "pr_attention"
+    });
+    expect(signals.find((signal) => signal.key === "testing")).toMatchObject({
+      value: 1,
+      detail: "1 need update | max wait 1.3d | 0 linked PR",
+      tone: "critical",
+      target: "testing"
+    });
+    expect(signals.find((signal) => signal.key === "triage")).toMatchObject({
+      value: 1,
+      detail: "3.0d oldest | balanced | 1 deferred",
+      tone: "attention",
+      target: "triage"
+    });
+    expect(signals.find((signal) => signal.key === "pending_pr")).toMatchObject({
+      value: 2,
+      detail: "1 attention | oldest 1.5d",
+      tone: "attention",
+      target: "pending_pr"
+    });
+  });
+
+  it("marks a needs-triage backlog as triage-heavy when active work is low", () => {
+    const person = personalView({
+      needsTriageIssues: [personalIssue({ number: 40, ageHours: 12 }), personalIssue({ number: 41, ageHours: 18 })]
+    });
+
+    const triage = personalOperatingSignals(person).find((signal) => signal.key === "triage");
+
+    expect(triage).toMatchObject({
+      value: 2,
+      detail: "18h oldest | triage-heavy | 0 deferred",
+      tone: "attention",
+      target: "triage"
+    });
   });
 });
 

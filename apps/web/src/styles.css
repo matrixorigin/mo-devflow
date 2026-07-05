@@ -3804,6 +3804,120 @@ button.testing-board-stat:focus-visible {
   margin: 0 0 6px !important;
 }
 
+.person-signal-panel {
+  border-top: 1px solid #e5e7eb;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  min-width: 0;
+  padding-top: 12px;
+}
+
+.person-signal-focus,
+.person-signal-button {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #94a3b8;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-width: 0;
+  text-align: left;
+}
+
+.person-signal-focus {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+}
+
+.person-signal-focus span,
+.person-signal-button span,
+.person-signal-button small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.person-signal-focus span {
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.person-signal-focus strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.person-signal-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  min-width: 0;
+}
+
+.person-signal-button {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  position: relative;
+}
+
+.person-signal-button strong {
+  color: #111827;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.person-signal-button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-signal-button .ant-tag {
+  justify-self: start;
+  margin-inline-end: 0;
+}
+
+.person-signal-focus:hover,
+.person-signal-button:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.person-signal-focus:focus-visible,
+.person-signal-button:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.person-signal-active {
+  box-shadow: inset 0 0 0 1px #111827;
+}
+
+.person-signal-critical {
+  border-left-color: #dc2626;
+}
+
+.person-signal-attention {
+  border-left-color: #d97706;
+}
+
+.person-signal-normal {
+  border-left-color: #2563eb;
+}
+
+.person-signal-good {
+  border-left-color: #16a34a;
+}
+
 .personal-rotation-overview {
   display: grid;
   gap: 12px;

@@ -130,6 +130,7 @@ import {
   personalDurationText,
   personalFlowThreadCounts,
   personalFlowThreadMatchesFilter,
+  personalOperatingSignals,
   personalTestingWorkCount,
   personPrimaryReasons,
   personWorkloadStatus,
@@ -160,6 +161,7 @@ import {
   type PersonalGanttChart,
   type PersonalGanttPrBar,
   type PersonalGanttRow,
+  type PersonalOperatingSignal,
   type PeopleScopeFilter,
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
@@ -10222,6 +10224,66 @@ function PersonalDrilldownBoard({
   );
 }
 
+function personalOperatingSignalColor(tone: PersonalOperatingSignal["tone"]): string {
+  if (tone === "critical") {
+    return "red";
+  }
+  if (tone === "attention") {
+    return "orange";
+  }
+  if (tone === "normal") {
+    return "blue";
+  }
+  return "green";
+}
+
+function PersonalOperatingSignalStrip({
+  signals,
+  activeFilter,
+  onSelect
+}: {
+  signals: PersonalOperatingSignal[];
+  activeFilter: PersonalDrilldownFilter;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  const topSignal = [...signals].sort((left, right) => right.priority - left.priority)[0] ?? null;
+
+  return (
+    <div className="person-signal-panel" aria-label="Personal workflow signals">
+      {topSignal ? (
+        <button
+          type="button"
+          className={`person-signal-focus person-signal-${topSignal.tone}`}
+          onClick={() => onSelect(topSignal.target)}
+        >
+          <span>Current focus</span>
+          <strong>
+            {topSignal.label}: {topSignal.detail}
+          </strong>
+        </button>
+      ) : null}
+      <div className="person-signal-grid">
+        {signals.map((signal) => (
+          <button
+            type="button"
+            className={`person-signal-button person-signal-${signal.tone} ${
+              activeFilter === signal.target ? "person-signal-active" : ""
+            }`}
+            aria-pressed={activeFilter === signal.target}
+            key={signal.key}
+            onClick={() => onSelect(signal.target)}
+          >
+            <span>{signal.label}</span>
+            <strong>{signal.value}</strong>
+            <small>{signal.detail}</small>
+            <Tag color={personalOperatingSignalColor(signal.tone)}>{signal.tone}</Tag>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SelectedPersonWorkbench({
   person,
   analyticsPeriod,
@@ -10241,6 +10303,7 @@ function SelectedPersonWorkbench({
   const routinePendingPrs = person.pendingPrs.filter((pr) => !attentionNumbers.has(pr.number));
   const activityItems = personalActivityItems(person);
   const activityItemById = new Map(activityItems.map((item) => [item.id, item]));
+  const operatingSignals = personalOperatingSignals(person, activityItems);
   const [objectPreviewItem, setObjectPreviewItem] = useState<PersonalActivityItem | null>(null);
   const gantt = personalGanttChart(person);
   const flowSummary = flowEfficiencySummary({
@@ -10272,23 +10335,16 @@ function SelectedPersonWorkbench({
           </span>
           <div>
             <Title level={4}>{person.login}</Title>
-            <Space size={[6, 6]} wrap>
-              <Tag color={person.summary.activeCriticalIssues > 0 ? "red" : "default"}>
-                {person.summary.activeCriticalIssues} s-1/s0
-              </Tag>
-              <Tag color={person.summary.attentionPrs > 0 ? "orange" : "default"}>
-                {person.summary.attentionPrs} PR attention
-              </Tag>
-              <Tag color={person.summary.needsTriageIssues > 0 ? "gold" : "default"}>
-                {person.summary.needsTriageIssues} needs triage
-              </Tag>
-              <Tag>{personalTestingWorkCount(person)} issue testing</Tag>
-              <Tag>
-                yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday}
-              </Tag>
-            </Space>
+            <Text type="secondary">
+              yesterday {person.summary.prsCreatedYesterday}/{person.summary.prsMergedYesterday} PRs
+            </Text>
           </div>
         </div>
+        <PersonalOperatingSignalStrip
+          signals={operatingSignals}
+          activeFilter={drilldownFilter}
+          onSelect={onDrilldownChange}
+        />
       </div>
 
       <PersonalRotationOverview

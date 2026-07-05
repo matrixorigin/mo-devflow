@@ -48,6 +48,19 @@ export interface PersonalActivityItem {
 }
 
 export type PersonalActionQueueCounts = Record<PersonalActionQueueFilter, number>;
+export type PersonalOperatingSignalKey = "active_issues" | "pr_blockers" | "testing" | "triage" | "pending_pr";
+export type PersonalOperatingSignalTone = "critical" | "attention" | "normal" | "good";
+export type PersonalOperatingSignalTarget = "active_issues" | "pr_attention" | "testing" | "triage" | "pending_pr";
+
+export interface PersonalOperatingSignal {
+  key: PersonalOperatingSignalKey;
+  label: string;
+  value: number;
+  detail: string;
+  tone: PersonalOperatingSignalTone;
+  target: PersonalOperatingSignalTarget;
+  priority: number;
+}
 
 export type PeopleScopeFilter =
   "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
@@ -749,6 +762,146 @@ export function sortPeopleByWorkload(people: PersonSummary[]): PersonSummary[] {
 
 export function personalTestingWorkCount(person: PersonalActionView): number {
   return person.testingIssues.length;
+}
+
+function maxFinite(values: Array<number | null>): number | null {
+  const finite = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  return finite.length > 0 ? Math.max(...finite) : null;
+}
+
+function compactDuration(value: number | null): string {
+  if (value === null) {
+    return "unknown";
+  }
+  if (value < 24) {
+    return `${Math.round(value)}h`;
+  }
+  return `${(value / 24).toFixed(1)}d`;
+}
+
+function prBlockerSummary(prs: PersonalPullRequestView[]): string {
+  if (prs.length === 0) {
+    return "no PR blockers";
+  }
+  const reasons = prs.flatMap(prAttentionReasons);
+  const ci = reasons.filter((reason) => reason === attentionFlagLabels.ci_failed).length;
+  const review = reasons.filter((reason) => reason === attentionFlagLabels.review_requested_no_response).length;
+  const changes = reasons.filter((reason) => reason === attentionFlagLabels.requested_changes).length;
+  const conflicts = reasons.filter((reason) => reason === attentionFlagLabels.merge_conflict).length;
+  const idle = reasons.filter((reason) => reason === attentionFlagLabels.no_human_action_24h).length;
+  const parts = [
+    ci > 0 ? `${ci} CI` : null,
+    review > 0 ? `${review} review` : null,
+    changes > 0 ? `${changes} changes` : null,
+    conflicts > 0 ? `${conflicts} conflict` : null,
+    idle > 0 ? `${idle} idle` : null
+  ].filter((part): part is string => part !== null);
+
+  return parts.length > 0 ? parts.join(" | ") : `${prs.length} attention PR`;
+}
+
+export function personalOperatingSignals(
+  person: PersonalActionView,
+  activityItems: PersonalActivityItem[] = personalActivityItems(person)
+): PersonalOperatingSignal[] {
+  const activeItems = activityItems.filter((item) => item.durationKind === "critical_active");
+  const activeNoPr = person.activeCriticalIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
+  const activeMissingTimeline = activeItems.filter((item) => item.durationHours === null).length;
+  const oldestActive = maxFinite(activeItems.map((item) => item.durationHours));
+  const blockedPrItems = activityItems.filter(
+    (item) => item.objectType === "pull_request" && personalActivityHasBlockingSignal(item)
+  );
+  const blockedPrNumbers = new Set(blockedPrItems.map((item) => item.number));
+  const blockedPrs = person.pendingPrs.filter((pr) => blockedPrNumbers.has(pr.number));
+  const staleTestingIssues = person.testingIssues.filter(testingIssueNeedsAttention);
+  const oldestTesting = maxFinite(person.testingIssues.map((issue) => issue.queueAgeHours));
+  const oldestTriage = maxFinite(person.needsTriageIssues.map((issue) => issue.ageHours));
+  const oldestPendingPr = maxFinite(person.pendingPrs.map((pr) => pr.ageHours));
+  const triageHeavy =
+    person.needsTriageIssues.length > person.activeCriticalIssues.length && person.activeCriticalIssues.length <= 1;
+  const activeDetail =
+    person.activeCriticalIssues.length === 0
+      ? "no active s-1/s0"
+      : `${compactDuration(oldestActive)} active | ${activeNoPr} no PR | ${activeMissingTimeline} timeline missing`;
+  const testingDetail =
+    person.testingIssues.length === 0
+      ? "no issue testing"
+      : `${staleTestingIssues.length} need update | max wait ${compactDuration(oldestTesting)} | ${
+          person.testingPrs.length
+        } linked PR`;
+  const triageDetail =
+    person.needsTriageIssues.length === 0
+      ? `${person.deferredIssues.length} deferred`
+      : `${compactDuration(oldestTriage)} oldest | ${triageHeavy ? "triage-heavy" : "balanced"} | ${
+          person.deferredIssues.length
+        } deferred`;
+  const pendingDetail =
+    person.pendingPrs.length === 0
+      ? "no pending PR"
+      : `${person.attentionPrs.length} attention | oldest ${compactDuration(oldestPendingPr)}`;
+
+  return [
+    {
+      key: "active_issues",
+      label: "Active issues",
+      value: person.activeCriticalIssues.length,
+      detail: activeDetail,
+      tone: person.activeCriticalIssues.length > 0 ? "critical" : "good",
+      target: "active_issues",
+      priority: person.activeCriticalIssues.length > 0 ? 1_000 + person.activeCriticalIssues.length : 100
+    },
+    {
+      key: "pr_blockers",
+      label: "PR blockers",
+      value: blockedPrItems.length,
+      detail: prBlockerSummary(blockedPrs),
+      tone: blockedPrItems.length > 0 ? "attention" : "good",
+      target: "pr_attention",
+      priority: blockedPrItems.length > 0 ? 850 + blockedPrItems.length : 80
+    },
+    {
+      key: "testing",
+      label: "Testing",
+      value: person.testingIssues.length,
+      detail: testingDetail,
+      tone: staleTestingIssues.length > 0 ? "critical" : person.testingIssues.length > 0 ? "attention" : "good",
+      target: "testing",
+      priority:
+        staleTestingIssues.length > 0
+          ? 920 + staleTestingIssues.length
+          : person.testingIssues.length > 0
+            ? 720 + person.testingIssues.length
+            : 70
+    },
+    {
+      key: "triage",
+      label: "Triage",
+      value: person.needsTriageIssues.length,
+      detail: triageDetail,
+      tone: person.needsTriageIssues.length > 0 ? "attention" : "good",
+      target: "triage",
+      priority: person.needsTriageIssues.length > 0 ? (triageHeavy ? 780 : 620) + person.needsTriageIssues.length : 60
+    },
+    {
+      key: "pending_pr",
+      label: "Pending PRs",
+      value: person.pendingPrs.length,
+      detail: pendingDetail,
+      tone:
+        person.attentionPrs.length > 0 || (oldestPendingPr !== null && oldestPendingPr >= 24)
+          ? "attention"
+          : person.pendingPrs.length > 0
+            ? "normal"
+            : "good",
+      target: "pending_pr",
+      priority:
+        person.attentionPrs.length > 0 || (oldestPendingPr !== null && oldestPendingPr >= 24)
+          ? 650 + person.pendingPrs.length
+          : person.pendingPrs.length > 0
+            ? 300 + person.pendingPrs.length
+            : 50
+    }
+  ];
 }
 
 function testingCountForPerson(login: string, personalByLogin: Map<string, PersonalActionView>): number {
