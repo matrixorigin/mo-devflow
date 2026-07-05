@@ -285,6 +285,7 @@ type DriftSignalFilter =
   | "warning"
   | "unowned"
   | "ai_easy"
+  | "defaulted_ai_easy"
   | "slow_to_test"
   | "pr_blockers"
   | "partial_evidence"
@@ -347,6 +348,7 @@ const driftSignalFilters = [
   "warning",
   "unowned",
   "ai_easy",
+  "defaulted_ai_easy",
   "slow_to_test",
   "pr_blockers",
   "partial_evidence",
@@ -2563,6 +2565,9 @@ export function aiDriftSignalMatchesSignalFilter(signal: AiDriftSignalView, filt
   }
   if (filter === "ai_easy") {
     return effectiveAiEffortLabel(signal.aiEffortLabel) === "ai-easy";
+  }
+  if (filter === "defaulted_ai_easy") {
+    return signal.aiEffortLabel === null;
   }
   if (filter === "slow_to_test") {
     return signal.ruleKey === "ai_easy_critical_too_old";
@@ -10155,6 +10160,7 @@ function DriftSignalSummary({
   const warning = count("warning");
   const unowned = count("unowned");
   const aiEasy = count("ai_easy");
+  const defaultedAiEasy = count("defaulted_ai_easy");
   const slowToTest = count("slow_to_test");
   const prBlockers = count("pr_blockers");
   const partial = count("partial_evidence");
@@ -10172,6 +10178,12 @@ function DriftSignalSummary({
     { filter: "warning", label: "warning", value: warning, tone: warning > 0 ? "attention" : "good" },
     { filter: "unowned", label: "unowned", value: unowned, tone: unowned > 0 ? "critical" : "good" },
     { filter: "ai_easy", label: "ai-easy", value: aiEasy, tone: aiEasy > 0 ? "attention" : "muted" },
+    {
+      filter: "defaulted_ai_easy",
+      label: "default ai-easy",
+      value: defaultedAiEasy,
+      tone: defaultedAiEasy > 0 ? "attention" : "muted"
+    },
     {
       filter: "slow_to_test",
       label: "slow to test",
@@ -21346,7 +21358,14 @@ export default function App() {
         title: "AI label",
         dataIndex: "aiEffortLabel",
         width: 128,
-        render: (label) => <Tag color="blue">{effectiveAiEffortLabel(label)}</Tag>
+        render: (label) =>
+          label ? (
+            <Tag color="blue">{label}</Tag>
+          ) : (
+            <Tooltip title="No ai-* label was cached; this signal treats the work as ai-easy by policy.">
+              <Tag color="gold">default ai-easy</Tag>
+            </Tooltip>
+          )
       },
       {
         title: "Notification",

@@ -180,13 +180,13 @@ describe("dashboard hash filters", () => {
       violationSignalFilter: "fixable"
     });
     const driftHash = dashboardHashForView("Drift", {
-      driftSignalFilter: "slow_to_test"
+      driftSignalFilter: "defaulted_ai_easy"
     });
 
     expect(violationHash).toBe("violations?signal=fixable");
-    expect(driftHash).toBe("drift?signal=slow_to_test");
+    expect(driftHash).toBe("drift?signal=defaulted_ai_easy");
     expect(violationSignalFilterFromHash(`#${violationHash}`)).toBe("fixable");
-    expect(driftSignalFilterFromHash(`#${driftHash}`)).toBe("slow_to_test");
+    expect(driftSignalFilterFromHash(`#${driftHash}`)).toBe("defaulted_ai_easy");
     expect(driftSignalFilterFromHash("#drift?signal=pr_blockers")).toBe("pr_blockers");
     expect(violationSignalFilterFromHash("#violations?source_id=42&signal=critical")).toBe("all");
     expect(driftSignalFilterFromHash("#drift?source_id=42&signal=notification_failed")).toBe("all");
@@ -654,6 +654,10 @@ describe("dashboard hash filters", () => {
     } as any;
 
     expect(aiDriftSignalMatchesSignalFilter(signal, "ai_easy")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter(signal, "defaulted_ai_easy")).toBe(true);
+    expect(aiDriftSignalMatchesSignalFilter({ ...signal, aiEffortLabel: "ai-easy" } as any, "defaulted_ai_easy")).toBe(
+      false
+    );
     expect(aiDriftSignalMatchesSignalFilter(signal, "slow_to_test")).toBe(true);
     expect(aiDriftSignalMatchesSignalFilter(signal, "pr_blockers")).toBe(false);
     expect(aiDriftSignalMatchesSignalFilter(blockerSignal, "pr_blockers")).toBe(true);
