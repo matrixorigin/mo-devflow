@@ -20880,7 +20880,7 @@ export default function App() {
               {visibleOperations.map((operation, index) => (
                 <Tooltip
                   key={`${operation.type}-${index}`}
-                  title={operation.type === "add_comment" ? operation.body : undefined}
+                  title={operation.type === "add_comment" ? "Comment body is hidden in the audit list." : undefined}
                 >
                   <Tag color={operation.type === "remove_label" ? "orange" : "green"}>
                     {workflowOperationSummary(operation)}
@@ -20896,7 +20896,9 @@ export default function App() {
                       {hiddenOperations.map((operation, index) => (
                         <Tooltip
                           key={`${operation.type}-${index}`}
-                          title={operation.type === "add_comment" ? operation.body : undefined}
+                          title={
+                            operation.type === "add_comment" ? "Comment body is hidden in the audit list." : undefined
+                          }
                         >
                           <Tag color={operation.type === "remove_label" ? "orange" : "green"}>
                             {workflowOperationSummary(operation)}

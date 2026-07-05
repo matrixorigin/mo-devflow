@@ -148,7 +148,7 @@ describe("write action audit view", () => {
         JSON.stringify([
           { type: "add_label", label: "needs-triage" },
           { type: "remove_label", label: "severity/s0" },
-          { type: "add_comment", body: "Deferred with reason." },
+          { type: "add_comment", body: "Deferred with private context." },
           { type: "add_label", label: "" },
           { type: "unknown", label: "ignored" },
           "not-an-operation"
@@ -157,13 +157,22 @@ describe("write action audit view", () => {
     ).toEqual([
       { type: "add_label", label: "needs-triage" },
       { type: "remove_label", label: "severity/s0" },
-      { type: "add_comment", body: "Deferred with reason." }
+      { type: "add_comment", body: "[comment body hidden from dashboard audit]" }
     ]);
   });
 
   test("drops malformed workflow operation JSON instead of exposing raw payloads", () => {
     expect(workflowFixOperationsFromJson("{not-json")).toEqual([]);
     expect(workflowFixOperationsFromJson(JSON.stringify({ type: "add_label", label: "needs-triage" }))).toEqual([]);
+  });
+
+  test("redacts comment bodies from dashboard audit operations", () => {
+    const operations = workflowFixOperationsFromJson(
+      JSON.stringify([{ type: "add_comment", body: "internal customer context should not be listed" }])
+    );
+
+    expect(operations).toEqual([{ type: "add_comment", body: "[comment body hidden from dashboard audit]" }]);
+    expect(JSON.stringify(operations)).not.toContain("internal customer context");
   });
 
   test("maps write execution rows to frontend-safe audit summaries", () => {

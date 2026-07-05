@@ -20,6 +20,8 @@ interface RowData extends RowDataPacket {
   [key: string]: unknown;
 }
 
+const auditCommentBodyRedaction = "[comment body hidden from dashboard audit]";
+
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -321,7 +323,7 @@ export function workflowFixOperationsFromJson(value: string | null | undefined):
       operations.push({ type: operation.type, label: operation.label });
     }
     if (operation.type === "add_comment" && typeof operation.body === "string" && operation.body.trim()) {
-      operations.push({ type: "add_comment", body: operation.body });
+      operations.push({ type: "add_comment", body: auditCommentBodyRedaction });
     }
   }
   return operations;
