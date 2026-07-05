@@ -51,6 +51,7 @@ const leasedWebhookDeliveryColumns = [
   "processing_owner"
 ].join(", ");
 const webhookEventFailureSampleLimit = 100;
+const webhookClaimCandidateLimit = 8;
 
 function stringify(value: unknown): string {
   return JSON.stringify(value ?? null);
@@ -194,42 +195,48 @@ export async function claimNextGitHubWebhookDelivery(input: {
          OR (status = 'processing' AND processing_expires_at < ?)
        )
      ORDER BY received_at ASC, id ASC
-     LIMIT 1`,
+     LIMIT ${webhookClaimCandidateLimit}`,
     [input.repoId, now]
   );
-  const candidate = candidates[0];
-  if (!candidate) {
-    return null;
+
+  for (const candidate of candidates) {
+    const candidateId = asNumber(candidate.id);
+    const [result] = await getPool().execute<ResultSetHeader>(
+      `UPDATE github_webhook_deliveries
+       SET status = 'processing',
+           attempts = attempts + 1,
+           processing_owner = ?,
+           processing_started_at = ?,
+           processing_expires_at = ?,
+           error_message = NULL
+       WHERE id = ?
+         AND repo_id = ?
+         AND (
+           status = 'received'
+           OR (status = 'processing' AND processing_expires_at < ?)
+         )`,
+      [input.processingOwner, now, leaseExpiresAt, candidateId, input.repoId, now]
+    );
+    if (Number(result.affectedRows ?? 0) === 0) {
+      continue;
+    }
+
+    const [rows] = await getPool().execute<RowData[]>(
+      `SELECT ${leasedWebhookDeliveryColumns}
+       FROM github_webhook_deliveries
+       WHERE id = ?
+         AND status = 'processing'
+         AND processing_owner = ?
+         AND processing_expires_at >= ?
+       LIMIT 1`,
+      [candidateId, input.processingOwner, now]
+    );
+    if (rows[0]) {
+      return toLeasedDelivery(rows[0]);
+    }
   }
 
-  const [result] = await getPool().execute<ResultSetHeader>(
-    `UPDATE github_webhook_deliveries
-     SET status = 'processing',
-         attempts = attempts + 1,
-         processing_owner = ?,
-         processing_started_at = ?,
-         processing_expires_at = ?,
-         error_message = NULL
-     WHERE id = ?
-       AND repo_id = ?
-       AND (
-         status = 'received'
-         OR (status = 'processing' AND processing_expires_at < ?)
-       )`,
-    [input.processingOwner, now, leaseExpiresAt, asNumber(candidate.id), input.repoId, now]
-  );
-  if (Number(result.affectedRows ?? 0) === 0) {
-    return null;
-  }
-
-  const [rows] = await getPool().execute<RowData[]>(
-    `SELECT ${leasedWebhookDeliveryColumns}
-     FROM github_webhook_deliveries
-     WHERE id = ? AND processing_owner = ?
-     LIMIT 1`,
-    [asNumber(candidate.id), input.processingOwner]
-  );
-  return rows[0] ? toLeasedDelivery(rows[0]) : null;
+  return null;
 }
 
 export async function completeGitHubWebhookDelivery(input: {
@@ -237,6 +244,7 @@ export async function completeGitHubWebhookDelivery(input: {
   processingOwner: string;
   result: unknown;
 }): Promise<void> {
+  const now = nowSql();
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE github_webhook_deliveries
      SET status = 'processed',
@@ -245,11 +253,14 @@ export async function completeGitHubWebhookDelivery(input: {
          processing_expires_at = NULL,
          processing_result_json = ?,
          error_message = NULL
-     WHERE id = ? AND processing_owner = ?`,
-    [nowSql(), stringify(input.result), input.deliveryId, input.processingOwner]
+     WHERE id = ?
+       AND status = 'processing'
+       AND processing_owner = ?
+       AND processing_expires_at >= ?`,
+    [now, stringify(input.result), input.deliveryId, input.processingOwner, now]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error(`Cannot complete webhook delivery ${input.deliveryId}; lease is no longer owned by this worker.`);
+    throw new Error(`Cannot complete webhook delivery ${input.deliveryId}; lease is no longer valid for this worker.`);
   }
 }
 
@@ -259,6 +270,7 @@ export async function failGitHubWebhookDelivery(input: {
   errorMessage: string;
   status?: "failed" | "failed_normalization";
 }): Promise<void> {
+  const now = nowSql();
   const [result] = await getPool().execute<ResultSetHeader>(
     `UPDATE github_webhook_deliveries
      SET status = ?,
@@ -266,11 +278,14 @@ export async function failGitHubWebhookDelivery(input: {
          processing_owner = NULL,
          processing_expires_at = NULL,
          error_message = ?
-     WHERE id = ? AND processing_owner = ?`,
-    [input.status ?? "failed", nowSql(), input.errorMessage, input.deliveryId, input.processingOwner]
+     WHERE id = ?
+       AND status = 'processing'
+       AND processing_owner = ?
+       AND processing_expires_at >= ?`,
+    [input.status ?? "failed", now, input.errorMessage, input.deliveryId, input.processingOwner, now]
   );
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error(`Cannot fail webhook delivery ${input.deliveryId}; lease is no longer owned by this worker.`);
+    throw new Error(`Cannot fail webhook delivery ${input.deliveryId}; lease is no longer valid for this worker.`);
   }
 }
 
