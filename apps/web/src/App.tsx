@@ -1337,7 +1337,7 @@ function actionErrorGuidance(context: ActionErrorContext, message: string): stri
   if (normalized.includes("sign in") || normalized.includes("login")) {
     return "Sign in with GitHub in this browser before retrying.";
   }
-  if (normalized.includes("rate limit") || normalized.includes("retry later")) {
+  if (normalized.includes("rate limit") || normalized.includes("quota") || normalized.includes("retry later")) {
     return "Wait for the retry window to pass; avoid repeatedly submitting the same action.";
   }
   if (normalized.includes("permission") || normalized.includes("scope") || normalized.includes("rejected")) {
@@ -22012,9 +22012,10 @@ export default function App() {
     testingQueue: () => openIssueTestingQueue("all"),
     workflowViolations: () => selectView("Violations")
   };
-  const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
-  const latestRateLimitRemaining = latestRateLimitHealth?.rateLimitRemaining ?? null;
-  const latestRateLimitResetAt = latestRateLimitHealth?.rateLimitResetAt ?? null;
+  const dashboardRateLimit = data ? syncRateLimitSummary(data.sync.health) : null;
+  const latestRateLimitRemaining = dashboardRateLimit?.lowestRemaining ?? null;
+  const latestRateLimitLayer = dashboardRateLimit?.lowestLayer ?? null;
+  const latestRateLimitResetAt = dashboardRateLimit?.resetAt ?? null;
   const testingHasTurnoverHistory = data
     ? data.testing.issueTransitionEvents > 0 || data.testing.handoffToCloseSamples > 0
     : false;
@@ -22504,7 +22505,7 @@ export default function App() {
                 className="band"
                 type={latestRateLimitRemaining <= 0 ? "error" : "warning"}
                 title="GitHub API rate limit is low"
-                description={`Latest ${latestRateLimitHealth?.layer ?? "sync"} run reported ${latestRateLimitRemaining} requests remaining${
+                description={`Lowest ${latestRateLimitLayer ? labelText(latestRateLimitLayer) : "sync"} run reported ${latestRateLimitRemaining} requests remaining${
                   latestRateLimitResetAt ? `; reset ${formatDate(latestRateLimitResetAt)}` : ""
                 }.`}
                 showIcon

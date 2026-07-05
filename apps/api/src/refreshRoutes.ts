@@ -1,14 +1,15 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
   enqueueJobsNow,
+  getOperationalHealth,
   getRepoId,
   recordManualRefreshRequest,
   retryFailedGitHubWebhookDeliveries,
   upsertRepoProfile
 } from "@mo-devflow/db";
-import type { ManualRefreshLayer } from "@mo-devflow/shared";
+import type { ManualRefreshLayer, OperationalHealthSummary, SyncHealthLayer } from "@mo-devflow/shared";
 import { getSessionRecordFromRequest } from "./authRoutes";
 import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 import { FixedWindowRateLimiter, manualRefreshRateLimitConfigFromEnv } from "./rateLimit";
@@ -30,6 +31,90 @@ function uniqueLayers(layers: ManualRefreshLayer[] | undefined): ManualRefreshLa
 
 function manualRefreshRateLimitKey(request: FastifyRequest, userId: number): string {
   return `manual-refresh:${userId}:${request.ip || "unknown"}`;
+}
+
+const githubApiRefreshLayers = new Set<ManualRefreshLayer>([
+  "github_sync",
+  "pr_backfill",
+  "issue_timeline_backfill",
+  "comment_backfill",
+  "webhooks"
+]);
+
+export interface ManualRefreshGithubRateLimitBlock {
+  blockedLayers: ManualRefreshLayer[];
+  rateLimitedLayers: SyncHealthLayer[];
+  resetAt: string | null;
+  retryAfterSeconds: number | null;
+}
+
+function retryAfterSecondsForReset(resetAt: string | null, nowMs = Date.now()): number | null {
+  if (!resetAt) {
+    return null;
+  }
+  const resetMs = Date.parse(resetAt);
+  if (!Number.isFinite(resetMs)) {
+    return null;
+  }
+  return Math.max(1, Math.ceil((resetMs - nowMs) / 1000));
+}
+
+export function manualRefreshGithubRateLimitBlock(input: {
+  requestedLayers: ManualRefreshLayer[];
+  operational: OperationalHealthSummary;
+  nowMs?: number;
+}): ManualRefreshGithubRateLimitBlock | null {
+  if (input.operational.sync.rateLimitedLayers.length === 0) {
+    return null;
+  }
+  const blockedLayers = input.requestedLayers.filter((layer) => githubApiRefreshLayers.has(layer));
+  if (blockedLayers.length === 0) {
+    return null;
+  }
+  const resetAt =
+    input.operational.sync.health
+      .filter((item) => input.operational.sync.rateLimitedLayers.includes(item.layer) && item.rateLimitResetAt !== null)
+      .map((item) => item.rateLimitResetAt)
+      .filter((value): value is string => value !== null)
+      .sort()[0] ?? null;
+  return {
+    blockedLayers,
+    rateLimitedLayers: input.operational.sync.rateLimitedLayers,
+    resetAt,
+    retryAfterSeconds: retryAfterSecondsForReset(resetAt, input.nowMs)
+  };
+}
+
+async function githubRateLimitBlockForRefresh(input: {
+  app: FastifyInstance;
+  repoId: number;
+  requestedLayers: ManualRefreshLayer[];
+}): Promise<ManualRefreshGithubRateLimitBlock | null> {
+  try {
+    return manualRefreshGithubRateLimitBlock({
+      requestedLayers: input.requestedLayers,
+      operational: await getOperationalHealth(input.repoId)
+    });
+  } catch (error) {
+    input.app.log.warn({ error, requestedLayers: input.requestedLayers }, "manual refresh quota health check failed");
+    return null;
+  }
+}
+
+function sendGithubRateLimitedRefresh(reply: FastifyReply, block: ManualRefreshGithubRateLimitBlock) {
+  if (block.retryAfterSeconds !== null) {
+    reply.header("retry-after", String(block.retryAfterSeconds));
+  }
+  return reply.status(429).send({
+    error: "manual_refresh_github_rate_limited",
+    message: `GitHub API quota is exhausted for ${block.rateLimitedLayers.join(
+      ", "
+    )}. Wait before queueing GitHub sync or backfill layers. Cache-only layers can still run.`,
+    blockedLayers: block.blockedLayers,
+    rateLimitedLayers: block.rateLimitedLayers,
+    resetAt: block.resetAt,
+    retryAfterSeconds: block.retryAfterSeconds
+  });
 }
 
 export async function registerRefreshRoutes(app: FastifyInstance, options: RefreshRouteOptions = {}): Promise<void> {
@@ -69,6 +154,10 @@ export async function registerRefreshRoutes(app: FastifyInstance, options: Refre
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const requestedAt = new Date().toISOString();
     const requestedLayers = uniqueLayers(parsed.data.layers);
+    const quotaBlock = await githubRateLimitBlockForRefresh({ app, repoId, requestedLayers });
+    if (quotaBlock) {
+      return sendGithubRateLimitedRefresh(reply, quotaBlock);
+    }
     const jobs: RefreshJobSeed[] = requestedLayers.map((layer) => ({
       jobKey: jobKeyForLayer(layer, profile.key),
       jobType: layer,
@@ -123,6 +212,10 @@ export async function registerRefreshRoutes(app: FastifyInstance, options: Refre
     const profile = loadRepoProfile();
     const repoId = (await getRepoId(profile.key)) ?? (await upsertRepoProfile(profile));
     const requestedAt = new Date().toISOString();
+    const quotaBlock = await githubRateLimitBlockForRefresh({ app, repoId, requestedLayers: ["webhooks"] });
+    if (quotaBlock) {
+      return sendGithubRateLimitedRefresh(reply, quotaBlock);
+    }
     try {
       const retryResult = await retryFailedGitHubWebhookDeliveries({ repoId });
       const requestedLayers: ManualRefreshLayer[] =

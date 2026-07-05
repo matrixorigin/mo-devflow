@@ -1,11 +1,13 @@
 import Fastify from "fastify";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { registerRefreshRoutes } from "./refreshRoutes";
+import type { OperationalHealthSummary } from "@mo-devflow/shared";
+import { manualRefreshGithubRateLimitBlock, registerRefreshRoutes } from "./refreshRoutes";
 import { csrfCookieName, csrfHeaderName } from "./csrf";
 import { FixedWindowRateLimiter } from "./rateLimit";
 
 const mocks = vi.hoisted(() => ({
   enqueueJobsNow: vi.fn(),
+  getOperationalHealth: vi.fn(),
   getRepoId: vi.fn(),
   getSessionRecordFromRequest: vi.fn(),
   loadRepoProfile: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock("@mo-devflow/config", () => ({
 
 vi.mock("@mo-devflow/db", () => ({
   enqueueJobsNow: mocks.enqueueJobsNow,
+  getOperationalHealth: mocks.getOperationalHealth,
   getRepoId: mocks.getRepoId,
   recordManualRefreshRequest: mocks.recordManualRefreshRequest,
   retryFailedGitHubWebhookDeliveries: mocks.retryFailedGitHubWebhookDeliveries,
@@ -48,7 +51,33 @@ describe("refresh routes", () => {
     });
     mocks.loadRepoProfile.mockReturnValue({ key: "matrixorigin/matrixone" });
     mocks.getRepoId.mockResolvedValue(7);
+    mocks.getOperationalHealth.mockResolvedValue(healthyOperationalHealth());
     mocks.retryFailedGitHubWebhookDeliveries.mockResolvedValue({ retriedDeliveries: 0 });
+  });
+
+  test("derives a manual refresh quota block only for GitHub API layers", () => {
+    const operational = rateLimitedOperationalHealth();
+
+    expect(
+      manualRefreshGithubRateLimitBlock({
+        requestedLayers: ["rules", "metrics"],
+        operational,
+        nowMs: Date.parse("2026-07-05T09:59:00.000Z")
+      })
+    ).toBeNull();
+
+    expect(
+      manualRefreshGithubRateLimitBlock({
+        requestedLayers: ["github_sync", "rules"],
+        operational,
+        nowMs: Date.parse("2026-07-05T09:59:00.000Z")
+      })
+    ).toEqual({
+      blockedLayers: ["github_sync"],
+      rateLimitedLayers: ["pr_backfill"],
+      resetAt: "2026-07-05T10:00:00.000Z",
+      retryAfterSeconds: 60
+    });
   });
 
   test("queues only selected manual refresh layers", async () => {
@@ -101,6 +130,68 @@ describe("refresh routes", () => {
         })
       );
       expect(onDashboardMutated).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("blocks GitHub manual refresh layers while GitHub quota is exhausted", async () => {
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
+    mocks.getOperationalHealth.mockResolvedValue(rateLimitedOperationalHealth());
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh",
+        headers: csrfHeaders,
+        payload: { layers: ["github_sync", "rules"] }
+      });
+
+      expect(response.statusCode).toBe(429);
+      expect(response.json()).toMatchObject({
+        error: "manual_refresh_github_rate_limited",
+        blockedLayers: ["github_sync"],
+        rateLimitedLayers: ["pr_backfill"],
+        resetAt: "2026-07-05T10:00:00.000Z"
+      });
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(mocks.recordManualRefreshRequest).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("allows cache-only manual refresh layers while GitHub quota is exhausted", async () => {
+    const app = Fastify();
+    await registerRefreshRoutes(app);
+    mocks.getOperationalHealth.mockResolvedValue(rateLimitedOperationalHealth());
+    mocks.enqueueJobsNow.mockResolvedValue([
+      { jobKey: "rules:matrixorigin/matrixone", jobType: "rules", status: "pending", nextRunAt: null },
+      { jobKey: "metrics:matrixorigin/matrixone", jobType: "metrics", status: "pending", nextRunAt: null }
+    ]);
+    mocks.recordManualRefreshRequest.mockResolvedValue({
+      requestId: 4,
+      requestedLayers: ["rules", "metrics"],
+      queuedJobs: [],
+      requestedAt: "2026-07-04T00:00:00.000Z"
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh",
+        headers: csrfHeaders,
+        payload: { layers: ["rules", "metrics"] }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledWith([
+        expect.objectContaining({ jobType: "rules" }),
+        expect.objectContaining({ jobType: "metrics" })
+      ]);
     } finally {
       await app.close();
     }
@@ -258,6 +349,33 @@ describe("refresh routes", () => {
     }
   });
 
+  test("blocks webhook retry while GitHub quota is exhausted", async () => {
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerRefreshRoutes(app, { onDashboardMutated });
+    mocks.getOperationalHealth.mockResolvedValue(rateLimitedOperationalHealth());
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/refresh/webhooks/retry-failed",
+        headers: csrfHeaders
+      });
+
+      expect(response.statusCode).toBe(429);
+      expect(response.json()).toMatchObject({
+        error: "manual_refresh_github_rate_limited",
+        blockedLayers: ["webhooks"],
+        rateLimitedLayers: ["pr_backfill"]
+      });
+      expect(mocks.retryFailedGitHubWebhookDeliveries).not.toHaveBeenCalled();
+      expect(mocks.enqueueJobsNow).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("rejects webhook retry before resetting deliveries when CSRF is missing", async () => {
     const app = Fastify();
     await registerRefreshRoutes(app);
@@ -313,3 +431,70 @@ describe("refresh routes", () => {
     }
   });
 });
+
+function healthyOperationalHealth(): OperationalHealthSummary {
+  return {
+    status: "healthy",
+    recommendedAction: null,
+    sync: {
+      health: [],
+      unhealthyLayers: [],
+      rateLimitedLayers: []
+    },
+    cache: {
+      status: "healthy",
+      staleObjects: 0,
+      staleThresholdHours: 6,
+      oldestCacheAgeHours: null,
+      partialObjects: 0
+    },
+    notifications: {
+      failedDeliveries: 0
+    },
+    webhooks: {
+      pendingDeliveries: 0,
+      staleProcessingDeliveries: 0,
+      processedDeliveries: 0,
+      failedDeliveries: 0,
+      normalizationFailedDeliveries: 0,
+      ignoredDeliveries: 0,
+      duplicateDeliveries: 0,
+      connectivityProbeDeliveries: 0,
+      lastReceivedAt: null,
+      oldestPendingReceivedAt: null,
+      lastConnectivityProbeAt: null,
+      latestFailure: null,
+      eventSummaries: [],
+      recentDeliveries: []
+    }
+  };
+}
+
+function rateLimitedOperationalHealth(): OperationalHealthSummary {
+  return {
+    ...healthyOperationalHealth(),
+    status: "degraded",
+    recommendedAction:
+      "GitHub API rate limit is exhausted for pr_backfill; wait until 2026-07-05T10:00:00.000Z before queueing more GitHub sync or backfill work.",
+    sync: {
+      health: [
+        {
+          layer: "pr_backfill",
+          status: "success",
+          lastSuccessfulAt: "2026-07-05T09:55:00.000Z",
+          lastAttemptedAt: "2026-07-05T09:55:00.000Z",
+          lastFailedAt: null,
+          lastFailureMessage: null,
+          cursorValue: null,
+          errorMessage: null,
+          rateLimitRemaining: 0,
+          rateLimitResetAt: "2026-07-05T10:00:00.000Z",
+          skipped: false,
+          skipReason: null
+        }
+      ],
+      unhealthyLayers: [],
+      rateLimitedLayers: ["pr_backfill"]
+    }
+  };
+}
