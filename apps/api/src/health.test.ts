@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { JobQueueHealth, OperationalHealthSummary, WorkerHealth } from "@mo-devflow/shared";
-import { apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
+import type { JobQueueHealth, OperationalHealthSummary, RepoProfile, WorkerHealth } from "@mo-devflow/shared";
+import { apiAccessHealthFromConfig, apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
 
 const worker: WorkerHealth = {
   status: "active",
@@ -65,6 +65,48 @@ const operational: OperationalHealthSummary = {
     eventSummaries: [],
     recentDeliveries: []
   }
+};
+
+const profile: RepoProfile = {
+  key: "matrixorigin/matrixone",
+  repo: { owner: "matrixorigin", name: "matrixone" },
+  reporting: { timezone: "Asia/Shanghai", weekStart: "Monday" },
+  access: {
+    anonymousRead: true,
+    exposeUserTokenSyncedPrivateData: false,
+    criticalScope: "repo-wide",
+    writeBackEnabled: false
+  },
+  people: { watchedUsers: [], testers: [] },
+  ownership: {
+    issueOwnerPriority: ["assignee", "linked_pr_author", "author"],
+    prOwner: "author",
+    unownedBucket: true
+  },
+  labels: {
+    bug: "kind/bug",
+    needsTriage: "needs-triage",
+    deferred: "deferred",
+    critical: ["severity/s-1", "severity/s0"],
+    active: ["severity/s-1", "severity/s0", "severity/s1"],
+    aiEffort: ["ai-easy", "ai-light", "ai-medium", "ai-heavy", "ai-manual"]
+  },
+  thresholds: {
+    prNoActionAttentionHours: 24,
+    criticalNoActionAttentionHours: 24,
+    aiEasyS0ToTestAttentionDays: 7,
+    needsTriageStaleHours: 72,
+    prematureSeverityWindowHours: 24,
+    aiEasyCriticalCriticalDays: 14
+  },
+  testing: { handoffScope: "issue", handoffSignals: { labels: [] } },
+  workflow: { skipUsers: [] },
+  notifications: {
+    wecom: { enabled: false },
+    employees: {},
+    routing: { cooldownHours: 12, fallbackRecipient: "maintainer_group", escalateAfterHours: 24 }
+  },
+  raw: {}
 };
 
 describe("API health status", () => {
@@ -218,5 +260,51 @@ describe("API health status", () => {
     expect(findings.find((finding) => finding.key === "operational")).toMatchObject({
       recommendedLayers: ["github_sync", "webhooks", "rules", "metrics", "ai_drift"]
     });
+  });
+
+  test("reports access configuration gaps without exposing secrets", () => {
+    const access = apiAccessHealthFromConfig(profile, {});
+    const findings = apiHealthFindings({ worker, jobQueue, operational, access });
+
+    expect(access).toMatchObject({
+      githubOAuthConfigured: false,
+      tokenEncryptionConfigured: false,
+      serviceReadTokenConfigured: false,
+      writeBackEnabled: false
+    });
+    expect(findings.map((finding) => finding.key)).toEqual([
+      "github_oauth",
+      "token_encryption",
+      "service_read_token"
+    ]);
+    expect(findings.find((finding) => finding.key === "github_oauth")).toMatchObject({ severity: "warning" });
+    expect(findings.find((finding) => finding.key === "service_read_token")).toMatchObject({
+      recommendedLayers: [
+        "pr_backfill",
+        "issue_timeline_backfill",
+        "comment_backfill",
+        "rules",
+        "metrics",
+        "ai_drift"
+      ]
+    });
+  });
+
+  test("degrades health when write-back is enabled but login or token encryption is not configured", () => {
+    const access = apiAccessHealthFromConfig(
+      { ...profile, access: { ...profile.access, writeBackEnabled: true } },
+      {
+        MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+        MO_DEVFLOW_TOKEN_ENCRYPTION_KEY: "too-short"
+      }
+    );
+
+    expect(access.tokenEncryptionConfigured).toBe(false);
+    expect(access.tokenEncryptionError).toContain("32 bytes");
+    expect(apiHealthStatus({ worker, jobQueue, operational, access })).toBe("degraded");
+    expect(apiHealthFindings({ worker, jobQueue, operational, access })).toEqual([
+      expect.objectContaining({ key: "github_oauth", severity: "critical" }),
+      expect.objectContaining({ key: "token_encryption", severity: "critical" })
+    ]);
   });
 });

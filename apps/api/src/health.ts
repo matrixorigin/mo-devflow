@@ -1,10 +1,13 @@
 import {
+  repoProfileConfigurationStatus,
   syncHealthLayers,
+  type RepoProfile,
   type JobQueueHealth,
   type ManualRefreshLayer,
   type OperationalHealthSummary,
   type WorkerHealth
 } from "@mo-devflow/shared";
+import { tokenEncryptionConfigFromEnv } from "./authCrypto";
 
 export type ApiHealthStatus = "healthy" | "degraded" | "unhealthy";
 export type ApiHealthFindingSeverity = "warning" | "critical";
@@ -16,6 +19,15 @@ export interface ApiHealthFinding {
   recommendedLayers?: ManualRefreshLayer[];
 }
 
+export interface ApiAccessHealth {
+  anonymousReadEnabled: boolean;
+  writeBackEnabled: boolean;
+  githubOAuthConfigured: boolean;
+  tokenEncryptionConfigured: boolean;
+  tokenEncryptionError: string | null;
+  serviceReadTokenConfigured: boolean;
+}
+
 const staleCacheRepairLayers: ManualRefreshLayer[] = ["github_sync", "rules", "metrics", "ai_drift"];
 const partialCacheRepairLayers: ManualRefreshLayer[] = [
   "pr_backfill",
@@ -25,6 +37,43 @@ const partialCacheRepairLayers: ManualRefreshLayer[] = [
   "metrics",
   "ai_drift"
 ];
+
+function githubOAuthConfiguredFromEnv(env: Record<string, string | undefined>): boolean {
+  return Boolean(
+    env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID?.trim() && env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET?.trim()
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function tokenEncryptionHealthFromEnv(env: Record<string, string | undefined>): {
+  configured: boolean;
+  error: string | null;
+} {
+  try {
+    return { configured: tokenEncryptionConfigFromEnv(env) !== null, error: null };
+  } catch (error) {
+    return { configured: false, error: errorMessage(error) };
+  }
+}
+
+export function apiAccessHealthFromConfig(
+  profile: RepoProfile,
+  env: Record<string, string | undefined> = process.env
+): ApiAccessHealth {
+  const profileConfiguration = repoProfileConfigurationStatus(profile, env);
+  const tokenEncryption = tokenEncryptionHealthFromEnv(env);
+  return {
+    anonymousReadEnabled: profile.access.anonymousRead,
+    writeBackEnabled: profile.access.writeBackEnabled,
+    githubOAuthConfigured: githubOAuthConfiguredFromEnv(env),
+    tokenEncryptionConfigured: tokenEncryption.configured,
+    tokenEncryptionError: tokenEncryption.error,
+    serviceReadTokenConfigured: profileConfiguration.githubServiceTokenConfigured
+  };
+}
 
 function orderedLayers(layers: Iterable<ManualRefreshLayer>): ManualRefreshLayer[] {
   const selected = new Set(layers);
@@ -61,6 +110,7 @@ export function apiHealthStatus(input: {
   jobQueue: JobQueueHealth;
   operational?: OperationalHealthSummary | null;
   operationalError?: string | null;
+  access?: ApiAccessHealth | null;
 }): ApiHealthStatus {
   if (input.worker.status !== "active") {
     return "degraded";
@@ -72,6 +122,12 @@ export function apiHealthStatus(input: {
     return "degraded";
   }
   if (input.operational?.status === "degraded") {
+    return "degraded";
+  }
+  if (
+    input.access?.writeBackEnabled &&
+    (!input.access.githubOAuthConfigured || !input.access.tokenEncryptionConfigured)
+  ) {
     return "degraded";
   }
   return "healthy";
@@ -86,6 +142,7 @@ export function apiHealthFindings(input: {
   jobQueue: JobQueueHealth;
   operational?: OperationalHealthSummary | null;
   operationalError?: string | null;
+  access?: ApiAccessHealth | null;
 }): ApiHealthFinding[] {
   const findings: ApiHealthFinding[] = [];
 
@@ -130,6 +187,35 @@ export function apiHealthFindings(input: {
       key: "partial_cache",
       severity: "warning",
       message: `${input.operational.cache.partialObjects} cached GitHub objects have incomplete workflow evidence; backfill PR detail, issue timeline, or comments before treating related conclusions as final.`,
+      recommendedLayers: partialCacheRepairLayers
+    });
+  }
+
+  if (input.access && !input.access.githubOAuthConfigured) {
+    findings.push({
+      key: "github_oauth",
+      severity: input.access.writeBackEnabled ? "critical" : "warning",
+      message:
+        "GitHub OAuth is not configured. Team members can observe cached data, but browser login, manual repair actions, and personal write-token binding are unavailable."
+    });
+  }
+
+  if (input.access && !input.access.tokenEncryptionConfigured) {
+    findings.push({
+      key: "token_encryption",
+      severity: input.access.writeBackEnabled ? "critical" : "warning",
+      message: input.access.tokenEncryptionError
+        ? `Personal write-token encryption is misconfigured: ${input.access.tokenEncryptionError}`
+        : "Personal write-token encryption is not configured. Logged-in users cannot connect personal GitHub write tokens until MO_DEVFLOW_TOKEN_ENCRYPTION_KEY is set."
+    });
+  }
+
+  if (input.access && !input.access.serviceReadTokenConfigured) {
+    findings.push({
+      key: "service_read_token",
+      severity: "warning",
+      message:
+        "No service read token is configured. Repository-wide polling can still use anonymous GitHub quota, but PR review, CI, mergeability, issue links, and comment-backed rules may remain partial.",
       recommendedLayers: partialCacheRepairLayers
     });
   }

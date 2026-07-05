@@ -1460,7 +1460,7 @@ function SessionModelPanel({
           </strong>
           <small>
             {githubOAuthConfigured
-              ? "OAuth creates the signed-in account session for this browser."
+              ? "OAuth creates the account session; no personal token is needed to log in."
               : "Set GitHub OAuth env vars before team members can log in."}
           </small>
         </div>
@@ -1749,7 +1749,7 @@ function AccountControl({
           <Button className="account-observer-button" aria-label="Anonymous observer session details">
             <UserRound size={16} aria-hidden="true" />
             <span>Observer</span>
-            <Tag>{teamSignIn.tokenConnectedUsers} saved tokens</Tag>
+            <Tag>{teamSignIn.connectedUsers} GitHub users</Tag>
             <Tag color={serviceTokenColor}>{serviceTokenLabel}</Tag>
           </Button>
         </Popover>
@@ -6362,6 +6362,14 @@ interface ApiHealthView {
   status: ApiHealthStatus;
   database: string;
   findings?: ApiHealthFindingView[];
+  access?: {
+    anonymousReadEnabled: boolean;
+    writeBackEnabled: boolean;
+    githubOAuthConfigured: boolean;
+    tokenEncryptionConfigured: boolean;
+    tokenEncryptionError: string | null;
+    serviceReadTokenConfigured: boolean;
+  };
   generatedAt: string;
   migration?: {
     status?: string;
@@ -6412,7 +6420,55 @@ function apiHealthFindingLabel(key: string): string {
   if (key === "partial_cache") {
     return "Incomplete Cache";
   }
+  if (key === "github_oauth") {
+    return "GitHub Login";
+  }
+  if (key === "token_encryption") {
+    return "Write Token Encryption";
+  }
+  if (key === "service_read_token") {
+    return "Service Read Token";
+  }
   return labelText(key);
+}
+
+function apiAccessHealthItems(access: NonNullable<ApiHealthView["access"]>): Array<{
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: HealthTileTone;
+}> {
+  return [
+    {
+      key: "oauth",
+      label: "GitHub login",
+      value: access.githubOAuthConfigured ? "configured" : "setup required",
+      detail: access.githubOAuthConfigured ? "OAuth browser sessions can be created." : "Set OAuth client ID and secret.",
+      tone: access.githubOAuthConfigured ? "good" : "attention"
+    },
+    {
+      key: "token-encryption",
+      label: "Write token storage",
+      value: access.tokenEncryptionConfigured ? "configured" : "setup required",
+      detail: access.tokenEncryptionError ?? "Needed before users can connect personal write tokens.",
+      tone: access.tokenEncryptionConfigured ? "good" : "attention"
+    },
+    {
+      key: "service-token",
+      label: "Service read source",
+      value: access.serviceReadTokenConfigured ? "configured" : "anonymous",
+      detail: access.serviceReadTokenConfigured ? "Polling/backfill has authenticated read quota." : "Evidence may stay partial.",
+      tone: access.serviceReadTokenConfigured ? "good" : "attention"
+    },
+    {
+      key: "write-back",
+      label: "Workflow writes",
+      value: access.writeBackEnabled ? "enabled" : "disabled",
+      detail: access.writeBackEnabled ? "Confirmed writes require login and personal token." : "Read-only workflow fixes.",
+      tone: access.writeBackEnabled ? "normal" : "good"
+    }
+  ];
 }
 
 function operationalHealthScore(data: DashboardSummary): { label: string; tone: HealthTileTone } {
@@ -6676,6 +6732,18 @@ function ApiHealthFindingsPanel({
             </Button>
           }
         />
+      ) : null}
+
+      {health?.access ? (
+        <div className="api-health-access-grid" aria-label="Access and login configuration">
+          {apiAccessHealthItems(health.access).map((item) => (
+            <div className={`api-health-access-item api-health-access-${item.tone}`} key={item.key}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <small>{item.detail}</small>
+            </div>
+          ))}
+        </div>
       ) : null}
 
       {health && findings.length === 0 ? (

@@ -8817,6 +8817,61 @@ button.flow-diagnostic-card:focus-visible {
   margin: 0;
 }
 
+.api-health-access-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.api-health-access-item {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.api-health-access-item span,
+.api-health-access-item small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-health-access-item strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-health-access-critical {
+  border-left-color: #dc2626;
+}
+
+.api-health-access-attention {
+  border-left-color: #d97706;
+}
+
+.api-health-access-good {
+  border-left-color: #16a34a;
+}
+
+.api-health-access-normal {
+  border-left-color: #2563eb;
+}
+
 .api-health-finding-list {
   display: grid;
   gap: 8px;
@@ -9975,6 +10030,10 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .team-health-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .api-health-access-grid {
     grid-template-columns: 1fr;
   }
 

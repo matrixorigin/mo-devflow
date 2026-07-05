@@ -14,7 +14,7 @@ import {
 import { registerApiSecurity } from "./apiSecurity";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
-import { apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
+import { apiAccessHealthFromConfig, apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { publicRepoProfileView } from "./profileView";
 import { registerRefreshRoutes } from "./refreshRoutes";
@@ -89,6 +89,7 @@ app.get("/health", async (_request, reply) => {
     await ensureMigrationReady();
     const [worker, jobQueue] = await Promise.all([getWorkerHealth(), getJobQueueHealth()]);
     const profile = loadRepoProfile();
+    const access = apiAccessHealthFromConfig(profile, process.env);
     const repoId = await getRepoId(profile.key);
     let operational = null;
     let operationalError: string | null = null;
@@ -100,12 +101,13 @@ app.get("/health", async (_request, reply) => {
         operationalError = "Operational health summary failed; inspect API logs.";
       }
     }
-    const status = apiHealthStatus({ worker, jobQueue, operational, operationalError });
-    const findings = apiHealthFindings({ worker, jobQueue, operational, operationalError });
+    const status = apiHealthStatus({ worker, jobQueue, operational, operationalError, access });
+    const findings = apiHealthFindings({ worker, jobQueue, operational, operationalError, access });
     return reply.status(apiHealthHttpStatus(status)).send({
       status,
       database: "connected",
       findings,
+      access,
       worker,
       jobQueue,
       operational,
