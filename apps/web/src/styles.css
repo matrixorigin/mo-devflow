@@ -6251,6 +6251,83 @@ button.flow-diagnostic-card:focus-visible {
   padding: 12px;
 }
 
+.api-health-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.api-health-critical {
+  border-left: 3px solid #dc2626;
+}
+
+.api-health-attention {
+  border-left: 3px solid #d97706;
+}
+
+.api-health-good {
+  border-left: 3px solid #16a34a;
+}
+
+.api-health-heading {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.api-health-heading h5 {
+  margin: 0 !important;
+}
+
+.api-health-alert {
+  margin: 0;
+}
+
+.api-health-finding-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.api-health-finding {
+  align-items: start;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #d97706;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.api-health-finding-critical {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  border-left-color: #dc2626;
+}
+
+.api-health-finding-warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.api-health-finding-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.api-health-finding-main .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.api-health-finding-actions {
+  justify-content: flex-end;
+}
+
 .health-layer-list,
 .health-fact-list {
   display: grid;
@@ -7188,6 +7265,19 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .production-readiness-score {
+    justify-content: flex-start;
+  }
+
+  .api-health-heading,
+  .api-health-finding {
+    grid-template-columns: 1fr;
+  }
+
+  .api-health-heading {
+    display: grid;
+  }
+
+  .api-health-finding-actions {
     justify-content: flex-start;
   }
 

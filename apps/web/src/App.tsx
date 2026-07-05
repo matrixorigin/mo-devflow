@@ -372,6 +372,11 @@ function isManualRefreshLayer(value: string): value is ManualRefreshLayer {
   return (syncHealthLayers as readonly string[]).includes(value);
 }
 
+function normalizeManualRefreshLayers(layers: string[] | undefined): ManualRefreshLayer[] {
+  const selected = new Set((layers ?? []).filter(isManualRefreshLayer));
+  return syncHealthLayers.filter((layer) => selected.has(layer));
+}
+
 function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
   if (layer === "github_sync") {
     return "Refresh open issue and PR cache from GitHub.";
@@ -4864,6 +4869,26 @@ function TeamStatusRow({ label, value, onClick }: { label: string; value: string
 }
 
 type HealthTileTone = "critical" | "attention" | "good" | "normal";
+type ApiHealthStatus = "healthy" | "degraded" | "unhealthy";
+type ApiHealthFindingSeverity = "warning" | "critical";
+
+interface ApiHealthFindingView {
+  key: string;
+  severity: ApiHealthFindingSeverity;
+  message: string;
+  recommendedLayers?: string[];
+}
+
+interface ApiHealthView {
+  status: ApiHealthStatus;
+  database: string;
+  findings?: ApiHealthFindingView[];
+  generatedAt: string;
+  migration?: {
+    status?: string;
+    error?: string | null;
+  };
+}
 
 function healthTileToneColor(tone: HealthTileTone): string {
   if (tone === "critical") {
@@ -4876,6 +4901,39 @@ function healthTileToneColor(tone: HealthTileTone): string {
     return "green";
   }
   return "blue";
+}
+
+function apiHealthStatusColor(status: ApiHealthStatus | undefined): string {
+  if (status === "healthy") {
+    return "green";
+  }
+  if (status === "unhealthy") {
+    return "red";
+  }
+  return "orange";
+}
+
+function apiHealthStatusTone(status: ApiHealthStatus | undefined): HealthTileTone {
+  if (status === "healthy") {
+    return "good";
+  }
+  if (status === "unhealthy") {
+    return "critical";
+  }
+  return "attention";
+}
+
+function apiHealthFindingLabel(key: string): string {
+  if (key === "job_queue") {
+    return "Job Queue";
+  }
+  if (key === "operational_summary") {
+    return "Operational Summary";
+  }
+  if (key === "partial_cache") {
+    return "Incomplete Cache";
+  }
+  return labelText(key);
 }
 
 function operationalHealthScore(data: DashboardSummary): { label: string; tone: HealthTileTone } {
@@ -5079,14 +5137,154 @@ function ManualRefreshHistory({ requests }: { requests: DashboardSummary["sync"]
   );
 }
 
+function ApiHealthFindingsPanel({
+  health,
+  loading,
+  error,
+  loadedAt,
+  authenticated,
+  saving,
+  onRefresh,
+  onQueueLayers,
+  onPrepareLayers,
+  onConnectToken
+}: {
+  health: ApiHealthView | null;
+  loading: boolean;
+  error: string | null;
+  loadedAt: string | null;
+  authenticated: boolean;
+  saving: boolean;
+  onRefresh: () => void;
+  onQueueLayers: (layers: ManualRefreshLayer[]) => void;
+  onPrepareLayers: (layers: ManualRefreshLayer[]) => void;
+  onConnectToken: () => void;
+}) {
+  const findings = health?.findings ?? [];
+
+  return (
+    <section className={`health-panel api-health-panel api-health-${apiHealthStatusTone(health?.status)}`}>
+      <div className="api-health-heading">
+        <div>
+          <Title level={5}>API Health Findings</Title>
+          <Text type="secondary">
+            Live service checks from /health. Use these when the dashboard cache and worker state disagree.
+          </Text>
+        </div>
+        <Space size={[6, 6]} wrap>
+          <Tag color={apiHealthStatusColor(health?.status)}>{health ? labelText(health.status) : "not loaded"}</Tag>
+          {health ? <Tag>db {labelText(health.database)}</Tag> : null}
+          {health?.migration?.status ? <Tag>migration {labelText(health.migration.status)}</Tag> : null}
+          {loadedAt ? <Tag>loaded {formatDate(loadedAt)}</Tag> : null}
+          <Button size="small" icon={<RefreshCw size={14} />} loading={loading} onClick={onRefresh}>
+            Refresh
+          </Button>
+        </Space>
+      </div>
+
+      {loading && !health ? <Skeleton active paragraph={{ rows: 2 }} title={false} /> : null}
+
+      {error ? (
+        <Alert
+          className="api-health-alert"
+          type="warning"
+          title="Health check could not be loaded"
+          description={error}
+          showIcon
+          action={
+            <Button size="small" onClick={onRefresh}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
+
+      {health && findings.length === 0 ? (
+        <Alert
+          className="api-health-alert"
+          type="success"
+          title="No API health findings"
+          description={`Generated ${formatDate(health.generatedAt)}.`}
+          showIcon
+        />
+      ) : null}
+
+      {findings.length > 0 ? (
+        <div className="api-health-finding-list" aria-label="API health findings">
+          {findings.map((finding) => {
+            const layers = normalizeManualRefreshLayers(finding.recommendedLayers);
+            return (
+              <article
+                className={`api-health-finding api-health-finding-${finding.severity}`}
+                key={`${finding.key}:${finding.message}`}
+              >
+                <div className="api-health-finding-main">
+                  <Space size={[4, 4]} wrap>
+                    <Tag color={finding.severity === "critical" ? "red" : "orange"}>{finding.severity}</Tag>
+                    <Text strong>{apiHealthFindingLabel(finding.key)}</Text>
+                  </Space>
+                  <Text>{finding.message}</Text>
+                  {layers.length > 0 ? (
+                    <Space size={[4, 4]} wrap>
+                      {layers.map((layer) => (
+                        <Tooltip title={manualRefreshLayerDescription(layer)} key={layer}>
+                          <Tag>{labelText(layer)}</Tag>
+                        </Tooltip>
+                      ))}
+                    </Space>
+                  ) : null}
+                </div>
+                <Space className="api-health-finding-actions" size={[6, 6]} wrap>
+                  {layers.length > 0 ? (
+                    <>
+                      <Tooltip title={authenticated ? "Queue recommended refresh layers" : "Sign in first"}>
+                        <span>
+                          <Button
+                            size="small"
+                            type="primary"
+                            icon={<RefreshCcw size={14} />}
+                            disabled={!authenticated}
+                            loading={saving}
+                            onClick={() => onQueueLayers(layers)}
+                          >
+                            Queue
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Button size="small" disabled={!authenticated} onClick={() => onPrepareLayers(layers)}>
+                        Edit layers
+                      </Button>
+                    </>
+                  ) : null}
+                  {!authenticated ? (
+                    <Button size="small" onClick={onConnectToken}>
+                      Sign in
+                    </Button>
+                  ) : null}
+                </Space>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function HealthBoard({
   data,
   session,
+  apiHealth,
+  apiHealthLoading,
+  apiHealthError,
+  apiHealthLoadedAt,
   authenticated,
   manualRefreshSaving,
   webhookRetrySaving,
   cacheImpactItems,
   onQueueLayers,
+  onPrepareLayers,
+  onRefreshApiHealth,
   onOpenView,
   onImpactSelect,
   onConnectToken,
@@ -5094,11 +5292,17 @@ function HealthBoard({
 }: {
   data: DashboardSummary;
   session: SessionView | null;
+  apiHealth: ApiHealthView | null;
+  apiHealthLoading: boolean;
+  apiHealthError: string | null;
+  apiHealthLoadedAt: string | null;
   authenticated: boolean;
   manualRefreshSaving: boolean;
   webhookRetrySaving: boolean;
   cacheImpactItems: CacheEvidenceImpactItem[];
   onQueueLayers: (layers: ManualRefreshLayer[]) => void;
+  onPrepareLayers: (layers: ManualRefreshLayer[]) => void;
+  onRefreshApiHealth: () => void;
   onOpenView: (view: DashboardView) => void;
   onImpactSelect: (target: CacheEvidenceImpactTarget) => void;
   onConnectToken: () => void;
@@ -5145,6 +5349,19 @@ function HealthBoard({
       ) : null}
 
       <ProductionReadinessStrip summary={productionReadiness} onNavigate={onOpenView} onConnectToken={onConnectToken} />
+
+      <ApiHealthFindingsPanel
+        health={apiHealth}
+        loading={apiHealthLoading}
+        error={apiHealthError}
+        loadedAt={apiHealthLoadedAt}
+        authenticated={authenticated}
+        saving={manualRefreshSaving}
+        onRefresh={onRefreshApiHealth}
+        onQueueLayers={onQueueLayers}
+        onPrepareLayers={onPrepareLayers}
+        onConnectToken={onConnectToken}
+      />
 
       <div className="health-command-grid">
         <HealthMetricCard
@@ -12397,6 +12614,10 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastDashboardLoadedAt, setLastDashboardLoadedAt] = useState<string | null>(null);
   const [dashboardReadModel, setDashboardReadModel] = useState<DashboardReadModelMeta | null>(null);
+  const [apiHealth, setApiHealth] = useState<ApiHealthView | null>(null);
+  const [apiHealthLoading, setApiHealthLoading] = useState(false);
+  const [apiHealthError, setApiHealthError] = useState<string | null>(null);
+  const [apiHealthLoadedAt, setApiHealthLoadedAt] = useState<string | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [error, setError] = useState<DashboardLoadError | null>(null);
   const [view, setView] = useState<DashboardView>(initialDashboardView);
@@ -12609,6 +12830,31 @@ export default function App() {
         setLoading(false);
       }
       dashboardRefreshInFlight.current = false;
+    }
+  }
+
+  async function loadApiHealth(options: { silent?: boolean } = {}) {
+    if (!options.silent) {
+      setApiHealthLoading(true);
+    }
+    setApiHealthError(null);
+    try {
+      const response = await fetch("/health");
+      const payload = (await response.json()) as ApiHealthView;
+      if (!payload.status) {
+        throw new Error(`Health check returned HTTP ${response.status}.`);
+      }
+      setApiHealth({
+        ...payload,
+        findings: payload.findings ?? []
+      });
+      setApiHealthLoadedAt(new Date().toISOString());
+    } catch (err) {
+      setApiHealthError(displayError(err));
+    } finally {
+      if (!options.silent) {
+        setApiHealthLoading(false);
+      }
     }
   }
 
@@ -12880,6 +13126,7 @@ export default function App() {
       setManualRefreshResult((await response.json()) as ManualRefreshResult);
       setManualRefreshModalOpen(false);
       void load();
+      void loadApiHealth({ silent: true });
     } catch (err) {
       setManualRefreshError(displayError(err));
     } finally {
@@ -12910,6 +13157,7 @@ export default function App() {
       }
       setWebhookRetryResult((await response.json()) as WebhookRetryResult);
       void load({ silent: true });
+      void loadApiHealth({ silent: true });
     } catch (err) {
       setWebhookRetryError(displayError(err));
       void loadSession();
@@ -13076,6 +13324,7 @@ export default function App() {
 
   useEffect(() => {
     void load();
+    void loadApiHealth();
     void loadSession();
   }, []);
 
@@ -13088,6 +13337,7 @@ export default function App() {
         return;
       }
       void load({ silent: true });
+      void loadApiHealth({ silent: true });
     };
     const intervalId = window.setInterval(refreshIfVisible, dashboardAutoRefreshMs);
     window.addEventListener("focus", refreshIfVisible);
@@ -14553,11 +14803,17 @@ export default function App() {
               <HealthBoard
                 data={data}
                 session={session}
+                apiHealth={apiHealth}
+                apiHealthLoading={apiHealthLoading}
+                apiHealthError={apiHealthError}
+                apiHealthLoadedAt={apiHealthLoadedAt}
                 authenticated={Boolean(session?.authenticated)}
                 manualRefreshSaving={manualRefreshSaving}
                 webhookRetrySaving={webhookRetrySaving}
                 cacheImpactItems={cacheImpactItems}
                 onQueueLayers={(layers) => void queueManualRefreshForLayers(layers)}
+                onPrepareLayers={openManualRefreshModal}
+                onRefreshApiHealth={() => void loadApiHealth()}
                 onOpenView={selectView}
                 onImpactSelect={openCacheEvidenceImpact}
                 onConnectToken={openTokenReconnect}
