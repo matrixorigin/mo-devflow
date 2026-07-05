@@ -74,6 +74,7 @@ import {
   syncRateLimitSummary,
   syncHealthCursorText,
   teamCriticalFlowCommandSummary,
+  teamPeopleFocusDefaultScope,
   teamPrimaryFocus,
   testingIssueEvidenceGapSummary,
   testingIssueHasConfirmedNoLinkedPr,
@@ -248,6 +249,59 @@ describe("dashboard hash filters", () => {
       target: "analytics",
       actionLabel: "Open analytics"
     });
+  });
+
+  it("opens the most important people board scope from team focus", () => {
+    expect(
+      teamPeopleFocusDefaultScope({
+        people: 6,
+        riskPeople: 5,
+        activeIssuePeople: 2,
+        prAttentionPeople: 3,
+        testingPeople: 1,
+        triagePeople: 1
+      })
+    ).toBe("critical");
+    expect(
+      teamPeopleFocusDefaultScope({
+        people: 6,
+        riskPeople: 4,
+        activeIssuePeople: 0,
+        prAttentionPeople: 2,
+        testingPeople: 1,
+        triagePeople: 1
+      })
+    ).toBe("attention");
+    expect(
+      teamPeopleFocusDefaultScope({
+        people: 6,
+        riskPeople: 2,
+        activeIssuePeople: 0,
+        prAttentionPeople: 0,
+        testingPeople: 1,
+        triagePeople: 1
+      })
+    ).toBe("testing");
+    expect(
+      teamPeopleFocusDefaultScope({
+        people: 6,
+        riskPeople: 1,
+        activeIssuePeople: 0,
+        prAttentionPeople: 0,
+        testingPeople: 0,
+        triagePeople: 1
+      })
+    ).toBe("triage");
+    expect(
+      teamPeopleFocusDefaultScope({
+        people: 6,
+        riskPeople: 0,
+        activeIssuePeople: 0,
+        prAttentionPeople: 0,
+        testingPeople: 0,
+        triagePeople: 0
+      })
+    ).toBe("all");
   });
 
   it("round-trips issue board filters for shareable drilldown links", () => {

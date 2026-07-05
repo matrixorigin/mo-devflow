@@ -348,6 +348,7 @@ describe("person workload summaries", () => {
 
     expect(teamPeopleFocusSummary(people, personalViews)).toEqual({
       people: 4,
+      riskPeople: 4,
       activeIssuePeople: 1,
       prAttentionPeople: 2,
       testingPeople: 1,

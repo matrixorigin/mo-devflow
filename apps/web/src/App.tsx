@@ -196,6 +196,7 @@ import {
   type TeamCommandSignalTarget,
   type TeamCriticalFlowEfficiency,
   type TeamOperatingSignal,
+  type TeamPeopleFocusSummary,
   type TestingTesterSort,
   type TrendMomentumItem,
   type TrendMomentumSummary,
@@ -4748,6 +4749,7 @@ function TeamRotationOverview({
   const peopleSource = data.people.length > 0 ? data.people : observedPeople;
   const peopleSourceIsObserved = data.people.length === 0 && observedPeople.length > 0;
   const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews);
+  const peopleFocusSummary = teamPeopleFocusSummary(peopleFocus, data.personalViews);
   const personalViewLogins = new Set(data.personalViews.map((person) => person.login));
   const openOwnerPersonalDrilldown = (
     summary: CriticalOwnerFlowSummary,
@@ -4854,6 +4856,7 @@ function TeamRotationOverview({
           prRisks={prRisks}
           staleTestingIssues={staleTestingIssues}
           triageSnapshot={triageSnapshot}
+          peopleFocusSummary={peopleFocusSummary}
           topAction={commandActions[0] ?? null}
           onNavigate={onNavigate}
           onOpenIssuesFilter={onOpenIssuesFilter}
@@ -5219,6 +5222,7 @@ function TeamOperationsSummary({
   prRisks,
   staleTestingIssues,
   triageSnapshot,
+  peopleFocusSummary,
   topAction,
   onNavigate,
   onOpenIssuesFilter,
@@ -5233,6 +5237,7 @@ function TeamOperationsSummary({
   prRisks: PendingPrView[];
   staleTestingIssues: TestingIssueQueueView[];
   triageSnapshot: ReturnType<typeof teamTriageSnapshot>;
+  peopleFocusSummary: TeamPeopleFocusSummary;
   topAction: TeamCommandAction | null;
   onNavigate: (view: DashboardView) => void;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
@@ -5248,6 +5253,8 @@ function TeamOperationsSummary({
       : triageSnapshot.needsTriageIssues > 0
         ? "normal"
         : "good";
+  const peopleTone =
+    peopleFocusSummary.activeIssuePeople > 0 ? "critical" : peopleFocusSummary.riskPeople > 0 ? "attention" : "good";
   const openTeamFocus = (): void => {
     if (teamFocus.target === "s_minus_one") {
       onOpenIssuesFilter({ scope: "s-1" });
@@ -5310,6 +5317,13 @@ function TeamOperationsSummary({
             onClick={() => onOpenPrsFilter("attention")}
           />
           <TeamOpsSummaryTile
+            label="People focus"
+            value={peopleFocusSummary.riskPeople}
+            detail={`${peopleFocusSummary.activeIssuePeople} active | ${peopleFocusSummary.prAttentionPeople} PR | ${peopleFocusSummary.testingPeople} test`}
+            tone={peopleTone}
+            onClick={() => onOpenPeopleFilter(teamPeopleFocusDefaultScope(peopleFocusSummary))}
+          />
+          <TeamOpsSummaryTile
             label="Testing issues"
             value={data.testing.queueIssues}
             detail={`${staleTestingIssues.length} waiting >24h`}
@@ -5342,6 +5356,22 @@ function TeamOperationsSummary({
       </div>
     </section>
   );
+}
+
+export function teamPeopleFocusDefaultScope(summary: TeamPeopleFocusSummary): PeopleScopeFilter {
+  if (summary.activeIssuePeople > 0) {
+    return "critical";
+  }
+  if (summary.prAttentionPeople > 0) {
+    return "attention";
+  }
+  if (summary.testingPeople > 0) {
+    return "testing";
+  }
+  if (summary.triagePeople > 0) {
+    return "triage";
+  }
+  return "all";
 }
 
 function TeamOpsSummaryTile({
@@ -7812,7 +7842,9 @@ function TeamPersonFocusCard({
           type="button"
           className="team-person-open"
           onClick={() => onPersonSelect(person.login)}
-          aria-label={observedMode ? `Open observed work for ${person.login}` : `Open ${person.login} personal workbench`}
+          aria-label={
+            observedMode ? `Open observed work for ${person.login}` : `Open ${person.login} personal workbench`
+          }
         >
           <span className="person-avatar" aria-hidden="true">
             {person.login.slice(0, 1).toUpperCase()}
@@ -7916,7 +7948,10 @@ function TeamPersonRhythmMini({
       <button
         type="button"
         className={`team-person-flow-mini ${
-          flow.issuesWithoutPr > 0 || flow.issuesNotInTesting > 0 || flow.cachePendingIssues > 0 || flow.slowEasyIssues > 0
+          flow.issuesWithoutPr > 0 ||
+          flow.issuesNotInTesting > 0 ||
+          flow.cachePendingIssues > 0 ||
+          flow.slowEasyIssues > 0
             ? "team-person-flow-mini-alert"
             : ""
         }`}

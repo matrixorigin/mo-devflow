@@ -106,6 +106,7 @@ export const peopleScopeFilters: PeopleScopeFilter[] = [
 export type PeopleBoardScopeCounts = Record<PeopleScopeFilter, number>;
 export interface TeamPeopleFocusSummary {
   people: number;
+  riskPeople: number;
   activeIssuePeople: number;
   prAttentionPeople: number;
   testingPeople: number;
@@ -1634,8 +1635,20 @@ export function teamPeopleFocusSummary(
   personalViews: PersonalActionView[]
 ): TeamPeopleFocusSummary {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const riskLogins = new Set<string>();
+  for (const person of people) {
+    if (
+      person.activeCriticalIssues > 0 ||
+      person.attentionPrs > 0 ||
+      person.needsTriageIssues > 0 ||
+      testingCountForPerson(person.login, personalByLogin) > 0
+    ) {
+      riskLogins.add(person.login);
+    }
+  }
   return {
     people: people.length,
+    riskPeople: riskLogins.size,
     activeIssuePeople: people.filter((person) => person.activeCriticalIssues > 0).length,
     prAttentionPeople: people.filter((person) => person.attentionPrs > 0).length,
     testingPeople: people.filter((person) => testingCountForPerson(person.login, personalByLogin) > 0).length,
