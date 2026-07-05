@@ -315,13 +315,29 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
         message: "No workflow fix preview exists for this session."
       });
     }
+    const preview = storedPreview.preview;
+    const previewExpired = new Date(storedPreview.expiresAt).getTime() <= Date.now();
+    if (storedPreview.status === "confirming" && previewExpired) {
+      const result = executionResult({
+        previewId: preview.previewId,
+        status: "stale_preview",
+        message:
+          "The previous confirmation did not finish before the preview expired. Generate a fresh preview before executing."
+      });
+      return persistRouteExecution({
+        repoId: storedPreview.repoId,
+        userId: session.userId,
+        githubLogin: session.githubLogin,
+        preview,
+        result
+      });
+    }
     if (storedPreview.status !== "previewed") {
       return reply.status(409).send({
         error: "workflow_fix_preview_not_confirmable",
         message: `Preview is already ${storedPreview.status}.`
       });
     }
-    const preview = storedPreview.preview;
     const claimPreviewOrReply = async (): Promise<boolean> => {
       const claimed = await claimWorkflowFixPreviewForUser({
         previewId: parsed.data.previewId,
@@ -356,7 +372,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
       });
     };
 
-    if (new Date(storedPreview.expiresAt).getTime() <= Date.now()) {
+    if (previewExpired) {
       const result = executionResult({
         previewId: preview.previewId,
         status: "stale_preview",

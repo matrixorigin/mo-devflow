@@ -526,6 +526,66 @@ describe("action routes", () => {
     }
   });
 
+  test("marks expired confirming workflow fix previews as stale instead of leaving them stuck", async () => {
+    const expiredPreview = {
+      ...preview,
+      createdAt: "2026-07-04T00:00:00.000Z",
+      expiresAt: "2026-07-04T00:10:00.000Z"
+    };
+    mocks.getWorkflowFixPreviewForUser.mockResolvedValue({
+      repoId: 10,
+      userId: 1,
+      githubLogin: "alice",
+      previewId: expiredPreview.previewId,
+      preview: expiredPreview,
+      status: "confirming",
+      expiresAt: expiredPreview.expiresAt
+    });
+
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: expiredPreview.previewId }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        previewId: expiredPreview.previewId,
+        status: "stale_preview",
+        message:
+          "The previous confirmation did not finish before the preview expired. Generate a fresh preview before executing.",
+        executedOperations: []
+      });
+      expect(mocks.markWorkflowFixPreviewStatus).toHaveBeenCalledWith({
+        previewId: expiredPreview.previewId,
+        userId: 1,
+        status: "stale_preview"
+      });
+      expect(mocks.recordWorkflowFixExecution).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoId: 10,
+          userId: 1,
+          githubLogin: "alice",
+          preview: expiredPreview,
+          result: expect.objectContaining({ status: "stale_preview" })
+        })
+      );
+      expect(mocks.claimWorkflowFixPreviewForUser).not.toHaveBeenCalled();
+      expect(mocks.loadRepoProfile).not.toHaveBeenCalled();
+      expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(onDashboardMutated).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   test("does not claim workflow fix confirmation when profile loading fails", async () => {
     mocks.loadRepoProfile.mockImplementation(() => {
       throw new Error("bad profile yaml");
