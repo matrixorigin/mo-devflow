@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   aiDriftSignalMatchesSignalFilter,
+  analyticsPeriodScopeText,
   criticalIssueAiFilterFromHash,
   criticalIssueOwnerFilterFromHash,
   criticalIssueScopeFilterFromHash,
   criticalIssueSortFromHash,
   criticalIssueTableSummary,
   analyticsPeriodFromHash,
+  currentMetricPeriodLabel,
+  currentMetricPeriodScopeText,
   dashboardHashForView,
   dashboardRefreshModeText,
   dashboardVisibilityChipLabel,
@@ -226,6 +229,9 @@ describe("dashboard hash filters", () => {
     expect(dashboardHashForView("Analytics", { analyticsPeriod: "day" })).toBe("analytics");
     expect(analyticsPeriodFromHash("#overview?period=month")).toBe("month");
     expect(analyticsPeriodFromHash("#analytics?period=week")).toBe("week");
+    expect(analyticsPeriodScopeText("week", 30)).toBe("Rolling 30-day trend, grouped by weekly periods");
+    expect(currentMetricPeriodLabel("month")).toBe("This Month");
+    expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe("Current calendar periods in Asia/Shanghai.");
   });
 
   it("round-trips workflow signal filters without hiding source deep links", () => {

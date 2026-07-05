@@ -2907,9 +2907,9 @@ function workerStatusDescription(worker: DashboardSummary["sync"]["worker"]): st
 }
 
 const analyticsMetricPeriodOptions = [
-  { label: "Daily", value: "day" },
-  { label: "Weekly", value: "week" },
-  { label: "Monthly", value: "month" }
+  { label: "Daily trend", value: "day" },
+  { label: "Weekly trend", value: "week" },
+  { label: "Monthly trend", value: "month" }
 ];
 
 const currentMetricPeriodOptions = [
@@ -2918,7 +2918,7 @@ const currentMetricPeriodOptions = [
   { label: "This month", value: "month" }
 ];
 
-function metricPeriodText(period: MetricPeriod): string {
+export function metricPeriodText(period: MetricPeriod): string {
   if (period === "week") {
     return "weekly";
   }
@@ -2926,6 +2926,10 @@ function metricPeriodText(period: MetricPeriod): string {
     return "monthly";
   }
   return "daily";
+}
+
+export function analyticsPeriodScopeText(period: MetricPeriod, periodDays: number): string {
+  return `Rolling ${periodDays}-day trend, grouped by ${metricPeriodText(period)} periods`;
 }
 
 function metricPeriodMovementLabel(period: MetricPeriod): string {
@@ -2938,7 +2942,7 @@ function metricPeriodMovementLabel(period: MetricPeriod): string {
   return "Daily";
 }
 
-function currentMetricPeriodLabel(period: MetricPeriod): string {
+export function currentMetricPeriodLabel(period: MetricPeriod): string {
   if (period === "week") {
     return "This Week";
   }
@@ -2946,6 +2950,10 @@ function currentMetricPeriodLabel(period: MetricPeriod): string {
     return "This Month";
   }
   return "Today";
+}
+
+export function currentMetricPeriodScopeText(timezone: string): string {
+  return `Current calendar periods in ${timezone}.`;
 }
 
 function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {
@@ -4908,9 +4916,7 @@ function TeamRotationOverview({
         <div className="section-heading">
           <div>
             <Title level={4}>Flow Efficiency</Title>
-            <Text type="secondary">
-              Last {data.analytics.periodDays} days, grouped {metricPeriodText(analyticsPeriod)}
-            </Text>
+            <Text type="secondary">{analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays)}</Text>
           </div>
           <Space size={[6, 6]} wrap>
             <Segmented
@@ -18390,6 +18396,7 @@ function initialPersonalPrThroughputSelection(person: PersonalActionView): Perso
 
 function PersonalPrThroughputPanel({
   person,
+  repoTimezone,
   selection,
   sort,
   prPeriodLimit,
@@ -18401,6 +18408,7 @@ function PersonalPrThroughputPanel({
   onOpenPrPeriodLimit
 }: {
   person: PersonalActionView;
+  repoTimezone: string;
   selection: PersonalPrThroughputSelection;
   sort: PersonalPrSort;
   prPeriodLimit: DashboardViewLimit | null;
@@ -18439,7 +18447,7 @@ function PersonalPrThroughputPanel({
         <div>
           <Title level={5}>Personal PRs: Today / This Week / This Month</Title>
           <Text type="secondary">
-            Current calendar periods in the repo timezone. Click a period for this person's PR list, duration, age, and
+            {currentMetricPeriodScopeText(repoTimezone)} Click a period for this person's PR list, duration, age, and
             blockers.
           </Text>
         </div>
@@ -18928,6 +18936,7 @@ function PersonalFlowEfficiencyMetric({
 
 function SelectedPersonWorkbench({
   person,
+  repoTimezone,
   generatedAt,
   analyticsPeriod,
   trendPoints,
@@ -18939,6 +18948,7 @@ function SelectedPersonWorkbench({
   onOpenPrPeriodLimit
 }: {
   person: PersonalActionView;
+  repoTimezone: string;
   generatedAt: string;
   analyticsPeriod: MetricPeriod;
   trendPoints: TrendMetricPoint[];
@@ -19024,6 +19034,7 @@ function SelectedPersonWorkbench({
       />
       <PersonalPrThroughputPanel
         person={person}
+        repoTimezone={repoTimezone}
         selection={throughputSelection}
         sort={personalPrSort}
         prPeriodLimit={prPeriodLimit}
@@ -23522,6 +23533,7 @@ export default function App() {
                     {selectedPersonalView ? (
                       <SelectedPersonWorkbench
                         person={selectedPersonalView}
+                        repoTimezone={data.repo.timezone}
                         generatedAt={data.sync.generatedAt}
                         analyticsPeriod={analyticsPeriod}
                         trendPoints={personalTrendPoints}
@@ -23553,8 +23565,8 @@ export default function App() {
                   <div>
                     <Title level={4}>Analytics</Title>
                     <Text type="secondary">
-                      Issue and PR flow, last {data.analytics.periodDays} days, grouped{" "}
-                      {metricPeriodText(analyticsPeriod)} | {data.repo.timezone}
+                      Issue and PR flow, {analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays)} |{" "}
+                      {data.repo.timezone}
                     </Text>
                   </div>
                   <Segmented
