@@ -208,6 +208,47 @@ describe("webhook routes", () => {
     }
   });
 
+  test("keeps accepted webhook deliveries visible when immediate refresh queueing fails", async () => {
+    process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+    const rawBody = JSON.stringify({
+      action: "opened",
+      repository: { full_name: "matrixorigin/matrixone" }
+    });
+    mocks.enqueueJobsNow.mockRejectedValueOnce(new Error("job queue unavailable"));
+    const onDashboardMutated = vi.fn();
+    const app = await createWebhookApp({ onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/webhooks/github",
+        headers: {
+          "content-type": "application/json",
+          "x-github-delivery": "delivery-queue-fallback",
+          "x-github-event": "issues",
+          "x-hub-signature-256": computeGitHubWebhookSignature("webhook-secret", rawBody)
+        },
+        payload: rawBody
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        accepted: true,
+        duplicate: false,
+        deliveryId: "delivery-queue-fallback",
+        eventName: "issues",
+        status: "received",
+        refreshQueued: false,
+        refreshQueueFallback: "scheduled_webhook_job"
+      });
+      expect(mocks.recordGitHubWebhookDelivery).toHaveBeenCalledOnce();
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledOnce();
+      expect(onDashboardMutated).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
+
   test("does not clear dashboard cache or queue refresh jobs for duplicate webhook deliveries", async () => {
     process.env.MO_DEVFLOW_GITHUB_WEBHOOK_SECRET = "webhook-secret";
     const rawBody = JSON.stringify({

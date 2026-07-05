@@ -159,6 +159,7 @@ export async function registerWebhookRoutes(app: FastifyInstance, options: Webho
     });
     notifyDashboardMutation(options, result.duplicate);
     let refreshQueued = false;
+    let refreshQueueFallback: "scheduled_webhook_job" | null = null;
     if (!result.duplicate) {
       try {
         await enqueueJobsNow(
@@ -172,6 +173,7 @@ export async function registerWebhookRoutes(app: FastifyInstance, options: Webho
         );
         refreshQueued = true;
       } catch (error) {
+        refreshQueueFallback = "scheduled_webhook_job";
         request.log.error({ error, deliveryId: headers.deliveryId }, "failed to queue webhook refresh jobs");
       }
     }
@@ -182,7 +184,8 @@ export async function registerWebhookRoutes(app: FastifyInstance, options: Webho
       deliveryId: result.deliveryId,
       eventName: headers.eventName,
       status: result.status,
-      refreshQueued
+      refreshQueued,
+      refreshQueueFallback
     });
   });
 }
