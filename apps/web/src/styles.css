@@ -5148,10 +5148,25 @@ button.testing-board-stat:focus-visible {
 }
 
 .flow-timeline-overflow {
+  background: #f8fafc;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
   color: #6b7280;
+  cursor: pointer;
+  justify-self: start;
   font-size: 11px;
   grid-column: 2;
   line-height: 1.2;
+  padding: 3px 8px;
+}
+
+.flow-timeline-overflow:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.flow-timeline-overflow-muted {
+  background: #ffffff;
 }
 
 .flow-thread-next {
@@ -5439,6 +5454,26 @@ button.testing-board-stat:focus-visible {
   line-height: 1.15;
   padding: 2px 6px;
   text-decoration: none;
+}
+
+.flow-pr-link-overflow {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.15;
+  padding: 2px 6px;
+}
+
+.flow-pr-link-overflow:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.flow-pr-link-overflow-muted {
+  background: #f9fafb;
 }
 
 .flow-pr-age {

@@ -9884,8 +9884,8 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
 }
 
 function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
-  const visiblePrs = row.prs.slice(0, 4);
-  const hiddenPrs = Math.max(0, row.prs.length - visiblePrs.length);
+  const prLazy = useLazyVisibleCount(row.prs.length, 4, row.id);
+  const visiblePrs = row.prs.slice(0, prLazy.visibleCount);
   const issueLabel = row.issue.number === null ? "PR group" : `Issue #${row.issue.number}`;
   const issueDuration = row.issue.durationHours === null ? "unknown duration" : hours(row.issue.durationHours);
   const issueBarText =
@@ -9931,7 +9931,15 @@ function FlowThreadTimeline({ row }: { row: PersonalGanttRow }) {
       ) : (
         visiblePrs.map((pr) => <FlowTimelinePrRow pr={pr} key={pr.number} />)
       )}
-      {hiddenPrs > 0 ? <span className="flow-timeline-overflow">+{hiddenPrs} more PRs in the list</span> : null}
+      {prLazy.hiddenCount > 0 ? (
+        <button type="button" className="flow-timeline-overflow" onClick={prLazy.showMore}>
+          +{prLazy.revealCount} more PRs ({prLazy.hiddenCount} hidden)
+        </button>
+      ) : prLazy.canCollapse ? (
+        <button type="button" className="flow-timeline-overflow flow-timeline-overflow-muted" onClick={prLazy.reset}>
+          Show compact timeline
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -9991,6 +9999,8 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
     number,
     url: linkedObjectUrl(pr.htmlUrl, "issues", number)
   }));
+  const linkedIssueLazy = useLazyVisibleCount(linkedIssues.length, 4, pr.number);
+  const visibleLinkedIssues = linkedIssues.slice(0, linkedIssueLazy.visibleCount);
 
   return (
     <div className={`flow-pr-row flow-pr-row-${pr.tone}`}>
@@ -10013,12 +10023,24 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
         {linkedIssues.length > 0 ? (
           <div className="flow-pr-links">
             <span>issues</span>
-            {linkedIssues.slice(0, 4).map((link) => (
+            {visibleLinkedIssues.map((link) => (
               <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
                 #{link.number}
               </a>
             ))}
-            {linkedIssues.length > 4 ? <span>+{linkedIssues.length - 4}</span> : null}
+            {linkedIssueLazy.hiddenCount > 0 ? (
+              <button type="button" className="flow-pr-link-overflow" onClick={linkedIssueLazy.showMore}>
+                +{linkedIssueLazy.revealCount} issues ({linkedIssueLazy.hiddenCount} hidden)
+              </button>
+            ) : linkedIssueLazy.canCollapse ? (
+              <button
+                type="button"
+                className="flow-pr-link-overflow flow-pr-link-overflow-muted"
+                onClick={linkedIssueLazy.reset}
+              >
+                Show fewer issues
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
