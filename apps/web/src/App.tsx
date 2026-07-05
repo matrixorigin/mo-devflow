@@ -3137,6 +3137,8 @@ function TeamRotationOverview({
         (criticalIssueOrder.get(right.issue?.number ?? -1) ?? Number.MAX_SAFE_INTEGER)
     );
   const testingIssues = sortTestingIssuesForAction(data.testing.issues);
+  const idleCriticalIssues = data.criticalIssues.filter((issue) => criticalIssueNoHumanAction(issue, generatedAt));
+  const staleTestingIssues = testingIssues.filter((issue) => (issue.queueAgeHours ?? 0) >= 24 || issue.syncError);
   const observedPeople = observedPeopleFromDashboard({
     criticalIssues: data.criticalIssues,
     pendingPrs: data.pendingPrs
@@ -3214,28 +3216,46 @@ function TeamRotationOverview({
             </button>
           </Space>
         </div>
-        <div className="team-focus-callout">
-          <ShieldAlert size={18} aria-hidden="true" />
-          <div>
-            <Text strong>{teamFocus.title}</Text>
-            <span>{teamFocus.detail}</span>
-          </div>
-        </div>
-        <TeamHealthStrip
-          signals={operatingSignals}
-          onNavigate={onNavigate}
+        <TeamOperationsSummary
+          data={data}
+          teamFocus={teamFocus}
+          sMinusOneIssues={sMinusOneIssues}
+          idleCriticalIssues={idleCriticalIssues}
+          prRisks={prRisks}
+          staleTestingIssues={staleTestingIssues}
+          triageSnapshot={triageSnapshot}
+          topAction={commandActions[0] ?? null}
           onOpenIssuesFilter={onOpenIssuesFilter}
           onOpenPrsFilter={onOpenPrsFilter}
           onOpenPeopleFilter={onOpenPeopleFilter}
         />
         <TeamCommandQueue actions={commandActions} />
-        <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
-        <ProductionReadinessStrip
-          summary={productionReadiness}
-          compact
-          onNavigate={onNavigate}
-          onConnectToken={onConnectToken}
-        />
+        <details className="team-evidence-disclosure">
+          <summary>
+            <span>System evidence</span>
+            <Tag color={productionReadiness.blockers.length > 0 ? "orange" : "green"}>
+              {productionReadiness.blockers.length > 0
+                ? `${productionReadiness.blockers.length} blockers`
+                : "ready checks"}
+            </Tag>
+          </summary>
+          <div className="team-evidence-body">
+            <TeamHealthStrip
+              signals={operatingSignals}
+              onNavigate={onNavigate}
+              onOpenIssuesFilter={onOpenIssuesFilter}
+              onOpenPrsFilter={onOpenPrsFilter}
+              onOpenPeopleFilter={onOpenPeopleFilter}
+            />
+            <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
+            <ProductionReadinessStrip
+              summary={productionReadiness}
+              compact
+              onNavigate={onNavigate}
+              onConnectToken={onConnectToken}
+            />
+          </div>
+        </details>
       </section>
 
       <TeamCriticalFlowPanel
@@ -3383,6 +3403,129 @@ function TeamRotationOverview({
         <TrendChart points={trendPoints} />
       </section>
     </div>
+  );
+}
+
+function TeamOperationsSummary({
+  data,
+  teamFocus,
+  sMinusOneIssues,
+  idleCriticalIssues,
+  prRisks,
+  staleTestingIssues,
+  triageSnapshot,
+  topAction,
+  onOpenIssuesFilter,
+  onOpenPrsFilter,
+  onOpenPeopleFilter
+}: {
+  data: DashboardSummary;
+  teamFocus: { title: string; detail: string };
+  sMinusOneIssues: number;
+  idleCriticalIssues: CriticalIssueView[];
+  prRisks: PendingPrView[];
+  staleTestingIssues: TestingIssueQueueView[];
+  triageSnapshot: ReturnType<typeof teamTriageSnapshot>;
+  topAction: TeamCommandAction | null;
+  onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
+  onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
+}) {
+  const sZeroIssues = Math.max(0, data.counts.criticalIssues - sMinusOneIssues);
+  const criticalTone = sMinusOneIssues > 0 ? "critical" : data.counts.criticalIssues > 0 ? "attention" : "good";
+  const triageTone =
+    triageSnapshot.needsTriageIssues > data.counts.criticalIssues && data.counts.criticalIssues <= 1
+      ? "attention"
+      : triageSnapshot.needsTriageIssues > 0
+        ? "normal"
+        : "good";
+
+  return (
+    <section className="team-ops-summary" aria-label="Team queue summary">
+      <div className="team-ops-primary">
+        <div className="team-ops-focus">
+          <ShieldAlert size={18} aria-hidden="true" />
+          <div>
+            <Text strong>{teamFocus.title}</Text>
+            <span>{teamFocus.detail}</span>
+          </div>
+        </div>
+        <div className="team-ops-tiles">
+          <TeamOpsSummaryTile
+            label="Active issues"
+            value={`${sMinusOneIssues}/${sZeroIssues}`}
+            detail={`${data.counts.criticalIssues} s-1/s0 total`}
+            tone={criticalTone}
+            onClick={() => onOpenIssuesFilter({ scope: sMinusOneIssues > 0 ? "s-1" : "all" })}
+          />
+          <TeamOpsSummaryTile
+            label="No action 24h"
+            value={idleCriticalIssues.length}
+            detail={`oldest ${optionalHours(maxCriticalActiveAge(idleCriticalIssues))}`}
+            tone={idleCriticalIssues.length > 0 ? "critical" : "good"}
+            onClick={() => onOpenIssuesFilter({ scope: "no_action_24h" })}
+          />
+          <TeamOpsSummaryTile
+            label="PR attention"
+            value={prRisks.length}
+            detail={`oldest ${optionalHours(maxPendingPrAge(prRisks))}`}
+            tone={prRisks.length > 0 ? "attention" : "good"}
+            onClick={() => onOpenPrsFilter("attention")}
+          />
+          <TeamOpsSummaryTile
+            label="Issue testing"
+            value={data.testing.queueIssues}
+            detail={`${staleTestingIssues.length} waiting >24h`}
+            tone={staleTestingIssues.length > 0 ? "attention" : data.testing.queueIssues > 0 ? "normal" : "good"}
+            onClick={() => onOpenPrsFilter(staleTestingIssues.length > 0 ? "stale_testing" : "testing")}
+          />
+          <TeamOpsSummaryTile
+            label="Triage"
+            value={triageSnapshot.needsTriageIssues}
+            detail={`${triageSnapshot.deferredIssues} deferred`}
+            tone={triageTone}
+            onClick={() => onOpenPeopleFilter("triage")}
+          />
+        </div>
+      </div>
+      <div className={`team-ops-next team-ops-next-${topAction?.tone ?? "good"}`}>
+        <span>First action</span>
+        {topAction ? (
+          <button type="button" onClick={topAction.onClick}>
+            <strong>{topAction.title}</strong>
+            <small>{topAction.detail}</small>
+            <em>{topAction.actionLabel}</em>
+          </button>
+        ) : (
+          <div>
+            <strong>No urgent blocker in cached data</strong>
+            <small>Review flow charts and trend changes.</small>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TeamOpsSummaryTile({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: "critical" | "attention" | "normal" | "good";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`team-ops-tile team-ops-tile-${tone}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
