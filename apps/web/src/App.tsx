@@ -4673,6 +4673,7 @@ function TeamRotationOverview({
   onConnectToken,
   onPersonSelect,
   onPersonalDrilldown,
+  onPersonalThroughput,
   criticalAiFilter,
   criticalScopeFilter,
   criticalOwnerFilter,
@@ -4698,6 +4699,7 @@ function TeamRotationOverview({
   onConnectToken: () => void;
   onPersonSelect: (login: string) => void;
   onPersonalDrilldown: (login: string, filter: PersonalDrilldownFilter) => void;
+  onPersonalThroughput: (login: string, selection: PersonalPrThroughputSelection) => void;
   criticalAiFilter: CriticalIssueAiFilter;
   criticalScopeFilter: CriticalIssueScopeFilter;
   criticalOwnerFilter: CriticalIssueOwnerFilter;
@@ -5052,6 +5054,7 @@ function TeamRotationOverview({
                 ? (_login, metric) => onOpenPeopleFilter(peopleScopeForPersonalMetric(metric))
                 : onPersonalDrilldown
             }
+            onThroughputSelect={peopleSourceIsObserved ? undefined : onPersonalThroughput}
           />
           <TeamOpsStatus data={data} onNavigate={onNavigate} />
         </aside>
@@ -7722,18 +7725,19 @@ function TeamPeopleFocus({
   personalViews,
   observedMode,
   onPersonSelect,
-  onMetricSelect
+  onMetricSelect,
+  onThroughputSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
   observedMode: boolean;
   onPersonSelect: (login: string) => void;
   onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const summary = teamPeopleFocusSummary(people, personalViews);
-  const attentionQueue = peopleAttentionQueue(people, personalViews, 3);
-  const pagedPeople = usePagedList(people, 4, people.map((person) => person.login).join(":"));
+  const pagedPeople = usePagedList(people, 3, people.map((person) => person.login).join(":"));
 
   return (
     <section className="team-side-panel">
@@ -7755,46 +7759,20 @@ function TeamPeopleFocus({
           />
         ) : (
           pagedPeople.visibleItems.map((person) => {
-            const testingWork = testingCountForPerson(person.login, personalViews);
-            const focus = personCardFocus(person, personalByLogin.get(person.login));
             return (
-              <button
-                type="button"
-                className="team-person-row"
-                onClick={() => onPersonSelect(person.login)}
+              <TeamPersonFocusCard
+                person={person}
+                personal={personalByLogin.get(person.login)}
+                observedMode={observedMode}
+                onPersonSelect={onPersonSelect}
+                onMetricSelect={onMetricSelect}
+                onThroughputSelect={onThroughputSelect}
                 key={person.login}
-              >
-                <span className="person-avatar" aria-hidden="true">
-                  {person.login.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="team-person-main">
-                  <strong>{person.login}</strong>
-                  <small>
-                    {person.activeCriticalIssues} s-1/s0 | {person.attentionPrs} PR attention | {testingWork} testing
-                    issues
-                  </small>
-                  <span className={`team-person-focus team-person-focus-${focus.tone}`}>
-                    <TimerReset size={13} aria-hidden="true" />
-                    <span>
-                      <strong>{focus.title}</strong>
-                      <small>{focus.detail}</small>
-                    </span>
-                  </span>
-                  {observedMode ? (
-                    <small>Visible cache owner; configure watched users for full personal view</small>
-                  ) : null}
-                </span>
-              </button>
+              />
             );
           })
         )}
       </div>
-      <PeopleAttentionQueueStrip
-        compact
-        items={attentionQueue}
-        onPersonSelect={onPersonSelect}
-        onMetricSelect={onMetricSelect}
-      />
       <CardListPagination
         total={people.length}
         page={pagedPeople.page}
@@ -7803,6 +7781,152 @@ function TeamPeopleFocus({
         onChange={pagedPeople.onPageChange}
       />
     </section>
+  );
+}
+
+function TeamPersonFocusCard({
+  person,
+  personal,
+  observedMode,
+  onPersonSelect,
+  onMetricSelect,
+  onThroughputSelect
+}: {
+  person: PersonSummary;
+  personal: PersonalActionView | undefined;
+  observedMode: boolean;
+  onPersonSelect: (login: string) => void;
+  onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
+}) {
+  const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+  const staleTesting = personal ? personalTestingStaleCount(personal) : 0;
+  const status = personWorkloadStatus(person);
+  const focus = personCardFocus(person, personal);
+  const openMetric = (metric: PersonalDrilldownFilter): void => onMetricSelect(person.login, metric);
+
+  return (
+    <article className={`team-person-card team-person-card-${status}`}>
+      <div className="team-person-card-top">
+        <button
+          type="button"
+          className="team-person-open"
+          onClick={() => onPersonSelect(person.login)}
+          aria-label={observedMode ? `Open observed work for ${person.login}` : `Open ${person.login} personal workbench`}
+        >
+          <span className="person-avatar" aria-hidden="true">
+            {person.login.slice(0, 1).toUpperCase()}
+          </span>
+          <span>
+            <strong>{person.login}</strong>
+            <small>{observedMode ? "observed cache owner" : workloadStatusText(status)}</small>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`team-person-next team-person-next-${focus.tone}`}
+          onClick={() => openMetric(focus.metric)}
+        >
+          <TimerReset size={13} aria-hidden="true" />
+          <span>
+            <strong>{focus.title}</strong>
+            <small>{focus.detail}</small>
+          </span>
+        </button>
+      </div>
+
+      <div className="team-person-metrics" aria-label={`${person.login} work queues`}>
+        <PersonQueueMetric
+          label="s-1/s0"
+          value={person.activeCriticalIssues}
+          detail={personActiveQueueDetail(person, personal)}
+          tone={personActiveMetricTone(person.activeCriticalIssues)}
+          onClick={() => openMetric("active_issues")}
+        />
+        <PersonQueueMetric
+          label="PR attention"
+          value={`${person.attentionPrs}/${person.pendingPrs}`}
+          detail={personPrQueueDetail(person, personal)}
+          tone={person.attentionPrs > 0 ? "attention" : person.pendingPrs > 0 ? "normal" : "good"}
+          onClick={() => openMetric(person.attentionPrs > 0 ? "pr_attention" : "pending_pr")}
+        />
+        <PersonQueueMetric
+          label="Triage"
+          value={`${person.needsTriageIssues}/${person.deferredIssues}`}
+          detail={personTriageQueueDetail(person, personal)}
+          tone={person.needsTriageIssues > 0 ? "attention" : person.deferredIssues > 0 ? "normal" : "good"}
+          onClick={() => openMetric(person.needsTriageIssues > 0 ? "triage" : "deferred")}
+        />
+        <PersonQueueMetric
+          label="Issue testing"
+          value={testingWork}
+          detail={personTestingQueueDetail(personal)}
+          tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+          onClick={() => openMetric("testing")}
+        />
+      </div>
+
+      {personal ? (
+        <TeamPersonRhythmMini
+          person={personal}
+          onMetricSelect={openMetric}
+          onThroughputSelect={(selection) => onThroughputSelect?.(person.login, selection)}
+        />
+      ) : null}
+    </article>
+  );
+}
+
+function TeamPersonRhythmMini({
+  person,
+  onMetricSelect,
+  onThroughputSelect
+}: {
+  person: PersonalActionView;
+  onMetricSelect: (metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (selection: PersonalPrThroughputSelection) => void;
+}) {
+  const rows = personalPrThroughputRows(person);
+  const flow = personalCriticalFlowEfficiency(person);
+  const openThroughput = (period: MetricPeriod): void => {
+    if (onThroughputSelect) {
+      onThroughputSelect(personalPrThroughputSelectionForPeriod(person, period));
+      return;
+    }
+    onMetricSelect("pending_pr");
+  };
+
+  return (
+    <div className="team-person-rhythm-mini" aria-label={`${person.login} current PR periods and critical flow`}>
+      <div className="team-person-periods-mini">
+        {rows.map((row) => (
+          <button
+            type="button"
+            className="team-person-period-mini"
+            key={row.period}
+            onClick={() => openThroughput(row.period)}
+            aria-label={`Open ${person.login} ${currentMetricPeriodLabel(row.period)} PR list`}
+          >
+            <span>{metricPeriodShortText(row.period)}</span>
+            <strong>{personalPrThroughputPair(row)}</strong>
+            <small>{personalPrPeriodThroughputDetail(person, row.period)}</small>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={`team-person-flow-mini ${
+          flow.issuesWithoutPr > 0 || flow.issuesNotInTesting > 0 || flow.cachePendingIssues > 0 || flow.slowEasyIssues > 0
+            ? "team-person-flow-mini-alert"
+            : ""
+        }`}
+        onClick={() => onMetricSelect(personalCriticalFlowDefaultTarget(flow))}
+      >
+        <span>s-1/s0 → PR → test</span>
+        <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>
+        <small>{personalCriticalFlowGapSummary(flow)}</small>
+      </button>
+    </div>
   );
 }
 
@@ -23483,6 +23607,7 @@ export default function App() {
                 onConnectToken={openTokenReconnect}
                 onPersonSelect={openPersonWorkbench}
                 onPersonalDrilldown={openPersonalDrilldown}
+                onPersonalThroughput={openPersonalThroughput}
                 criticalAiFilter={criticalIssueAiFilter}
                 criticalScopeFilter={criticalIssueScopeFilter}
                 criticalOwnerFilter={criticalIssueOwnerFilter}

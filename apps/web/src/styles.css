@@ -2860,7 +2860,7 @@ button.team-monitor-tile {
 }
 
 button.team-monitor-tile:hover,
-.team-person-row:hover {
+button.team-monitor-tile:focus-visible {
   border-color: #93c5fd;
 }
 
@@ -3114,7 +3114,7 @@ button.team-monitor-tile:hover,
 }
 
 .team-work-row:last-child,
-.team-person-row:last-child,
+.team-person-card:last-child,
 .team-status-row:last-child {
   border-bottom: 0;
 }
@@ -3592,93 +3592,258 @@ button.team-monitor-tile:hover,
   outline: none;
 }
 
-.team-person-row {
-  appearance: none;
-  align-items: center;
+.team-person-card {
   background: #ffffff;
-  border: 0;
   border-bottom: 1px solid #f3f4f6;
-  cursor: pointer;
+  border-left: 3px solid #9ca3af;
   display: grid;
-  gap: 8px;
-  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
   min-width: 0;
   padding: 10px 12px;
+}
+
+.team-person-card-critical {
+  border-left-color: #dc2626;
+}
+
+.team-person-card-attention {
+  border-left-color: #d97706;
+}
+
+.team-person-card-triage {
+  border-left-color: #ca8a04;
+}
+
+.team-person-card-active {
+  border-left-color: #2563eb;
+}
+
+.team-person-card-clear {
+  border-left-color: #16a34a;
+}
+
+.team-person-card-top {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.team-person-open,
+.team-person-next,
+.team-person-period-mini,
+.team-person-flow-mini {
+  appearance: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-width: 0;
   text-align: left;
 }
 
-.team-person-main {
+.team-person-open {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0;
+}
+
+.team-person-open > span:last-child {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.team-person-main strong,
-.team-person-main small {
+.team-person-open strong,
+.team-person-open small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.team-person-main small {
+.team-person-open small {
   color: #6b7280;
   font-size: 12px;
+  line-height: 1.2;
 }
 
-.team-person-focus {
+.team-person-open:hover strong,
+.team-person-open:focus-visible strong {
+  color: #1d4ed8;
+}
+
+.team-person-open:focus-visible,
+.team-person-next:focus-visible,
+.team-person-period-mini:focus-visible,
+.team-person-flow-mini:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.team-person-next {
   align-items: start;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-left: 3px solid #2563eb;
-  border-radius: 6px;
-  color: #374151;
+  border-radius: 7px;
   display: grid;
   gap: 6px;
   grid-template-columns: auto minmax(0, 1fr);
-  margin-top: 5px;
-  min-width: 0;
-  padding: 6px 8px;
+  padding: 7px 8px;
 }
 
-.team-person-focus-critical {
+.team-person-next:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.team-person-next-critical {
   background: #fef2f2;
   border-color: #fecaca;
   border-left-color: #dc2626;
 }
 
-.team-person-focus-attention {
+.team-person-next-attention {
   background: #fffbeb;
   border-color: #fde68a;
   border-left-color: #d97706;
 }
 
-.team-person-focus-clear {
+.team-person-next-clear {
   background: #f0fdf4;
   border-color: #bbf7d0;
   border-left-color: #16a34a;
 }
 
-.team-person-focus > span {
+.team-person-next > span {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
-.team-person-focus strong,
-.team-person-focus small {
+.team-person-next strong,
+.team-person-next small {
   line-height: 1.2;
   min-width: 0;
-  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.team-person-focus strong {
+.team-person-next strong {
   color: #111827;
   font-size: 12px;
 }
 
-.team-person-focus small {
+.team-person-next small {
   color: #4b5563;
   font-size: 11px;
+}
+
+.team-person-metrics {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.team-person-metrics .person-queue-metric {
+  gap: 2px;
+  min-height: 70px;
+  padding: 7px;
+}
+
+.team-person-metrics .person-queue-metric span {
+  font-size: 10px;
+}
+
+.team-person-metrics .person-queue-metric strong {
+  font-size: 13px;
+}
+
+.team-person-metrics .person-queue-metric small {
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.team-person-rhythm-mini {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.team-person-periods-mini {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.team-person-period-mini,
+.team-person-flow-mini {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #64748b;
+  border-radius: 7px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+}
+
+.team-person-period-mini:hover,
+.team-person-flow-mini:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.team-person-period-mini span,
+.team-person-flow-mini span {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.team-person-period-mini strong,
+.team-person-flow-mini strong {
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-person-period-mini small,
+.team-person-flow-mini small {
+  color: #4b5563;
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.team-person-flow-mini {
+  border-left-color: #2563eb;
+}
+
+.team-person-flow-mini-alert {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
 }
 
 .team-status-row {
