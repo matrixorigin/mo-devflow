@@ -134,6 +134,7 @@ import {
   personalActivityNeedsLink,
   personalActivityNextAction,
   personalActivityPrimarySignal,
+  personalDailyPlan,
   personalDurationText,
   personalFlowThreadCounts,
   personalFlowThreadMatchesFilter,
@@ -170,6 +171,7 @@ import {
   type PersonalGanttChart,
   type PersonalGanttPrBar,
   type PersonalGanttRow,
+  type PersonalDailyPlanItem,
   type PersonalOperatingSignal,
   type PeopleBoardSort,
   type PeopleScopeFilter,
@@ -14499,7 +14501,7 @@ function WatchedPersonOperationsSummary({
   activeFilter: PersonalDrilldownFilter;
   onSelect: (filter: PersonalDrilldownFilter) => void;
 }) {
-  const topSignal = [...signals].sort((left, right) => right.priority - left.priority)[0] ?? null;
+  const dailyPlan = personalDailyPlan(signals);
   const testingWork = personalTestingWorkCount(person);
   const staleTestingIssues = person.testingIssues.filter(isTestingIssueStale).length;
   const yesterdayPrs = person.summary.prsCreatedYesterday + person.summary.prsMergedYesterday;
@@ -14582,7 +14584,7 @@ function WatchedPersonOperationsSummary({
           onClick={() => onSelect("yesterday_pr")}
         />
       </div>
-      <PersonOpsFirstAction signal={topSignal} onSelect={onSelect} />
+      <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
     </section>
   );
 }
@@ -14669,33 +14671,45 @@ function ObservedPersonOperationsSummary({
   );
 }
 
-function PersonOpsFirstAction({
-  signal,
+function PersonDailyPlanPanel({
+  items,
   onSelect
 }: {
-  signal: PersonalOperatingSignal | null;
+  items: PersonalDailyPlanItem[];
   onSelect: (filter: PersonalDrilldownFilter) => void;
 }) {
-  if (!signal) {
+  if (items.length === 0) {
     return (
-      <div className="person-ops-first person-ops-first-good">
-        <span>No current blocker</span>
+      <div className="person-daily-plan person-daily-plan-clear">
+        <span>Today's order</span>
         <div>
-          <strong>No urgent blocker in cached data</strong>
-          <small>Review trend and routine PR movement.</small>
+          <strong>No current blocker</strong>
+          <small>Review trends and routine PR movement.</small>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`person-ops-first person-ops-first-${signal.tone}`}>
-      <span>Current blocker</span>
-      <button type="button" onClick={() => onSelect(signal.target)}>
-        <strong>{signal.label}</strong>
-        <small>{signal.detail}</small>
-        <em>Open {personalDrilldownLabel(signal.target)}</em>
-      </button>
+    <div className="person-daily-plan" aria-label="Personal daily action order">
+      <span>Today's order</span>
+      <div className="person-daily-plan-list">
+        {items.map((item) => (
+          <button
+            type="button"
+            className={`person-daily-plan-item person-daily-plan-item-${item.tone}`}
+            onClick={() => onSelect(item.target)}
+            key={item.key}
+          >
+            <em>{item.stage}</em>
+            <strong>
+              {item.label}
+              <b>{item.value}</b>
+            </strong>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

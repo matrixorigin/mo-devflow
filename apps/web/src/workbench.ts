@@ -65,6 +65,19 @@ export interface PersonalOperatingSignal {
   priority: number;
 }
 
+export type PersonalDailyPlanStage = "Do now" | "Next" | "Watch";
+
+export interface PersonalDailyPlanItem {
+  key: string;
+  stage: PersonalDailyPlanStage;
+  label: string;
+  value: number;
+  detail: string;
+  tone: PersonalOperatingSignalTone;
+  target: PersonalOperatingSignalTarget;
+  priority: number;
+}
+
 export type PeopleScopeFilter =
   "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
 export type PeopleBoardSort = "workload" | "active" | "pr_age" | "pr_attention" | "triage" | "testing_wait" | "name";
@@ -1221,6 +1234,23 @@ export function personalOperatingSignals(
             : 50
     }
   ];
+}
+
+export function personalDailyPlan(signals: PersonalOperatingSignal[], maxItems = 3): PersonalDailyPlanItem[] {
+  const stages: PersonalDailyPlanStage[] = ["Do now", "Next", "Watch"];
+  const actionableSignals = signals
+    .filter((signal) => signal.value > 0 && (signal.tone === "critical" || signal.tone === "attention"))
+    .sort((left, right) => right.priority - left.priority);
+  const actionableKeys = new Set(actionableSignals.map((signal) => signal.key));
+  const routineSignals = signals
+    .filter((signal) => signal.value > 0 && !actionableKeys.has(signal.key))
+    .sort((left, right) => right.priority - left.priority);
+
+  return [...actionableSignals, ...routineSignals].slice(0, maxItems).map((signal, index) => ({
+    ...signal,
+    key: `${stages[index] ?? "Watch"}:${signal.key}`,
+    stage: stages[index] ?? "Watch"
+  }));
 }
 
 function testingCountForPerson(login: string, personalByLogin: Map<string, PersonalActionView>): number {

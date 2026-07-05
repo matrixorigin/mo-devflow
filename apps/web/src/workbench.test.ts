@@ -27,6 +27,7 @@ import {
   notificationDeliveryMatchesScope,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
+  personalDailyPlan,
   personalFlowThreadCounts,
   personalFlowThreadMatchesFilter,
   personalGanttChart,
@@ -1270,6 +1271,11 @@ describe("personal operating signals", () => {
       tone: "attention",
       target: "pending_pr"
     });
+    expect(personalDailyPlan(signals)).toEqual([
+      expect.objectContaining({ stage: "Do now", label: "Active issues", target: "active_issues" }),
+      expect.objectContaining({ stage: "Next", label: "Issue testing", target: "testing" }),
+      expect.objectContaining({ stage: "Watch", label: "PR blockers", target: "pr_attention" })
+    ]);
   });
 
   it("marks a needs-triage backlog as triage-heavy when active work is low", () => {
@@ -1285,6 +1291,26 @@ describe("personal operating signals", () => {
       tone: "attention",
       target: "triage"
     });
+    expect(personalDailyPlan(personalOperatingSignals(person))[0]).toMatchObject({
+      stage: "Do now",
+      label: "Triage",
+      target: "triage"
+    });
+  });
+
+  it("keeps routine pending PR movement visible when no blocker exists", () => {
+    const person = personalView({
+      pendingPrs: [pullRequest({ number: 20, ageHours: 6 })]
+    });
+
+    expect(personalDailyPlan(personalOperatingSignals(person))).toEqual([
+      expect.objectContaining({
+        stage: "Do now",
+        label: "Pending PRs",
+        tone: "normal",
+        target: "pending_pr"
+      })
+    ]);
   });
 });
 
