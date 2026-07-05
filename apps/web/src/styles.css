@@ -5336,6 +5336,10 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.people-focus-row > .person-queue-rhythm {
+  grid-column: 3;
+}
+
 .person-board-status {
   align-items: center;
   display: flex;
@@ -5458,6 +5462,12 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
 }
 
+.person-queue-work {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .person-queue-metric {
   appearance: none;
   background: #ffffff;
@@ -5472,6 +5482,90 @@ button.testing-board-stat:focus-visible {
   min-width: 0;
   padding: 8px;
   text-align: left;
+}
+
+.person-queue-rhythm {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(250px, 0.9fr) minmax(240px, 1.1fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.person-board-compact .person-queue-rhythm {
+  grid-template-columns: 1fr;
+}
+
+.person-queue-rhythm-periods {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.person-queue-rhythm-period,
+.person-queue-flow-card {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.person-queue-rhythm-period:hover,
+.person-queue-rhythm-period:focus-visible,
+.person-queue-flow-card:hover,
+.person-queue-flow-card:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.person-queue-rhythm-period span,
+.person-queue-flow-card span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.person-queue-rhythm-period strong,
+.person-queue-flow-card strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-queue-rhythm-period small,
+.person-queue-flow-card small {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-queue-flow-card {
+  border-left: 3px solid #2563eb;
+}
+
+.person-queue-flow-card-alert {
+  border-left-color: #d97706;
 }
 
 .person-queue-actions {
@@ -10094,9 +10188,17 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .people-focus-row > .person-queue-rhythm {
+    grid-column: 1 / -1;
+  }
+
   .person-queue-metrics {
     grid-column: 1 / -1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .person-queue-rhythm {
+    grid-template-columns: 1fr;
   }
 
   .person-queue-actions {
@@ -10907,6 +11009,10 @@ button.flow-diagnostic-card:focus-visible {
   .person-queue-metrics {
     grid-column: auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .person-queue-rhythm {
+    grid-template-columns: 1fr;
   }
 
   .person-board-compact {

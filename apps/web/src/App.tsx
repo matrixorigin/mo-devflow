@@ -827,6 +827,28 @@ function normalizeManualRefreshLayers(layers: string[] | undefined): ManualRefre
   return syncHealthLayers.filter((layer) => selected.has(layer));
 }
 
+type ManualRefreshPreset = "all" | "workflow" | "evidence" | "metrics";
+
+export function manualRefreshPresetLayers(preset: ManualRefreshPreset): ManualRefreshLayer[] {
+  if (preset === "workflow") {
+    return normalizeManualRefreshLayers(["webhooks", "rules", "notifications"]);
+  }
+  if (preset === "evidence") {
+    return normalizeManualRefreshLayers([
+      "pr_backfill",
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "rules",
+      "metrics",
+      "ai_drift"
+    ]);
+  }
+  if (preset === "metrics") {
+    return ["metrics"];
+  }
+  return [...syncHealthLayers];
+}
+
 function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
   if (layer === "github_sync") {
     return "Refresh open issue and PR cache from GitHub.";
@@ -10482,7 +10504,8 @@ function PeopleFocusQueue({
   scopeFilter,
   mode,
   onSelect,
-  onMetricSelect
+  onMetricSelect,
+  onThroughputSelect
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
@@ -10491,6 +10514,7 @@ function PeopleFocusQueue({
   mode: "watched" | "observed";
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
   const focusPeople = sortPeopleForBoard(people, personalViews, "workload").slice(0, 5);
@@ -10590,6 +10614,13 @@ function PeopleFocusQueue({
                   onClick={() => openMetric("testing")}
                 />
               </div>
+              {personal ? (
+                <PersonQueueRhythmStrip
+                  person={personal}
+                  onOpenMetric={openMetric}
+                  onThroughputSelect={(selection) => onThroughputSelect?.(person.login, selection)}
+                />
+              ) : null}
             </article>
           );
         })}
@@ -11855,6 +11886,7 @@ function PersonWorkloadBoard({
   selectedLogin,
   onSelect,
   onMetricSelect,
+  onThroughputSelect,
   sort = "workload",
   mode = "watched",
   compact = false
@@ -11864,6 +11896,7 @@ function PersonWorkloadBoard({
   selectedLogin: string | null;
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
   sort?: PeopleBoardSort;
   mode?: "watched" | "observed";
   compact?: boolean;
@@ -11916,6 +11949,7 @@ function PersonWorkloadBoard({
               selected={selectedLogin === person.login}
               onSelect={onSelect}
               onMetricSelect={onMetricSelect}
+              onThroughputSelect={onThroughputSelect}
             />
           ))}
         </div>
@@ -12027,6 +12061,13 @@ function PersonWorkloadBoard({
                 </button>
               </span>
               <PersonReasonStrip reasons={reasons} resetKey={`${person.login}:${reasons.join("|")}`} />
+              {personal ? (
+                <PersonQueueRhythmStrip
+                  person={personal}
+                  onOpenMetric={openMetric}
+                  onThroughputSelect={(selection) => onThroughputSelect?.(person.login, selection)}
+                />
+              ) : null}
             </article>
           );
         })}
@@ -12116,6 +12157,7 @@ function PersonWorkloadRow({
   selected,
   onSelect,
   onMetricSelect,
+  onThroughputSelect,
   mode
 }: {
   person: PersonSummary;
@@ -12123,6 +12165,7 @@ function PersonWorkloadRow({
   selected: boolean;
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
   mode: "watched" | "observed";
 }) {
   const testingWork = personal ? personalTestingWorkCount(personal) : 0;
@@ -12165,49 +12208,58 @@ function PersonWorkloadRow({
 
       <PersonBoardDailyPlanStrip items={dailyPlan} fallback={focus} onSelect={openMetric} />
 
-      <div className="person-queue-metrics" aria-label={`${person.login} work queues`}>
-        <PersonQueueMetric
-          label="Active issues"
-          value={person.activeCriticalIssues}
-          detail={personActiveQueueDetail(person, personal)}
-          tone={personActiveMetricTone(person.activeCriticalIssues)}
-          onClick={() => openMetric("active_issues")}
-        />
-        <PersonQueueMetric
-          label="PR attention"
-          value={person.attentionPrs}
-          detail={personPrAttentionQueueDetail(person, personal)}
-          tone={person.attentionPrs > 0 ? "attention" : "good"}
-          onClick={() => openMetric("pr_attention")}
-        />
-        <PersonQueueMetric
-          label="Pending PR"
-          value={person.pendingPrs}
-          detail={personPendingPrQueueDetail(person, personal)}
-          tone={person.pendingPrs > 0 ? "normal" : "good"}
-          onClick={() => openMetric("pending_pr")}
-        />
-        <PersonQueueMetric
-          label="Needs triage"
-          value={person.needsTriageIssues}
-          detail={personNeedsTriageQueueDetail(person, personal)}
-          tone={person.needsTriageIssues > 0 ? "attention" : "good"}
-          onClick={() => openMetric("triage")}
-        />
-        <PersonQueueMetric
-          label="Deferred"
-          value={person.deferredIssues}
-          detail={personDeferredQueueDetail(person, personal)}
-          tone={person.deferredIssues > 0 ? "normal" : "good"}
-          onClick={() => openMetric("deferred")}
-        />
-        <PersonQueueMetric
-          label="Issue testing"
-          value={testingWork}
-          detail={personTestingQueueDetail(personal)}
-          tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
-          onClick={() => openMetric("testing")}
-        />
+      <div className="person-queue-work">
+        <div className="person-queue-metrics" aria-label={`${person.login} work queues`}>
+          <PersonQueueMetric
+            label="Active issues"
+            value={person.activeCriticalIssues}
+            detail={personActiveQueueDetail(person, personal)}
+            tone={personActiveMetricTone(person.activeCriticalIssues)}
+            onClick={() => openMetric("active_issues")}
+          />
+          <PersonQueueMetric
+            label="PR attention"
+            value={person.attentionPrs}
+            detail={personPrAttentionQueueDetail(person, personal)}
+            tone={person.attentionPrs > 0 ? "attention" : "good"}
+            onClick={() => openMetric("pr_attention")}
+          />
+          <PersonQueueMetric
+            label="Pending PR"
+            value={person.pendingPrs}
+            detail={personPendingPrQueueDetail(person, personal)}
+            tone={person.pendingPrs > 0 ? "normal" : "good"}
+            onClick={() => openMetric("pending_pr")}
+          />
+          <PersonQueueMetric
+            label="Needs triage"
+            value={person.needsTriageIssues}
+            detail={personNeedsTriageQueueDetail(person, personal)}
+            tone={person.needsTriageIssues > 0 ? "attention" : "good"}
+            onClick={() => openMetric("triage")}
+          />
+          <PersonQueueMetric
+            label="Deferred"
+            value={person.deferredIssues}
+            detail={personDeferredQueueDetail(person, personal)}
+            tone={person.deferredIssues > 0 ? "normal" : "good"}
+            onClick={() => openMetric("deferred")}
+          />
+          <PersonQueueMetric
+            label="Issue testing"
+            value={testingWork}
+            detail={personTestingQueueDetail(personal)}
+            tone={staleTesting > 0 ? "attention" : testingWork > 0 ? "normal" : "good"}
+            onClick={() => openMetric("testing")}
+          />
+        </div>
+        {personal ? (
+          <PersonQueueRhythmStrip
+            person={personal}
+            onOpenMetric={openMetric}
+            onThroughputSelect={(selection) => onThroughputSelect?.(person.login, selection)}
+          />
+        ) : null}
       </div>
 
       <div className="person-queue-actions">
@@ -12238,6 +12290,59 @@ function PersonQueueMetric({
       <strong>{value}</strong>
       <small>{detail}</small>
     </button>
+  );
+}
+
+function PersonQueueRhythmStrip({
+  person,
+  onOpenMetric,
+  onThroughputSelect
+}: {
+  person: PersonalActionView;
+  onOpenMetric: (metric: PersonalDrilldownFilter) => void;
+  onThroughputSelect?: (selection: PersonalPrThroughputSelection) => void;
+}) {
+  const rows = personalPrThroughputRows(person);
+  const flow = personalCriticalFlowEfficiency(person);
+  const openThroughput = (period: MetricPeriod): void => {
+    if (onThroughputSelect) {
+      onThroughputSelect(personalPrThroughputSelectionForPeriod(person, period));
+      return;
+    }
+    onOpenMetric("pending_pr");
+  };
+
+  return (
+    <div className="person-queue-rhythm" aria-label={`${person.login} PR rhythm and active issue flow`}>
+      <div className="person-queue-rhythm-periods" aria-label={`${person.login} day week month PR counts`}>
+        {rows.map((row) => (
+          <button
+            type="button"
+            className="person-queue-rhythm-period"
+            key={row.period}
+            onClick={() => openThroughput(row.period)}
+          >
+            <span>{metricPeriodShortText(row.period)}</span>
+            <strong>{personalPrThroughputPair(row)}</strong>
+            <small>avg {optionalHours(row.averagePendingPrAgeHours)}</small>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={`person-queue-flow-card ${
+          flow.activeIssues > flow.issuesWithPr || flow.cachePendingIssues > 0 ? "person-queue-flow-card-alert" : ""
+        }`}
+        onClick={() => onOpenMetric("active_issues")}
+      >
+        <span>s-1/s0 → PR → Issue Testing</span>
+        <strong>{personalCriticalFlowEfficiencySummary(flow)}</strong>
+        <small>
+          to PR {optionalHours(flow.averageActiveToFirstPrHours)} | to test{" "}
+          {optionalHours(flow.averageActiveToTestingHours)}
+        </small>
+      </button>
+    </div>
   );
 }
 
@@ -16860,7 +16965,13 @@ export interface PersonalPrThroughputSelection {
   period: MetricPeriod;
 }
 
-interface PersonalPrThroughputRow {
+interface PersonalThroughputRequest {
+  login: string;
+  selection: PersonalPrThroughputSelection;
+  requestedAt: number;
+}
+
+export interface PersonalPrThroughputRow {
   period: MetricPeriod;
   label: string;
   prsCreated: number | null;
@@ -16872,7 +16983,7 @@ interface PersonalPrThroughputRow {
   sourceCompleteness: TrendMetricPoint["sourceCompleteness"] | null;
 }
 
-interface PersonalCriticalFlowEfficiency {
+export interface PersonalCriticalFlowEfficiency {
   activeIssues: number;
   issuesWithPr: number;
   issuesInTesting: number;
@@ -16927,6 +17038,28 @@ function personalPrThroughputRow(period: MetricPeriod, point: TrendMetricPoint |
   };
 }
 
+function metricPeriodShortText(period: MetricPeriod): string {
+  if (period === "week") {
+    return "W";
+  }
+  if (period === "month") {
+    return "M";
+  }
+  return "D";
+}
+
+function throughputCountText(value: number | null): string {
+  return value === null ? "-" : String(value);
+}
+
+export function personalPrThroughputPair(row: Pick<PersonalPrThroughputRow, "prsCreated" | "prsMerged">): string {
+  return `${throughputCountText(row.prsCreated)}/${throughputCountText(row.prsMerged)}`;
+}
+
+export function personalPrThroughputSummary(rows: PersonalPrThroughputRow[]): string {
+  return rows.map((row) => `${metricPeriodShortText(row.period)} ${personalPrThroughputPair(row)}`).join(" | ");
+}
+
 export function personalCriticalFlowEfficiency(
   person: Pick<PersonalActionView, "activeCriticalIssues">
 ): PersonalCriticalFlowEfficiency {
@@ -16940,6 +17073,10 @@ export function personalCriticalFlowEfficiency(
     cachePendingIssues: rows.filter((row) => row.cachePending).length,
     rows
   };
+}
+
+export function personalCriticalFlowEfficiencySummary(flow: PersonalCriticalFlowEfficiency): string {
+  return `${flow.issuesWithPr}/${flow.activeIssues} with PR | ${flow.issuesInTesting} in test`;
 }
 
 function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {
@@ -17279,6 +17416,7 @@ function SelectedPersonWorkbench({
   generatedAt,
   analyticsPeriod,
   trendPoints,
+  throughputRequest,
   onAnalyticsPeriodChange,
   drilldownFilter,
   onDrilldownChange
@@ -17287,6 +17425,7 @@ function SelectedPersonWorkbench({
   generatedAt: string;
   analyticsPeriod: MetricPeriod;
   trendPoints: TrendMetricPoint[];
+  throughputRequest: PersonalThroughputRequest | null;
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
   drilldownFilter: PersonalDrilldownFilter;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
@@ -17341,6 +17480,13 @@ function SelectedPersonWorkbench({
   useEffect(() => {
     setThroughputSelection(initialPersonalPrThroughputSelection(person));
   }, [person.login]);
+
+  useEffect(() => {
+    if (!throughputRequest || throughputRequest.login !== person.login) {
+      return;
+    }
+    selectThroughput(throughputRequest.selection);
+  }, [person.login, throughputRequest]);
 
   return (
     <div className="selected-person-workbench">
@@ -18554,6 +18700,7 @@ export default function App() {
   const [personalDrilldownFilter, setPersonalDrilldownFilter] = useState<PersonalDrilldownFilter>(() =>
     personalDrilldownFilterFromHash(initialHash())
   );
+  const [personalThroughputRequest, setPersonalThroughputRequest] = useState<PersonalThroughputRequest | null>(null);
   const [workObjectPreview, setWorkObjectPreview] = useState<TeamWorkPreview | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [workflowPreview, setWorkflowPreview] = useState<WorkflowFixPreview | null>(null);
@@ -18988,6 +19135,12 @@ export default function App() {
     selectView("Personal", login, { personalDrilldownFilter: filter });
   }
 
+  function openPersonalThroughput(login: string, selection: PersonalPrThroughputSelection) {
+    setPersonalThroughputRequest({ login, selection, requestedAt: Date.now() });
+    setSelectedPerson(login);
+    selectView("Personal", login);
+  }
+
   function openObservedPersonPreview(login: string) {
     if (!data) {
       return;
@@ -19305,7 +19458,7 @@ export default function App() {
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
     if (layers) {
-      setManualRefreshLayers(layers);
+      setManualRefreshLayers(normalizeManualRefreshLayers(layers));
     }
     setManualRefreshError(null);
     setManualRefreshModalOpen(true);
@@ -19318,7 +19471,8 @@ export default function App() {
   }
 
   async function queueManualRefreshForLayers(layers: ManualRefreshLayer[]) {
-    if (layers.length === 0) {
+    const normalizedLayers = normalizeManualRefreshLayers(layers);
+    if (normalizedLayers.length === 0) {
       setManualRefreshError("Select at least one refresh layer.");
       return;
     }
@@ -19330,7 +19484,7 @@ export default function App() {
         method: "POST",
         headers: jsonHeadersWithCsrf(),
         credentials: "same-origin",
-        body: JSON.stringify({ layers })
+        body: JSON.stringify({ layers: normalizedLayers })
       });
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -21616,6 +21770,7 @@ export default function App() {
                       selectedLogin={selectedPersonalView?.login ?? null}
                       onSelect={selectPerson}
                       onMetricSelect={openPersonalDrilldown}
+                      onThroughputSelect={openPersonalThroughput}
                     />
                     {selectedPersonalView ? (
                       <SelectedPersonWorkbench
@@ -21623,6 +21778,11 @@ export default function App() {
                         generatedAt={data.sync.generatedAt}
                         analyticsPeriod={analyticsPeriod}
                         trendPoints={personalTrendPoints}
+                        throughputRequest={
+                          personalThroughputRequest?.login === selectedPersonalView.login
+                            ? personalThroughputRequest
+                            : null
+                        }
                         onAnalyticsPeriodChange={changeAnalyticsPeriod}
                         drilldownFilter={personalDrilldownFilter}
                         onDrilldownChange={changePersonalDrilldownFilter}
@@ -21948,6 +22108,7 @@ export default function App() {
                     mode={peopleBoardUsesObserved ? "observed" : "watched"}
                     onSelect={openPeopleBoardPerson}
                     onMetricSelect={openPeopleBoardMetric}
+                    onThroughputSelect={peopleBoardUsesObserved ? undefined : openPersonalThroughput}
                   />
                 ) : null}
                 <section className="people-by-person-board" aria-label="By person workload">
@@ -21973,6 +22134,7 @@ export default function App() {
                     sort={peopleSort}
                     onSelect={openPeopleBoardPerson}
                     onMetricSelect={openPeopleBoardMetric}
+                    onThroughputSelect={peopleBoardUsesObserved ? undefined : openPersonalThroughput}
                     mode={peopleBoardUsesObserved ? "observed" : "watched"}
                   />
                 </section>
@@ -22141,11 +22303,17 @@ export default function App() {
       >
         <Space orientation="vertical" size={12} className="token-modal-body">
           <Space size={[6, 6]} wrap>
-            <Button size="small" onClick={() => setManualRefreshLayers([...syncHealthLayers])}>
+            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("all"))}>
               All
             </Button>
-            <Button size="small" onClick={() => setManualRefreshLayers(["webhooks", "rules", "notifications"])}>
+            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("evidence"))}>
+              Evidence
+            </Button>
+            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("workflow"))}>
               Workflow
+            </Button>
+            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("metrics"))}>
+              Metrics
             </Button>
             <Button size="small" onClick={() => setManualRefreshLayers([])}>
               Clear
@@ -22167,7 +22335,7 @@ export default function App() {
           <Checkbox.Group
             value={manualRefreshLayers}
             onChange={(values) => {
-              setManualRefreshLayers(values.map(String).filter(isManualRefreshLayer));
+              setManualRefreshLayers(normalizeManualRefreshLayers(values.map(String)));
             }}
           >
             <Space orientation="vertical" size={8}>

@@ -11,6 +11,7 @@ import {
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
+  manualRefreshPresetLayers,
   notificationDeliveryScopeFilterFromHash,
   peopleScopeFilterFromHash,
   peopleSortLabel,
@@ -18,9 +19,11 @@ import {
   pagedRangeLabel,
   personalActionQueueDisclosureSummary,
   personalCriticalFlowEfficiency,
+  personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalPrListForScope,
   personalPrListTotalForScope,
+  personalPrThroughputSummary,
   personalPrThroughputSelectionForPeriod,
   personalPrThroughputRows,
   personalDrilldownFilterFromHash,
@@ -195,6 +198,30 @@ describe("dashboard hash filters", () => {
     expect(webhookScopeFilterFromHash("#webhooks?scope=bad")).toBe("pending");
     expect(writeAuditScopeFilterFromHash("#audit?scope=bad")).toBe("attention");
     expect(analyticsPeriodFromHash("#analytics?period=bad")).toBe("day");
+  });
+
+  it("selects stable manual refresh layer presets for common repair paths", () => {
+    expect(manualRefreshPresetLayers("workflow")).toEqual(["webhooks", "rules", "notifications"]);
+    expect(manualRefreshPresetLayers("evidence")).toEqual([
+      "pr_backfill",
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "rules",
+      "metrics",
+      "ai_drift"
+    ]);
+    expect(manualRefreshPresetLayers("metrics")).toEqual(["metrics"]);
+    expect(manualRefreshPresetLayers("all")).toEqual([
+      "github_sync",
+      "pr_backfill",
+      "issue_timeline_backfill",
+      "comment_backfill",
+      "webhooks",
+      "rules",
+      "metrics",
+      "ai_drift",
+      "notifications"
+    ]);
   });
 
   it("routes capped read models to the most relevant board drilldown", () => {
@@ -385,6 +412,7 @@ describe("dashboard hash filters", () => {
       "month:24/20"
     ]);
     expect(rows[0]?.averagePendingPrAgeHours).toBe(18);
+    expect(personalPrThroughputSummary(rows)).toBe("D 3/2 | W 9/7 | M 24/20");
   });
 
   it("maps personal day/week/month PR totals to the visible PR list", () => {
@@ -549,6 +577,7 @@ describe("dashboard hash filters", () => {
       averageActiveToFirstPrHours: 18,
       averageActiveToTestingHours: 42
     });
+    expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 with PR | 1 in test");
     expect(flow.rows[0]).toMatchObject({ aiEffortLabel: "ai-easy", firstPrAfterActiveHours: 18 });
   });
 });
