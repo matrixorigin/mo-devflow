@@ -70,6 +70,18 @@ describe("dashboard hash filters", () => {
     });
     expect(personalHash).toBe("personal?person=alice&drilldown=pr_attention");
     expect(personalDrilldownFilterFromHash(`#${personalHash}`)).toBe("pr_attention");
+    expect(
+      dashboardHashForView("Personal", {
+        personLogin: "alice",
+        personalDrilldownFilter: "testing"
+      })
+    ).toBe("personal?person=alice&drilldown=testing");
+    expect(
+      dashboardHashForView("Personal", {
+        personLogin: "alice",
+        personalDrilldownFilter: "active_issues"
+      })
+    ).toBe("personal?person=alice");
   });
 
   it("round-trips issue testing queue filters through PR board links", () => {

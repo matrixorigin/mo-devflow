@@ -3857,6 +3857,7 @@ function TeamRotationOverview({
   onNavigate,
   onConnectToken,
   onPersonSelect,
+  onPersonalDrilldown,
   criticalAiFilter,
   criticalScopeFilter,
   criticalOwnerFilter,
@@ -3881,6 +3882,7 @@ function TeamRotationOverview({
   onNavigate: (view: DashboardView) => void;
   onConnectToken: () => void;
   onPersonSelect: (login: string) => void;
+  onPersonalDrilldown: (login: string, filter: PersonalDrilldownFilter) => void;
   criticalAiFilter: CriticalIssueAiFilter;
   criticalScopeFilter: CriticalIssueScopeFilter;
   criticalOwnerFilter: CriticalIssueOwnerFilter;
@@ -3929,6 +3931,18 @@ function TeamRotationOverview({
   const peopleSource = data.people.length > 0 ? data.people : observedPeople;
   const peopleSourceIsObserved = data.people.length === 0 && observedPeople.length > 0;
   const peopleFocus = sortPeopleForTeamFocus(peopleSource, data.personalViews);
+  const personalViewLogins = new Set(data.personalViews.map((person) => person.login));
+  const openOwnerPersonalDrilldown = (
+    summary: CriticalOwnerFlowSummary,
+    filter: PersonalDrilldownFilter,
+    fallback: () => void
+  ) => {
+    if (summary.ownerLogin && personalViewLogins.has(summary.ownerLogin)) {
+      onPersonalDrilldown(summary.ownerLogin, filter);
+      return;
+    }
+    fallback();
+  };
   const sMinusOneIssues = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1").length;
   const triageSnapshot = teamTriageSnapshot(data);
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
@@ -4072,13 +4086,21 @@ function TeamRotationOverview({
         onOpenIssues={() => onOpenIssuesFilter({})}
         onOpenNoPrIssues={() => onOpenIssuesFilter({ scope: "no_pr" })}
         onOpenOwnerIssues={(summary) =>
-          onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "all" })
+          openOwnerPersonalDrilldown(summary, "active_issues", () =>
+            onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "all" })
+          )
         }
         onOpenOwnerNoPrIssues={(summary) =>
           onOpenIssuesFilter({ owner: criticalIssueOwnerFilterFor(summary.ownerLogin), scope: "no_pr" })
         }
         onOpenPrRisks={() => onOpenPrsFilter("attention")}
+        onOpenOwnerPrRisks={(summary) =>
+          openOwnerPersonalDrilldown(summary, "pr_attention", () => onOpenPrsFilter("attention"))
+        }
         onOpenTestingIssues={() => onOpenTestingIssueQueue("all")}
+        onOpenOwnerTestingIssues={(summary) =>
+          openOwnerPersonalDrilldown(summary, "testing", () => onOpenTestingIssueQueue("all"))
+        }
         onPreviewIssue={(issue) => setWorkPreview({ objectType: "issue", issue })}
       />
 
@@ -4947,7 +4969,9 @@ function TeamCriticalFlowPanel({
   onOpenOwnerIssues,
   onOpenOwnerNoPrIssues,
   onOpenPrRisks,
+  onOpenOwnerPrRisks,
   onOpenTestingIssues,
+  onOpenOwnerTestingIssues,
   onPreviewIssue
 }: {
   issues: CriticalIssueView[];
@@ -4961,7 +4985,9 @@ function TeamCriticalFlowPanel({
   onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
   onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
   onOpenPrRisks: () => void;
+  onOpenOwnerPrRisks: (summary: CriticalOwnerFlowSummary) => void;
   onOpenTestingIssues: () => void;
+  onOpenOwnerTestingIssues: (summary: CriticalOwnerFlowSummary) => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
   const pagedRows = usePagedList(rows, 3, rows.map((row) => row.id).join(":"));
@@ -5024,8 +5050,8 @@ function TeamCriticalFlowPanel({
         summaries={ownerSummaries}
         onOpenOwnerIssues={onOpenOwnerIssues}
         onOpenOwnerNoPrIssues={onOpenOwnerNoPrIssues}
-        onOpenPrRisks={onOpenPrRisks}
-        onOpenTestingIssues={onOpenTestingIssues}
+        onOpenOwnerPrRisks={onOpenOwnerPrRisks}
+        onOpenOwnerTestingIssues={onOpenOwnerTestingIssues}
       />
 
       <div className="team-critical-flow-list">
@@ -5146,14 +5172,14 @@ function TeamCriticalOwnerFlowBoard({
   summaries,
   onOpenOwnerIssues,
   onOpenOwnerNoPrIssues,
-  onOpenPrRisks,
-  onOpenTestingIssues
+  onOpenOwnerPrRisks,
+  onOpenOwnerTestingIssues
 }: {
   summaries: CriticalOwnerFlowSummary[];
   onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
   onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
-  onOpenPrRisks: () => void;
-  onOpenTestingIssues: () => void;
+  onOpenOwnerPrRisks: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenOwnerTestingIssues: (summary: CriticalOwnerFlowSummary) => void;
 }) {
   const pagedSummaries = usePagedList(summaries, 6, summaries.map((summary) => summary.key).join(":"));
 
@@ -5184,8 +5210,8 @@ function TeamCriticalOwnerFlowBoard({
             summary={summary}
             onOpenOwnerIssues={onOpenOwnerIssues}
             onOpenOwnerNoPrIssues={onOpenOwnerNoPrIssues}
-            onOpenPrRisks={onOpenPrRisks}
-            onOpenTestingIssues={onOpenTestingIssues}
+            onOpenOwnerPrRisks={onOpenOwnerPrRisks}
+            onOpenOwnerTestingIssues={onOpenOwnerTestingIssues}
           />
         ))}
       </div>
@@ -5204,14 +5230,14 @@ function TeamCriticalOwnerFlowCard({
   summary,
   onOpenOwnerIssues,
   onOpenOwnerNoPrIssues,
-  onOpenPrRisks,
-  onOpenTestingIssues
+  onOpenOwnerPrRisks,
+  onOpenOwnerTestingIssues
 }: {
   summary: CriticalOwnerFlowSummary;
   onOpenOwnerIssues: (summary: CriticalOwnerFlowSummary) => void;
   onOpenOwnerNoPrIssues: (summary: CriticalOwnerFlowSummary) => void;
-  onOpenPrRisks: () => void;
-  onOpenTestingIssues: () => void;
+  onOpenOwnerPrRisks: (summary: CriticalOwnerFlowSummary) => void;
+  onOpenOwnerTestingIssues: (summary: CriticalOwnerFlowSummary) => void;
 }) {
   const testingTone = summary.staleTestingIssues > 0 ? "critical" : summary.testingIssues > 0 ? "attention" : "normal";
   const aiLabel = summary.aiLabels.length > 0 ? summary.aiLabels.slice(0, 2).join(", ") : "ai-easy";
@@ -5259,13 +5285,13 @@ function TeamCriticalOwnerFlowCard({
           label="PR blockers"
           value={summary.blockedPrs}
           tone={summary.blockedPrs > 0 ? "attention" : "normal"}
-          onClick={onOpenPrRisks}
+          onClick={() => onOpenOwnerPrRisks(summary)}
         />
         <TeamCriticalOwnerFlowMetric
           label="Issue testing"
           value={summary.testingIssues}
           tone={testingTone}
-          onClick={onOpenTestingIssues}
+          onClick={() => onOpenOwnerTestingIssues(summary)}
         />
       </div>
     </article>
@@ -20369,6 +20395,7 @@ export default function App() {
                 onNavigate={selectView}
                 onConnectToken={openTokenReconnect}
                 onPersonSelect={openPersonWorkbench}
+                onPersonalDrilldown={openPersonalDrilldown}
                 criticalAiFilter={criticalIssueAiFilter}
                 criticalScopeFilter={criticalIssueScopeFilter}
                 criticalOwnerFilter={criticalIssueOwnerFilter}
