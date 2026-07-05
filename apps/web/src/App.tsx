@@ -842,6 +842,14 @@ function normalizeManualRefreshLayers(layers: string[] | undefined): ManualRefre
 
 type ManualRefreshPreset = "all" | "workflow" | "evidence" | "metrics";
 
+const githubApiManualRefreshLayers = new Set<ManualRefreshLayer>([
+  "github_sync",
+  "pr_backfill",
+  "issue_timeline_backfill",
+  "comment_backfill",
+  "webhooks"
+]);
+
 export function manualRefreshPresetLayers(preset: ManualRefreshPreset): ManualRefreshLayer[] {
   if (preset === "workflow") {
     return normalizeManualRefreshLayers(["webhooks", "rules", "notifications"]);
@@ -860,6 +868,27 @@ export function manualRefreshPresetLayers(preset: ManualRefreshPreset): ManualRe
     return ["metrics"];
   }
   return [...syncHealthLayers];
+}
+
+export function manualRefreshLayerBlockedByQuota(
+  layer: ManualRefreshLayer,
+  rateLimit: Pick<SyncRateLimitSummary, "exhaustedLayers"> | null | undefined
+): boolean {
+  return Boolean(rateLimit?.exhaustedLayers.length) && githubApiManualRefreshLayers.has(layer);
+}
+
+export function filterManualRefreshLayersForQuota(
+  layers: ManualRefreshLayer[],
+  rateLimit: Pick<SyncRateLimitSummary, "exhaustedLayers"> | null | undefined
+): ManualRefreshLayer[] {
+  return layers.filter((layer) => !manualRefreshLayerBlockedByQuota(layer, rateLimit));
+}
+
+export function manualRefreshPresetLayersForQuota(
+  preset: ManualRefreshPreset,
+  rateLimit: Pick<SyncRateLimitSummary, "exhaustedLayers"> | null | undefined
+): ManualRefreshLayer[] {
+  return filterManualRefreshLayersForQuota(manualRefreshPresetLayers(preset), rateLimit);
 }
 
 function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
@@ -20689,7 +20718,9 @@ export default function App() {
 
   function openManualRefreshModal(layers?: ManualRefreshLayer[]) {
     if (layers) {
-      setManualRefreshLayers(normalizeManualRefreshLayers(layers));
+      setManualRefreshLayers(
+        filterManualRefreshLayersForQuota(normalizeManualRefreshLayers(layers), dashboardRateLimit)
+      );
     }
     setManualRefreshError(null);
     setManualRefreshModalOpen(true);
@@ -20702,9 +20733,16 @@ export default function App() {
   }
 
   async function queueManualRefreshForLayers(layers: ManualRefreshLayer[]) {
-    const normalizedLayers = normalizeManualRefreshLayers(layers);
+    const normalizedLayers = filterManualRefreshLayersForQuota(
+      normalizeManualRefreshLayers(layers),
+      dashboardRateLimit
+    );
     if (normalizedLayers.length === 0) {
-      setManualRefreshError("Select at least one refresh layer.");
+      setManualRefreshError(
+        dashboardRateLimit?.exhaustedLayers.length
+          ? "GitHub API quota is exhausted. Select cache-only layers such as rules, metrics, AI drift, or notifications."
+          : "Select at least one refresh layer."
+      );
       return;
     }
     setManualRefreshSaving(true);
@@ -22013,6 +22051,8 @@ export default function App() {
     workflowViolations: () => selectView("Violations")
   };
   const dashboardRateLimit = data ? syncRateLimitSummary(data.sync.health) : null;
+  const manualRefreshSelectableLayers = filterManualRefreshLayersForQuota(manualRefreshLayers, dashboardRateLimit);
+  const manualRefreshQuotaBlocksGitHubLayers = Boolean(dashboardRateLimit?.exhaustedLayers.length);
   const latestRateLimitRemaining = dashboardRateLimit?.lowestRemaining ?? null;
   const latestRateLimitLayer = dashboardRateLimit?.lowestLayer ?? null;
   const latestRateLimitResetAt = dashboardRateLimit?.resetAt ?? null;
@@ -23578,7 +23618,7 @@ export default function App() {
         open={manualRefreshModalOpen}
         okText="Queue"
         confirmLoading={manualRefreshSaving}
-        okButtonProps={{ disabled: manualRefreshLayers.length === 0 || !session?.authenticated }}
+        okButtonProps={{ disabled: manualRefreshSelectableLayers.length === 0 || !session?.authenticated }}
         onOk={() => void queueManualRefresh()}
         onCancel={() => {
           setManualRefreshModalOpen(false);
@@ -23587,16 +23627,28 @@ export default function App() {
       >
         <Space orientation="vertical" size={12} className="token-modal-body">
           <Space size={[6, 6]} wrap>
-            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("all"))}>
+            <Button
+              size="small"
+              onClick={() => setManualRefreshLayers(manualRefreshPresetLayersForQuota("all", dashboardRateLimit))}
+            >
               All
             </Button>
-            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("evidence"))}>
+            <Button
+              size="small"
+              onClick={() => setManualRefreshLayers(manualRefreshPresetLayersForQuota("evidence", dashboardRateLimit))}
+            >
               Evidence
             </Button>
-            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("workflow"))}>
+            <Button
+              size="small"
+              onClick={() => setManualRefreshLayers(manualRefreshPresetLayersForQuota("workflow", dashboardRateLimit))}
+            >
               Workflow
             </Button>
-            <Button size="small" onClick={() => setManualRefreshLayers(manualRefreshPresetLayers("metrics"))}>
+            <Button
+              size="small"
+              onClick={() => setManualRefreshLayers(manualRefreshPresetLayersForQuota("metrics", dashboardRateLimit))}
+            >
               Metrics
             </Button>
             <Button size="small" onClick={() => setManualRefreshLayers([])}>
@@ -23616,21 +23668,39 @@ export default function App() {
               showIcon
             />
           ) : null}
+          {manualRefreshQuotaBlocksGitHubLayers ? (
+            <Alert
+              type="warning"
+              title="GitHub API quota is exhausted"
+              description={`GitHub-backed layers are disabled until reset${
+                dashboardRateLimit?.resetAt ? ` at ${formatDate(dashboardRateLimit.resetAt)}` : ""
+              }. Cache-only layers can still run.`}
+              showIcon
+            />
+          ) : null}
           <Checkbox.Group
-            value={manualRefreshLayers}
+            value={manualRefreshSelectableLayers}
             onChange={(values) => {
-              setManualRefreshLayers(normalizeManualRefreshLayers(values.map(String)));
+              setManualRefreshLayers(
+                filterManualRefreshLayersForQuota(normalizeManualRefreshLayers(values.map(String)), dashboardRateLimit)
+              );
             }}
           >
             <Space orientation="vertical" size={8}>
-              {syncHealthLayers.map((layer) => (
-                <Checkbox key={layer} value={layer}>
-                  <Space orientation="vertical" size={0}>
-                    <Text>{labelText(layer)}</Text>
-                    <Text type="secondary">{manualRefreshLayerDescription(layer)}</Text>
-                  </Space>
-                </Checkbox>
-              ))}
+              {syncHealthLayers.map((layer) => {
+                const blockedByQuota = manualRefreshLayerBlockedByQuota(layer, dashboardRateLimit);
+                return (
+                  <Checkbox disabled={blockedByQuota} key={layer} value={layer}>
+                    <Space orientation="vertical" size={0}>
+                      <Space size={[4, 4]} wrap>
+                        <Text>{labelText(layer)}</Text>
+                        {blockedByQuota ? <Tag color="red">quota blocked</Tag> : null}
+                      </Space>
+                      <Text type="secondary">{manualRefreshLayerDescription(layer)}</Text>
+                    </Space>
+                  </Checkbox>
+                );
+              })}
             </Space>
           </Checkbox.Group>
           {manualRefreshError ? (

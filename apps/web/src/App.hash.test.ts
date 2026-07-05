@@ -15,7 +15,10 @@ import {
   dashboardVisibilityTitle,
   dashboardViewLimitTargetForKey,
   driftSignalFilterFromHash,
+  filterManualRefreshLayersForQuota,
+  manualRefreshLayerBlockedByQuota,
   manualRefreshPresetLayers,
+  manualRefreshPresetLayersForQuota,
   manualRefreshQueuedJobLabel,
   notificationDeliveryScopeFilterFromHash,
   peoplePrFlowMatrixRows,
@@ -313,6 +316,25 @@ describe("dashboard hash filters", () => {
       "ai_drift",
       "notifications"
     ]);
+  });
+
+  it("removes GitHub-backed manual refresh layers while quota is exhausted", () => {
+    const exhausted = { exhaustedLayers: ["pr_backfill"] };
+    expect(manualRefreshLayerBlockedByQuota("github_sync", exhausted)).toBe(true);
+    expect(manualRefreshLayerBlockedByQuota("rules", exhausted)).toBe(false);
+    expect(filterManualRefreshLayersForQuota(["github_sync", "rules", "metrics"], exhausted)).toEqual([
+      "rules",
+      "metrics"
+    ]);
+    expect(manualRefreshPresetLayersForQuota("workflow", exhausted)).toEqual(["rules", "notifications"]);
+    expect(manualRefreshPresetLayersForQuota("evidence", exhausted)).toEqual(["rules", "metrics", "ai_drift"]);
+    expect(manualRefreshPresetLayersForQuota("all", exhausted)).toEqual([
+      "rules",
+      "metrics",
+      "ai_drift",
+      "notifications"
+    ]);
+    expect(manualRefreshPresetLayersForQuota("metrics", exhausted)).toEqual(["metrics"]);
   });
 
   it("summarizes queued manual refresh jobs with status and readiness", () => {
