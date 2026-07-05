@@ -9055,6 +9055,33 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
   );
 }
 
+function PersonReasonStrip({ reasons, resetKey }: { reasons: string[]; resetKey: string }) {
+  const reasonLazy = useLazyVisibleCount(reasons.length, 3, resetKey);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
+
+  if (reasons.length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="person-reasons">
+      {visibleReasons.map((reason) => (
+        <span key={reason}>{reason}</span>
+      ))}
+      <LazyListToggle
+        hiddenCount={reasonLazy.hiddenCount}
+        revealCount={reasonLazy.revealCount}
+        canCollapse={reasonLazy.canCollapse}
+        itemLabel="reasons"
+        className="linked-overflow-button"
+        collapsedLabel="Show fewer reasons"
+        onShowMore={reasonLazy.showMore}
+        onCollapse={reasonLazy.reset}
+      />
+    </span>
+  );
+}
+
 function PersonWorkloadBoard({
   people,
   personalViews,
@@ -9210,11 +9237,7 @@ function PersonWorkloadBoard({
                   <small>PR yday</small>
                 </button>
               </span>
-              <span className="person-reasons">
-                {reasons.slice(0, 3).map((reason) => (
-                  <span key={reason}>{reason}</span>
-                ))}
-              </span>
+              <PersonReasonStrip reasons={reasons} resetKey={`${person.login}:${reasons.join("|")}`} />
             </article>
           );
         })}
@@ -9306,6 +9329,11 @@ function ObservedPersonThreadRow({
   const prs = observedThreadPullRequests(thread);
   const sourceUrl = thread.issue?.htmlUrl ?? prs[0]?.htmlUrl ?? null;
   const pagedPrs = usePagedList(prs, 4, thread.id);
+  const linkedIssueUrls = sourceUrl
+    ? thread.linkedIssueNumbers.map((number) => ({ number, url: linkedObjectUrl(sourceUrl, "issues", number) }))
+    : [];
+  const linkedIssueLazy = useLazyVisibleCount(linkedIssueUrls.length, 3, thread.id);
+  const visibleLinkedIssues = linkedIssueUrls.slice(0, linkedIssueLazy.visibleCount);
 
   return (
     <article className={`observed-thread-row observed-thread-row-${thread.tone}`}>
@@ -9381,13 +9409,23 @@ function ObservedPersonThreadRow({
           defaultPageSize={4}
           onChange={pagedPrs.onPageChange}
         />
-        {!thread.issue && thread.linkedIssueNumbers.length > 0 && sourceUrl ? (
+        {!thread.issue && visibleLinkedIssues.length > 0 ? (
           <span className="observed-thread-issues">
-            {thread.linkedIssueNumbers.slice(0, 3).map((number) => (
-              <a href={linkedObjectUrl(sourceUrl, "issues", number)} target="_blank" rel="noreferrer" key={number}>
-                Issue #{number}
+            {visibleLinkedIssues.map((link) => (
+              <a href={link.url} target="_blank" rel="noreferrer" key={link.number}>
+                Issue #{link.number}
               </a>
             ))}
+            <LazyListToggle
+              hiddenCount={linkedIssueLazy.hiddenCount}
+              revealCount={linkedIssueLazy.revealCount}
+              canCollapse={linkedIssueLazy.canCollapse}
+              itemLabel="issues"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer issues"
+              onShowMore={linkedIssueLazy.showMore}
+              onCollapse={linkedIssueLazy.reset}
+            />
           </span>
         ) : null}
       </div>
@@ -9606,6 +9644,92 @@ function ObservedPersonIssuePanel({
   );
 }
 
+function ObservedPersonPrRow({ pr, onPreview }: { pr: PendingPrView; onPreview: (pr: PendingPrView) => void }) {
+  const reasons = prAttentionReasons(pr);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 2, `reasons:${pr.number}:${reasons.join("|")}`);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
+  const issueLinks = pr.linkedIssueNumbers.map((number) => ({
+    number,
+    url: linkedObjectUrl(pr.htmlUrl, "issues", number)
+  }));
+  const issueLazy = useLazyVisibleCount(issueLinks.length, 2, `issues:${pr.number}:${pr.linkedIssueNumbers.join(",")}`);
+  const visibleIssueLinks = issueLinks.slice(0, issueLazy.visibleCount);
+
+  return (
+    <article className="observed-person-row">
+      <span className="observed-person-row-main">
+        <a className="observed-person-row-link" href={pr.htmlUrl} target="_blank" rel="noreferrer">
+          #{pr.number} {pr.title}
+        </a>
+        <small>
+          {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
+        </small>
+      </span>
+      <span className="observed-person-row-tags">
+        {reasons.length > 0 ? (
+          <>
+            {visibleReasons.map((reason) => (
+              <Tag color="orange" key={reason}>
+                {reason}
+              </Tag>
+            ))}
+            <LazyListToggle
+              hiddenCount={reasonLazy.hiddenCount}
+              revealCount={reasonLazy.revealCount}
+              canCollapse={reasonLazy.canCollapse}
+              itemLabel="blockers"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer blockers"
+              onShowMore={reasonLazy.showMore}
+              onCollapse={reasonLazy.reset}
+            />
+          </>
+        ) : (
+          <Tag>no blocker</Tag>
+        )}
+        {visibleIssueLinks.length > 0 ? (
+          <>
+            {visibleIssueLinks.map((link) => (
+              <a
+                className="observed-person-link-pill"
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                key={link.number}
+              >
+                issue #{link.number}
+              </a>
+            ))}
+            <LazyListToggle
+              hiddenCount={issueLazy.hiddenCount}
+              revealCount={issueLazy.revealCount}
+              canCollapse={issueLazy.canCollapse}
+              itemLabel="issues"
+              className="linked-overflow-button"
+              collapsedLabel="Show fewer issues"
+              onShowMore={issueLazy.showMore}
+              onCollapse={issueLazy.reset}
+            />
+          </>
+        ) : (
+          <Tag color={pr.isComplete ? "orange" : "default"}>{pr.isComplete ? "unlinked" : "link sync pending"}</Tag>
+        )}
+        <Tooltip title={`Preview PR ${pr.number}`}>
+          <Button
+            aria-label={`Preview PR ${pr.number}`}
+            className="observed-person-row-action"
+            icon={<Eye size={14} />}
+            size="small"
+            type="text"
+            onClick={() => onPreview(pr)}
+          />
+        </Tooltip>
+        <ExternalLink size={13} aria-hidden="true" />
+      </span>
+    </article>
+  );
+}
+
 function ObservedPersonPrPanel({
   title,
   prs,
@@ -9634,50 +9758,7 @@ function ObservedPersonPrPanel({
         {prs.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No visible pending PR by this login" />
         ) : (
-          pagedPrs.visibleItems.map((pr) => {
-            const reasons = prAttentionReasons(pr);
-            return (
-              <article className="observed-person-row" key={pr.number}>
-                <span className="observed-person-row-main">
-                  <a className="observed-person-row-link" href={pr.htmlUrl} target="_blank" rel="noreferrer">
-                    #{pr.number} {pr.title}
-                  </a>
-                  <small>
-                    {hours(pr.ageHours)} open | last human action {formatDate(pr.lastHumanActionAt)}
-                  </small>
-                </span>
-                <span className="observed-person-row-tags">
-                  {reasons.length > 0 ? (
-                    reasons.slice(0, 2).map((reason) => (
-                      <Tag color="orange" key={reason}>
-                        {reason}
-                      </Tag>
-                    ))
-                  ) : (
-                    <Tag>no blocker</Tag>
-                  )}
-                  {pr.linkedIssueNumbers.length > 0 ? (
-                    <Tag color="blue">#{pr.linkedIssueNumbers.slice(0, 2).join(", #")}</Tag>
-                  ) : (
-                    <Tag color={pr.isComplete ? "orange" : "default"}>
-                      {pr.isComplete ? "unlinked" : "link sync pending"}
-                    </Tag>
-                  )}
-                  <Tooltip title={`Preview PR ${pr.number}`}>
-                    <Button
-                      aria-label={`Preview PR ${pr.number}`}
-                      className="observed-person-row-action"
-                      icon={<Eye size={14} />}
-                      size="small"
-                      type="text"
-                      onClick={() => onPreview(pr)}
-                    />
-                  </Tooltip>
-                  <ExternalLink size={13} aria-hidden="true" />
-                </span>
-              </article>
-            );
-          })
+          pagedPrs.visibleItems.map((pr) => <ObservedPersonPrRow pr={pr} onPreview={onPreview} key={pr.number} />)
         )}
       </div>
       <CardListPagination
@@ -9882,6 +9963,8 @@ function IssueWorkCard({
   const linkedPullRequests = critical ? issue.linkedPullRequests : [];
   const linkedPrLazy = useLazyVisibleCount(linkedPullRequests.length, 4, issue.number);
   const visibleLinkedPrs = linkedPullRequests.slice(0, linkedPrLazy.visibleCount);
+  const reasonLazy = useLazyVisibleCount(reasons.length, 4, issue.number);
+  const visibleReasons = reasons.slice(0, reasonLazy.visibleCount);
 
   return (
     <article className={`work-item-card ${critical ? "work-item-critical" : ""}`}>
@@ -9954,11 +10037,21 @@ function IssueWorkCard({
       ) : null}
       {reasons.length > 0 ? (
         <div className="work-reasons">
-          {reasons.slice(0, 4).map((reason) => (
+          {visibleReasons.map((reason) => (
             <Tag color={reason.toLowerCase().includes("partial") ? "gold" : "orange"} key={reason}>
               {reason}
             </Tag>
           ))}
+          <LazyListToggle
+            hiddenCount={reasonLazy.hiddenCount}
+            revealCount={reasonLazy.revealCount}
+            canCollapse={reasonLazy.canCollapse}
+            itemLabel="reasons"
+            className="linked-overflow-button"
+            collapsedLabel="Show fewer reasons"
+            onShowMore={reasonLazy.showMore}
+            onCollapse={reasonLazy.reset}
+          />
         </div>
       ) : null}
     </article>

@@ -4291,7 +4291,7 @@ button.testing-board-stat:focus-visible {
   gap: 6px;
 }
 
-.person-reasons span {
+.person-reasons > span {
   background: #f3f4f6;
   border-radius: 999px;
   color: #374151;
@@ -4593,11 +4593,27 @@ button.testing-board-stat:focus-visible {
   flex-wrap: wrap;
   gap: 4px;
   justify-content: flex-end;
-  max-width: 260px;
+  max-width: 360px;
 }
 
 .observed-person-row-action {
   color: #2563eb;
+}
+
+.observed-person-link-pill {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 12px;
+  line-height: 1.15;
+  padding: 3px 7px;
+  text-decoration: none;
+}
+
+.observed-person-link-pill:hover {
+  background: #dbeafe;
+  text-decoration: underline;
 }
 
 .selected-person-workbench {
