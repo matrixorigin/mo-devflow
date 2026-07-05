@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import {
+  claimWorkflowFixPreviewForUser,
   enqueueJobsNow,
   getActiveGitHubTokenForUser,
   getActiveWorkflowViolation,
@@ -318,6 +319,20 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
       return reply.status(409).send({
         error: "workflow_fix_preview_not_confirmable",
         message: `Preview is already ${storedPreview.status}.`
+      });
+    }
+    const claimed = await claimWorkflowFixPreviewForUser({
+      previewId: parsed.data.previewId,
+      userId: session.userId
+    });
+    if (!claimed) {
+      const latestPreview = await getWorkflowFixPreviewForUser({
+        previewId: parsed.data.previewId,
+        userId: session.userId
+      });
+      return reply.status(409).send({
+        error: "workflow_fix_preview_not_confirmable",
+        message: `Preview is already ${latestPreview?.status ?? "not confirmable"}.`
       });
     }
 

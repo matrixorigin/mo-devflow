@@ -11,7 +11,7 @@ import type {
 } from "@mo-devflow/shared";
 import { emptyNotificationTrace, parseJsonArray, parseJsonRecord } from "@mo-devflow/shared";
 import { randomUUID } from "node:crypto";
-import type { RowDataPacket } from "mysql2";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { fromSqlDate, getPool, sqlDate } from "./client";
 import { notificationDeliveryVisibilityWhereSql } from "./notifications";
 import { dashboardVisibilityFilter, type DashboardViewer } from "./visibility";
@@ -220,10 +220,20 @@ export async function getWorkflowFixPreviewForUser(input: {
   };
 }
 
+export async function claimWorkflowFixPreviewForUser(input: { previewId: string; userId: number }): Promise<boolean> {
+  const [result] = await getPool().execute<ResultSetHeader>(
+    `UPDATE write_action_previews
+     SET status = 'confirming'
+     WHERE preview_id = ? AND user_id = ? AND status = 'previewed'`,
+    [input.previewId, input.userId]
+  );
+  return result.affectedRows === 1;
+}
+
 export async function markWorkflowFixPreviewStatus(input: {
   previewId: string;
   userId: number;
-  status: WorkflowFixExecutionStatus | "previewed";
+  status: WorkflowFixExecutionStatus | "previewed" | "confirming";
 }): Promise<void> {
   await getPool().execute("UPDATE write_action_previews SET status = ? WHERE preview_id = ? AND user_id = ?", [
     input.status,

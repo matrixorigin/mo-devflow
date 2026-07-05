@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   fetchIssueFreshState: vi.fn(),
   fetchIssueWritePermission: vi.fn(),
   applyWorkflowFixPreview: vi.fn(),
+  claimWorkflowFixPreviewForUser: vi.fn(),
   enqueueJobsNow: vi.fn()
 }));
 
@@ -30,6 +31,7 @@ vi.mock("./authRoutes", () => ({
 }));
 
 vi.mock("@mo-devflow/db", () => ({
+  claimWorkflowFixPreviewForUser: mocks.claimWorkflowFixPreviewForUser,
   enqueueJobsNow: mocks.enqueueJobsNow,
   getActiveGitHubTokenForUser: mocks.getActiveGitHubTokenForUser,
   getActiveWorkflowViolation: mocks.getActiveWorkflowViolation,
@@ -199,6 +201,7 @@ describe("action routes", () => {
       status: "previewed",
       expiresAt: preview.expiresAt
     });
+    mocks.claimWorkflowFixPreviewForUser.mockResolvedValue(true);
     mocks.fetchIssueWritePermission.mockResolvedValue({
       allowed: true,
       permission: "write",
@@ -446,6 +449,10 @@ describe("action routes", () => {
         userId: 1,
         status: "blocked"
       });
+      expect(mocks.claimWorkflowFixPreviewForUser).toHaveBeenCalledWith({
+        previewId: preview.previewId,
+        userId: 1
+      });
       expect(mocks.recordWorkflowFixExecution).toHaveBeenCalledWith(
         expect.objectContaining({
           repoId: 10,
@@ -458,6 +465,61 @@ describe("action routes", () => {
       expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
       expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
       expect(onDashboardMutated).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects duplicate workflow fix confirmations before GitHub side effects", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.claimWorkflowFixPreviewForUser.mockResolvedValue(false);
+    mocks.getWorkflowFixPreviewForUser
+      .mockResolvedValueOnce({
+        repoId: 10,
+        userId: 1,
+        githubLogin: "alice",
+        previewId: preview.previewId,
+        preview,
+        status: "previewed",
+        expiresAt: preview.expiresAt
+      })
+      .mockResolvedValueOnce({
+        repoId: 10,
+        userId: 1,
+        githubLogin: "alice",
+        previewId: preview.previewId,
+        preview,
+        status: "confirming",
+        expiresAt: preview.expiresAt
+      });
+
+    const app = Fastify();
+    const onDashboardMutated = vi.fn();
+    await registerActionRoutes(app, { onDashboardMutated });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: "workflow_fix_preview_not_confirmable",
+        message: "Preview is already confirming."
+      });
+      expect(mocks.getActiveGitHubTokenForUser).not.toHaveBeenCalled();
+      expect(mocks.fetchIssueWritePermission).not.toHaveBeenCalled();
+      expect(mocks.applyWorkflowFixPreview).not.toHaveBeenCalled();
+      expect(mocks.markWorkflowFixPreviewStatus).not.toHaveBeenCalled();
+      expect(mocks.recordWorkflowFixExecution).not.toHaveBeenCalled();
+      expect(onDashboardMutated).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
