@@ -2839,6 +2839,20 @@ function criticalIssueSortLabel(sort: CriticalIssueSort): string {
   return "risk";
 }
 
+export function criticalIssueTableSummary(
+  issueCount: number,
+  scope: CriticalIssueScopeFilter,
+  ai: CriticalIssueAiFilter,
+  owner: CriticalIssueOwnerFilter,
+  sort: CriticalIssueSort
+): string {
+  const noun = issueCount === 1 ? "issue" : "issues";
+  const aiLabel = ai === "all" ? "all AI" : ai;
+  return `${issueCount} ${noun} | ${criticalScopeLabel(scope)} | ${criticalIssueOwnerFilterLabel(
+    owner
+  )} | ${aiLabel} | sort ${criticalIssueSortLabel(sort)}`;
+}
+
 export function prScopeLabel(filter: PrScopeFilter): string {
   if (filter === "active_issue") {
     return "linked to active s-1/s0";
@@ -18585,9 +18599,9 @@ export default function App() {
                   onPreview={setWorkObjectPreview}
                 />
                 {criticalOwnerCoverageRows.length > 0 ? (
-                  <div className="owner-coverage-strip">
-                    <div className="subsection-heading">
-                      <Title level={5}>Owner Coverage</Title>
+                  <details className="secondary-disclosure owner-coverage-disclosure">
+                    <summary>
+                      <span>Owner coverage</span>
                       <Space size={[4, 4]} wrap>
                         <button
                           type="button"
@@ -18600,7 +18614,11 @@ export default function App() {
                               ? "inline-filter-chip-active"
                               : ""
                           }`}
-                          onClick={() => openCriticalIssueScope("unowned")}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openCriticalIssueScope("unowned");
+                          }}
                         >
                           {data.counts.unownedCriticalIssues} unowned
                         </button>
@@ -18613,7 +18631,11 @@ export default function App() {
                               ? "inline-filter-chip-active"
                               : ""
                           }`}
-                          onClick={() => openCriticalIssueScope("non_watched")}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openCriticalIssueScope("non_watched");
+                          }}
                         >
                           {data.counts.nonWatchedCriticalIssues} non-watched
                         </button>
@@ -18627,31 +18649,53 @@ export default function App() {
                                 ? "inline-filter-chip-active"
                                 : ""
                             }`}
-                            onClick={() => openCriticalIssueScope("skipped")}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openCriticalIssueScope("skipped");
+                            }}
                           >
                             {data.counts.skippedCriticalIssues} skip automation
                           </button>
                         </Tooltip>
                       </Space>
+                    </summary>
+                    <div className="secondary-disclosure-body">
+                      <Table
+                        size="small"
+                        rowKey={(owner) => owner.ownerLogin ?? "unowned"}
+                        columns={criticalOwnerCoverageColumns}
+                        dataSource={criticalOwnerCoverageRows}
+                        pagination={tablePagination(criticalOwnerCoverageRows.length, 8)}
+                      />
                     </div>
+                  </details>
+                ) : null}
+                <details className="secondary-disclosure critical-table-disclosure">
+                  <summary>
+                    <span>Issue table</span>
+                    <Tag>
+                      {criticalIssueTableSummary(
+                        filteredCriticalIssuesForTable.length,
+                        criticalIssueScopeFilter,
+                        criticalIssueAiFilter,
+                        criticalIssueOwnerFilter,
+                        criticalIssueSort
+                      )}
+                    </Tag>
+                  </summary>
+                  <div className="secondary-disclosure-body">
                     <Table
-                      size="small"
-                      rowKey={(owner) => owner.ownerLogin ?? "unowned"}
-                      columns={criticalOwnerCoverageColumns}
-                      dataSource={criticalOwnerCoverageRows}
-                      pagination={tablePagination(criticalOwnerCoverageRows.length, 8)}
+                      rowKey="number"
+                      size="middle"
+                      columns={criticalColumns}
+                      dataSource={filteredCriticalIssuesForTable}
+                      scroll={{ x: 1812 }}
+                      pagination={tablePagination(filteredCriticalIssuesForTable.length, 8)}
+                      locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
                     />
                   </div>
-                ) : null}
-                <Table
-                  rowKey="number"
-                  size="middle"
-                  columns={criticalColumns}
-                  dataSource={filteredCriticalIssuesForTable}
-                  scroll={{ x: 1812 }}
-                  pagination={tablePagination(filteredCriticalIssuesForTable.length, 8)}
-                  locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
-                />
+                </details>
               </section>
             ) : null}
 

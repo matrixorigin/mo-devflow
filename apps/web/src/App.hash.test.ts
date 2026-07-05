@@ -4,6 +4,7 @@ import {
   criticalIssueOwnerFilterFromHash,
   criticalIssueScopeFilterFromHash,
   criticalIssueSortFromHash,
+  criticalIssueTableSummary,
   dashboardHashForView,
   dashboardRefreshModeText,
   dashboardViewLimitTargetForKey,
@@ -162,6 +163,15 @@ describe("dashboard hash filters", () => {
   it("summarizes the collapsed PR table with count, scope, and sort", () => {
     expect(prRotationTableSummary(1, "ci_failed", "age")).toBe("1 PR | CI failed | sort PR age");
     expect(prRotationTableSummary(12, "attention", "last_action")).toBe("12 PRs | PR attention | sort last action");
+  });
+
+  it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {
+    expect(criticalIssueTableSummary(1, "s-1", "ai-easy", "owner:alice", "active_age")).toBe(
+      "1 issue | s-1 | alice | ai-easy | sort active age"
+    );
+    expect(criticalIssueTableSummary(8, "no_action_24h", "all", "all", "risk")).toBe(
+      "8 issues | no action 24h | all owners | all AI | sort risk"
+    );
   });
 
   it("clamps paged range labels when filters shrink the table", () => {

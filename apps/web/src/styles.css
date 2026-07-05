@@ -3210,15 +3210,6 @@ button.webhook-path-metric:focus-visible {
   min-width: 0;
 }
 
-.owner-coverage-strip {
-  border-bottom: 1px solid #e5e7eb;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
-  min-width: 0;
-  padding-bottom: 12px;
-}
-
 .section {
   background: #ffffff;
   border: 1px solid #e5e7eb;
