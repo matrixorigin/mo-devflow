@@ -155,6 +155,7 @@ import {
   sortPeopleForBoard,
   sortTestingIssuesForAction,
   sortTestingTestersForManagement,
+  teamCriticalFlowEfficiency,
   teamCommandSignals,
   teamOperatingSignals,
   teamPeopleFocusSummary,
@@ -184,6 +185,7 @@ import {
   type PeopleScopeFilter,
   type PrCriticalIssueContext,
   type TeamCommandSignalTarget,
+  type TeamCriticalFlowEfficiency,
   type TeamOperatingSignal,
   type TestingTesterSort,
   type TrendMomentumItem,
@@ -5221,6 +5223,7 @@ function TeamCriticalFlowPanel({
   ).length;
   const issueTestingRows = rows.filter((row) => row.issue && testingIssueNumbers.has(row.issue.number)).length;
   const prVisibleRows = Math.max(0, rows.length - noVisiblePrRows);
+  const efficiency = teamCriticalFlowEfficiency(rows, testingIssues);
 
   return (
     <section className="team-critical-flow-panel" aria-label="Critical issue and PR flow">
@@ -5261,6 +5264,13 @@ function TeamCriticalFlowPanel({
         prVisibleIssues={prVisibleRows}
         issuesWithPrBlockers={issuesWithPrBlockers}
         issueTestingIssues={issueTestingRows}
+        onOpenIssues={onOpenIssues}
+        onOpenNoPrIssues={onOpenNoPrIssues}
+        onOpenPrRisks={onOpenPrRisks}
+        onOpenTestingIssues={onOpenTestingIssues}
+      />
+      <TeamCriticalFlowEfficiencyStrip
+        efficiency={efficiency}
         onOpenIssues={onOpenIssues}
         onOpenNoPrIssues={onOpenNoPrIssues}
         onOpenPrRisks={onOpenPrRisks}
@@ -5357,6 +5367,87 @@ function TeamCriticalFlowFunnel({
         onClick={onOpenTestingIssues}
       />
     </section>
+  );
+}
+
+function TeamCriticalFlowEfficiencyStrip({
+  efficiency,
+  onOpenIssues,
+  onOpenNoPrIssues,
+  onOpenPrRisks,
+  onOpenTestingIssues
+}: {
+  efficiency: TeamCriticalFlowEfficiency;
+  onOpenIssues: () => void;
+  onOpenNoPrIssues: () => void;
+  onOpenPrRisks: () => void;
+  onOpenTestingIssues: () => void;
+}) {
+  const prCoverageTone =
+    efficiency.issuesWithoutPr > 0 ? "critical" : efficiency.blockedPrs > 0 ? "attention" : "normal";
+  const testingTone =
+    efficiency.testingCachePendingIssues > 0
+      ? "attention"
+      : efficiency.averageActiveToTestingHours !== null && efficiency.averageActiveToTestingHours >= 168
+        ? "critical"
+        : "normal";
+
+  return (
+    <section className="critical-flow-efficiency-strip" aria-label="Active issue to PR and issue testing efficiency">
+      <TeamCriticalFlowEfficiencyMetric
+        label="Linked PR coverage"
+        value={`${efficiency.issuesWithPr}/${efficiency.activeIssues}`}
+        detail={`${efficiency.issuesWithoutPr} no PR | ${efficiency.blockedPrs} blocked PR`}
+        tone={prCoverageTone}
+        onClick={
+          efficiency.issuesWithoutPr > 0 ? onOpenNoPrIssues : efficiency.blockedPrs > 0 ? onOpenPrRisks : onOpenIssues
+        }
+      />
+      <TeamCriticalFlowEfficiencyMetric
+        label="To first PR"
+        value={optionalHours(efficiency.averageActiveToFirstPrHours)}
+        detail="avg after s-1/s0 start"
+        tone={
+          efficiency.averageActiveToFirstPrHours !== null && efficiency.averageActiveToFirstPrHours >= 72
+            ? "attention"
+            : "normal"
+        }
+        onClick={efficiency.issuesWithoutPr > 0 ? onOpenNoPrIssues : onOpenIssues}
+      />
+      <TeamCriticalFlowEfficiencyMetric
+        label="To issue testing"
+        value={optionalHours(efficiency.averageActiveToTestingHours)}
+        detail={`${efficiency.issuesInTesting} in test | ${efficiency.testingCachePendingIssues} cache pending`}
+        tone={testingTone}
+        onClick={onOpenTestingIssues}
+      />
+    </section>
+  );
+}
+
+function TeamCriticalFlowEfficiencyMetric({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "critical" | "attention" | "normal";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`critical-flow-efficiency-metric critical-flow-efficiency-metric-${tone}`}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 

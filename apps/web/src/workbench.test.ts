@@ -45,6 +45,7 @@ import {
   sortPeopleForBoard,
   sortTestingIssuesForAction,
   sortTestingTestersForManagement,
+  teamCriticalFlowEfficiency,
   sortPeopleByWorkload,
   teamPeopleFocusSummary,
   teamOperatingSignals,
@@ -1116,6 +1117,51 @@ describe("testing issue action order", () => {
 });
 
 describe("critical owner flow summaries", () => {
+  it("summarizes active severity to PR and issue testing efficiency for the team", () => {
+    const blockerPr = pullRequest({
+      number: 101,
+      ageHours: 60,
+      attentionFlags: ["ci_failed"],
+      linkedIssueNumbers: [10]
+    });
+    const testingPr = pullRequest({
+      number: 201,
+      ageHours: 20,
+      linkedIssueNumbers: [20]
+    });
+    const threads = observedOwnerThreads(
+      [
+        criticalIssue({
+          number: 10,
+          criticalAgeHours: 72,
+          linkedPullRequests: [{ ...linkedPullRequest(), number: 101, ageHours: 60, attentionFlags: ["ci_failed"] }]
+        }),
+        criticalIssue({
+          number: 11,
+          criticalAgeHours: 20,
+          linkedPullRequests: []
+        }),
+        criticalIssue({
+          number: 20,
+          criticalAgeHours: 50,
+          linkedPullRequests: [{ ...linkedPullRequest(), number: 201, ageHours: 20 }]
+        })
+      ],
+      [blockerPr, testingPr]
+    ).filter((thread) => thread.issue !== null);
+
+    expect(teamCriticalFlowEfficiency(threads, [testingIssue({ number: 20, queueAgeHours: 10 })])).toEqual({
+      activeIssues: 3,
+      issuesWithPr: 2,
+      issuesWithoutPr: 1,
+      issuesInTesting: 1,
+      blockedPrs: 1,
+      averageActiveToFirstPrHours: 21,
+      averageActiveToTestingHours: 40,
+      testingCachePendingIssues: 0
+    });
+  });
+
   it("groups active s-1/s0 issue flow by owner with PR and issue-testing bottlenecks", () => {
     const aliceBlockedPr = pullRequest({
       number: 101,

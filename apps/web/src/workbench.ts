@@ -689,6 +689,17 @@ export interface CriticalOwnerFlowSummary {
   tone: CriticalOwnerFlowTone;
 }
 
+export interface TeamCriticalFlowEfficiency {
+  activeIssues: number;
+  issuesWithPr: number;
+  issuesWithoutPr: number;
+  issuesInTesting: number;
+  blockedPrs: number;
+  averageActiveToFirstPrHours: number | null;
+  averageActiveToTestingHours: number | null;
+  testingCachePendingIssues: number;
+}
+
 export function effectiveAiEffortLabel(label: string | null): string {
   return label ?? "ai-easy";
 }
@@ -2084,6 +2095,61 @@ export function criticalOwnerFlowSummaries(
         right.activeIssues - left.activeIssues ||
         left.ownerLabel.localeCompare(right.ownerLabel)
     );
+}
+
+export function teamCriticalFlowEfficiency(
+  threads: ObservedOwnerThread[],
+  testingIssues: TestingIssueQueueView[] = []
+): TeamCriticalFlowEfficiency {
+  const activeThreads = threads.filter((thread) => thread.issue !== null);
+  const testingIssueByNumber = new Map(testingIssues.map((issue) => [issue.number, issue]));
+  const firstPrLeadTimes: number[] = [];
+  const testingLeadTimes: number[] = [];
+  const blockedPrNumbers = new Set<number>();
+  let issuesWithPr = 0;
+  let issuesInTesting = 0;
+  let testingCachePendingIssues = 0;
+
+  for (const thread of activeThreads) {
+    const issue = thread.issue;
+    if (!issue) {
+      continue;
+    }
+    const prs = observedOwnerThreadPullRequests(thread);
+    if (prs.length > 0) {
+      issuesWithPr += 1;
+    }
+    for (const pr of prs) {
+      if (prAttentionReasons(pr as PendingPrView).length > 0) {
+        blockedPrNumbers.add(pr.number);
+      }
+    }
+    const criticalAgeHours = issue.criticalAgeHours;
+    if (criticalAgeHours !== null && prs.length > 0) {
+      firstPrLeadTimes.push(Math.min(...prs.map((pr) => Math.max(0, criticalAgeHours - pr.ageHours))));
+    }
+
+    const testingIssue = testingIssueByNumber.get(issue.number) ?? null;
+    if (testingIssue) {
+      issuesInTesting += 1;
+      if (criticalAgeHours !== null && testingIssue.queueAgeHours !== null) {
+        testingLeadTimes.push(Math.max(0, criticalAgeHours - testingIssue.queueAgeHours));
+      } else {
+        testingCachePendingIssues += 1;
+      }
+    }
+  }
+
+  return {
+    activeIssues: activeThreads.length,
+    issuesWithPr,
+    issuesWithoutPr: Math.max(0, activeThreads.length - issuesWithPr),
+    issuesInTesting,
+    blockedPrs: blockedPrNumbers.size,
+    averageActiveToFirstPrHours: average(firstPrLeadTimes),
+    averageActiveToTestingHours: average(testingLeadTimes),
+    testingCachePendingIssues
+  };
 }
 
 function criticalOwnerFlowToneRank(tone: CriticalOwnerFlowTone): number {
