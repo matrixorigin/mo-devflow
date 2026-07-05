@@ -4582,6 +4582,12 @@ button.critical-board-stat:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.testing-evidence-note {
+  background: #fffbeb;
+  border-color: #fde68a;
+  border-left-color: #d97706;
+}
+
 .testing-command-summary {
   display: grid;
   gap: 8px;

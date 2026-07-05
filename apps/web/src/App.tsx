@@ -12019,6 +12019,7 @@ function TestingCommandBoard({
   const partialIssueTransitions = testing.recentIssueTransitions.filter(
     (transition) => transition.sourceCompleteness === "partial_cache"
   ).length;
+  const issueEvidence = testingIssueEvidenceGapSummary(testing.issues);
   const hasTurnoverHistory = testing.issueTransitionEvents > 0 || testing.handoffToCloseSamples > 0;
   const [testerSort, setTesterSort] = useState<TestingTesterSort>("attention");
   const testerRows = sortTestingTestersForManagement(testing.testers, testerSort);
@@ -12058,6 +12059,16 @@ function TestingCommandBoard({
           label, and comment signals do not move an issue into testing.
         </Text>
       </div>
+      {issueEvidence.dataGapIssues > 0 ? (
+        <div className="testing-scope-note testing-evidence-note">
+          <Text strong>
+            {issueEvidence.dataGapIssues === 1
+              ? "1 issue in testing needs cache evidence refresh."
+              : `${issueEvidence.dataGapIssues} issues in testing need cache evidence refresh.`}
+          </Text>
+          <Text type="secondary">{issueEvidence.detail}</Text>
+        </div>
+      ) : null}
 
       <div className="testing-command-summary" aria-label="Testing command summary">
         <TestingBoardStat
@@ -12093,6 +12104,14 @@ function TestingCommandBoard({
           onClick={testing.queuePrs > 0 ? () => onOpenPrsFilter("testing") : undefined}
         />
         <TestingBoardStat
+          label="issue data gaps"
+          value={issueEvidence.dataGapIssues}
+          tone={issueEvidence.dataGapIssues > 0 ? "attention" : "normal"}
+          active={testingIssueFilter === "data_gap"}
+          actionLabel="Filter"
+          onClick={issueEvidence.dataGapIssues > 0 ? () => openIssueQueueFilter("data_gap") : undefined}
+        />
+        <TestingBoardStat
           label="testers"
           value={testing.testers.length}
           tone={testerAttentionCount > 0 ? "attention" : "normal"}
@@ -12122,15 +12141,6 @@ function TestingCommandBoard({
                 ? "attention"
                 : "normal"
             }
-          />
-        ) : null}
-        {hasTurnoverHistory ? (
-          <TestingBoardStat
-            label="issue evidence gaps"
-            value={partialIssueTransitions}
-            tone={partialIssueTransitions > 0 ? "attention" : "normal"}
-            actionLabel="Filter"
-            onClick={partialIssueTransitions > 0 ? () => openIssueQueueFilter("data_gap") : undefined}
           />
         ) : null}
       </div>
@@ -12282,6 +12292,58 @@ type TestingIssueQueueSort = "priority" | "wait" | "number";
 
 export function testingIssueHasDataGap(issue: TestingIssueQueueView): boolean {
   return issue.queueAgeEvidence === "issue_cache_timestamp" || !issue.isComplete || issue.syncError !== null;
+}
+
+export interface TestingIssueEvidenceGapSummary {
+  dataGapIssues: number;
+  cacheTimestampIssues: number;
+  incompleteIssues: number;
+  syncErrorIssues: number;
+  pendingLinkedPrEvidenceIssues: number;
+  detail: string;
+}
+
+export function testingIssueEvidenceGapSummary(issues: TestingIssueQueueView[]): TestingIssueEvidenceGapSummary {
+  const cacheTimestampIssues = issues.filter((issue) => issue.queueAgeEvidence === "issue_cache_timestamp").length;
+  const incompleteIssues = issues.filter((issue) => !issue.isComplete).length;
+  const syncErrorIssues = issues.filter((issue) => issue.syncError !== null).length;
+  const dataGapIssues = issues.filter(testingIssueHasDataGap).length;
+  const pendingLinkedPrEvidenceIssues = issues.filter(
+    (issue) => issue.linkedPullRequests.length === 0 && testingIssueHasDataGap(issue)
+  ).length;
+
+  if (dataGapIssues === 0) {
+    return {
+      dataGapIssues,
+      cacheTimestampIssues,
+      incompleteIssues,
+      syncErrorIssues,
+      pendingLinkedPrEvidenceIssues,
+      detail: "Current issue testing evidence is complete."
+    };
+  }
+
+  const parts = [
+    cacheTimestampIssues > 0
+      ? objectCountLabel(cacheTimestampIssues, "issue uses", "issues use") + " issue update time"
+      : null,
+    incompleteIssues > 0
+      ? objectCountLabel(incompleteIssues, "issue has", "issues have") + " incomplete details"
+      : null,
+    syncErrorIssues > 0 ? objectCountLabel(syncErrorIssues, "issue has", "issues have") + " sync errors" : null,
+    pendingLinkedPrEvidenceIssues > 0
+      ? objectCountLabel(pendingLinkedPrEvidenceIssues, "issue has", "issues have") + " linked PR evidence pending"
+      : null
+  ].filter((part): part is string => part !== null);
+
+  return {
+    dataGapIssues,
+    cacheTimestampIssues,
+    incompleteIssues,
+    syncErrorIssues,
+    pendingLinkedPrEvidenceIssues,
+    detail: parts.join(" | ")
+  };
 }
 
 export function testingIssueHasConfirmedNoLinkedPr(issue: TestingIssueQueueView): boolean {

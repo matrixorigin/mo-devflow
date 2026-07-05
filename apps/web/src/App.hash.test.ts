@@ -67,6 +67,7 @@ import {
   sortPersonalPrList,
   syncRateLimitSummary,
   syncHealthCursorText,
+  testingIssueEvidenceGapSummary,
   testingIssueHasConfirmedNoLinkedPr,
   testingIssueHasDataGap,
   testingIssueLinkedPrEvidenceText,
@@ -605,6 +606,59 @@ describe("dashboard hash filters", () => {
     expect(testingIssueHasConfirmedNoLinkedPr(completeIssue)).toBe(true);
     expect(testingIssueLinkedPrEvidenceText(completeIssue)).toBe("No linked PR confirmed");
     expect(testingIssueLinkedPrEvidenceText(linkedIssue)).toBe("1 linked PR");
+  });
+
+  it("summarizes testing issue evidence gaps for the current queue", () => {
+    const partialIssue = {
+      linkedPullRequests: [],
+      queueAgeEvidence: "issue_cache_timestamp",
+      isComplete: false,
+      syncError: null
+    } as any;
+    const syncErrorIssue = {
+      linkedPullRequests: [{ number: 43 }],
+      queueAgeEvidence: "issue_assignment_event",
+      isComplete: true,
+      syncError: "GitHub detail sync failed"
+    } as any;
+    const completeIssue = {
+      linkedPullRequests: [],
+      queueAgeEvidence: "issue_label_event",
+      isComplete: true,
+      syncError: null
+    } as any;
+
+    const summary = testingIssueEvidenceGapSummary([partialIssue, syncErrorIssue, completeIssue]);
+
+    expect(summary).toMatchObject({
+      dataGapIssues: 2,
+      cacheTimestampIssues: 1,
+      incompleteIssues: 1,
+      syncErrorIssues: 1,
+      pendingLinkedPrEvidenceIssues: 1
+    });
+    expect(summary.detail).toContain("1 issue uses issue update time");
+    expect(summary.detail).toContain("1 issue has linked PR evidence pending");
+  });
+
+  it("summarizes a complete testing issue queue without warning copy", () => {
+    expect(
+      testingIssueEvidenceGapSummary([
+        {
+          linkedPullRequests: [],
+          queueAgeEvidence: "issue_assignment_event",
+          isComplete: true,
+          syncError: null
+        } as any
+      ])
+    ).toMatchObject({
+      dataGapIssues: 0,
+      cacheTimestampIssues: 0,
+      incompleteIssues: 0,
+      syncErrorIssues: 0,
+      pendingLinkedPrEvidenceIssues: 0,
+      detail: "Current issue testing evidence is complete."
+    });
   });
 
   it("summarizes the collapsed PR table with count, scope, and sort", () => {
