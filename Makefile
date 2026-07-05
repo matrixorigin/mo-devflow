@@ -1,4 +1,4 @@
-.PHONY: help setup dev-init dev-start dev-ready dev-stop dev-clean dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-check db-create db-migrate sync-once rules-once metrics-once drift-once notify-once format format-check check test ci
+.PHONY: help setup config-check config-check-production dev-init dev-start dev-ready dev-stop dev-clean dev-status dev-api-start dev-api-stop dev-api-logs dev-api-status dev-worker-start dev-worker-stop dev-worker-logs dev-worker-status dev-web-start dev-web-stop dev-web-logs dev-web-status dev-db-connect db-check db-create db-migrate sync-once rules-once metrics-once drift-once notify-once format format-check check test ci
 
 API_PID := api_server.pid
 API_LOG := api_server.log
@@ -14,11 +14,14 @@ ASSERT_PORT_FREE := node scripts/assert-port-free.mjs
 ASSERT_DB_READY := node scripts/assert-db-ready.mjs
 ENSURE_TOKEN_KEY := node scripts/ensure-token-encryption-key.mjs
 ENSURE_WEBHOOK_SECRET := node scripts/ensure-github-webhook-secret.mjs
+CONFIG_CHECK := node scripts/config-check.mjs
 
 help:
 	@echo "mo-devflow Development Commands"
 	@echo "================================"
 	@echo "  make setup              - Create .env, local secrets, and install dependencies"
+	@echo "  make config-check       - Validate local configuration without printing secrets"
+	@echo "  make config-check-production - Validate production-required configuration"
 	@echo "  make dev-init           - setup + db-create + db-migrate"
 	@echo "  make dev-start          - Start API, worker, and web UI"
 	@echo "  make dev-ready          - Wait for local API, worker, and web readiness"
@@ -43,6 +46,12 @@ setup:
 	@$(ENSURE_TOKEN_KEY) .env
 	@$(ENSURE_WEBHOOK_SECRET) .env
 	@npm install
+
+config-check:
+	@$(CONFIG_CHECK) .env
+
+config-check-production:
+	@$(CONFIG_CHECK) --production .env
 
 dev-init: setup db-create db-migrate
 

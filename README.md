@@ -11,6 +11,7 @@ Development workflow observability platform for configured GitHub repositories, 
 
 ```bash
 make setup
+make config-check
 make dev-init
 make sync-once
 make rules-once
@@ -66,6 +67,11 @@ Authenticated users can request an immediate retry for the latest failed
 delivery; the worker still performs the actual send.
 The notification panel also reports readiness, including webhook configuration
 and employee mapping coverage, before maintainers rely on owner-routed alerts.
+
+Run `make config-check` before local startup to validate `.env` without printing
+secret values. For deployment, run `make config-check-production`; it treats
+GitHub OAuth login, the deployment service read token, webhook secret, and token
+encryption as production gates.
 
 `make setup` generates a local-only `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` in the
 ignored `.env` file so personal GitHub token binding can work in development.
