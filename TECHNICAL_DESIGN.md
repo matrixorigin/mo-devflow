@@ -319,7 +319,7 @@ Token requirements:
 - Detect revoked or expired tokens and show a reconnect flow.
 - Store only the minimum metadata needed for UX: GitHub login, token last validated time, and visible scopes or capability checks.
 - Keep encryption keys in environment or secret management, not in the database.
-- Support encryption key rotation later by storing key version metadata with encrypted tokens.
+- Support encryption key rotation by storing key version metadata with encrypted tokens. New tokens use `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` and `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION`; old active tokens can be decrypted during rotation by setting `MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS` as comma-separated `version=key` entries.
 
 Session and token lifecycle:
 

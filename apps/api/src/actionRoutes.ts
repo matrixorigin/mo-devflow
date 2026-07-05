@@ -25,7 +25,7 @@ import type {
   WorkflowFixPreview,
   WorkflowFixStateSnapshot
 } from "@mo-devflow/shared";
-import { decryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
+import { decryptSecretWithConfig, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { getSessionRecordFromRequest } from "./authRoutes";
 import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 import { githubTokenFailureForWorkflowRead } from "./githubTokenFailures";
@@ -178,7 +178,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
     } catch {
       encryptionConfig = null;
     }
-    if (!storedToken || !encryptionConfig || storedToken.keyVersion !== encryptionConfig.keyVersion) {
+    if (!storedToken || !encryptionConfig) {
       return reply.status(403).send({
         error: "write_capability_unavailable",
         message: "A usable GitHub token is not available for this session."
@@ -187,14 +187,14 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
 
     let token: string;
     try {
-      token = decryptSecret(
+      token = decryptSecretWithConfig(
         {
           ciphertext: storedToken.encryptedToken,
           iv: storedToken.tokenIv,
           authTag: storedToken.tokenAuthTag,
           keyVersion: storedToken.keyVersion
         },
-        encryptionConfig.key
+        encryptionConfig
       );
     } catch {
       return reply.status(403).send({
@@ -380,7 +380,7 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
     } catch {
       encryptionConfig = null;
     }
-    if (!storedToken || !encryptionConfig || storedToken.keyVersion !== encryptionConfig.keyVersion) {
+    if (!storedToken || !encryptionConfig) {
       const result = executionResult({
         previewId: preview.previewId,
         status: "token_unavailable",
@@ -397,14 +397,14 @@ export async function registerActionRoutes(app: FastifyInstance, options: Action
 
     let token: string;
     try {
-      token = decryptSecret(
+      token = decryptSecretWithConfig(
         {
           ciphertext: storedToken.encryptedToken,
           iv: storedToken.tokenIv,
           authTag: storedToken.tokenAuthTag,
           keyVersion: storedToken.keyVersion
         },
-        encryptionConfig.key
+        encryptionConfig
       );
     } catch (error) {
       const result = executionResult({

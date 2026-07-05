@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { RepoProfile, WorkflowFixPreview } from "@mo-devflow/shared";
 import { encryptSecret, tokenEncryptionConfigFromEnv } from "./authCrypto";
 import { registerActionRoutes } from "./actionRoutes";
@@ -129,15 +129,43 @@ const csrfHeaders = {
   [csrfHeaderName]: csrfToken
 };
 
-const originalTokenEncryptionKey = process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+const originalTokenEncryptionEnv = {
+  key: process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY,
+  keyVersion: process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION,
+  previousKeys: process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS
+};
 
-function encryptedStoredToken() {
-  process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+function restoreTokenEncryptionEnv(): void {
+  if (originalTokenEncryptionEnv.key === undefined) {
+    delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
+  } else {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = originalTokenEncryptionEnv.key;
+  }
+  if (originalTokenEncryptionEnv.keyVersion === undefined) {
+    delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION;
+  } else {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION = originalTokenEncryptionEnv.keyVersion;
+  }
+  if (originalTokenEncryptionEnv.previousKeys === undefined) {
+    delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS;
+  } else {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS = originalTokenEncryptionEnv.previousKeys;
+  }
+}
+
+function encryptedStoredToken(input: { key?: Buffer; keyVersion?: string; plaintext?: string } = {}) {
+  process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = (input.key ?? Buffer.alloc(32, 7)).toString("base64");
+  if (input.keyVersion) {
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION = input.keyVersion;
+  } else {
+    delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION;
+  }
+  delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS;
   const config = tokenEncryptionConfigFromEnv();
   if (!config) {
     throw new Error("test token encryption config missing");
   }
-  const encrypted = encryptSecret("test-user-token", config);
+  const encrypted = encryptSecret(input.plaintext ?? "test-user-token", config);
   return {
     encryptedToken: encrypted.ciphertext,
     tokenIv: encrypted.iv,
@@ -152,11 +180,7 @@ function encryptedStoredToken() {
 describe("action routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    if (originalTokenEncryptionKey === undefined) {
-      delete process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
-    } else {
-      process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = originalTokenEncryptionKey;
-    }
+    restoreTokenEncryptionEnv();
     mocks.loadRepoProfile.mockReturnValue(profile);
     mocks.getSessionRecordFromRequest.mockResolvedValue({
       userId: 1,
@@ -189,6 +213,10 @@ describe("action routes", () => {
         nextRunAt: "2026-07-04T00:00:00.000Z"
       }))
     );
+  });
+
+  afterEach(() => {
+    restoreTokenEncryptionEnv();
   });
 
   test("rejects workflow fix previews without a valid CSRF token", async () => {
@@ -548,6 +576,56 @@ describe("action routes", () => {
         expect.objectContaining({ jobKey: "notifications:matrixorigin/matrixone", jobType: "notifications" })
       ]);
       expect(onDashboardMutated).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("confirms workflow fixes with a token encrypted by a previous key version", async () => {
+    const writeBackProfile = {
+      ...profile,
+      access: { ...profile.access, writeBackEnabled: true }
+    };
+    const previousKey = Buffer.alloc(32, 4);
+    const currentKey = Buffer.alloc(32, 9);
+    const storedToken = encryptedStoredToken({
+      key: previousKey,
+      keyVersion: "previous-v1",
+      plaintext: "previous-version-token"
+    });
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY = currentKey.toString("base64");
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY_VERSION = "current-v2";
+    process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_PREVIOUS_KEYS = `previous-v1=${previousKey.toString("base64")}`;
+    mocks.loadRepoProfile.mockReturnValue(writeBackProfile);
+    mocks.getActiveGitHubTokenForUser.mockResolvedValue(storedToken);
+    mocks.applyWorkflowFixPreview.mockResolvedValue({
+      appliedOperations: preview.operations,
+      beforeState: preview.currentState,
+      afterState: preview.proposedState,
+      response: { ok: true }
+    });
+
+    const app = Fastify();
+    await registerActionRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/actions/workflow-fix/confirm",
+        headers: csrfHeaders,
+        payload: { previewId: preview.previewId }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        previewId: preview.previewId,
+        status: "success"
+      });
+      expect(mocks.applyWorkflowFixPreview).toHaveBeenCalledWith({
+        token: "previous-version-token",
+        profile: writeBackProfile,
+        preview
+      });
     } finally {
       await app.close();
     }
