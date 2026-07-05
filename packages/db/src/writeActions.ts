@@ -49,7 +49,10 @@ export async function getCachedIssueByNumber(input: {
 }): Promise<NormalizedIssue | null> {
   const visibility = dashboardVisibilityFilter("i", input.profile, input.viewer);
   const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
+    `SELECT i.github_id, i.number, i.title, i.body, i.state, i.author_login, i.html_url,
+            i.created_at, i.updated_at, i.closed_at, i.labels_json, i.assignees_json,
+            i.owner_login, i.owner_reason, i.lifecycle_state, i.severity, i.ai_effort_label,
+            i.source_auth_type, i.source_user_id, i.visibility_class, i.is_complete
      FROM issues i
      WHERE i.repo_id = ? AND i.number = ? AND i.is_pull_request = 0 AND ${visibility.sql}
      LIMIT 1`,
@@ -82,7 +85,7 @@ export async function getCachedIssueByNumber(input: {
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     isComplete: asNumber(row.is_complete) === 1,
-    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+    rawPayload: {}
   };
 }
 

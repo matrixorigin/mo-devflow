@@ -1,5 +1,8 @@
+import { loadEnv } from "@mo-devflow/config";
 import { closePool, migrate } from "@mo-devflow/db";
 import { recomputeAiDriftFromCache } from "./sync";
+
+loadEnv();
 
 try {
   await migrate();

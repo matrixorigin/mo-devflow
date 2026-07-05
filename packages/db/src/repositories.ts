@@ -106,6 +106,14 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
+function ruleScanBatchSizeFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.MO_DEVFLOW_RULE_SCAN_BATCH_SIZE ?? "500");
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 500;
+  }
+  return Math.min(5000, Math.floor(parsed));
+}
+
 function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
@@ -1045,13 +1053,44 @@ export async function upsertIssueTimelineEvent(repoId: number, event: Normalized
   }
 }
 
+async function listOpenIssueRowsForRules(repoId: number): Promise<RowData[]> {
+  const pool = getPool();
+  const batchSize = ruleScanBatchSizeFromEnv();
+  const rows: RowData[] = [];
+  let afterNumber = 0;
+
+  while (true) {
+    const [batch] = await pool.execute<RowData[]>(
+      `SELECT github_id, number, title, body, state, author_login, html_url,
+              created_at, updated_at, closed_at, labels_json, assignees_json,
+              owner_login, owner_reason, lifecycle_state, severity, ai_effort_label,
+              is_pull_request, source_auth_type, source_user_id, visibility_class,
+              is_complete, sync_error, last_synced_at
+       FROM issues
+       WHERE repo_id = ?
+         AND state = 'open'
+         AND is_pull_request = 0
+         AND number > ?
+       ORDER BY number ASC
+       LIMIT ?`,
+      [repoId, afterNumber, batchSize]
+    );
+    rows.push(...batch);
+    if (batch.length < batchSize) {
+      break;
+    }
+    const nextAfterNumber = asNumber(batch[batch.length - 1]?.number);
+    if (nextAfterNumber <= afterNumber) {
+      break;
+    }
+    afterNumber = nextAfterNumber;
+  }
+
+  return rows;
+}
+
 export async function listCachedIssuesForRules(repoId: number, profile: RepoProfile): Promise<NormalizedIssue[]> {
-  const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
-     FROM issues
-     WHERE repo_id = ? AND state = 'open' AND is_pull_request = 0`,
-    [repoId]
-  );
+  const rows = await listOpenIssueRowsForRules(repoId);
   const issueNumbers = rows.map((row) => asNumber(row.number));
   const commentEvidence = await issueCommentEvidenceByIssueNumber(repoId, issueNumbers);
   const currentCriticalSeverityByIssueNumber = new Map(
@@ -1099,7 +1138,7 @@ export async function listCachedIssuesForRules(repoId: number, profile: RepoProf
     visibilityClass: asString(row.visibility_class) as NormalizedIssue["visibilityClass"],
     isComplete: asNumber(row.is_complete) === 1,
     commentEvidence: commentEvidence.get(asNumber(row.number)),
-    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+    rawPayload: {}
   }));
 }
 
@@ -1154,13 +1193,48 @@ async function issueCommentEvidenceByIssueNumber(
   return result;
 }
 
+async function listOpenPullRequestRowsForRules(repoId: number): Promise<RowData[]> {
+  const pool = getPool();
+  const batchSize = ruleScanBatchSizeFromEnv();
+  const rows: RowData[] = [];
+  let afterNumber = 0;
+
+  while (true) {
+    const [batch] = await pool.execute<RowData[]>(
+      `SELECT github_id, number, title, state, author_login, owner_login, html_url,
+              created_at, updated_at, closed_at, merged_at, draft, head_ref, base_ref,
+              labels_json, assignees_json, requested_reviewers_json, age_hours,
+              last_human_action_at, last_system_action_at, review_decision,
+              merge_state_status, ci_state, latest_review_state,
+              latest_review_submitted_at, latest_commit_at, detail_synced_at,
+              detail_error, testing_state, testing_testers_json, testing_signals_json,
+              testing_queue_age_hours, attention_flags_json, linked_issue_numbers_json,
+              source_auth_type, source_user_id, visibility_class, is_complete,
+              sync_error, last_synced_at
+       FROM pull_requests
+       WHERE repo_id = ?
+         AND state = 'open'
+         AND number > ?
+       ORDER BY number ASC
+       LIMIT ?`,
+      [repoId, afterNumber, batchSize]
+    );
+    rows.push(...batch);
+    if (batch.length < batchSize) {
+      break;
+    }
+    const nextAfterNumber = asNumber(batch[batch.length - 1]?.number);
+    if (nextAfterNumber <= afterNumber) {
+      break;
+    }
+    afterNumber = nextAfterNumber;
+  }
+
+  return rows;
+}
+
 export async function listCachedPullRequestsForRules(repoId: number): Promise<NormalizedPullRequest[]> {
-  const [rows] = await getPool().execute<RowData[]>(
-    `SELECT *
-     FROM pull_requests
-     WHERE repo_id = ? AND state = 'open'`,
-    [repoId]
-  );
+  const rows = await listOpenPullRequestRowsForRules(repoId);
 
   return rows.map((row) => ({
     githubId: asNumber(row.github_id),
@@ -1206,7 +1280,7 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
     visibilityClass: asString(row.visibility_class) as NormalizedPullRequest["visibilityClass"],
     isComplete: asBoolean(row.is_complete),
-    rawPayload: parseJsonRecord(asString(row.raw_payload), {})
+    rawPayload: {}
   }));
 }
 
