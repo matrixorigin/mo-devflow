@@ -810,8 +810,14 @@ function CardListPagination({
     return null;
   }
 
+  const rangeStart = (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
+
   return (
     <div className="work-list-pagination">
+      <span className="work-list-pagination-range">
+        Showing {rangeStart}-{rangeEnd} of {total}
+      </span>
       <Pagination
         align="end"
         current={page}
@@ -4526,11 +4532,18 @@ function teamCommandSignalTargetView(target: TeamCommandSignalTarget): Dashboard
 }
 
 function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
-  const lazy = useLazyVisibleCount(actions.length, 4, actions.map((action) => action.key).join(":"));
+  const lazy = useLazyVisibleCount(actions.length, 3, actions.map((action) => action.key).join(":"));
   const visibleActions = actions.slice(0, lazy.visibleCount);
 
   return (
     <section className="team-command-board" aria-label="Team command queue">
+      <div className="team-command-board-heading">
+        <div>
+          <Text strong>Management actions</Text>
+          <Text type="secondary">Highest-ranked blockers first. Each row opens the filtered board.</Text>
+        </div>
+        <Tag>{actions.length} actions</Tag>
+      </div>
       <div className="team-command-queue">
         {visibleActions.map((action, index) => (
           <button
@@ -4554,6 +4567,7 @@ function TeamCommandQueue({ actions }: { actions: TeamCommandAction[] }) {
         canCollapse={lazy.canCollapse}
         itemLabel="command items"
         className="team-command-more"
+        collapsedLabel="Show fewer actions"
         onShowMore={lazy.showMore}
         onCollapse={lazy.reset}
       />
@@ -4801,7 +4815,7 @@ function TeamCriticalFlowPanel({
   onOpenPrRisks: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
-  const pagedRows = usePagedList(rows, 7, rows.map((row) => row.id).join(":"));
+  const pagedRows = usePagedList(rows, 5, rows.map((row) => row.id).join(":"));
   const noVisiblePrRows = rows.filter((row) => row.needsLink).length;
   const blockedPrs = teamCriticalFlowBlockedPrCount(rows);
 
@@ -4859,7 +4873,7 @@ function TeamCriticalFlowPanel({
         total={rows.length}
         page={pagedRows.page}
         pageSize={pagedRows.pageSize}
-        defaultPageSize={7}
+        defaultPageSize={5}
         onChange={pagedRows.onPageChange}
       />
     </section>
@@ -8406,14 +8420,16 @@ function CriticalIssueActionQueue({
     <section className="critical-action-queue" aria-label="Critical issue action queue">
       <div className="critical-action-queue-heading">
         <div>
-          <Text strong>Issue Action Queue</Text>
+          <Text strong>Active issues to review</Text>
           <Text type="secondary">
-            Sorted {criticalIssueSortLabel(sort)} view for {criticalScopeLabel(scopeFilter)},{" "}
-            {criticalIssueOwnerFilterLabel(ownerFilter)}, {aiFilter === "all" ? "all AI effort" : aiFilter}.
+            {criticalScopeLabel(scopeFilter)} | {criticalIssueOwnerFilterLabel(ownerFilter)} |{" "}
+            {aiFilter === "all" ? "all AI effort" : aiFilter} | sort {criticalIssueSortLabel(sort)} | oldest{" "}
+            {optionalHours(maxCriticalActiveAge(issues))}
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
           <Tag>{issues.length} issues</Tag>
+          <Tag>click preview for linked PRs</Tag>
           {pagedIssues.visibleItems.length < issues.length ? (
             <Tag>
               {pagedIssues.startIndex + 1}-{pagedIssues.startIndex + pagedIssues.visibleItems.length}
@@ -9078,14 +9094,14 @@ function PrActionQueue({
     <section className="pr-action-queue" aria-label="PR action queue">
       <div className="pr-action-queue-heading">
         <div>
-          <Text strong>PR Action Queue</Text>
+          <Text strong>PRs to review</Text>
           <Text type="secondary">
-            Sorted {prSortLabel(sort)} view for {prScopeLabel(scopeFilter)}. Each row keeps PR blockers and linked issue
-            context together.
+            {prScopeLabel(scopeFilter)} | sort {prSortLabel(sort)} | oldest {optionalHours(maxPendingPrAge(prs))}
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
           <Tag>{prs.length} PRs</Tag>
+          <Tag>click row preview for linked issues</Tag>
           {pagedPrs.visibleItems.length < prs.length ? (
             <Tag>
               {pagedPrs.startIndex + 1}-{pagedPrs.startIndex + pagedPrs.visibleItems.length}
@@ -15460,12 +15476,61 @@ function SelectedPersonWorkbench({
         />
       </details>
 
-      <PersonalExecutionMap
-        chart={gantt}
-        onOpenActiveIssues={() => onDrilldownChange("active_issues")}
-        onOpenPrAttention={() => onDrilldownChange("pr_attention")}
-        onOpenThreads={() => onDrilldownChange("threads")}
-      />
+      <details className="secondary-disclosure personal-flow-map-disclosure">
+        <summary>
+          <span>Issue / PR flow map</span>
+          <Space size={[4, 4]} wrap>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                person.activeCriticalIssues.length > 0 ? "inline-filter-chip-red" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "active_issues" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("active_issues");
+              }}
+            >
+              {person.activeCriticalIssues.length} active
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${
+                person.attentionPrs.length > 0 ? "" : "inline-filter-chip-muted"
+              } ${drilldownFilter === "pr_attention" ? "inline-filter-chip-active" : ""}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("pr_attention");
+              }}
+            >
+              {person.attentionPrs.length} PR blockers
+            </button>
+            <button
+              type="button"
+              className={`inline-filter-chip ${gantt.unlinkedPrCount > 0 ? "" : "inline-filter-chip-muted"} ${
+                drilldownFilter === "threads" ? "inline-filter-chip-active" : ""
+              }`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDrilldownChange("threads");
+              }}
+            >
+              {gantt.unlinkedPrCount} link gaps
+            </button>
+            <span className="secondary-summary-note">oldest {hours(gantt.maxAgeHours)}</span>
+          </Space>
+        </summary>
+        <div className="secondary-disclosure-body">
+          <PersonalExecutionMap
+            chart={gantt}
+            onOpenActiveIssues={() => onDrilldownChange("active_issues")}
+            onOpenPrAttention={() => onDrilldownChange("pr_attention")}
+            onOpenThreads={() => onDrilldownChange("threads")}
+          />
+        </div>
+      </details>
 
       <PersonalActionSnapshot
         items={activityItems}

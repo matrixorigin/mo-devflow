@@ -1351,6 +1351,29 @@ button.freshness-path-card:focus-visible {
   min-width: 0;
 }
 
+.team-command-board-heading {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.team-command-board-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.team-command-board-heading .ant-typography-secondary {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .team-command-queue {
   display: grid;
   gap: 8px;
@@ -6417,10 +6440,20 @@ button.testing-board-stat:focus-visible {
   align-items: center;
   border-top: 1px solid #f1f5f9;
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
   margin-top: 10px;
   min-width: 0;
   padding-top: 10px;
+}
+
+.work-list-pagination-range {
+  color: #6b7280;
+  flex: 1 1 auto;
+  font-size: 12px;
+  line-height: 1.2;
+  min-width: 120px;
+  white-space: nowrap;
 }
 
 .work-list-pagination .ant-pagination {
@@ -9649,9 +9682,14 @@ button.flow-diagnostic-card:focus-visible {
   }
 
   .work-list-pagination {
+    flex-wrap: wrap;
     justify-content: flex-start;
     overflow-x: auto;
     padding-bottom: 2px;
+  }
+
+  .work-list-pagination-range {
+    flex-basis: 100%;
   }
 
   .critical-board-summary {
