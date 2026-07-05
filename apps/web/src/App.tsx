@@ -11620,6 +11620,7 @@ function PeoplePrFlowMatrix({
           >
             <strong>{personalPrThroughputPair(throughput)}</strong>
             <small>{personalPrPeriodThroughputDetail(row.personal, period)}</small>
+            <small>{personalPrPeriodBlockerDetail(row.personal, period)}</small>
             <small>{personalPrPeriodRiskDetail(row.personal, period)}</small>
             <em>Open PR list</em>
           </button>
@@ -17944,6 +17945,7 @@ function WatchedPersonOperationsSummary({
                   {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg{" "}
                   {personalPrPeriodAverageDurationText(periodList)}
                 </small>
+                <small>{personalPrPeriodBlockerDetail(person, row.period)}</small>
                 <small>{personalPrPeriodRiskDetail(person, row.period)}</small>
               </button>
             );
@@ -18250,6 +18252,10 @@ export interface PersonalPrThroughputRow {
   prsMerged: number | null;
   pendingPrs: number | null;
   attentionPrs: number | null;
+  ciFailedPrs: number | null;
+  requestedChangePrs: number | null;
+  reviewWaitingPrs: number | null;
+  mergeConflictPrs: number | null;
   averagePendingPrAgeHours: number | null;
   averageTestingQueueAgeHours: number | null;
   sourceCompleteness: TrendMetricPoint["sourceCompleteness"] | null;
@@ -18316,6 +18322,10 @@ function personalPrThroughputRow(
     prsMerged: periodList?.totalMergedPrs ?? point?.prsMerged ?? null,
     pendingPrs: point?.pendingPrs ?? null,
     attentionPrs: point?.attentionPrs ?? null,
+    ciFailedPrs: point?.ciFailedPrs ?? null,
+    requestedChangePrs: point?.requestedChangePrs ?? null,
+    reviewWaitingPrs: point?.reviewWaitingPrs ?? null,
+    mergeConflictPrs: point?.mergeConflictPrs ?? null,
     averagePendingPrAgeHours: point?.averagePendingPrAgeHours ?? null,
     averageTestingQueueAgeHours: point?.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: point?.sourceCompleteness ?? null
@@ -18370,6 +18380,25 @@ export function personalPrPeriodRiskDetail(person: PersonalActionView, period: M
   )} | open age ${optionalHours(row.averagePendingPrAgeHours)} | test wait ${optionalHours(
     row.averageTestingQueueAgeHours
   )}`;
+}
+
+export function personalPrPeriodBlockerDetail(person: PersonalActionView, period: MetricPeriod): string {
+  const row =
+    personalPrThroughputRows(person).find((item) => item.period === period) ?? personalPrThroughputRow(period, null);
+  const parts = [
+    row.ciFailedPrs && row.ciFailedPrs > 0 ? `${row.ciFailedPrs} CI` : null,
+    row.requestedChangePrs && row.requestedChangePrs > 0 ? `${row.requestedChangePrs} changes` : null,
+    row.reviewWaitingPrs && row.reviewWaitingPrs > 0 ? `${row.reviewWaitingPrs} review` : null,
+    row.mergeConflictPrs && row.mergeConflictPrs > 0 ? `${row.mergeConflictPrs} conflict` : null
+  ].filter((part): part is string => part !== null);
+
+  if (parts.length > 0) {
+    return `blockers ${parts.join(" | ")}`;
+  }
+  if (row.attentionPrs !== null && row.attentionPrs > 0) {
+    return `blockers ${row.attentionPrs} attention`;
+  }
+  return row.attentionPrs === null ? "blockers -" : "blockers none";
 }
 
 function prCountLabel(count: number): string {
@@ -18634,6 +18663,7 @@ function PersonalPrThroughputPanel({
               </strong>
               <small>{row.label} created / merged</small>
               <em>{personalPrPeriodThroughputDetail(person, row.period)}</em>
+              <em>{personalPrPeriodBlockerDetail(person, row.period)}</em>
               <em>{personalPrPeriodRiskDetail(person, row.period)}</em>
               {row.sourceCompleteness === "partial_cache" ? <Tag color="gold">partial cache</Tag> : null}
               {periodList?.truncated ? <Tag color="gold">list capped</Tag> : null}

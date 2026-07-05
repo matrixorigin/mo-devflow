@@ -42,6 +42,7 @@ import {
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalPrPeriodAverageDurationText,
+  personalPrPeriodBlockerDetail,
   personalPrPeriodRiskDetail,
   personalPrPeriodThroughputDetail,
   personalPrListForScope,
@@ -901,6 +902,7 @@ describe("dashboard hash filters", () => {
     expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
     expect(personalPrPeriodThroughputDetail(person, "week")).toBe("3 PRs in list | avg 6.7d");
     expect(personalPrPeriodRiskDetail(person, "week")).toBe("pending - | attention - | open age - | test wait -");
+    expect(personalPrPeriodBlockerDetail(person, "week")).toBe("blockers -");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
     expect(personalPrPeriodActivitySummary(person.prPeriodLists[0])).toBe(
@@ -1003,6 +1005,17 @@ describe("dashboard hash filters", () => {
     const person = {
       attentionPrs: [],
       pendingPrs: [],
+      analytics: [
+        metricPoint({
+          ciFailedPrs: 2,
+          requestedChangePrs: 1,
+          reviewWaitingPrs: 3,
+          mergeConflictPrs: 1,
+          attentionPrs: 7
+        })
+      ],
+      analyticsWeekly: [],
+      analyticsMonthly: [],
       prPeriodLists: [
         {
           period: "day",
@@ -1037,6 +1050,8 @@ describe("dashboard hash filters", () => {
       period: "month",
       scope: "period_all"
     });
+    expect(personalPrPeriodBlockerDetail(person, "day")).toBe("blockers 2 CI | 1 changes | 3 review | 1 conflict");
+    expect(personalPrPeriodBlockerDetail(person, "month")).toBe("blockers -");
   });
 
   it("sorts personal PR lists by activity, age, and risk", () => {
@@ -1274,6 +1289,7 @@ describe("dashboard hash filters", () => {
     expect(personalPrPeriodRiskDetail(rows[0].personal, "week")).toBe(
       "pending 2 | attention 1 | open age 1.3d | test wait 10h"
     );
+    expect(personalPrPeriodBlockerDetail(rows[0].personal, "week")).toBe("blockers 1 attention");
     expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | test 1/1 (100%)");
   });
 });
@@ -1347,6 +1363,10 @@ function metricPoint(input: {
   prsMerged?: number;
   pendingPrs?: number;
   attentionPrs?: number;
+  ciFailedPrs?: number;
+  requestedChangePrs?: number;
+  reviewWaitingPrs?: number;
+  mergeConflictPrs?: number;
   averagePendingPrAgeHours?: number | null;
   averageTestingQueueAgeHours?: number | null;
 }) {
@@ -1369,10 +1389,10 @@ function metricPoint(input: {
     pendingPrs: input.pendingPrs ?? 0,
     averagePendingPrAgeHours: input.averagePendingPrAgeHours ?? null,
     attentionPrs: input.attentionPrs ?? 0,
-    ciFailedPrs: 0,
-    requestedChangePrs: 0,
-    reviewWaitingPrs: 0,
-    mergeConflictPrs: 0,
+    ciFailedPrs: input.ciFailedPrs ?? 0,
+    requestedChangePrs: input.requestedChangePrs ?? 0,
+    reviewWaitingPrs: input.reviewWaitingPrs ?? 0,
+    mergeConflictPrs: input.mergeConflictPrs ?? 0,
     testingQueueIssues: 0,
     averageTestingQueueAgeHours: input.averageTestingQueueAgeHours ?? null,
     sourceCompleteness: "complete_cache",
