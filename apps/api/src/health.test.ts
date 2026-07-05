@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { JobQueueHealth, OperationalHealthSummary, WorkerHealth } from "@mo-devflow/shared";
-import { apiHealthHttpStatus, apiHealthStatus } from "./health";
+import { apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
 
 const worker: WorkerHealth = {
   status: "active",
@@ -84,5 +84,26 @@ describe("API health status", () => {
     expect(apiHealthHttpStatus("healthy")).toBe(200);
     expect(apiHealthHttpStatus("degraded")).toBe(200);
     expect(apiHealthHttpStatus("unhealthy")).toBe(503);
+  });
+
+  test("reports machine-readable degraded findings", () => {
+    const findings = apiHealthFindings({
+      worker: { ...worker, status: "stale", recommendedAction: "Restart the worker." },
+      jobQueue: {
+        ...jobQueue,
+        status: "attention",
+        staleLeases: 1,
+        recommendedAction: "A running lease is stale."
+      },
+      operational: { ...operational, status: "degraded", recommendedAction: "Cache objects are stale." },
+      operationalError: "Operational probe failed."
+    });
+
+    expect(findings).toEqual([
+      { key: "worker", severity: "warning", message: "Restart the worker." },
+      { key: "job_queue", severity: "critical", message: "A running lease is stale." },
+      { key: "operational_summary", severity: "warning", message: "Operational probe failed." },
+      { key: "operational", severity: "warning", message: "Cache objects are stale." }
+    ]);
   });
 });

@@ -14,7 +14,7 @@ import {
 import { registerApiSecurity } from "./apiSecurity";
 import { registerActionRoutes } from "./actionRoutes";
 import { getSessionRecordFromRequest, registerAuthRoutes } from "./authRoutes";
-import { apiHealthHttpStatus, apiHealthStatus } from "./health";
+import { apiHealthFindings, apiHealthHttpStatus, apiHealthStatus } from "./health";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { publicRepoProfileView } from "./profileView";
 import { registerRefreshRoutes } from "./refreshRoutes";
@@ -101,9 +101,11 @@ app.get("/health", async (_request, reply) => {
       }
     }
     const status = apiHealthStatus({ worker, jobQueue, operational, operationalError });
+    const findings = apiHealthFindings({ worker, jobQueue, operational, operationalError });
     return reply.status(apiHealthHttpStatus(status)).send({
       status,
       database: "connected",
+      findings,
       worker,
       jobQueue,
       operational,
