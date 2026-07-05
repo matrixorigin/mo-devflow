@@ -192,7 +192,8 @@ interface DashboardReadModelMeta {
 }
 
 type TrendMetricPoint = DailyMetricPoint | AggregatedMetricPoint;
-type CriticalIssueScopeFilter = "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "timeline_missing" | "skipped";
+type CriticalIssueScopeFilter =
+  "all" | "s-1" | "s0" | "no_pr" | "owner_gap" | "unowned" | "non_watched" | "timeline_missing" | "skipped";
 type CriticalIssueAiFilter = "all" | string;
 type CriticalIssueSort = "risk" | "active_age" | "last_action" | "number";
 type PrScopeFilter =
@@ -1803,6 +1804,12 @@ function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: Critic
   if (scopeFilter === "owner_gap") {
     return issue.ownerScope !== "watched";
   }
+  if (scopeFilter === "unowned") {
+    return issue.ownerScope === "unowned";
+  }
+  if (scopeFilter === "non_watched") {
+    return issue.ownerScope === "non_watched";
+  }
   if (scopeFilter === "timeline_missing") {
     return issue.criticalAgeEvidence === "missing_timeline";
   }
@@ -1835,6 +1842,12 @@ function criticalScopeLabel(filter: CriticalIssueScopeFilter): string {
   if (filter === "owner_gap") {
     return "owner gaps";
   }
+  if (filter === "unowned") {
+    return "unowned";
+  }
+  if (filter === "non_watched") {
+    return "non-watched";
+  }
   if (filter === "timeline_missing") {
     return "timeline missing";
   }
@@ -1856,6 +1869,12 @@ function criticalOverflowLabel(filter: CriticalIssueScopeFilter): string {
   }
   if (filter === "owner_gap") {
     return "owner-gap issues";
+  }
+  if (filter === "unowned") {
+    return "unowned issues";
+  }
+  if (filter === "non_watched") {
+    return "non-watched-owner issues";
   }
   if (filter === "timeline_missing") {
     return "issues missing timeline evidence";
@@ -2392,6 +2411,8 @@ function CriticalIssueFilterBar({
             { label: "s0", value: "s0" },
             { label: "No PR", value: "no_pr" },
             { label: "Owner gap", value: "owner_gap" },
+            { label: "Unowned", value: "unowned" },
+            { label: "Non-watched", value: "non_watched" },
             { label: "No timeline", value: "timeline_missing" },
             { label: "Skipped", value: "skipped" }
           ]}
@@ -6091,6 +6112,8 @@ function CriticalIssueBoard({
   const missingTimeline = issues.filter((issue) => issue.criticalAgeEvidence === "missing_timeline").length;
   const noLinkedPr = issues.filter((issue) => issue.linkedPullRequests.length === 0).length;
   const ownerGaps = issues.filter((issue) => issue.ownerScope !== "watched").length;
+  const unownedIssues = issues.filter((issue) => issue.ownerScope === "unowned").length;
+  const nonWatchedIssues = issues.filter((issue) => issue.ownerScope === "non_watched").length;
   const skipped = issues.filter((issue) => issue.workflowSkipped).length;
 
   return (
@@ -6149,6 +6172,20 @@ function CriticalIssueBoard({
           tone={ownerGaps > 0 ? "attention" : "good"}
           active={scopeFilter === "owner_gap"}
           onClick={() => onScopeFilterChange("owner_gap")}
+        />
+        <CriticalBoardStat
+          label="unowned"
+          value={unownedIssues}
+          tone={unownedIssues > 0 ? "critical" : "good"}
+          active={scopeFilter === "unowned"}
+          onClick={() => onScopeFilterChange("unowned")}
+        />
+        <CriticalBoardStat
+          label="non-watched"
+          value={nonWatchedIssues}
+          tone={nonWatchedIssues > 0 ? "attention" : "good"}
+          active={scopeFilter === "non_watched"}
+          onClick={() => onScopeFilterChange("non_watched")}
         />
         <CriticalBoardStat
           label="skip automation"
@@ -14451,10 +14488,36 @@ export default function App() {
                     <div className="subsection-heading">
                       <Title level={5}>Owner Coverage</Title>
                       <Space size={[4, 4]} wrap>
-                        <Tag color="red">{data.counts.unownedCriticalIssues} unowned</Tag>
-                        <Tag color="orange">{data.counts.nonWatchedCriticalIssues} non-watched</Tag>
+                        <button
+                          type="button"
+                          className={`inline-filter-chip ${
+                            data.counts.unownedCriticalIssues > 0
+                              ? "inline-filter-chip-red"
+                              : "inline-filter-chip-muted"
+                          } ${criticalIssueScopeFilter === "unowned" ? "inline-filter-chip-active" : ""}`}
+                          onClick={() => setCriticalIssueScopeFilter("unowned")}
+                        >
+                          {data.counts.unownedCriticalIssues} unowned
+                        </button>
+                        <button
+                          type="button"
+                          className={`inline-filter-chip ${
+                            data.counts.nonWatchedCriticalIssues > 0 ? "" : "inline-filter-chip-muted"
+                          } ${criticalIssueScopeFilter === "non_watched" ? "inline-filter-chip-active" : ""}`}
+                          onClick={() => setCriticalIssueScopeFilter("non_watched")}
+                        >
+                          {data.counts.nonWatchedCriticalIssues} non-watched
+                        </button>
                         <Tooltip title={workflowSkipTooltip()}>
-                          <Tag>{data.counts.skippedCriticalIssues} skip automation</Tag>
+                          <button
+                            type="button"
+                            className={`inline-filter-chip ${
+                              data.counts.skippedCriticalIssues > 0 ? "" : "inline-filter-chip-muted"
+                            } ${criticalIssueScopeFilter === "skipped" ? "inline-filter-chip-active" : ""}`}
+                            onClick={() => setCriticalIssueScopeFilter("skipped")}
+                          >
+                            {data.counts.skippedCriticalIssues} skip automation
+                          </button>
                         </Tooltip>
                       </Space>
                     </div>
