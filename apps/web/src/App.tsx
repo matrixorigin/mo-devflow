@@ -15434,6 +15434,118 @@ function PersonalDrilldownBoard({
   );
 }
 
+function PersonalActiveWorkPreview({
+  chart,
+  activeFilter,
+  onSelect
+}: {
+  chart: PersonalGanttChart;
+  activeFilter: PersonalDrilldownFilter;
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  const [previewThread, setPreviewThread] = useState<PersonalGanttRow | null>(null);
+  const visibleRows = chart.rows.slice(0, 3);
+
+  if (chart.rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="person-active-work" aria-label="Personal active work preview">
+      <div className="person-active-work-heading">
+        <div>
+          <Text strong>Active Work</Text>
+          <Text type="secondary">Top issue/PR threads for the selected person.</Text>
+        </div>
+        <Space size={[4, 4]} wrap>
+          <button
+            type="button"
+            className={`inline-filter-chip ${activeFilter === "threads" ? "inline-filter-chip-active" : ""}`}
+            onClick={() => onSelect("threads")}
+          >
+            {chart.rows.length} threads
+          </button>
+          {chart.unlinkedPrCount > 0 ? <Tag color="orange">{chart.unlinkedPrCount} link gaps</Tag> : null}
+          {chart.sharedPrCount > 0 ? <Tag>{chart.sharedPrCount} shared PR</Tag> : null}
+        </Space>
+      </div>
+      <div className="person-active-work-list">
+        {visibleRows.map((row) => (
+          <PersonalActiveWorkRow
+            row={row}
+            key={row.id}
+            onOpenThreads={() => onSelect("threads")}
+            onPreview={setPreviewThread}
+          />
+        ))}
+      </div>
+      <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
+    </section>
+  );
+}
+
+function PersonalActiveWorkRow({
+  row,
+  onOpenThreads,
+  onPreview
+}: {
+  row: PersonalGanttRow;
+  onOpenThreads: () => void;
+  onPreview: (row: PersonalGanttRow) => void;
+}) {
+  const statusCounts = flowThreadStatusCounts(row);
+  const duration = row.issue.durationHours === null ? "unknown" : hours(row.issue.durationHours);
+  const objectHref = row.issue.htmlUrl ?? row.prs[0]?.htmlUrl ?? null;
+  const objectLabel =
+    row.issue.number !== null ? `Issue #${row.issue.number}` : row.prs.length > 0 ? `${row.prs.length} PRs` : "Thread";
+  const nextAction = flowThreadNextAction(row);
+
+  return (
+    <article className={`person-active-work-row person-active-work-row-${row.tone}`}>
+      <div className="person-active-work-main">
+        <div className="person-active-work-title-row">
+          {objectHref ? (
+            <a href={objectHref} target="_blank" rel="noreferrer">
+              {objectLabel}
+            </a>
+          ) : (
+            <Text strong>{objectLabel}</Text>
+          )}
+          <Tag color={ganttToneColor(row.tone)}>{row.tone}</Tag>
+          {row.issue.severity ? <Tag color={severityColor(row.issue.severity)}>{row.issue.severity}</Tag> : null}
+          <Tag color={row.issue.durationHours === null ? "gold" : undefined}>{duration}</Tag>
+        </div>
+        <Text className="person-active-work-title">{row.issue.title}</Text>
+        <Text type="secondary" className="person-active-work-next">
+          {nextAction}
+        </Text>
+      </div>
+      <div className="person-active-work-facts">
+        <span>
+          <strong>{statusCounts.prs}</strong>
+          <small>PRs</small>
+        </span>
+        <span>
+          <strong>{statusCounts.blockedPrs}</strong>
+          <small>blocked</small>
+        </span>
+        <span>
+          <strong>{statusCounts.testingIssues + statusCounts.testingPrs}</strong>
+          <small>testing</small>
+        </span>
+      </div>
+      <Space className="person-active-work-actions" size={[6, 6]} wrap>
+        <Button size="small" icon={<ListFilter size={14} />} onClick={onOpenThreads}>
+          Threads
+        </Button>
+        <Button size="small" icon={<Eye size={14} />} onClick={() => onPreview(row)}>
+          Preview
+        </Button>
+      </Space>
+    </article>
+  );
+}
+
 function personalOperatingSignalColor(tone: PersonalOperatingSignal["tone"]): string {
   if (tone === "critical") {
     return "red";
@@ -15847,6 +15959,7 @@ function SelectedPersonWorkbench({
         activeFilter={drilldownFilter}
         onSelect={onDrilldownChange}
       />
+      <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />
       <details className="secondary-disclosure person-signal-disclosure">
         <summary>
           <span>Signal evidence</span>
