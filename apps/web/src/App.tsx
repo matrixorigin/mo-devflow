@@ -20,7 +20,7 @@ import {
   Typography
 } from "antd";
 import type { MenuProps } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type {
   AggregatedMetricPoint,
   AiDriftSignalView,
@@ -180,6 +180,7 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 const dashboardAutoRefreshMs = 30_000;
 const tokenEncryptionSetupHint = "Token encryption is not configured. Run make setup, restart the API, then try again.";
 const boardRevealStep = 4;
+const tablePageSizeOptions = [8, 10, 20, 50, 100];
 
 type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
@@ -424,6 +425,24 @@ function useLazyVisibleCount(total: number, initialLimit?: number, resetKey: str
 
 function percentText(value: number | null): string {
   return value === null ? "-" : `${value}%`;
+}
+
+function tablePagination(
+  total: number,
+  pageSize = 10,
+  options: Pick<TablePaginationConfig, "current" | "onChange"> = {}
+): TablePaginationConfig {
+  return {
+    current: options.current,
+    pageSize,
+    pageSizeOptions: tablePageSizeOptions,
+    position: ["topRight", "bottomRight"],
+    showQuickJumper: total > pageSize,
+    showSizeChanger: total > Math.min(...tablePageSizeOptions),
+    showTotal: (shownTotal, range) => `${range[0]}-${range[1]} of ${shownTotal}`,
+    total,
+    onChange: options.onChange
+  };
 }
 
 function signedNumber(value: number): string {
@@ -11244,7 +11263,7 @@ function WebhookIngestionBoard({
         columns={columns}
         dataSource={recentDeliveries}
         scroll={{ x: 1240 }}
-        pagination={{ pageSize: 8 }}
+        pagination={tablePagination(recentDeliveries.length, 8)}
         locale={{
           emptyText: (
             <Empty
@@ -11521,7 +11540,7 @@ function WriteAuditBoard({
         columns={columns}
         dataSource={filteredActions}
         scroll={{ x: 1420 }}
-        pagination={{ pageSize: 8 }}
+        pagination={tablePagination(filteredActions.length, 8)}
         locale={{
           emptyText: (
             <Empty
@@ -13234,7 +13253,7 @@ export default function App() {
     window.setTimeout(scrollTestingIssueQueueIntoView, 0);
   };
   const criticalOwnerCoverageRows = data
-    ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped).slice(0, 8)
+    ? data.criticalOwnerCoverage.filter((owner) => owner.ownerScope !== "watched" || owner.workflowSkipped)
     : [];
   const notStartedSyncLayers = data?.sync.health.filter((item) => item.status === "not_started") ?? [];
   const profileSetupIssueCount = data ? data.profileWarnings.length + data.profileActions.length : 0;
@@ -13840,7 +13859,7 @@ export default function App() {
                   columns={notificationColumns}
                   dataSource={filteredNotificationDeliveries}
                   scroll={{ x: 1340 }}
-                  pagination={{ pageSize: 8 }}
+                  pagination={tablePagination(filteredNotificationDeliveries.length, 8)}
                   locale={{
                     emptyText: (
                       <Empty
@@ -13952,7 +13971,7 @@ export default function App() {
                           columns={testerColumns}
                           dataSource={data.testing.testers}
                           scroll={{ x: 760 }}
-                          pagination={false}
+                          pagination={tablePagination(data.testing.testers.length, 8)}
                           locale={{ emptyText: <Empty description="No configured tester queue in cache" /> }}
                         />
                         {testingHasIssueTransitions ? (
@@ -13963,7 +13982,7 @@ export default function App() {
                             columns={testingIssueTransitionColumns}
                             dataSource={data.testing.recentIssueTransitions}
                             scroll={{ x: 1040 }}
-                            pagination={{ pageSize: 6 }}
+                            pagination={tablePagination(data.testing.recentIssueTransitions.length, 6)}
                             locale={{ emptyText: <Empty description="No issue test assignment evidence yet" /> }}
                           />
                         ) : null}
@@ -14001,7 +14020,7 @@ export default function App() {
                       columns={prColumns}
                       dataSource={filteredPendingPrs}
                       scroll={{ x: 1832 }}
-                      pagination={{ pageSize: 10 }}
+                      pagination={tablePagination(filteredPendingPrs.length, 10)}
                       locale={{ emptyText: <Empty description="No pending PRs in cache" /> }}
                     />
                   </>
@@ -14215,11 +14234,10 @@ export default function App() {
                   columns={driftColumns}
                   dataSource={data.aiDriftSignals}
                   scroll={{ x: 1700 }}
-                  pagination={{
+                  pagination={tablePagination(data.aiDriftSignals.length, signalTargetPageSize, {
                     current: driftTablePage,
-                    pageSize: signalTargetPageSize,
                     onChange: setDriftTablePage
-                  }}
+                  })}
                   locale={{ emptyText: <Empty description="No active AI drift signals in cache" /> }}
                 />
               </section>
@@ -14262,11 +14280,10 @@ export default function App() {
                   columns={violationColumns}
                   dataSource={data.workflowViolations}
                   scroll={{ x: 1580 }}
-                  pagination={{
+                  pagination={tablePagination(data.workflowViolations.length, signalTargetPageSize, {
                     current: violationTablePage,
-                    pageSize: signalTargetPageSize,
                     onChange: setViolationTablePage
-                  }}
+                  })}
                   locale={{ emptyText: <Empty description="No active workflow violations in cache" /> }}
                 />
               </section>
@@ -14310,7 +14327,7 @@ export default function App() {
                       rowKey={(owner) => owner.ownerLogin ?? "unowned"}
                       columns={criticalOwnerCoverageColumns}
                       dataSource={criticalOwnerCoverageRows}
-                      pagination={false}
+                      pagination={tablePagination(criticalOwnerCoverageRows.length, 8)}
                     />
                   </div>
                 ) : null}
@@ -14320,7 +14337,7 @@ export default function App() {
                   columns={criticalColumns}
                   dataSource={filteredCriticalIssuesForTable}
                   scroll={{ x: 1812 }}
-                  pagination={{ pageSize: 8 }}
+                  pagination={tablePagination(filteredCriticalIssuesForTable.length, 8)}
                   locale={{ emptyText: <Empty description="No active s-1/s0 issues in cache" /> }}
                 />
               </section>
