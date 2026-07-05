@@ -3775,6 +3775,7 @@ function TeamRotationOverview({
   onPrSortChange,
   onOpenIssuesFilter,
   onOpenPrsFilter,
+  onOpenTestingIssueQueue,
   onOpenPeopleFilter
 }: {
   data: DashboardSummary;
@@ -3798,6 +3799,7 @@ function TeamRotationOverview({
   onPrSortChange: (value: PrSort) => void;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
   const generatedAt = data.sync.generatedAt;
@@ -3851,6 +3853,7 @@ function TeamRotationOverview({
     onConnectToken,
     onOpenIssuesFilter,
     onOpenPrsFilter,
+    onOpenTestingIssueQueue,
     onOpenPeopleFilter
   });
   const criticalLanePage = usePagedList(
@@ -3914,6 +3917,7 @@ function TeamRotationOverview({
           topAction={commandActions[0] ?? null}
           onOpenIssuesFilter={onOpenIssuesFilter}
           onOpenPrsFilter={onOpenPrsFilter}
+          onOpenTestingIssueQueue={onOpenTestingIssueQueue}
           onOpenPeopleFilter={onOpenPeopleFilter}
         />
         <TeamCommandQueue actions={commandActions} />
@@ -3932,6 +3936,7 @@ function TeamRotationOverview({
               onNavigate={onNavigate}
               onOpenIssuesFilter={onOpenIssuesFilter}
               onOpenPrsFilter={onOpenPrsFilter}
+              onOpenTestingIssueQueue={onOpenTestingIssueQueue}
               onOpenPeopleFilter={onOpenPeopleFilter}
             />
             <TeamUpdatePipelineStrip summary={updatePipeline} onNavigate={onNavigate} />
@@ -4063,7 +4068,7 @@ function TeamRotationOverview({
             defaultPageSize={5}
             actionLabel="Open Testing"
             tone={data.testing.staleQueueIssues > 0 ? "critical" : "attention"}
-            onAction={() => onOpenPrsFilter("testing")}
+            onAction={() => onOpenTestingIssueQueue("all")}
             onPageChange={testingLanePage.onPageChange}
           >
             {testingLanePage.visibleItems.map((issue) => (
@@ -4115,7 +4120,7 @@ function TeamRotationOverview({
               pendingPrAge: () => onOpenPrsFilter("all"),
               prAttention: () => onOpenPrsFilter("attention"),
               activeCriticalAge: () => onOpenIssuesFilter({}),
-              testingQueue: () => onOpenPrsFilter("testing"),
+              testingQueue: () => onOpenTestingIssueQueue("all"),
               workflowViolations: () => onNavigate("Violations")
             }}
           />
@@ -4137,6 +4142,7 @@ function TeamOperationsSummary({
   topAction,
   onOpenIssuesFilter,
   onOpenPrsFilter,
+  onOpenTestingIssueQueue,
   onOpenPeopleFilter
 }: {
   data: DashboardSummary;
@@ -4149,6 +4155,7 @@ function TeamOperationsSummary({
   topAction: TeamCommandAction | null;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
   const sZeroIssues = Math.max(0, data.counts.criticalIssues - sMinusOneIssues);
@@ -4197,7 +4204,7 @@ function TeamOperationsSummary({
             value={data.testing.queueIssues}
             detail={`${staleTestingIssues.length} waiting >24h`}
             tone={staleTestingIssues.length > 0 ? "attention" : data.testing.queueIssues > 0 ? "normal" : "good"}
-            onClick={() => onOpenPrsFilter(staleTestingIssues.length > 0 ? "stale_testing" : "testing")}
+            onClick={() => onOpenTestingIssueQueue(staleTestingIssues.length > 0 ? "stale" : "all")}
           />
           <TeamOpsSummaryTile
             label="Triage"
@@ -4271,6 +4278,7 @@ function teamCommandActions({
   onConnectToken,
   onOpenIssuesFilter,
   onOpenPrsFilter,
+  onOpenTestingIssueQueue,
   onOpenPeopleFilter
 }: {
   data: DashboardSummary;
@@ -4284,6 +4292,7 @@ function teamCommandActions({
   onConnectToken: () => void;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }): TeamCommandAction[] {
   const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
@@ -4378,7 +4387,7 @@ function teamCommandActions({
       tone: "attention",
       actionLabel: "Open testing",
       priority: 860,
-      onClick: () => onOpenPrsFilter("stale_testing")
+      onClick: () => onOpenTestingIssueQueue("stale")
     });
   }
   if (criticalPeople.length > 0) {
@@ -4512,12 +4521,14 @@ function TeamHealthStrip({
   onNavigate,
   onOpenIssuesFilter,
   onOpenPrsFilter,
+  onOpenTestingIssueQueue,
   onOpenPeopleFilter
 }: {
   signals: TeamOperatingSignal[];
   onNavigate: (view: DashboardView) => void;
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void;
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
+  onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
   return (
@@ -4530,7 +4541,14 @@ function TeamHealthStrip({
           detail={signal.detail}
           tone={signal.tone}
           onClick={() =>
-            openTeamOperatingSignal(signal, onNavigate, onOpenIssuesFilter, onOpenPrsFilter, onOpenPeopleFilter)
+            openTeamOperatingSignal(
+              signal,
+              onNavigate,
+              onOpenIssuesFilter,
+              onOpenPrsFilter,
+              onOpenTestingIssueQueue,
+              onOpenPeopleFilter
+            )
           }
         />
       ))}
@@ -4543,6 +4561,7 @@ function openTeamOperatingSignal(
   onNavigate: (view: DashboardView) => void,
   onOpenIssuesFilter: (filters: OpenIssuesFilterOptions) => void,
   onOpenPrsFilter: (scope: PrScopeFilter) => void,
+  onOpenTestingIssueQueue: (filter?: TestingIssueQueueFilter) => void,
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void
 ): void {
   if (signal.target === "critical_without_pr") {
@@ -4570,11 +4589,11 @@ function openTeamOperatingSignal(
     return;
   }
   if (signal.target === "testing_stale") {
-    onOpenPrsFilter("stale_testing");
+    onOpenTestingIssueQueue("stale");
     return;
   }
   if (signal.target === "testing") {
-    onOpenPrsFilter("testing");
+    onOpenTestingIssueQueue("all");
     return;
   }
   if (signal.target === "webhooks") {
@@ -16515,6 +16534,15 @@ export default function App() {
     selectView("PRs", selectedPerson, { prScopeFilter: scope, prBoardTab: nextTab });
   }
 
+  function openIssueTestingQueue(filter: TestingIssueQueueFilter = "all") {
+    const nextScope: PrScopeFilter = "testing";
+    setTestingIssueQueueFilter(filter);
+    setPrScopeFilter(nextScope);
+    setPrBoardTab("testing");
+    selectView("PRs", selectedPerson, { prScopeFilter: nextScope, prBoardTab: "testing" });
+    window.setTimeout(scrollTestingIssueQueueIntoView, 0);
+  }
+
   function switchPrBoardTab(nextTab: PrBoardTab) {
     const nextScope = nextTab === "rotation" && isTestingPrScope(prScopeFilter) ? "all" : prScopeFilter;
     setPrBoardTab(nextTab);
@@ -16536,7 +16564,7 @@ export default function App() {
       return;
     }
     if (target === "testing") {
-      openPrsWithFilter("testing_evidence_gap");
+      openIssueTestingQueue("data_gap");
       return;
     }
     selectView("Drift");
@@ -18002,7 +18030,7 @@ export default function App() {
     pendingPrAge: () => openPrsWithFilter("all"),
     prAttention: () => openPrsWithFilter("attention"),
     activeCriticalAge: () => openIssuesWithFilter({}),
-    testingQueue: () => openPrsWithFilter("testing"),
+    testingQueue: () => openIssueTestingQueue("all"),
     workflowViolations: () => selectView("Violations")
   };
   const latestRateLimitHealth = data?.sync.health.find((item) => item.rateLimitRemaining !== null) ?? null;
@@ -18318,6 +18346,7 @@ export default function App() {
                 onPrSortChange={setPrSort}
                 onOpenIssuesFilter={openIssuesWithFilter}
                 onOpenPrsFilter={openPrsWithFilter}
+                onOpenTestingIssueQueue={openIssueTestingQueue}
                 onOpenPeopleFilter={openPeopleWithFilter}
               />
             ) : null}
@@ -18477,7 +18506,7 @@ export default function App() {
                 title={`${data.testing.staleQueueIssues} issues have waited on test too long`}
                 description="Some test waits still use cached issue update time until GitHub issue timeline handoff evidence is backfilled."
                 action={
-                  <Button size="small" onClick={() => openPrsWithFilter("stale_testing")}>
+                  <Button size="small" onClick={() => openIssueTestingQueue("stale")}>
                     Open test queue
                   </Button>
                 }
