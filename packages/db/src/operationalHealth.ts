@@ -151,6 +151,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
   const staleObjects = asNumber(cacheRow.stale_count);
   const partialObjects = asNumber(cacheRow.partial_count);
   const failedDeliveries = asNumber(notificationRows[0]?.failed_count);
+  const webhookFailures = webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
   const oldestSyncedAt = fromSqlDate(cacheRow.oldest_synced_at);
   const unhealthyLayers = syncHealth
     .filter((item) => item.status === "failed" || item.status === "blocked")
@@ -162,7 +163,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
     syncHealth,
     staleObjects,
     notificationFailures: failedDeliveries,
-    webhookFailures: webhooks.failedDeliveries
+    webhookFailures
   });
 
   return {
@@ -171,7 +172,7 @@ export async function getOperationalHealth(repoId: number): Promise<OperationalH
       syncHealth,
       staleObjects,
       notificationFailures: failedDeliveries,
-      webhookFailures: webhooks.failedDeliveries,
+      webhookFailures,
       latestWebhookFailure: webhooks.latestFailure
     }),
     sync: {

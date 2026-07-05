@@ -2806,6 +2806,167 @@ button.team-status-row:focus-visible {
   padding-left: 18px;
 }
 
+.webhook-update-path {
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.webhook-update-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.webhook-update-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.webhook-update-heading span:last-child {
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.webhook-path-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.webhook-path-step {
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #94a3b8;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.webhook-path-step-critical {
+  border-left-color: #dc2626;
+}
+
+.webhook-path-step-attention {
+  border-left-color: #d97706;
+}
+
+.webhook-path-step-good {
+  border-left-color: #16a34a;
+}
+
+.webhook-path-step-muted {
+  border-left-color: #94a3b8;
+}
+
+.webhook-path-step-heading {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.webhook-path-step-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.webhook-path-step-heading strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.webhook-path-icon {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #334155;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.webhook-path-step p {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+  min-height: 34px;
+  overflow-wrap: anywhere;
+}
+
+.webhook-path-metrics {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.webhook-path-metric {
+  align-items: center;
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  color: #111827;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+}
+
+button.webhook-path-metric {
+  cursor: pointer;
+}
+
+button.webhook-path-metric:hover,
+button.webhook-path-metric:focus-visible {
+  border-color: #2563eb;
+  outline: none;
+}
+
+.webhook-path-metric span,
+.webhook-path-metric strong {
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.webhook-path-metric span {
+  color: #6b7280;
+}
+
+.webhook-path-metric strong {
+  font-weight: 750;
+}
+
+.webhook-path-metric-active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
+.webhook-path-metric-critical {
+  border-color: #fecaca;
+}
+
 .webhook-setup-panel {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -7707,6 +7868,10 @@ button.flow-diagnostic-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .webhook-path-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .webhook-setup-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7740,6 +7905,15 @@ button.flow-diagnostic-card:focus-visible {
   .webhook-setup-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .webhook-update-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .webhook-path-grid {
+    grid-template-columns: 1fr;
   }
 
   .webhook-setup-grid {

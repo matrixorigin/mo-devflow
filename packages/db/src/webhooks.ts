@@ -286,7 +286,7 @@ export async function getWebhookIngestionHealth(repoId: number): Promise<Webhook
     `SELECT
        SUM(CASE WHEN status IN ('received', 'processing') THEN 1 ELSE 0 END) AS pending_deliveries,
        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_deliveries,
-       SUM(CASE WHEN status IN ('failed', 'failed_normalization') THEN 1 ELSE 0 END) AS failed_deliveries,
+       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries,
        SUM(CASE WHEN status = 'failed_normalization' THEN 1 ELSE 0 END) AS normalization_failed_deliveries,
        SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_deliveries,
        SUM(duplicate_count) AS duplicate_deliveries,

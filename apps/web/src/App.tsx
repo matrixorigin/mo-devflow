@@ -2578,6 +2578,10 @@ function webhookScopeLabel(filter: WebhookDeliveryScopeFilter): string {
   return "all deliveries";
 }
 
+function webhookFailedDeliveryCount(webhooks: DashboardSummary["webhooks"]): number {
+  return webhooks.failedDeliveries + webhooks.normalizationFailedDeliveries;
+}
+
 function webhookDeliveryMatchesScope(delivery: GitHubWebhookDeliveryView, filter: WebhookDeliveryScopeFilter): boolean {
   if (filter === "pending") {
     return delivery.status === "received" || delivery.status === "processing";
@@ -5498,6 +5502,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
     data.notifications.unacknowledgedDeliveries +
     data.notifications.escalationPendingDeliveries;
   const webhookReadiness = summarizeWebhookReadiness(data);
+  const webhookFailures = webhookFailedDeliveryCount(data.webhooks);
   return (
     <section className="team-side-panel">
       <div className="team-side-heading">
@@ -5519,7 +5524,7 @@ function TeamOpsStatus({ data, onNavigate }: { data: DashboardSummary; onNavigat
         />
         <TeamStatusRow
           label="Webhook"
-          value={`${webhookReadinessModeLabel(webhookReadiness.mode)} | ${data.webhooks.pendingDeliveries} pending / ${data.webhooks.failedDeliveries} failed`}
+          value={`${webhookReadinessModeLabel(webhookReadiness.mode)} | ${data.webhooks.pendingDeliveries} pending / ${webhookFailures} failed`}
           onClick={() => onNavigate("Webhooks")}
         />
         <TeamStatusRow
@@ -5625,7 +5630,7 @@ function operationalHealthScore(data: DashboardSummary): { label: string; tone: 
     data.sync.worker.status === "offline" ||
     data.sync.jobQueue.failedJobs > 0 ||
     data.sync.jobQueue.blockedJobs > 0 ||
-    data.webhooks.failedDeliveries > 0 ||
+    webhookFailedDeliveryCount(data.webhooks) > 0 ||
     data.notifications.failedDeliveries > 0
   ) {
     return { label: "action required", tone: "critical" };
@@ -5999,6 +6004,7 @@ function HealthBoard({
   const repairRecommendation = recommendCacheRepair(data.sync);
   const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
   const webhookReadiness = summarizeWebhookReadiness(data);
+  const webhookFailures = webhookFailedDeliveryCount(data.webhooks);
   const productionReadiness = summarizeProductionReadiness({ data, session });
   const refreshDisabledReason = authenticated
     ? undefined
@@ -6089,11 +6095,11 @@ function HealthBoard({
           value={webhookReadinessModeLabel(webhookReadiness.mode)}
           detail={webhookReadiness.facts.slice(0, 3).join(", ")}
           tone={webhookReadiness.tone}
-          action={data.webhooks.failedDeliveries > 0 ? "Retry failed" : "Open webhooks"}
-          disabled={data.webhooks.failedDeliveries > 0 && !authenticated}
+          action={webhookFailures > 0 ? "Retry failed" : "Open webhooks"}
+          disabled={webhookFailures > 0 && !authenticated}
           disabledReason={refreshDisabledReason}
           loading={webhookRetrySaving}
-          onClick={() => (data.webhooks.failedDeliveries > 0 ? onRetryFailedWebhooks() : onOpenView("Webhooks"))}
+          onClick={() => (webhookFailures > 0 ? onRetryFailedWebhooks() : onOpenView("Webhooks"))}
         />
         <HealthMetricCard
           label="Notifications"
@@ -6155,8 +6161,7 @@ function HealthBoard({
             <HealthFact
               label="Webhook"
               value={
-                data.webhooks.latestFailure ??
-                `${data.webhooks.pendingDeliveries} pending, ${data.webhooks.failedDeliveries} failed`
+                data.webhooks.latestFailure ?? `${data.webhooks.pendingDeliveries} pending, ${webhookFailures} failed`
               }
             />
             <HealthFact
@@ -13607,7 +13612,7 @@ function WebhookIngestionBoard({
     webhookDeliveryMatchesScope(delivery, scopeFilter)
   );
   const pendingDeliveries = data.webhooks.pendingDeliveries;
-  const failedDeliveries = data.webhooks.failedDeliveries;
+  const failedDeliveries = webhookFailedDeliveryCount(data.webhooks);
   const duplicateDeliveries = data.webhooks.duplicateDeliveries;
   const connectivityProbeDeliveries = data.webhooks.connectivityProbeDeliveries;
   const otherIgnoredDeliveries = Math.max(0, data.webhooks.ignoredDeliveries - connectivityProbeDeliveries);
@@ -13703,6 +13708,16 @@ function WebhookIngestionBoard({
       </div>
 
       <WebhookReadinessPanel readiness={readiness} />
+      <WebhookUpdatePathPanel
+        data={data}
+        readiness={readiness}
+        scopeFilter={scopeFilter}
+        authenticated={authenticated}
+        retrySaving={retrySaving}
+        onScopeFilterChange={onScopeFilterChange}
+        onRetryFailed={onRetryFailed}
+        onRefreshWebhooks={onRefreshWebhooks}
+      />
       <WebhookSetupPanel
         data={data}
         secretConfigured={secretConfigured}
@@ -13827,6 +13842,245 @@ function WebhookIngestionBoard({
         }}
       />
     </section>
+  );
+}
+
+type WebhookPathTone = WebhookReadinessSummary["tone"] | "muted";
+
+function WebhookUpdatePathPanel({
+  data,
+  readiness,
+  scopeFilter,
+  authenticated,
+  retrySaving,
+  onScopeFilterChange,
+  onRetryFailed,
+  onRefreshWebhooks
+}: {
+  data: DashboardSummary;
+  readiness: WebhookReadinessSummary;
+  scopeFilter: WebhookDeliveryScopeFilter;
+  authenticated: boolean;
+  retrySaving: boolean;
+  onScopeFilterChange: (value: WebhookDeliveryScopeFilter) => void;
+  onRetryFailed: () => void;
+  onRefreshWebhooks: () => void;
+}) {
+  const failedDeliveries = webhookFailedDeliveryCount(data.webhooks);
+  const workerHealthy = data.sync.worker.status === "active";
+  const queueHealthy = data.sync.jobQueue.status === "healthy";
+  const workerRepairTone: WebhookPathTone =
+    !workerHealthy || !queueHealthy || data.sync.jobQueue.failedJobs > 0 || data.sync.jobQueue.blockedJobs > 0
+      ? "critical"
+      : data.sync.jobQueue.queueDepth > 0 || data.sync.jobQueue.runningJobs > 0
+        ? "attention"
+        : "good";
+  const processingTone: WebhookPathTone =
+    failedDeliveries > 0
+      ? "critical"
+      : data.webhooks.pendingDeliveries > 0
+        ? "attention"
+        : data.webhooks.processedDeliveries > 0
+          ? "good"
+          : "muted";
+  const cacheTone: WebhookPathTone =
+    data.sync.staleObjects > 0 ? "critical" : data.sync.partialObjects > 0 ? "attention" : "good";
+  const totalDeliveries =
+    data.webhooks.pendingDeliveries +
+    data.webhooks.processedDeliveries +
+    failedDeliveries +
+    data.webhooks.ignoredDeliveries;
+  const workerDetail =
+    data.sync.worker.recommendedAction ??
+    data.sync.jobQueue.recommendedAction ??
+    (data.sync.worker.secondsSinceHeartbeat === null
+      ? "Worker heartbeat has not been recorded."
+      : `Worker heartbeat ${Math.round(data.sync.worker.secondsSinceHeartbeat)}s ago.`);
+  const cacheDetail =
+    data.sync.staleObjects > 0 || data.sync.partialObjects > 0
+      ? `${data.sync.staleObjects} stale objects, ${data.sync.partialObjects} incomplete objects.`
+      : `Dashboard generated ${formatDate(data.sync.generatedAt)}.`;
+
+  return (
+    <section className="webhook-update-path" aria-label="Webhook update path">
+      <div className="webhook-update-heading">
+        <div>
+          <Text strong>Update Path</Text>
+          <Text type="secondary">
+            GitHub webhooks update the cache; the dashboard reads the cache and refreshes automatically.
+          </Text>
+        </div>
+        <Space size={[6, 6]} wrap>
+          <Button size="small" disabled={!authenticated} onClick={onRefreshWebhooks}>
+            Process queue
+          </Button>
+          <Button
+            size="small"
+            danger={failedDeliveries > 0}
+            disabled={!authenticated || failedDeliveries === 0}
+            loading={retrySaving}
+            onClick={onRetryFailed}
+          >
+            Retry failed
+          </Button>
+        </Space>
+      </div>
+
+      <div className="webhook-path-grid">
+        <WebhookPathStep
+          icon={<GitMerge size={16} />}
+          label="1. GitHub delivery"
+          value={data.webhooks.lastReceivedAt ? formatDate(data.webhooks.lastReceivedAt) : "No delivery yet"}
+          detail={
+            data.webhooks.lastConnectivityProbeAt
+              ? `Ping observed ${formatDate(data.webhooks.lastConnectivityProbeAt)}.`
+              : readiness.description
+          }
+          tone={readiness.tone}
+        >
+          <WebhookPathMetric
+            label="all"
+            value={totalDeliveries}
+            active={scopeFilter === "all"}
+            onClick={() => onScopeFilterChange("all")}
+          />
+          <WebhookPathMetric
+            label="ping"
+            value={data.webhooks.connectivityProbeDeliveries}
+            active={scopeFilter === "connectivity_probe"}
+            onClick={() => onScopeFilterChange("connectivity_probe")}
+          />
+        </WebhookPathStep>
+
+        <WebhookPathStep
+          icon={<ClipboardCheck size={16} />}
+          label="2. Cache ingestion"
+          value={
+            failedDeliveries > 0
+              ? `${failedDeliveries} failed`
+              : data.webhooks.pendingDeliveries > 0
+                ? `${data.webhooks.pendingDeliveries} pending`
+                : `${data.webhooks.processedDeliveries} processed`
+          }
+          detail={
+            data.webhooks.latestFailure ??
+            `${data.webhooks.normalizationFailedDeliveries} normalization failures, ${data.webhooks.duplicateDeliveries} duplicates.`
+          }
+          tone={processingTone}
+        >
+          <WebhookPathMetric
+            label="pending"
+            value={data.webhooks.pendingDeliveries}
+            active={scopeFilter === "pending"}
+            onClick={() => onScopeFilterChange("pending")}
+          />
+          <WebhookPathMetric
+            label="failed"
+            value={failedDeliveries}
+            active={scopeFilter === "failed"}
+            tone={failedDeliveries > 0 ? "critical" : "normal"}
+            onClick={() => onScopeFilterChange("failed")}
+          />
+          <WebhookPathMetric
+            label="processed"
+            value={data.webhooks.processedDeliveries}
+            active={scopeFilter === "processed"}
+            onClick={() => onScopeFilterChange("processed")}
+          />
+          <WebhookPathMetric
+            label="duplicates"
+            value={data.webhooks.duplicateDeliveries}
+            active={scopeFilter === "duplicates"}
+            onClick={() => onScopeFilterChange("duplicates")}
+          />
+        </WebhookPathStep>
+
+        <WebhookPathStep
+          icon={<ServerCog size={16} />}
+          label="3. Worker repair"
+          value={`${labelText(data.sync.worker.status)} / ${data.sync.jobQueue.queueDepth} queued`}
+          detail={workerDetail}
+          tone={workerRepairTone}
+        >
+          <WebhookPathMetric label="running" value={data.sync.jobQueue.runningJobs} />
+          <WebhookPathMetric label="failed jobs" value={data.sync.jobQueue.failedJobs} />
+          <WebhookPathMetric label="blocked" value={data.sync.jobQueue.blockedJobs} />
+        </WebhookPathStep>
+
+        <WebhookPathStep
+          icon={<RefreshCw size={16} />}
+          label="4. Dashboard cache"
+          value={formatDate(data.sync.generatedAt)}
+          detail={cacheDetail}
+          tone={cacheTone}
+        >
+          <WebhookPathMetric label="stale" value={data.sync.staleObjects} />
+          <WebhookPathMetric label="incomplete" value={data.sync.partialObjects} />
+        </WebhookPathStep>
+      </div>
+    </section>
+  );
+}
+
+function WebhookPathStep({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+  children
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone: WebhookPathTone;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`webhook-path-step webhook-path-step-${tone}`}>
+      <div className="webhook-path-step-heading">
+        <span className="webhook-path-icon">{icon}</span>
+        <div>
+          <Text type="secondary">{label}</Text>
+          <strong>{value}</strong>
+        </div>
+      </div>
+      <p>{detail}</p>
+      <div className="webhook-path-metrics">{children}</div>
+    </div>
+  );
+}
+
+function WebhookPathMetric({
+  label,
+  value,
+  active = false,
+  tone = "normal",
+  onClick
+}: {
+  label: string;
+  value: number;
+  active?: boolean;
+  tone?: "normal" | "critical";
+  onClick?: () => void;
+}) {
+  const className = `webhook-path-metric${active ? " webhook-path-metric-active" : ""}${
+    tone === "critical" ? " webhook-path-metric-critical" : ""
+  }`;
+  if (!onClick) {
+    return (
+      <span className={className}>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={className} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
   );
 }
 
@@ -15937,6 +16191,7 @@ export default function App() {
   const freshness = data ? summarizeFreshness(data.sync) : null;
   const cacheEvidence = data ? summarizeCacheEvidence({ sync: data.sync, visibility: data.visibility }) : null;
   const cacheImpactItems = data ? cacheEvidenceImpactItems(data) : [];
+  const webhookFailures = data ? webhookFailedDeliveryCount(data.webhooks) : 0;
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
   const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
@@ -16354,14 +16609,12 @@ export default function App() {
               />
             ) : null}
 
-            {data.webhooks.failedDeliveries > 0 && view !== "Health" && view !== "Webhooks" ? (
+            {webhookFailures > 0 && view !== "Health" && view !== "Webhooks" ? (
               <Alert
                 className="band"
                 type="warning"
                 title="Webhook ingestion has failed deliveries"
-                description={
-                  data.webhooks.latestFailure ?? `${data.webhooks.failedDeliveries} webhook deliveries failed.`
-                }
+                description={data.webhooks.latestFailure ?? `${webhookFailures} webhook deliveries failed.`}
                 action={
                   <Button
                     size="small"
