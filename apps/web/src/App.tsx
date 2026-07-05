@@ -16954,16 +16954,21 @@ function PersonalPrThroughputPanel({
   selection,
   onSelectionChange,
   onDrilldownChange,
+  onIssuePreview,
   onPullRequestPreview
 }: {
   person: PersonalActionView;
   selection: PersonalPrThroughputSelection;
   onSelectionChange: (selection: PersonalPrThroughputSelection) => void;
   onDrilldownChange: (filter: PersonalDrilldownFilter) => void;
+  onIssuePreview: (issue: CriticalIssueView) => void;
   onPullRequestPreview: (pr: PersonalPullRequestView) => void;
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
+  const flowRowLazy = useLazyVisibleCount(flow.rows.length, 5, `${person.login}:critical-flow`);
+  const visibleFlowRows = flow.rows.slice(0, flowRowLazy.visibleCount);
+  const issueByNumber = new Map(person.activeCriticalIssues.map((issue) => [issue.number, issue]));
   const listScope = selection.scope;
   const listPeriod = selection.period;
   const selectedPeriodList = personalPrPeriodListForPeriod(person, listPeriod);
@@ -17099,8 +17104,19 @@ function PersonalPrThroughputPanel({
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue flow for this person" />
           ) : (
             <div className="personal-flow-efficiency-rows">
-              {flow.rows.slice(0, 5).map((row) => (
-                <div className="personal-flow-efficiency-row" key={row.issueNumber}>
+              {visibleFlowRows.map((row) => (
+                <button
+                  type="button"
+                  className="personal-flow-efficiency-row"
+                  key={row.issueNumber}
+                  onClick={() => {
+                    const issue = issueByNumber.get(row.issueNumber);
+                    if (issue) {
+                      onIssuePreview(issue);
+                    }
+                  }}
+                  aria-label={`Preview issue ${row.issueNumber} critical flow`}
+                >
                   <span>
                     <strong>#{row.issueNumber}</strong>
                     <small>
@@ -17123,8 +17139,18 @@ function PersonalPrThroughputPanel({
                     <strong>{row.cachePending ? "cache" : optionalHours(row.testingAfterActiveHours)}</strong>
                     <small>to testing</small>
                   </span>
-                </div>
+                </button>
               ))}
+              <LazyListToggle
+                hiddenCount={flowRowLazy.hiddenCount}
+                revealCount={flowRowLazy.revealCount}
+                canCollapse={flowRowLazy.canCollapse}
+                itemLabel="issue flows"
+                className="personal-flow-efficiency-toggle"
+                collapsedLabel="Show fewer issue flows"
+                onShowMore={flowRowLazy.showMore}
+                onCollapse={flowRowLazy.reset}
+              />
             </div>
           )}
         </div>
@@ -17273,6 +17299,7 @@ function SelectedPersonWorkbench({
         selection={throughputSelection}
         onSelectionChange={setThroughputSelection}
         onDrilldownChange={onDrilldownChange}
+        onIssuePreview={previewIssue}
         onPullRequestPreview={previewPullRequest}
       />
       <PersonalActiveWorkPreview chart={gantt} activeFilter={drilldownFilter} onSelect={onDrilldownChange} />

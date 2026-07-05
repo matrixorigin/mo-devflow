@@ -7124,12 +7124,28 @@ button.testing-board-stat:focus-visible {
 }
 
 .personal-flow-efficiency-row {
+  background: #ffffff;
+  border: 0;
   border-bottom: 1px solid #eef2f7;
+  color: inherit;
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 8px;
   grid-template-columns: minmax(92px, 1.2fr) repeat(4, minmax(72px, 1fr));
   min-width: 0;
   padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.personal-flow-efficiency-row:hover {
+  background: #f8fafc;
+}
+
+.personal-flow-efficiency-row:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 
 .personal-flow-efficiency-row:last-child {
@@ -7159,6 +7175,29 @@ button.testing-board-stat:focus-visible {
   color: #6b7280;
   font-size: 11px;
   line-height: 1.2;
+}
+
+.personal-flow-efficiency-toggle {
+  align-items: center;
+  background: #f8fafc;
+  border: 0;
+  border-top: 1px solid #eef2f7;
+  color: #2563eb;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 6px;
+  justify-content: center;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.personal-flow-efficiency-toggle:hover {
+  background: #eef6ff;
+}
+
+.personal-flow-efficiency-toggle-muted {
+  color: #6b7280;
 }
 
 .personal-rotation-lane {
