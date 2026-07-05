@@ -431,19 +431,20 @@ function optionalHours(value: number | null): string {
   return value === null ? "-" : hours(value);
 }
 
-function hoursSince(value: string | null): number | null {
-  if (!value) {
+function hoursSince(value: string | null, nowIso: string): number | null {
+  if (!value || !nowIso) {
     return null;
   }
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
+  const nowTimestamp = Date.parse(nowIso);
+  if (!Number.isFinite(timestamp) || !Number.isFinite(nowTimestamp)) {
     return null;
   }
-  return Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
+  return Math.max(0, (nowTimestamp - timestamp) / (60 * 60 * 1000));
 }
 
-function criticalIssueNoHumanAction(issue: Pick<CriticalIssueView, "lastHumanActionAt">): boolean {
-  const idleHours = hoursSince(issue.lastHumanActionAt);
+function criticalIssueNoHumanAction(issue: Pick<CriticalIssueView, "lastHumanActionAt">, generatedAt: string): boolean {
+  const idleHours = hoursSince(issue.lastHumanActionAt, generatedAt);
   return idleHours !== null && idleHours >= 24;
 }
 
@@ -2224,7 +2225,11 @@ function criticalIssueMatchesOwner(issue: CriticalIssueView, ownerFilter: Critic
   return issue.ownerLogin === criticalIssueOwnerFilterLogin(ownerFilter);
 }
 
-function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: CriticalIssueScopeFilter): boolean {
+function criticalIssueMatchesScope(
+  issue: CriticalIssueView,
+  scopeFilter: CriticalIssueScopeFilter,
+  generatedAt: string
+): boolean {
   if (scopeFilter === "s-1") {
     return issue.severity === "severity/s-1";
   }
@@ -2232,7 +2237,7 @@ function criticalIssueMatchesScope(issue: CriticalIssueView, scopeFilter: Critic
     return issue.severity === "severity/s0";
   }
   if (scopeFilter === "no_action_24h") {
-    return criticalIssueNoHumanAction(issue);
+    return criticalIssueNoHumanAction(issue, generatedAt);
   }
   if (scopeFilter === "no_pr") {
     return issue.linkedPullRequests.length === 0;
@@ -2259,12 +2264,13 @@ function filterCriticalIssues(
   issues: CriticalIssueView[],
   aiFilter: CriticalIssueAiFilter,
   scopeFilter: CriticalIssueScopeFilter,
-  ownerFilter: CriticalIssueOwnerFilter = "all"
+  ownerFilter: CriticalIssueOwnerFilter,
+  generatedAt: string
 ): CriticalIssueView[] {
   return issues.filter(
     (issue) =>
       criticalIssueMatchesAi(issue, aiFilter) &&
-      criticalIssueMatchesScope(issue, scopeFilter) &&
+      criticalIssueMatchesScope(issue, scopeFilter, generatedAt) &&
       criticalIssueMatchesOwner(issue, ownerFilter)
   );
 }
@@ -2805,7 +2811,10 @@ function observedPersonPreview(data: DashboardSummary, login: string): ObservedP
   }
 
   const criticalIssuesByPr = criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs);
-  const issues = sortCriticalIssuesForAction(data.criticalIssues.filter((issue) => issue.ownerLogin === login));
+  const issues = sortCriticalIssuesForAction(
+    data.criticalIssues.filter((issue) => issue.ownerLogin === login),
+    data.sync.generatedAt
+  );
   const prs = sortPendingPrsForAction(
     data.pendingPrs.filter((pr) => pr.ownerLogin === login),
     criticalIssuesByPr
@@ -3104,9 +3113,11 @@ function TeamRotationOverview({
   onOpenPrsFilter: (scope: PrScopeFilter) => void;
   onOpenPeopleFilter: (scope: PeopleScopeFilter) => void;
 }) {
+  const generatedAt = data.sync.generatedAt;
   const criticalIssues = sortCriticalIssuesForDisplay(
-    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter, criticalOwnerFilter),
-    criticalIssueSort
+    filterCriticalIssues(data.criticalIssues, criticalAiFilter, criticalScopeFilter, criticalOwnerFilter, generatedAt),
+    criticalIssueSort,
+    generatedAt
   );
   const criticalIssuesByPr = useMemo(
     () => criticalIssueContextsByPullRequest(data.criticalIssues, data.pendingPrs),
@@ -3229,6 +3240,7 @@ function TeamRotationOverview({
 
       <TeamCriticalFlowPanel
         rows={criticalFlowRows}
+        generatedAt={generatedAt}
         onOpenIssues={() => onOpenIssuesFilter({})}
         onOpenNoPrIssues={() => onOpenIssuesFilter({ scope: "no_pr" })}
         onOpenPrRisks={() => onOpenPrsFilter("attention")}
@@ -3266,7 +3278,12 @@ function TeamRotationOverview({
             }
           >
             {criticalLanePage.visibleItems.map((issue) => (
-              <TeamCriticalIssueRow issue={issue} key={issue.number} onPreview={setWorkPreview} />
+              <TeamCriticalIssueRow
+                issue={issue}
+                key={issue.number}
+                generatedAt={generatedAt}
+                onPreview={setWorkPreview}
+              />
             ))}
           </TeamRotationLane>
           <TeamRotationLane
@@ -3326,7 +3343,7 @@ function TeamRotationOverview({
         </aside>
       </div>
 
-      <TeamWorkPreviewModal preview={workPreview} onClose={() => setWorkPreview(null)} />
+      <TeamWorkPreviewModal preview={workPreview} generatedAt={generatedAt} onClose={() => setWorkPreview(null)} />
       <TestingIssuePreviewModal issue={testingPreviewIssue} onClose={() => setTestingPreviewIssue(null)} />
 
       <section className="section team-flow-section">
@@ -3408,7 +3425,9 @@ function teamCommandActions({
 }): TeamCommandAction[] {
   const sMinusOneRows = data.criticalIssues.filter((issue) => issue.severity === "severity/s-1");
   const issuesWithoutPr = data.criticalIssues.filter((issue) => issue.linkedPullRequests.length === 0);
-  const idleActiveIssues = data.criticalIssues.filter(criticalIssueNoHumanAction);
+  const idleActiveIssues = data.criticalIssues.filter((issue) =>
+    criticalIssueNoHumanAction(issue, data.sync.generatedAt)
+  );
   const staleActiveIssues = data.criticalIssues.filter(
     (issue) => issue.criticalAgeHours !== null && issue.criticalAgeHours >= 72
   );
@@ -3836,12 +3855,14 @@ function ProductionReadinessGateButton({
 
 function TeamCriticalFlowPanel({
   rows,
+  generatedAt,
   onOpenIssues,
   onOpenNoPrIssues,
   onOpenPrRisks,
   onPreviewIssue
 }: {
   rows: ObservedOwnerThread[];
+  generatedAt: string;
   onOpenIssues: () => void;
   onOpenNoPrIssues: () => void;
   onOpenPrRisks: () => void;
@@ -3877,7 +3898,13 @@ function TeamCriticalFlowPanel({
       <div className="team-critical-flow-list">
         {pagedRows.visibleItems.length > 0 ? (
           pagedRows.visibleItems.map((row) => (
-            <TeamCriticalFlowRow key={row.id} row={row} onOpenPrRisks={onOpenPrRisks} onPreviewIssue={onPreviewIssue} />
+            <TeamCriticalFlowRow
+              key={row.id}
+              row={row}
+              generatedAt={generatedAt}
+              onOpenPrRisks={onOpenPrRisks}
+              onPreviewIssue={onPreviewIssue}
+            />
           ))
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issue matches this filter" />
@@ -3897,10 +3924,12 @@ function TeamCriticalFlowPanel({
 
 function TeamCriticalFlowRow({
   row,
+  generatedAt,
   onOpenPrRisks,
   onPreviewIssue
 }: {
   row: ObservedOwnerThread;
+  generatedAt: string;
   onOpenPrRisks: () => void;
   onPreviewIssue: (issue: CriticalIssueView) => void;
 }) {
@@ -3929,7 +3958,7 @@ function TeamCriticalFlowRow({
         </a>
         <div className="team-critical-flow-meta">
           <CriticalIssueOwnerTag issue={issue} />
-          <span>{criticalIssueNextAction(issue)}</span>
+          <span>{criticalIssueNextAction(issue, generatedAt)}</span>
           <span>last {formatDate(issue.lastHumanActionAt)}</span>
         </div>
       </div>
@@ -4232,12 +4261,14 @@ function TeamRotationLane({
 
 function TeamCriticalIssueRow({
   issue,
+  generatedAt,
   onPreview
 }: {
   issue: CriticalIssueView;
+  generatedAt: string;
   onPreview: (preview: TeamWorkPreview) => void;
 }) {
-  const riskTags = criticalIssueRiskTags(issue);
+  const riskTags = criticalIssueRiskTags(issue, generatedAt);
   const linkedPrs = issue.linkedPullRequests.slice(0, 4);
   const visibleRiskTags = riskTags.slice(0, 4);
   const hiddenRiskTagCount = Math.max(0, riskTags.length - visibleRiskTags.length);
@@ -4305,7 +4336,7 @@ function TeamCriticalIssueRow({
       </div>
       <div className="team-work-action">
         <Text type="secondary">Next</Text>
-        <Text strong>{criticalIssueNextAction(issue)}</Text>
+        <Text strong>{criticalIssueNextAction(issue, generatedAt)}</Text>
         <small>{issue.linkedPullRequests.length} linked PR</small>
       </div>
     </article>
@@ -4471,19 +4502,35 @@ function LinkedOverflowButton({
   );
 }
 
-function TeamWorkPreviewModal({ preview, onClose }: { preview: TeamWorkPreview | null; onClose: () => void }) {
+function TeamWorkPreviewModal({
+  preview,
+  generatedAt,
+  onClose
+}: {
+  preview: TeamWorkPreview | null;
+  generatedAt: string;
+  onClose: () => void;
+}) {
   if (!preview) {
     return null;
   }
 
   if (preview.objectType === "issue") {
-    return <TeamIssuePreviewModal issue={preview.issue} onClose={onClose} />;
+    return <TeamIssuePreviewModal issue={preview.issue} generatedAt={generatedAt} onClose={onClose} />;
   }
   return <TeamPullRequestPreviewModal activeIssues={preview.activeIssues} pr={preview.pr} onClose={onClose} />;
 }
 
-function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; onClose: () => void }) {
-  const riskTags = criticalIssueRiskTags(issue);
+function TeamIssuePreviewModal({
+  issue,
+  generatedAt,
+  onClose
+}: {
+  issue: CriticalIssueView;
+  generatedAt: string;
+  onClose: () => void;
+}) {
+  const riskTags = criticalIssueRiskTags(issue, generatedAt);
   const [linkedPrsExpanded, setLinkedPrsExpanded] = useState(false);
   const linkedPrs = linkedPrsExpanded ? issue.linkedPullRequests : issue.linkedPullRequests.slice(0, 8);
   const hiddenLinkedPrCount = Math.max(0, issue.linkedPullRequests.length - linkedPrs.length);
@@ -4542,7 +4589,7 @@ function TeamIssuePreviewModal({ issue, onClose }: { issue: CriticalIssueView; o
 
         <section className="team-object-preview-section">
           <Text strong>Next action</Text>
-          <Text>{criticalIssueNextAction(issue)}</Text>
+          <Text>{criticalIssueNextAction(issue, generatedAt)}</Text>
         </section>
 
         {riskTags.length > 0 ? (
@@ -5716,7 +5763,9 @@ function HealthFact({ label, value }: { label: string; value: string }) {
 }
 
 function teamPrimaryFocus(data: DashboardSummary, sMinusOneIssues: number): { title: string; detail: string } {
-  const idleActiveIssues = data.criticalIssues.filter(criticalIssueNoHumanAction);
+  const idleActiveIssues = data.criticalIssues.filter((issue) =>
+    criticalIssueNoHumanAction(issue, data.sync.generatedAt)
+  );
   if (sMinusOneIssues > 0) {
     return {
       title: `${sMinusOneIssues} active s-1 issues are the first queue.`,
@@ -6837,7 +6886,7 @@ function prCriticalIssueTooltip(issue: PrCriticalIssueContext): string {
     .join(" | ");
 }
 
-function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
+function criticalIssueRiskTags(issue: CriticalIssueView, generatedAt: string): CriticalRiskTag[] {
   const tags: CriticalRiskTag[] = [];
   if (issue.ownerScope === "unowned") {
     tags.push({ key: "unowned", label: "unowned", color: "red", tooltip: ownerScopeTooltip(issue.ownerScope) });
@@ -6852,7 +6901,7 @@ function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
   if (issue.workflowSkipped) {
     tags.push({ key: "skip", label: "skip automation", color: "default", tooltip: workflowSkipTooltip() });
   }
-  if (criticalIssueNoHumanAction(issue)) {
+  if (criticalIssueNoHumanAction(issue, generatedAt)) {
     tags.push({
       key: "no-action",
       label: "no human action 24h",
@@ -6891,7 +6940,7 @@ function criticalIssueRiskTags(issue: CriticalIssueView): CriticalRiskTag[] {
   return tags;
 }
 
-function criticalIssueRiskScore(issue: CriticalIssueView): number {
+function criticalIssueRiskScore(issue: CriticalIssueView, generatedAt: string): number {
   const blockerScore = issue.blockers.reduce((score, blocker) => {
     if (blocker.severity === "critical") {
       return score + 180;
@@ -6906,7 +6955,7 @@ function criticalIssueRiskScore(issue: CriticalIssueView): number {
     (issue.ownerScope === "unowned" ? 260 : 0) +
     (issue.ownerScope === "non_watched" ? 120 : 0) +
     (issue.workflowSkipped ? 40 : 0) +
-    (criticalIssueNoHumanAction(issue) ? 180 : 0) +
+    (criticalIssueNoHumanAction(issue, generatedAt) ? 180 : 0) +
     (issue.linkedPullRequests.length === 0 ? 120 : 0) +
     (issue.criticalAgeEvidence === "missing_timeline" ? 60 : 0) +
     (!issue.isComplete ? 30 : 0) +
@@ -6915,9 +6964,9 @@ function criticalIssueRiskScore(issue: CriticalIssueView): number {
   );
 }
 
-function sortCriticalIssuesForAction(issues: CriticalIssueView[]): CriticalIssueView[] {
+function sortCriticalIssuesForAction(issues: CriticalIssueView[], generatedAt: string): CriticalIssueView[] {
   return [...issues].sort((left, right) => {
-    const riskDelta = criticalIssueRiskScore(right) - criticalIssueRiskScore(left);
+    const riskDelta = criticalIssueRiskScore(right, generatedAt) - criticalIssueRiskScore(left, generatedAt);
     if (riskDelta !== 0) {
       return riskDelta;
     }
@@ -6929,9 +6978,13 @@ function sortCriticalIssuesForAction(issues: CriticalIssueView[]): CriticalIssue
   });
 }
 
-function sortCriticalIssuesForDisplay(issues: CriticalIssueView[], sort: CriticalIssueSort): CriticalIssueView[] {
+function sortCriticalIssuesForDisplay(
+  issues: CriticalIssueView[],
+  sort: CriticalIssueSort,
+  generatedAt: string
+): CriticalIssueView[] {
   if (sort === "risk") {
-    return sortCriticalIssuesForAction(issues);
+    return sortCriticalIssuesForAction(issues, generatedAt);
   }
   if (sort === "last_action") {
     return [...issues].sort(
@@ -6945,19 +6998,19 @@ function sortCriticalIssuesForDisplay(issues: CriticalIssueView[], sort: Critica
   return [...issues].sort(
     (left, right) =>
       (right.criticalAgeHours ?? -1) - (left.criticalAgeHours ?? -1) ||
-      criticalIssueRiskScore(right) - criticalIssueRiskScore(left) ||
+      criticalIssueRiskScore(right, generatedAt) - criticalIssueRiskScore(left, generatedAt) ||
       right.number - left.number
   );
 }
 
-function criticalIssueNextAction(issue: CriticalIssueView): string {
+function criticalIssueNextAction(issue: CriticalIssueView, generatedAt: string): string {
   if (issue.ownerScope === "unowned") {
     return "Assign an owner";
   }
   if (issue.linkedPullRequests.length === 0) {
     return "Link execution PR";
   }
-  if (criticalIssueNoHumanAction(issue)) {
+  if (criticalIssueNoHumanAction(issue, generatedAt)) {
     return "Post owner update";
   }
   if (issue.blockers.some((blocker) => blocker.relatedPrNumber !== null && blocker.severity !== "info")) {
@@ -6974,6 +7027,7 @@ function criticalIssueNextAction(issue: CriticalIssueView): string {
 
 function CriticalIssueBoard({
   issues,
+  generatedAt,
   aiFilter,
   scopeFilter,
   ownerFilter,
@@ -6985,6 +7039,7 @@ function CriticalIssueBoard({
   onPreview
 }: {
   issues: CriticalIssueView[];
+  generatedAt: string;
   aiFilter: CriticalIssueAiFilter;
   scopeFilter: CriticalIssueScopeFilter;
   ownerFilter: CriticalIssueOwnerFilter;
@@ -6999,23 +7054,26 @@ function CriticalIssueBoard({
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active s-1/s0 issues" />;
   }
   const ownerFilteredIssues = issues.filter((issue) => criticalIssueMatchesOwner(issue, ownerFilter));
-  const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter, ownerFilter);
+  const filteredIssues = filterCriticalIssues(issues, aiFilter, scopeFilter, ownerFilter, generatedAt);
   const sMinusOneIssues = sortCriticalIssuesForDisplay(
     filteredIssues.filter((issue) => issue.severity === "severity/s-1"),
-    sort
+    sort,
+    generatedAt
   );
   const sZeroIssues = sortCriticalIssuesForDisplay(
     filteredIssues.filter((issue) => issue.severity === "severity/s0"),
-    sort
+    sort,
+    generatedAt
   );
   const otherCriticalIssues = sortCriticalIssuesForDisplay(
     filteredIssues.filter((issue) => issue.severity !== "severity/s-1" && issue.severity !== "severity/s0"),
-    sort
+    sort,
+    generatedAt
   );
   const missingTimeline = ownerFilteredIssues.filter(
     (issue) => issue.criticalAgeEvidence === "missing_timeline"
   ).length;
-  const noHumanAction = ownerFilteredIssues.filter(criticalIssueNoHumanAction).length;
+  const noHumanAction = ownerFilteredIssues.filter((issue) => criticalIssueNoHumanAction(issue, generatedAt)).length;
   const noLinkedPr = ownerFilteredIssues.filter((issue) => issue.linkedPullRequests.length === 0).length;
   const ownerGaps = ownerFilteredIssues.filter((issue) => issue.ownerScope !== "watched").length;
   const unownedIssues = ownerFilteredIssues.filter((issue) => issue.ownerScope === "unowned").length;
@@ -7116,6 +7174,7 @@ function CriticalIssueBoard({
           title="s-1 Emergency Lane"
           description="Highest-severity active issues. These should be reviewed before s0 work."
           issues={sMinusOneIssues}
+          generatedAt={generatedAt}
           tone="critical"
           emptyText="No active s-1 issues"
           onPreview={(issue) => onPreview({ objectType: "issue", issue })}
@@ -7124,6 +7183,7 @@ function CriticalIssueBoard({
           title="s0 Execution Risks"
           description="s0 issues sorted by owner, linked PR, blocker, and evidence risk."
           issues={sZeroIssues}
+          generatedAt={generatedAt}
           tone="attention"
           emptyText="No active s0 issues"
           visibleLimit={10}
@@ -7134,6 +7194,7 @@ function CriticalIssueBoard({
             title="Other Active Severity"
             description="Configured active severity labels outside s-1/s0."
             issues={otherCriticalIssues}
+            generatedAt={generatedAt}
             tone="normal"
             emptyText="No other active severity issues"
             onPreview={(issue) => onPreview({ objectType: "issue", issue })}
@@ -7463,6 +7524,7 @@ function CriticalIssueLane({
   title,
   description,
   issues,
+  generatedAt,
   tone,
   emptyText,
   visibleLimit,
@@ -7471,6 +7533,7 @@ function CriticalIssueLane({
   title: string;
   description: string;
   issues: CriticalIssueView[];
+  generatedAt: string;
   tone: "critical" | "attention" | "normal";
   emptyText: string;
   visibleLimit?: number;
@@ -7500,7 +7563,7 @@ function CriticalIssueLane({
       ) : (
         <div className="critical-issue-list">
           {pagedIssues.visibleItems.map((issue) => (
-            <CriticalIssueBoardRow issue={issue} key={issue.number} onPreview={onPreview} />
+            <CriticalIssueBoardRow issue={issue} key={issue.number} generatedAt={generatedAt} onPreview={onPreview} />
           ))}
         </div>
       )}
@@ -7517,12 +7580,14 @@ function CriticalIssueLane({
 
 function CriticalIssueBoardRow({
   issue,
+  generatedAt,
   onPreview
 }: {
   issue: CriticalIssueView;
+  generatedAt: string;
   onPreview?: (issue: CriticalIssueView) => void;
 }) {
-  const riskTags = criticalIssueRiskTags(issue);
+  const riskTags = criticalIssueRiskTags(issue, generatedAt);
   const riskLazy = useLazyVisibleCount(riskTags.length, 5, issue.number);
   const linkedPrLazy = useLazyVisibleCount(issue.linkedPullRequests.length, 3, issue.number);
   const visibleRiskTags = riskTags.slice(0, riskLazy.visibleCount);
@@ -7576,7 +7641,7 @@ function CriticalIssueBoardRow({
             </Tooltip>
           ) : null}
         </div>
-        <Text strong>{criticalIssueNextAction(issue)}</Text>
+        <Text strong>{criticalIssueNextAction(issue, generatedAt)}</Text>
         {linkedPrs.length > 0 ? (
           <div className="critical-linked-prs">
             {linkedPrs.map((pr) => (
@@ -8680,7 +8745,7 @@ function PersonWorkloadBoard({
 
 type ObservedThreadPullRequest = CriticalIssueLinkedPullRequestView | PendingPrView;
 
-function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[] }) {
+function ObservedPersonThreadBoard({ threads, generatedAt }: { threads: ObservedOwnerThread[]; generatedAt: string }) {
   const pagedThreads = usePagedList(threads, cardListDefaultPageSize, threads.map((thread) => thread.id).join(","));
   const [preview, setPreview] = useState<TeamWorkPreview | null>(null);
   const threadIssues = useMemo(() => threads.flatMap((thread) => (thread.issue ? [thread.issue] : [])), [threads]);
@@ -8734,7 +8799,7 @@ function ObservedPersonThreadBoard({ threads }: { threads: ObservedOwnerThread[]
           onChange={pagedThreads.onPageChange}
         />
       </section>
-      <TeamWorkPreviewModal preview={preview} onClose={() => setPreview(null)} />
+      <TeamWorkPreviewModal preview={preview} generatedAt={generatedAt} onClose={() => setPreview(null)} />
     </>
   );
 }
@@ -8892,11 +8957,13 @@ function observedThreadDurationText(thread: ObservedOwnerThread): string {
 
 function ObservedPersonInlineWorkbench({
   preview,
+  generatedAt,
   focus,
   onFocusChange,
   onOpenPreview
 }: {
   preview: ObservedPersonPreview;
+  generatedAt: string;
   focus: PersonalDrilldownFilter;
   onFocusChange: (filter: PersonalDrilldownFilter) => void;
   onOpenPreview: () => void;
@@ -8953,10 +9020,11 @@ function ObservedPersonInlineWorkbench({
         </button>
       </div>
 
-      <ObservedPersonThreadBoard threads={preview.threads} />
+      <ObservedPersonThreadBoard threads={preview.threads} generatedAt={generatedAt} />
       <ObservedPersonDetailPanels
         issueTitle="Active s-1/s0 Issues"
         issues={preview.issues}
+        generatedAt={generatedAt}
         prTitle={observedPersonPrPanelTitle(focus)}
         prs={focusedPrs}
       />
@@ -8984,11 +9052,13 @@ function observedPersonPrPanelTitle(focus: PersonalDrilldownFilter): string {
 function ObservedPersonDetailPanels({
   issueTitle,
   issues,
+  generatedAt,
   prTitle,
   prs
 }: {
   issueTitle: string;
   issues: CriticalIssueView[];
+  generatedAt: string;
   prTitle: string;
   prs: PendingPrView[];
 }) {
@@ -9011,7 +9081,7 @@ function ObservedPersonDetailPanels({
           }
         />
       </div>
-      <TeamWorkPreviewModal preview={preview} onClose={() => setPreview(null)} />
+      <TeamWorkPreviewModal preview={preview} generatedAt={generatedAt} onClose={() => setPreview(null)} />
     </>
   );
 }
@@ -9175,9 +9245,11 @@ function ObservedPersonPrPanel({
 
 function ObservedPersonPreviewModal({
   preview,
+  generatedAt,
   onClose
 }: {
   preview: ObservedPersonPreview | null;
+  generatedAt: string;
   onClose: () => void;
 }) {
   return (
@@ -9210,10 +9282,11 @@ function ObservedPersonPreviewModal({
               <small>pending PR</small>
             </span>
           </div>
-          <ObservedPersonThreadBoard threads={preview.threads} />
+          <ObservedPersonThreadBoard threads={preview.threads} generatedAt={generatedAt} />
           <ObservedPersonDetailPanels
             issueTitle="Active s-1/s0 Issues"
             issues={preview.issues}
+            generatedAt={generatedAt}
             prTitle="Pending PRs"
             prs={preview.prs}
           />
@@ -11467,12 +11540,14 @@ function PersonalWorkbenchQuickFilters({
 
 function PersonalRotationOverview({
   person,
+  generatedAt,
   chart,
   activityItems,
   drilldownFilter,
   onDrilldownChange
 }: {
   person: PersonalActionView;
+  generatedAt: string;
   chart: PersonalGanttChart;
   activityItems: PersonalActivityItem[];
   drilldownFilter: PersonalDrilldownFilter;
@@ -11817,7 +11892,7 @@ function PersonalRotationOverview({
       </div>
       <FlowThreadPreviewModal row={previewThread} onClose={() => setPreviewThread(null)} />
       <TestingIssuePreviewModal issue={testingPreviewIssue} onClose={() => setTestingPreviewIssue(null)} />
-      <TeamWorkPreviewModal preview={prPreview} onClose={() => setPrPreview(null)} />
+      <TeamWorkPreviewModal preview={prPreview} generatedAt={generatedAt} onClose={() => setPrPreview(null)} />
     </div>
   );
 }
@@ -12276,6 +12351,7 @@ function PersonalOperatingSignalStrip({
 
 function SelectedPersonWorkbench({
   person,
+  generatedAt,
   analyticsPeriod,
   trendPoints,
   onAnalyticsPeriodChange,
@@ -12283,6 +12359,7 @@ function SelectedPersonWorkbench({
   onDrilldownChange
 }: {
   person: PersonalActionView;
+  generatedAt: string;
   analyticsPeriod: MetricPeriod;
   trendPoints: TrendMetricPoint[];
   onAnalyticsPeriodChange: (period: MetricPeriod) => void;
@@ -12339,6 +12416,7 @@ function SelectedPersonWorkbench({
 
       <PersonalRotationOverview
         person={person}
+        generatedAt={generatedAt}
         chart={gantt}
         activityItems={activityItems}
         drilldownFilter={drilldownFilter}
@@ -14839,9 +14917,11 @@ export default function App() {
           data.criticalIssues,
           criticalIssueAiFilter,
           criticalIssueScopeFilter,
-          criticalIssueOwnerFilter
+          criticalIssueOwnerFilter,
+          data.sync.generatedAt
         ),
-        criticalIssueSort
+        criticalIssueSort,
+        data.sync.generatedAt
       )
     : [];
   const filteredPeople = data ? filterPeopleByScope(peopleBoardPeople, data.personalViews, peopleScopeFilter) : [];
@@ -15817,6 +15897,7 @@ export default function App() {
                     {selectedObservedPersonPreview ? (
                       <ObservedPersonInlineWorkbench
                         preview={selectedObservedPersonPreview}
+                        generatedAt={data.sync.generatedAt}
                         focus={personalDrilldownFilter}
                         onFocusChange={(filter) =>
                           openObservedPersonalMetric(selectedObservedPersonPreview.login, filter)
@@ -15840,6 +15921,7 @@ export default function App() {
                     {selectedPersonalView ? (
                       <SelectedPersonWorkbench
                         person={selectedPersonalView}
+                        generatedAt={data.sync.generatedAt}
                         analyticsPeriod={analyticsPeriod}
                         trendPoints={personalTrendPoints}
                         onAnalyticsPeriodChange={setAnalyticsPeriod}
@@ -15989,6 +16071,7 @@ export default function App() {
                 </div>
                 <CriticalIssueBoard
                   issues={data.criticalIssues}
+                  generatedAt={data.sync.generatedAt}
                   aiFilter={criticalIssueAiFilter}
                   scopeFilter={criticalIssueScopeFilter}
                   ownerFilter={criticalIssueOwnerFilter}
@@ -16185,9 +16268,14 @@ export default function App() {
           </>
         ) : null}
       </Content>
-      <TeamWorkPreviewModal preview={workObjectPreview} onClose={() => setWorkObjectPreview(null)} />
+      <TeamWorkPreviewModal
+        preview={workObjectPreview}
+        generatedAt={data?.sync.generatedAt ?? ""}
+        onClose={() => setWorkObjectPreview(null)}
+      />
       <ObservedPersonPreviewModal
         preview={observedPersonPreviewState}
+        generatedAt={data?.sync.generatedAt ?? ""}
         onClose={() => setObservedPersonPreviewState(null)}
       />
       <Modal
