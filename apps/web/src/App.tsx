@@ -2621,6 +2621,16 @@ function metricPeriodText(period: MetricPeriod): string {
   return "daily";
 }
 
+function metricPeriodLabel(period: MetricPeriod): string {
+  if (period === "week") {
+    return "Week";
+  }
+  if (period === "month") {
+    return "Month";
+  }
+  return "Day";
+}
+
 function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {
   if (period === "week") {
     return analytics.teamWeekly ?? [];
@@ -5264,7 +5274,7 @@ function TeamCriticalFlowPanel({
       <div className="team-critical-flow-heading">
         <div>
           <Title level={4}>Active s-1/s0 Flow</Title>
-          <Text type="secondary">Issue-linked execution PRs and current blockers.</Text>
+          <Text type="secondary">s-1/s0 active age, linked PR coverage, blockers, and issue testing handoff.</Text>
         </div>
         <div className="team-critical-flow-tools">
           <div className="board-filter-group board-filter-group-inline team-critical-flow-ai">
@@ -5380,7 +5390,7 @@ function TeamCriticalFlowFunnel({
         onClick={onOpenIssues}
       />
       <TeamCriticalFlowStage
-        label="PR visible"
+        label="Has linked PR"
         value={prVisibleIssues}
         detail={`${visibleRate} of active | ${activeIssues - prVisibleIssues} no PR`}
         tone={activeIssues - prVisibleIssues > 0 ? "attention" : "normal"}
@@ -5429,7 +5439,7 @@ function TeamCriticalFlowEfficiencyStrip({
   return (
     <section className="critical-flow-efficiency-strip" aria-label="Active issue to PR and issue testing efficiency">
       <TeamCriticalFlowEfficiencyMetric
-        label="Linked PR coverage"
+        label="Issue to PR"
         value={`${efficiency.issuesWithPr}/${efficiency.activeIssues}`}
         detail={`${efficiency.issuesWithoutPr} no PR | ${efficiency.blockedPrs} blocked PR`}
         tone={prCoverageTone}
@@ -5438,7 +5448,7 @@ function TeamCriticalFlowEfficiencyStrip({
         }
       />
       <TeamCriticalFlowEfficiencyMetric
-        label="To first PR"
+        label="s-1/s0 to PR"
         value={optionalHours(efficiency.averageActiveToFirstPrHours)}
         detail="avg after s-1/s0 start"
         tone={
@@ -5449,7 +5459,7 @@ function TeamCriticalFlowEfficiencyStrip({
         onClick={efficiency.issuesWithoutPr > 0 ? onOpenNoPrIssues : onOpenIssues}
       />
       <TeamCriticalFlowEfficiencyMetric
-        label="To issue testing"
+        label="s-1/s0 to test"
         value={optionalHours(efficiency.averageActiveToTestingHours)}
         detail={`${efficiency.issuesInTesting} in test | ${efficiency.testingCachePendingIssues} cache pending`}
         tone={testingTone}
@@ -12594,7 +12604,7 @@ function PersonQueueRhythmStrip({
             key={row.period}
             onClick={() => openThroughput(row.period)}
           >
-            <span>{metricPeriodShortText(row.period)} created/merged</span>
+            <span>{metricPeriodLabel(row.period)} created/merged</span>
             <strong>{personalPrThroughputPair(row)}</strong>
             <small>
               {personalPrVisibleUniqueTotalForPeriod(person, row.period)} PRs | avg time{" "}
@@ -16979,7 +16989,7 @@ function WatchedPersonOperationsSummary({
                 onClick={() => onThroughputSelect(personalPrThroughputSelectionForPeriod(person, row.period))}
                 aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
               >
-                <span>{metricPeriodText(row.period)}</span>
+                <span>{metricPeriodLabel(row.period)}</span>
                 <strong>
                   {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
                 </strong>
@@ -17488,8 +17498,8 @@ function PersonalPrThroughputPanel({
     >
       <div className="subsection-heading">
         <div>
-          <Title level={5}>Day / Week / Month PRs</Title>
-          <Text type="secondary">Day, week, month PR counts, visible PR list, and active issue flow.</Text>
+          <Title level={5}>PRs By Day / Week / Month</Title>
+          <Text type="secondary">Click a period to inspect created PRs, merged PRs, duration, age, and blockers.</Text>
         </div>
         <Space size={[4, 4]} wrap>
           <button type="button" className="inline-filter-chip" onClick={() => onDrilldownChange("pending_pr")}>
@@ -17518,7 +17528,7 @@ function PersonalPrThroughputPanel({
               }}
               aria-label={`Open ${person.login} ${metricPeriodText(row.period)} PR list`}
             >
-              <span>{metricPeriodText(row.period)}</span>
+              <span>{metricPeriodLabel(row.period)}</span>
               <strong>
                 {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
               </strong>
@@ -17634,7 +17644,7 @@ function PersonalPrThroughputPanel({
               onClick={() => onDrilldownChange("testing")}
             />
             <PersonalFlowEfficiencyMetric
-              label="Severity to PR"
+              label="s-1/s0 to PR"
               value={optionalHours(flow.averageActiveToFirstPrHours)}
               detail="avg from s-1/s0"
               onClick={() =>
@@ -17642,7 +17652,7 @@ function PersonalPrThroughputPanel({
               }
             />
             <PersonalFlowEfficiencyMetric
-              label="Severity to test"
+              label="s-1/s0 to test"
               value={optionalHours(flow.averageActiveToTestingHours)}
               detail="avg from s-1/s0"
               onClick={() => onDrilldownChange("testing")}
