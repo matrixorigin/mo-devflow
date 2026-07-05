@@ -20056,6 +20056,12 @@ export default function App() {
       setNotificationAckError(`${labelText(delivery.status)} notification deliveries do not require acknowledgement.`);
       return;
     }
+    if (!delivery.sourceActive) {
+      setNotificationAckError(
+        "The notification source is already resolved. Refresh the dashboard instead of acknowledging."
+      );
+      return;
+    }
     setNotificationAckSavingId(delivery.id);
     setNotificationAckError(null);
     setNotificationAckResult(null);
@@ -20085,6 +20091,12 @@ export default function App() {
     }
     if (!notificationStatusAllowsRetry(delivery.status)) {
       setNotificationAckError(`${labelText(delivery.status)} notification deliveries cannot be retried.`);
+      return;
+    }
+    if (!delivery.sourceActive) {
+      setNotificationAckError(
+        "The notification source is already resolved. Refresh the dashboard instead of retrying."
+      );
       return;
     }
     setNotificationRetrySavingId(delivery.id);
@@ -20812,6 +20824,7 @@ export default function App() {
           <Space size={[4, 4]} wrap>
             <Tag>{labelText(delivery.sourceType)}</Tag>
             <Tag color="blue">{labelText(delivery.ruleKey)}</Tag>
+            {!delivery.sourceActive ? <Tag color="default">source resolved</Tag> : null}
           </Space>
         )
       },
@@ -20862,13 +20875,16 @@ export default function App() {
         title: "Acknowledgement",
         width: 188,
         render: (_, delivery) => {
-          const canAcknowledge = notificationStatusRequiresAcknowledgement(delivery.status);
+          const canAcknowledge = notificationStatusRequiresAcknowledgement(delivery.status) && delivery.sourceActive;
           if (delivery.acknowledgedAt) {
             return (
               <Tooltip title={`Acknowledged by ${delivery.acknowledgedBy ?? "unknown"}`}>
                 <Tag color="green">{formatDate(delivery.acknowledgedAt)}</Tag>
               </Tooltip>
             );
+          }
+          if (!delivery.sourceActive) {
+            return <Tag color="default">source resolved</Tag>;
           }
           if (!canAcknowledge) {
             return <Tag color="default">not required</Tag>;
@@ -20901,7 +20917,10 @@ export default function App() {
         title: "Retry",
         width: 116,
         render: (_, delivery) => {
-          const canRetry = notificationStatusAllowsRetry(delivery.status);
+          const canRetry = notificationStatusAllowsRetry(delivery.status) && delivery.sourceActive;
+          if (!delivery.sourceActive) {
+            return <Text type="secondary">resolved</Text>;
+          }
           if (!canRetry) {
             return <Text type="secondary">-</Text>;
           }

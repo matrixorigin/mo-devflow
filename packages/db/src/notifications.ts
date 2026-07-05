@@ -1202,6 +1202,11 @@ export type NotificationAcknowledgementResult =
       deliveryStatus: NotificationStatus;
     }
   | {
+      outcome: "source_resolved";
+      deliveryId: number;
+      deliveryStatus: NotificationStatus;
+    }
+  | {
       outcome: "not_found";
     };
 
@@ -1215,8 +1220,9 @@ export async function acknowledgeNotificationDelivery(input: {
 }): Promise<NotificationAcknowledgementResult> {
   const pool = getPool();
   const visibility = notificationDeliveryVisibilityWhereSql("d", input.profile, input.viewer);
+  const activeSourceWhere = activeNotificationDeliverySourceWhereSql("d");
   const [deliveryRows] = await pool.execute<RowData[]>(
-    `SELECT id, status
+    `SELECT id, status, CASE WHEN ${activeSourceWhere} THEN 1 ELSE 0 END AS source_active
      FROM notification_deliveries d
      WHERE d.id = ? AND d.repo_id = ? AND ${visibility.sql}
      LIMIT 1`,
@@ -1228,6 +1234,13 @@ export async function acknowledgeNotificationDelivery(input: {
   }
 
   const deliveryStatus = asString(delivery.status) as NotificationStatus;
+  if (asNumber(delivery.source_active) !== 1) {
+    return {
+      outcome: "source_resolved",
+      deliveryId: asNumber(delivery.id),
+      deliveryStatus
+    };
+  }
   if (!notificationStatusRequiresAcknowledgement(deliveryStatus)) {
     return {
       outcome: "not_acknowledgeable",
@@ -1279,6 +1292,7 @@ export async function getNotificationHealth(input: {
   const [deliveryRows] = await getPool().execute<RowData[]>(
     `SELECT
        ${notificationDeliveryHealthColumns},
+       CASE WHEN ${activeSourceWhere} THEN 1 ELSE 0 END AS source_active,
        a.acknowledged_at,
        a.github_login AS acknowledged_by
      FROM notification_deliveries d
@@ -1344,6 +1358,7 @@ export async function getNotificationHealth(input: {
   const lastDeliveries: NotificationDeliveryView[] = deliveryRows.map((row) => ({
     id: asNumber(row.id),
     sourceType: asString(row.source_type) as NotificationDeliveryView["sourceType"],
+    sourceActive: asNumber(row.source_active) === 1,
     ruleKey: asString(row.rule_key),
     objectType: asString(row.object_type),
     objectNumber: row.object_number === null || row.object_number === undefined ? null : asNumber(row.object_number),

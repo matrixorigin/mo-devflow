@@ -624,11 +624,13 @@ describe("notification delivery filters", () => {
       notificationDelivery({ id: 2, status: "sent", acknowledgedAt: null, sourceType: "workflow_violation" }),
       notificationDelivery({ id: 3, status: "sent", acknowledgedAt: "2026-07-04T01:00:00.000Z" }),
       notificationDelivery({ id: 4, status: "sent", sourceType: "daily_digest", objectType: "digest" }),
-      notificationDelivery({ id: 5, status: "skipped_quiet_hours", sourceType: "ai_drift_signal" })
+      notificationDelivery({ id: 5, status: "skipped_quiet_hours", sourceType: "ai_drift_signal" }),
+      notificationDelivery({ id: 6, status: "failed_transient", sourceType: "attention_item", sourceActive: false }),
+      notificationDelivery({ id: 7, status: "sent", sourceType: "workflow_violation", sourceActive: false })
     ];
 
     expect(notificationDeliveryScopeCounts(deliveries)).toMatchObject({
-      all: 5,
+      all: 7,
       attention: 3,
       failed: 1,
       ack_pending: 2,
@@ -637,6 +639,12 @@ describe("notification delivery filters", () => {
     expect(
       deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "attention")).map((d) => d.id)
     ).toEqual([1, 2, 5]);
+    expect(
+      deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "failed")).map((d) => d.id)
+    ).toEqual([1]);
+    expect(
+      deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "ack_pending")).map((d) => d.id)
+    ).toEqual([2, 4]);
     expect(
       deliveries.filter((delivery) => notificationDeliveryMatchesScope(delivery, "digest")).map((d) => d.id)
     ).toEqual([4]);
@@ -2019,6 +2027,7 @@ function notificationDelivery(input: Partial<NotificationDeliveryView> & { id: n
   return {
     id: input.id,
     sourceType: input.sourceType ?? "attention_item",
+    sourceActive: input.sourceActive ?? true,
     ruleKey: input.ruleKey ?? "critical_no_human_action",
     objectType: input.objectType ?? "issue",
     objectNumber: input.objectNumber ?? 42,

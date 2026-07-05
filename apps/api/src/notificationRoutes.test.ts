@@ -360,4 +360,32 @@ describe("notification routes", () => {
       await app.close();
     }
   });
+
+  test("suppresses acknowledgements after the underlying notification source is resolved", async () => {
+    const app = Fastify();
+    await registerNotificationRoutes(app);
+    mocks.acknowledgeNotificationDelivery.mockResolvedValue({
+      outcome: "source_resolved",
+      deliveryId: 10,
+      deliveryStatus: "sent"
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/notifications/deliveries/10/acknowledge",
+        headers: csrfHeaders
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: "notification_source_resolved",
+        message: "The underlying notification source is no longer active; refresh the dashboard instead of acknowledging.",
+        deliveryStatus: "sent"
+      });
+      expect(mocks.recordProductWriteActionExecution).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 });

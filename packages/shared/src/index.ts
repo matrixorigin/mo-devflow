@@ -815,6 +815,7 @@ export interface NotificationCandidate {
 export interface NotificationDeliveryView {
   id: number;
   sourceType: NotificationSourceType;
+  sourceActive: boolean;
   ruleKey: string;
   objectType: string;
   objectNumber: number | null;

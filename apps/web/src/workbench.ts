@@ -468,10 +468,12 @@ export function notificationDeliveryMatchesScope(
     return true;
   }
   if (filter === "failed") {
-    return delivery.status === "failed_transient" || delivery.status === "failed_permanent";
+    return (
+      delivery.sourceActive && (delivery.status === "failed_transient" || delivery.status === "failed_permanent")
+    );
   }
   if (filter === "ack_pending") {
-    return delivery.status === "sent" && !delivery.acknowledgedAt;
+    return delivery.sourceActive && delivery.status === "sent" && !delivery.acknowledgedAt;
   }
   if (filter === "digest") {
     return (
@@ -481,6 +483,7 @@ export function notificationDeliveryMatchesScope(
     );
   }
   return (
+    delivery.sourceActive &&
     !notificationDeliveryMatchesScope(delivery, "digest") &&
     (notificationDeliveryMatchesScope(delivery, "failed") ||
       notificationDeliveryMatchesScope(delivery, "ack_pending") ||
