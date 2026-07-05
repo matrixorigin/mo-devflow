@@ -106,12 +106,20 @@ describe("person workload summaries", () => {
       personSummary({ login: "alice", activeCriticalIssues: 1, pendingPrs: 2 }),
       personSummary({ login: "bob", attentionPrs: 2, pendingPrs: 2 }),
       personSummary({ login: "carol", needsTriageIssues: 3 }),
-      personSummary({ login: "dave" })
+      personSummary({ login: "dave" }),
+      personSummary({ login: "erin", activeCriticalIssues: 2 }),
+      personSummary({ login: "frank" })
     ];
     const personalViews = [
       personalView({
         login: "alice",
-        activeCriticalIssues: [criticalIssue({ number: 10, criticalAgeHours: 12 })],
+        activeCriticalIssues: [
+          criticalIssue({
+            number: 10,
+            criticalAgeHours: 12,
+            linkedPullRequests: [linkedPullRequest({ testingState: "testing", testingQueueAgeHours: 4 })]
+          })
+        ],
         pendingPrs: [pullRequest({ number: 20, ageHours: 8 })]
       }),
       personalView({
@@ -130,19 +138,59 @@ describe("person workload summaries", () => {
       personalView({
         login: "dave",
         testingIssues: [testingIssue({ number: 50, queueAgeHours: 36 })]
+      }),
+      personalView({
+        login: "erin",
+        activeCriticalIssues: [
+          criticalIssue({ number: 60, criticalAgeHours: 96, linkedPullRequests: [] }),
+          criticalIssue({
+            number: 61,
+            criticalAgeHours: 48,
+            linkedPullRequests: [linkedPullRequest({ testingState: "not_ready", testingQueueAgeHours: null })]
+          })
+        ]
+      }),
+      personalView({
+        login: "frank",
+        analytics: [
+          metricPoint({ date: "2026-07-03", prsCreated: 1, prsMerged: 1 }),
+          metricPoint({ date: "2026-07-04", prsCreated: 6, prsMerged: 4 })
+        ],
+        analyticsWeekly: [
+          {
+            ...metricPoint({ date: "2026-07-04", prsCreated: 9, prsMerged: 8 }),
+            period: "week",
+            periodStart: "2026-06-29",
+            periodEnd: "2026-07-06",
+            label: "2026-W27"
+          }
+        ],
+        analyticsMonthly: [
+          {
+            ...metricPoint({ date: "2026-07-04", prsCreated: 20, prsMerged: 18 }),
+            period: "month",
+            periodStart: "2026-07-01",
+            periodEnd: "2026-08-01",
+            label: "2026-07"
+          }
+        ]
       })
     ];
 
-    expect(sortPeopleForBoard(people, personalViews, "active").map((person) => person.login)[0]).toBe("alice");
+    expect(sortPeopleForBoard(people, personalViews, "active").map((person) => person.login)[0]).toBe("erin");
     expect(sortPeopleForBoard(people, personalViews, "pr_age").map((person) => person.login)[0]).toBe("bob");
     expect(sortPeopleForBoard(people, personalViews, "pr_attention").map((person) => person.login)[0]).toBe("bob");
     expect(sortPeopleForBoard(people, personalViews, "triage").map((person) => person.login)[0]).toBe("carol");
     expect(sortPeopleForBoard(people, personalViews, "testing_wait").map((person) => person.login)[0]).toBe("dave");
+    expect(sortPeopleForBoard(people, personalViews, "pr_throughput").map((person) => person.login)[0]).toBe("frank");
+    expect(sortPeopleForBoard(people, personalViews, "flow_gap").map((person) => person.login)[0]).toBe("erin");
     expect(sortPeopleForBoard(people, personalViews, "name").map((person) => person.login)).toEqual([
       "alice",
       "bob",
       "carol",
-      "dave"
+      "dave",
+      "erin",
+      "frank"
     ]);
   });
 
@@ -2040,9 +2088,9 @@ function personalView(input: Partial<PersonalActionView>): PersonalActionView {
     prsCreatedYesterday: input.prsCreatedYesterday ?? [],
     prsMergedYesterday: input.prsMergedYesterday ?? [],
     prPeriodLists: input.prPeriodLists ?? [],
-    analytics: [],
-    analyticsWeekly: [],
-    analyticsMonthly: []
+    analytics: input.analytics ?? [],
+    analyticsWeekly: input.analyticsWeekly ?? [],
+    analyticsMonthly: input.analyticsMonthly ?? []
   };
 }
 
@@ -2100,25 +2148,27 @@ function criticalIssue(input: Partial<CriticalIssueView>): CriticalIssueView {
   };
 }
 
-function linkedPullRequest(): CriticalIssueView["linkedPullRequests"][number] {
+function linkedPullRequest(
+  input: Partial<CriticalIssueView["linkedPullRequests"][number]> = {}
+): CriticalIssueView["linkedPullRequests"][number] {
   return {
-    number: 100,
-    title: "fix issue",
-    htmlUrl: "https://github.com/example/repo/pull/100",
-    state: "open",
-    ownerLogin: "alice",
-    ageHours: 24,
-    lastHumanActionAt: "2026-07-03T00:00:00Z",
-    reviewDecision: null,
-    mergeStateStatus: null,
-    ciState: null,
-    testingState: "not_ready",
-    testingTesters: [],
-    testingQueueAgeHours: null,
-    workflowSkipped: false,
-    attentionFlags: [],
-    linkedIssueNumbers: [10],
-    isComplete: true
+    number: input.number ?? 100,
+    title: input.title ?? "fix issue",
+    htmlUrl: input.htmlUrl ?? "https://github.com/example/repo/pull/100",
+    state: input.state ?? "open",
+    ownerLogin: input.ownerLogin ?? "alice",
+    ageHours: input.ageHours ?? 24,
+    lastHumanActionAt: input.lastHumanActionAt ?? "2026-07-03T00:00:00Z",
+    reviewDecision: input.reviewDecision ?? null,
+    mergeStateStatus: input.mergeStateStatus ?? null,
+    ciState: input.ciState ?? null,
+    testingState: input.testingState ?? "not_ready",
+    testingTesters: input.testingTesters ?? [],
+    testingQueueAgeHours: input.testingQueueAgeHours ?? null,
+    workflowSkipped: input.workflowSkipped ?? false,
+    attentionFlags: input.attentionFlags ?? [],
+    linkedIssueNumbers: input.linkedIssueNumbers ?? [10],
+    isComplete: input.isComplete ?? true
   };
 }
 

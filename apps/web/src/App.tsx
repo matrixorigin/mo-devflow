@@ -363,6 +363,8 @@ const peopleBoardSorts = [
   "active",
   "pr_age",
   "pr_attention",
+  "pr_throughput",
+  "flow_gap",
   "triage",
   "testing_wait",
   "name"
@@ -3673,6 +3675,12 @@ export function peopleSortLabel(sort: PeopleBoardSort): string {
   if (sort === "pr_attention") {
     return "PR attention";
   }
+  if (sort === "pr_throughput") {
+    return "PR volume";
+  }
+  if (sort === "flow_gap") {
+    return "flow gap";
+  }
   if (sort === "triage") {
     return "triage";
   }
@@ -4023,6 +4031,8 @@ function PeopleSortControl({
           { label: "Active", value: "active" },
           { label: "PR age", value: "pr_age" },
           { label: "PR attention", value: "pr_attention" },
+          { label: "PR volume", value: "pr_throughput" },
+          { label: "Flow gap", value: "flow_gap" },
           { label: "Triage", value: "triage" },
           { label: "Test wait", value: "testing_wait" },
           { label: "Name", value: "name" }
@@ -10593,6 +10603,7 @@ function PeopleFocusQueue({
   personalViews,
   selectedLogin,
   scopeFilter,
+  sort,
   mode,
   onSelect,
   onMetricSelect,
@@ -10602,13 +10613,14 @@ function PeopleFocusQueue({
   personalViews: PersonalActionView[];
   selectedLogin: string | null;
   scopeFilter: PeopleScopeFilter;
+  sort: PeopleBoardSort;
   mode: "watched" | "observed";
   onSelect: (login: string) => void;
   onMetricSelect?: (login: string, metric: PersonalDrilldownFilter) => void;
   onThroughputSelect?: (login: string, selection: PersonalPrThroughputSelection) => void;
 }) {
   const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
-  const focusPeople = sortPeopleForBoard(people, personalViews, "workload").slice(0, 5);
+  const focusPeople = sortPeopleForBoard(people, personalViews, sort).slice(0, 5);
   const counts = peopleBoardScopeCounts(people, personalViews);
 
   if (focusPeople.length === 0) {
@@ -10621,7 +10633,7 @@ function PeopleFocusQueue({
         <div>
           <Text strong>By Person</Text>
           <Text type="secondary">
-            Top {focusPeople.length} by workload in {peopleScopeLabel(scopeFilter)}.
+            Top {focusPeople.length} by {peopleSortLabel(sort)} in {peopleScopeLabel(scopeFilter)}.
           </Text>
         </div>
         <Space size={[4, 4]} wrap>
@@ -22196,6 +22208,7 @@ export default function App() {
                     personalViews={data.personalViews}
                     selectedLogin={selectedPersonalView?.login ?? null}
                     scopeFilter={peopleScopeFilter}
+                    sort={peopleSort}
                     mode={peopleBoardUsesObserved ? "observed" : "watched"}
                     onSelect={openPeopleBoardPerson}
                     onMetricSelect={openPeopleBoardMetric}

@@ -75,6 +75,7 @@ describe("dashboard hash filters", () => {
     });
     expect(peopleScopeFilterFromHash(`#${peopleHash}`)).toBe("triage");
     expect(peopleSortFromHash(`#${peopleHash}`)).toBe("testing_wait");
+    expect(peopleSortFromHash("#people?sort=flow_gap")).toBe("flow_gap");
 
     const personalHash = dashboardHashForView("Personal", {
       personLogin: "alice",
@@ -354,6 +355,8 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("workload")).toBe("workload");
     expect(peopleSortLabel("active")).toBe("active issues");
     expect(peopleSortLabel("pr_age")).toBe("PR age");
+    expect(peopleSortLabel("pr_throughput")).toBe("PR volume");
+    expect(peopleSortLabel("flow_gap")).toBe("flow gap");
     expect(peopleSortLabel("testing_wait")).toBe("testing wait");
   });
 

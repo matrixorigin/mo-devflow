@@ -80,7 +80,8 @@ export interface PersonalDailyPlanItem {
 
 export type PeopleScopeFilter =
   "all" | "critical" | "attention" | "triage" | "deferred" | "pending_pr" | "testing" | "yesterday_pr";
-export type PeopleBoardSort = "workload" | "active" | "pr_age" | "pr_attention" | "triage" | "testing_wait" | "name";
+export type PeopleBoardSort =
+  "workload" | "active" | "pr_age" | "pr_attention" | "pr_throughput" | "flow_gap" | "triage" | "testing_wait" | "name";
 
 export const peopleScopeFilters: PeopleScopeFilter[] = [
   "all",
@@ -1127,6 +1128,51 @@ function personTestingCount(person: PersonalActionView | undefined): number {
   return person ? personalTestingWorkCount(person) : 0;
 }
 
+function latestMetricPoint(points: DailyMetricPoint[] | undefined): DailyMetricPoint | null {
+  if (!points || points.length === 0) {
+    return null;
+  }
+  const sorted = [...points].sort(
+    (left, right) =>
+      Date.parse(left.date) - Date.parse(right.date) || Date.parse(left.generatedAt) - Date.parse(right.generatedAt)
+  );
+  return sorted.at(-1) ?? null;
+}
+
+function metricPrThroughput(point: DailyMetricPoint | null): number {
+  return point ? point.prsCreated + point.prsMerged : 0;
+}
+
+function personPrThroughputSortValues(person: PersonalActionView | undefined): number[] {
+  return [
+    metricPrThroughput(latestMetricPoint(person?.analytics)),
+    metricPrThroughput(latestMetricPoint(person?.analyticsWeekly)),
+    metricPrThroughput(latestMetricPoint(person?.analyticsMonthly)),
+    person?.pendingPrs.length ?? 0,
+    person?.attentionPrs.length ?? 0
+  ];
+}
+
+function personFlowGapSortValues(summary: PersonSummary, person: PersonalActionView | undefined): number[] {
+  const activeIssues = person?.activeCriticalIssues ?? [];
+  const issuesWithoutPr = activeIssues.filter((issue) => issue.linkedPullRequests.length === 0);
+  const issuesNotInTesting = activeIssues.filter(
+    (issue) =>
+      issue.linkedPullRequests.length === 0 ||
+      !issue.linkedPullRequests.some(
+        (pr) => pr.testingState !== "not_ready" || pr.testingQueueAgeHours !== null || pr.testingTesters.length > 0
+      )
+  );
+  return [
+    issuesWithoutPr.length,
+    issuesNotInTesting.length,
+    maxFinite(issuesWithoutPr.map((issue) => issue.criticalAgeHours)) ?? -1,
+    maxFinite(issuesNotInTesting.map((issue) => issue.criticalAgeHours)) ?? -1,
+    summary.activeCriticalIssues,
+    summary.attentionPrs
+  ];
+}
+
 function comparePersonNumbers(leftValues: number[], rightValues: number[]): number {
   for (let index = 0; index < leftValues.length; index += 1) {
     const delta = (rightValues[index] ?? 0) - (leftValues[index] ?? 0);
@@ -1173,6 +1219,20 @@ export function sortPeopleForBoard(
       const delta = comparePersonNumbers(
         [left.attentionPrs, maxPersonAttentionPrAge(leftPersonal), left.pendingPrs],
         [right.attentionPrs, maxPersonAttentionPrAge(rightPersonal), right.pendingPrs]
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+    if (sort === "pr_throughput") {
+      const delta = comparePersonNumbers(
+        personPrThroughputSortValues(leftPersonal),
+        personPrThroughputSortValues(rightPersonal)
+      );
+      return delta || left.login.localeCompare(right.login);
+    }
+    if (sort === "flow_gap") {
+      const delta = comparePersonNumbers(
+        personFlowGapSortValues(left, leftPersonal),
+        personFlowGapSortValues(right, rightPersonal)
       );
       return delta || left.login.localeCompare(right.login);
     }
