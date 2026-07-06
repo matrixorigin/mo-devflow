@@ -70,6 +70,7 @@ import {
   pendingPrRiskScore,
   prLifecycleDurationText,
   prBoardTabFromHash,
+  prOperationsFirstAction,
   prOperationsSummaryCounts,
   prRotationTableSummary,
   prScopeHelp,
@@ -1026,6 +1027,28 @@ describe("dashboard hash filters", () => {
 
     expect(pendingPrRiskScore(ciBlockedPr as any)).toBeGreaterThan(pendingPrRiskScore(reviewIdlePr as any));
     expect(pendingPrRiskScore(conflictedPr as any)).toBeGreaterThan(pendingPrRiskScore(ciBlockedPr as any));
+  });
+
+  it("prioritizes PR operation focus by active issue and then hard blocker stage", () => {
+    const counts = {
+      activeIssuePrs: 0,
+      attentionPrs: 3,
+      noActionPrs: 0,
+      ciFailedPrs: 1,
+      requestedChangePrs: 1,
+      conflictPrs: 1,
+      noIssuePrs: 0,
+      evidenceIncompletePrs: 0,
+      evidenceGapPrs: 0,
+      issueLinkPendingPrs: 0
+    };
+
+    expect(prOperationsFirstAction(counts)).toMatchObject({ scope: "conflict" });
+    expect(prOperationsFirstAction({ ...counts, conflictPrs: 0 })).toMatchObject({ scope: "ci_failed" });
+    expect(prOperationsFirstAction({ ...counts, conflictPrs: 0, ciFailedPrs: 0 })).toMatchObject({
+      scope: "request_changes"
+    });
+    expect(prOperationsFirstAction({ ...counts, activeIssuePrs: 1 })).toMatchObject({ scope: "active_issue" });
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {

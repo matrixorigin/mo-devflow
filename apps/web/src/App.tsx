@@ -11344,6 +11344,13 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("testing_evidence_gap")}
       />
       <CriticalBoardStat
+        label="conflict"
+        value={conflictPrs}
+        tone={conflictPrs > 0 ? "critical" : "good"}
+        active={scopeFilter === "conflict"}
+        onClick={() => onScopeFilterChange("conflict")}
+      />
+      <CriticalBoardStat
         label="CI failed"
         value={ciFailedPrs}
         tone={ciFailedPrs > 0 ? "critical" : "good"}
@@ -11356,13 +11363,6 @@ function PrBoardSummary({
         tone={requestedChangePrs > 0 ? "critical" : "good"}
         active={scopeFilter === "request_changes"}
         onClick={() => onScopeFilterChange("request_changes")}
-      />
-      <CriticalBoardStat
-        label="conflict"
-        value={conflictPrs}
-        tone={conflictPrs > 0 ? "critical" : "good"}
-        active={scopeFilter === "conflict"}
-        onClick={() => onScopeFilterChange("conflict")}
       />
       <CriticalBoardStat
         label="no visible issue after sync"
@@ -11481,7 +11481,7 @@ export function pagedRangeLabel(total: number, page: number, pageSize: number): 
   return `${start}-${end}`;
 }
 
-function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
+export function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
   scope: PrScopeFilter;
   title: string;
   detail: string;
@@ -11493,11 +11493,11 @@ function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
       detail: `${counts.activeIssuePrs} PRs are attached to active s-1/s0 work.`
     };
   }
-  if (counts.requestedChangePrs > 0) {
+  if (counts.conflictPrs > 0) {
     return {
-      scope: "request_changes",
-      title: "Resolve requested changes",
-      detail: `${counts.requestedChangePrs} PRs cannot move until review feedback is handled.`
+      scope: "conflict",
+      title: "Resolve merge conflicts",
+      detail: `${counts.conflictPrs} PRs are blocked by merge state.`
     };
   }
   if (counts.ciFailedPrs > 0) {
@@ -11507,11 +11507,11 @@ function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
       detail: `${counts.ciFailedPrs} PRs have failing or errored checks.`
     };
   }
-  if (counts.conflictPrs > 0) {
+  if (counts.requestedChangePrs > 0) {
     return {
-      scope: "conflict",
-      title: "Resolve merge conflicts",
-      detail: `${counts.conflictPrs} PRs are blocked by merge state.`
+      scope: "request_changes",
+      title: "Resolve requested changes",
+      detail: `${counts.requestedChangePrs} PRs cannot move until review feedback is handled.`
     };
   }
   if (counts.noActionPrs > 0) {
@@ -11608,6 +11608,14 @@ function PrOperationsSummary({
             onClick={() => onScopeFilterChange("active_issue")}
           />
           <PrOpsTile
+            label="Conflict"
+            value={counts.conflictPrs}
+            detail="merge blocked"
+            tone={counts.conflictPrs > 0 ? "critical" : "good"}
+            active={scopeFilter === "conflict"}
+            onClick={() => onScopeFilterChange("conflict")}
+          />
+          <PrOpsTile
             label="CI failed"
             value={counts.ciFailedPrs}
             detail="failed checks"
@@ -11622,14 +11630,6 @@ function PrOperationsSummary({
             tone={counts.requestedChangePrs > 0 ? "critical" : "good"}
             active={scopeFilter === "request_changes"}
             onClick={() => onScopeFilterChange("request_changes")}
-          />
-          <PrOpsTile
-            label="Conflict"
-            value={counts.conflictPrs}
-            detail="merge blocked"
-            tone={counts.conflictPrs > 0 ? "critical" : "good"}
-            active={scopeFilter === "conflict"}
-            onClick={() => onScopeFilterChange("conflict")}
           />
           <PrOpsTile
             label="PR detail pending"
