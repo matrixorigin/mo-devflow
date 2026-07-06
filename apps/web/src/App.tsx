@@ -925,10 +925,10 @@ function manualRefreshLayerDescription(layer: ManualRefreshLayer): string {
     return "Repair PR review, CI, mergeability, and linked-issue evidence.";
   }
   if (layer === "issue_timeline_backfill") {
-    return "Repair severity promotion and issue handoff timelines.";
+    return "Repair severity promotion and issue testing timelines.";
   }
   if (layer === "comment_backfill") {
-    return "Repair comment evidence for deferred reasons and handoff signals.";
+    return "Repair comment evidence for deferred reasons and issue testing signals.";
   }
   if (layer === "webhooks") {
     return "Process queued webhook deliveries and missed event repair.";
@@ -2231,8 +2231,8 @@ function profileCapabilityCards(data: DashboardSummary): ProfileCapabilityCard[]
       label: "Issue testing",
       value: configuration.testingHandoffConfigured ? `${configuration.testerCount} testers` : "not configured",
       detail: configuration.testingHandoffConfigured
-        ? "Issue testing is driven by issue assignee or issue label handoff signals."
-        : "Testing turnover cannot be trusted until issue handoff signals are configured.",
+        ? "Issue testing is driven by issue assignee or configured issue labels."
+        : "Testing turnover cannot be trusted until issue testing rules are configured.",
       configured: configuration.testingHandoffConfigured
     },
     {
@@ -2489,12 +2489,12 @@ function testingIssueQueueAgeEvidenceMetricLabel(evidence: TestingIssueQueueView
 
 function testingIssueHandoffSummary(issue: TestingIssueQueueView): string {
   if (issue.testingSignals.length > 0) {
-    return `handoff: ${issue.testingSignals.slice(0, 2).map(testingSignalTagLabel).join(", ")}`;
+    return `testing signal: ${issue.testingSignals.slice(0, 2).map(testingSignalTagLabel).join(", ")}`;
   }
   if (issue.testers.length > 0) {
-    return `handoff: tester assignment`;
+    return "testing signal: tester assignment";
   }
-  return "handoff evidence not visible";
+  return "issue testing evidence not visible";
 }
 
 function ciColor(value: string): string {
@@ -3864,7 +3864,7 @@ export function prScopeLabel(filter: PrScopeFilter): string {
     return "conflict";
   }
   if (filter === "no_issue") {
-    return "no linked issue in cache";
+    return "no visible issue after sync";
   }
   if (filter === "issue_link_pending") {
     return "issue link sync pending";
@@ -4686,7 +4686,7 @@ function PrFilterBar({
             { label: "CI failed", value: "ci_failed" },
             { label: "Requested changes", value: "request_changes" },
             { label: "Conflict", value: "conflict" },
-            { label: "No linked issue in cache", value: "no_issue" },
+            { label: "No visible issue after sync", value: "no_issue" },
             { label: "Issue link sync pending", value: "issue_link_pending" },
             { label: "PR cache pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
@@ -6077,7 +6077,7 @@ function TeamCriticalFlowPanel({
       <div className="team-critical-flow-heading">
         <div>
           <Title level={4}>Active s-1/s0 Flow</Title>
-          <Text type="secondary">s-1/s0 active age, linked PR coverage, blockers, and issue testing handoff.</Text>
+          <Text type="secondary">s-1/s0 active age, linked PR coverage, blockers, and issue testing state.</Text>
         </div>
         <div className="team-critical-flow-tools">
           <div className="board-filter-group board-filter-group-inline team-critical-flow-ai">
@@ -6217,7 +6217,7 @@ export function teamCriticalFlowCommandSummary(efficiency: TeamCriticalFlowEffic
 
   if (efficiency.testingCachePendingIssues > 0) {
     return {
-      title: `${efficiency.testingCachePendingIssues} testing handoffs need cache evidence`,
+      title: `${efficiency.testingCachePendingIssues} issue testing signals need cache evidence`,
       detail: `${testing} | refresh issue testing evidence before judging wait time`,
       tone: "attention",
       target: "testing",
@@ -7039,6 +7039,7 @@ function TeamPrRiskRow({
             PR #{pr.number}
           </WorkObjectLink>
           <Tag>{hours(pr.ageHours)}</Tag>
+          {prEvidencePending(pr) ? <Tag color="gold">PR detail sync pending</Tag> : null}
           {activeIssues.length > 0 ? (
             <Tag color={severityColor(activeIssues[0]?.severity ?? null)}>
               {activeIssues.length} active issue{activeIssues.length === 1 ? "" : "s"}
@@ -7066,12 +7067,14 @@ function TeamPrRiskRow({
         </a>
         <div className="team-work-tags">
           <Tag>{pr.ownerLogin}</Tag>
-          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-          {pr.reviewDecision ? (
-            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
-          ) : null}
           {pr.mergeStateStatus ? (
             <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {prHasRequestChanges(pr) ? (
+            <Tag color="red">changes requested</Tag>
+          ) : pr.reviewDecision ? (
+            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           {visibleReasons.map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
@@ -7490,12 +7493,14 @@ function TeamPullRequestPreviewModal({
           <Tag>{pr.ownerLogin}</Tag>
           <Tag>{hours(pr.ageHours)}</Tag>
           {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
-          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-          {pr.reviewDecision ? (
-            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
-          ) : null}
           {pr.mergeStateStatus ? (
             <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
+          {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+          {prHasRequestChanges(pr) ? (
+            <Tag color="red">changes requested</Tag>
+          ) : pr.reviewDecision ? (
+            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           <Tooltip title={issueLinkStatus.detail}>
             <Tag color={issueLinkStatus.color}>{issueLinkStatus.label}</Tag>
@@ -7834,7 +7839,7 @@ function TeamTestingIssueRow({
             onCollapse={testingSignalLazy.reset}
           />
           {issue.testers.length === 0 && issue.testingSignals.length === 0 ? (
-            <Tag color="gold">handoff evidence pending</Tag>
+            <Tag color="gold">issue testing evidence pending</Tag>
           ) : null}
           <Tag>{issue.linkedPullRequests.length} linked PR</Tag>
           {blockerCount > 0 ? <Tag color="orange">{blockerCount} PR blockers</Tag> : null}
@@ -9036,11 +9041,11 @@ function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueCont
   return (
     prActiveIssueRiskScore(activeIssues) +
     prAttentionReasons(pr).length * 80 +
-    (pr.reviewDecision === "changes_requested" ? 180 : 0) +
+    (pr.mergeStateStatus === "dirty" ? 240 : 0) +
     (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
-      ? 160
+      ? 220
       : 0) +
-    (pr.mergeStateStatus === "dirty" ? 160 : 0) +
+    (prHasRequestChanges(pr) ? 180 : 0) +
     (isTestingStalePr(pr) ? 150 : 0) +
     (pr.testingQueueAgeHours !== null ? 80 : 0) +
     (pr.ageHours >= 24 ? 60 : 0) +
@@ -9124,7 +9129,7 @@ function teamTestingIssueNextAction(issue: TestingIssueQueueView, blockerCount: 
     return "Check issue testing status";
   }
   if (issue.queueAgeEvidence === "issue_cache_timestamp") {
-    return "Backfill handoff time";
+    return "Backfill testing start";
   }
   return "Track test result";
 }
@@ -11353,6 +11358,7 @@ interface PrOperationsSummaryCounts {
   ciFailedPrs: number;
   requestedChangePrs: number;
   conflictPrs: number;
+  noIssuePrs: number;
   evidenceIncompletePrs: number;
   evidenceGapPrs: number;
   issueLinkPendingPrs: number;
@@ -11384,6 +11390,7 @@ export function prOperationsSummaryCounts(
     ciFailedPrs: prs.filter(prHasFailedCi).length,
     requestedChangePrs: prs.filter(prHasRequestChanges).length,
     conflictPrs: prs.filter(prHasConflict).length,
+    noIssuePrs: prs.filter((pr) => prHasNoLinkedIssue(pr, criticalIssuesByPr.get(pr.number) ?? [])).length,
     evidenceIncompletePrs: evidenceIncompleteNumbers.size,
     evidenceGapPrs,
     issueLinkPendingPrs
@@ -11474,6 +11481,13 @@ function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
       scope: counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending",
       title: "Repair PR cache evidence",
       detail: `${counts.evidenceIncompletePrs} unique PRs have incomplete PR or issue link evidence.`
+    };
+  }
+  if (counts.noIssuePrs > 0) {
+    return {
+      scope: "no_issue",
+      title: "Review PRs without visible issues",
+      detail: `${counts.noIssuePrs} PRs have completed sync but no visible issue relationship.`
     };
   }
   return {
@@ -11573,12 +11587,28 @@ function PrOperationsSummary({
             onClick={() => onScopeFilterChange("conflict")}
           />
           <PrOpsTile
-            label="Evidence incomplete"
-            value={counts.evidenceIncompletePrs}
-            detail={`${counts.evidenceGapPrs} PR evidence | ${counts.issueLinkPendingPrs} issue links`}
-            tone={counts.evidenceIncompletePrs > 0 ? "attention" : "good"}
-            active={scopeFilter === "evidence_pending" || scopeFilter === "issue_link_pending"}
-            onClick={() => onScopeFilterChange(counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending")}
+            label="PR detail pending"
+            value={counts.evidenceGapPrs}
+            detail={`${counts.evidenceGapPrs} detail gaps`}
+            tone={counts.evidenceGapPrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "evidence_pending"}
+            onClick={() => onScopeFilterChange("evidence_pending")}
+          />
+          <PrOpsTile
+            label="Issue links pending"
+            value={counts.issueLinkPendingPrs}
+            detail="sync before judging"
+            tone={counts.issueLinkPendingPrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "issue_link_pending"}
+            onClick={() => onScopeFilterChange("issue_link_pending")}
+          />
+          <PrOpsTile
+            label="No visible issue"
+            value={counts.noIssuePrs}
+            detail="after completed sync"
+            tone={counts.noIssuePrs > 0 ? "attention" : "good"}
+            active={scopeFilter === "no_issue"}
+            onClick={() => onScopeFilterChange("no_issue")}
           />
         </div>
       </div>
@@ -11721,8 +11751,8 @@ function PrEvidenceRepairBanner({
         <div className="pr-evidence-repair-content">
           <Text type="secondary">
             {hasGap
-              ? "Refresh PR detail, issue link, and issue handoff evidence before treating these rows as final unlinked or stalled signals."
-              : "No PR detail, issue link, or issue handoff evidence gap is visible in the current cache for this filter."}
+              ? "Refresh PR detail, issue link, and issue testing evidence before treating these rows as final unlinked or stalled signals."
+              : "No PR detail, issue link, or issue testing evidence gap is visible in the current cache for this filter."}
           </Text>
           <div className="pr-evidence-repair-actions" aria-label="PR evidence repair shortcuts">
             <button
@@ -11750,7 +11780,7 @@ function PrEvidenceRepairBanner({
               } ${scopeFilter === "testing_evidence_gap" ? "inline-filter-chip-active" : ""}`}
               onClick={() => onScopeChange("testing_evidence_gap")}
             >
-              {summary.testingEvidenceGap} issue handoff
+              {summary.testingEvidenceGap} issue testing evidence
             </button>
             <Button size="small" loading={saving} disabled={!authenticated} onClick={onQueueRefresh}>
               {authenticated ? "Queue evidence refresh" : "Sign in to refresh"}
@@ -12701,9 +12731,9 @@ function TestingCommandBoard({
   return (
     <div className="testing-command-board">
       <div className="testing-scope-note">
-        <Text strong>An issue enters testing when it matches configured handoff rules.</Text>
+        <Text strong>An issue enters testing when it matches configured issue testing rules.</Text>
         <Text type="secondary">
-          Supported handoff signals are issue tester assignment or configured issue labels. PR reviewer, assignee,
+          Supported issue testing signals are issue tester assignment or configured issue labels. PR reviewer, assignee,
           label, and comment signals do not move an issue into testing.
         </Text>
       </div>
@@ -12767,7 +12797,7 @@ function TestingCommandBoard({
           onClick={testing.testers.length > 0 ? scrollToTesterPanel : undefined}
         />
         <TestingBoardStat
-          label="issue handoffs"
+          label="testing starts"
           value={testing.issueTransitionEvents}
           tone={testing.issueTransitionEvents > 0 ? "normal" : "muted"}
           actionLabel="View"
@@ -12782,7 +12812,7 @@ function TestingCommandBoard({
         />
         {hasTurnoverHistory ? (
           <TestingBoardStat
-            label="handoff to close"
+            label="testing to close"
             value={testing.averageHandoffToCloseHours === null ? "-" : hours(testing.averageHandoffToCloseHours)}
             tone={
               testing.averageHandoffToCloseHours !== null && testing.averageHandoffToCloseHours >= 24
@@ -12811,7 +12841,7 @@ function TestingCommandBoard({
             <div>
               <Text strong>Tester Efficiency</Text>
               <Text type="secondary">
-                Current issue queue and cached handoff-to-close samples by configured tester.
+                Current issue queue and cached testing-to-close samples by configured tester.
               </Text>
             </div>
             <Space size={[6, 6]} wrap>
@@ -12923,7 +12953,7 @@ function TestingCommandBoard({
             />
             <TestingQueueLane
               title="Linked PRs"
-              description="PR status for issues already assigned to testers; the issue remains the testing handoff."
+              description="PR status for issues already assigned to testers; the issue remains the testing source."
               prs={activePrs}
               visibleLimit={6}
               tone="normal"
@@ -13333,7 +13363,7 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
         </div>
 
         <section className="testing-issue-preview-section">
-          <Text strong>Handoff evidence</Text>
+          <Text strong>Issue testing evidence</Text>
           {issue.testingSignals.length === 0 ? (
             <Text type="secondary">No configured issue testing signal is visible in cache.</Text>
           ) : (
@@ -13467,7 +13497,7 @@ function TestingTurnoverBreakdown({
         tone={testing.staleQueueIssues > 0 ? "critical" : testing.queueIssues > 0 ? "attention" : "normal"}
       />
       <TestingTurnoverCard
-        label="Handoff to close"
+        label="Testing to close"
         value={testing.averageHandoffToCloseHours === null ? "-" : hours(testing.averageHandoffToCloseHours)}
         detail={`${testing.handoffToCloseSamples} closed issue samples`}
         tone={handoffToCloseTone}
@@ -13595,7 +13625,7 @@ function TestingQueueRow({ pr }: { pr: PendingPrView }) {
           {pr.testingTesters.length > 0 ? (
             <span>testers {pr.testingTesters.slice(0, 3).join(", ")}</span>
           ) : (
-            <span>issue handoff evidence is on the linked issue</span>
+            <span>issue testing evidence is on the linked issue</span>
           )}
         </div>
       </div>
@@ -15131,7 +15161,13 @@ function PullRequestWorkCard({
       <div className="work-tag-row">
         <Tag color={pr.state === "open" ? "green" : "default"}>{pr.state}</Tag>
         {pr.draft ? <Tag color="gold">draft</Tag> : null}
-        {pr.reviewDecision ? (
+        {pr.mergeStateStatus ? (
+          <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+        ) : null}
+        {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+        {prHasRequestChanges(pr) ? (
+          <Tag color="red">changes requested</Tag>
+        ) : pr.reviewDecision ? (
           <Tag
             color={
               pr.reviewDecision === "changes_requested" ? "red" : pr.reviewDecision === "approved" ? "green" : "blue"
@@ -15139,10 +15175,6 @@ function PullRequestWorkCard({
           >
             {labelText(pr.reviewDecision)}
           </Tag>
-        ) : null}
-        {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-        {pr.mergeStateStatus ? (
-          <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
         ) : null}
         {isTestingQueuePr(pr) ? <TestingStateTag state={pr.testingState} /> : null}
         {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
@@ -15353,7 +15385,7 @@ function PullRequestCardList({
     { label: "Merge", value: "merge" },
     { label: "Issue testing", value: "testing" },
     { label: "Issue link sync pending", value: "issue_link_pending" },
-    { label: "No linked issue in cache", value: "confirmed_no_issue" }
+    { label: "No visible issue after sync", value: "confirmed_no_issue" }
   ];
   const filterOptions = baseFilterOptions.filter(
     (option) => option.value === "all" || prs.some((pr) => pullRequestMatchesListFilter(pr, option.value))
@@ -15487,7 +15519,7 @@ function PersonalActionSnapshot({
         <ActivitySummaryTile
           label="Issue testing"
           value={counts.testing}
-          detail="issue handoff"
+          detail="issue testing"
           tone={counts.testing > 0 ? "normal" : "muted"}
           active={activeDrilldownFilter === "testing"}
           onSelect={() => openQueueFilter("testing")}
@@ -17607,7 +17639,7 @@ function PersonalRotationOverview({
               <>
                 <div className="personal-testing-subsection">
                   <div className="personal-testing-subheading">
-                    <Text strong>Issue handoff</Text>
+                    <Text strong>Issue testing</Text>
                     <Tag color={staleTestingWorkCount > 0 ? "red" : testingWorkCount > 0 ? "blue" : "default"}>
                       {testingWorkCount}
                     </Tag>
@@ -22915,16 +22947,20 @@ export default function App() {
           return hasBlocker ? (
             <Space size={[4, 4]} wrap>
               {pr.draft ? <Tag color="gold">draft</Tag> : null}
-              {pr.reviewDecision ? (
+              {pr.mergeStateStatus ? (
+                <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+              ) : null}
+              {pr.ciState ? <Tag color={ciColor(pr.ciState)}>CI {labelText(pr.ciState)}</Tag> : null}
+              {prHasRequestChanges(pr) ? (
+                <Tag color="red">changes requested</Tag>
+              ) : pr.reviewDecision ? (
                 <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
                   review {labelText(pr.reviewDecision)}
                 </Tag>
-              ) : pr.attentionFlags.includes("review_requested_no_response") ? (
+              ) : pr.attentionFlags.includes("review_requested_no_response") &&
+                !prHasFailedCi(pr) &&
+                !prHasConflict(pr) ? (
                 <Tag color="orange">review waiting</Tag>
-              ) : null}
-              {pr.ciState ? <Tag color={ciColor(pr.ciState)}>CI {labelText(pr.ciState)}</Tag> : null}
-              {pr.mergeStateStatus ? (
-                <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
               ) : null}
             </Space>
           ) : (
@@ -23504,7 +23540,7 @@ export default function App() {
             )
         },
         {
-          title: "Handoff evidence",
+          title: "Issue testing evidence",
           dataIndex: "testingSignals",
           ellipsis: true,
           render: (signals: string[]) => {
@@ -23522,7 +23558,7 @@ export default function App() {
                 {hiddenSignals.length > 0 ? (
                   <Popover
                     trigger="click"
-                    title={`${hiddenSignals.length} more handoff signals`}
+                    title={`${hiddenSignals.length} more issue testing signals`}
                     content={
                       <Space size={[4, 4]} wrap>
                         {hiddenSignals.map((signal) => (
@@ -23536,9 +23572,9 @@ export default function App() {
                     <button
                       type="button"
                       className="linked-overflow-button"
-                      aria-label={`View ${hiddenSignals.length} more handoff signals`}
+                      aria-label={`View ${hiddenSignals.length} more issue testing signals`}
                     >
-                      View {hiddenSignals.length} more handoff signals
+                      View {hiddenSignals.length} more issue testing signals
                     </button>
                   </Popover>
                 ) : null}
@@ -24187,7 +24223,7 @@ export default function App() {
                 className="band"
                 type="warning"
                 title={`${data.testing.staleQueueIssues} issues have waited on issue testing too long`}
-                description="Some issue testing waits still use cached issue update time until GitHub issue timeline handoff evidence is backfilled."
+                description="Some issue testing waits still use cached issue update time until GitHub issue testing timeline evidence is backfilled."
                 action={
                   <Button size="small" onClick={() => openIssueTestingQueue("stale")}>
                     Open issue testing
@@ -24496,7 +24532,7 @@ export default function App() {
                         {data.testing.queuePrs} linked PRs
                       </button>
                       {testingHasIssueTransitions ? (
-                        <Tag>{data.testing.issueTransitionEvents} issue handoffs</Tag>
+                        <Tag>{data.testing.issueTransitionEvents} testing starts</Tag>
                       ) : null}
                       {testingHasIssueTransitions ? (
                         <Tag>last start {formatDate(data.testing.lastIssueTransitionAt)}</Tag>

@@ -1823,16 +1823,61 @@ const attentionFlagLabels: Record<string, string> = {
 };
 
 const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+const prDetailSyncPendingReason = "PR detail sync pending";
+const prAttentionReasonPriority = new Map<string, number>([
+  [attentionFlagLabels.merge_conflict, 110],
+  [attentionFlagLabels.ci_failed, 100],
+  [prDetailSyncPendingReason, 95],
+  [attentionFlagLabels.requested_changes, 90],
+  ["Issue testing changes requested", 85],
+  [attentionFlagLabels.no_human_action_24h, 60],
+  [attentionFlagLabels.testing_stalled, 55],
+  [attentionFlagLabels.review_requested_no_response, 40]
+]);
 
 type PrAttentionReasonSource = Pick<
   PersonalPullRequestView,
   "attentionFlags" | "reviewDecision" | "ciState" | "mergeStateStatus" | "testingState"
->;
+> & { latestReviewState?: string | null; isComplete?: boolean; detailSyncedAt?: string | null; detailError?: string | null };
+
+function prAttentionReasonScore(reason: string): number {
+  return prAttentionReasonPriority.get(reason) ?? 10;
+}
+
+function orderedPrAttentionReasons(reasons: string[]): string[] {
+  return uniqueStrings(reasons).sort(
+    (left, right) => prAttentionReasonScore(right) - prAttentionReasonScore(left) || left.localeCompare(right)
+  );
+}
+
+function prHasPreReviewBlocker(pr: PrAttentionReasonSource): boolean {
+  return (
+    pr.mergeStateStatus === "dirty" ||
+    (pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState)) ||
+    pr.reviewDecision === "changes_requested" ||
+    pr.latestReviewState === "changes_requested"
+  );
+}
+
+function prReviewEvidencePending(pr: PrAttentionReasonSource): boolean {
+  return pr.isComplete === false || pr.detailSyncedAt === null || Boolean(pr.detailError);
+}
 
 export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
-  const reasons = pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
+  const reasons = pr.attentionFlags
+    .filter(
+      (flag) => !(flag === "review_requested_no_response" && (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr)))
+    )
+    .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
-  if (pr.reviewDecision === "changes_requested" && !reasons.includes(attentionFlagLabels.requested_changes)) {
+  if (prReviewEvidencePending(pr)) {
+    reasons.push(prDetailSyncPendingReason);
+  }
+
+  if (
+    (pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested") &&
+    !reasons.includes(attentionFlagLabels.requested_changes)
+  ) {
     reasons.push(attentionFlagLabels.requested_changes);
   }
   if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
@@ -1845,7 +1890,7 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
     reasons.push("Issue testing changes requested");
   }
 
-  return [...new Set(reasons)];
+  return orderedPrAttentionReasons(reasons);
 }
 
 interface TeamPrBlockerSnapshot {
@@ -2737,9 +2782,15 @@ function testingIssueReasons(issue: TestingIssueQueueView): string[] {
 }
 
 function testingIssueLinkedPrReasons(pr: TestingIssueQueueView["linkedPullRequests"][number]): string[] {
-  return uniqueStrings(
+  const hasPreReviewBlocker =
+    pr.mergeStateStatus === "dirty" ||
+    (pr.ciState !== null && failedCiStates.has(pr.ciState)) ||
+    pr.reviewDecision === "changes_requested";
+  return orderedPrAttentionReasons(
     [
-      ...pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " ")),
+      ...pr.attentionFlags
+        .filter((flag) => !(flag === "review_requested_no_response" && hasPreReviewBlocker))
+        .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " ")),
       pr.reviewDecision === "changes_requested" ? attentionFlagLabels.requested_changes : null,
       pr.ciState && failedCiStates.has(pr.ciState) ? attentionFlagLabels.ci_failed : null,
       pr.mergeStateStatus === "dirty" ? attentionFlagLabels.merge_conflict : null,
@@ -2785,7 +2836,14 @@ function prGanttTone(pr: GanttPullRequestSource, reasons: string[]): PersonalGan
 }
 
 function prReasons(pr: GanttPullRequestSource): string[] {
-  const reasons = pr.attentionFlags.map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
+  const reasons = pr.attentionFlags
+    .filter(
+      (flag) => !(flag === "review_requested_no_response" && (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr)))
+    )
+    .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
+  if (prReviewEvidencePending(pr)) {
+    reasons.push(prDetailSyncPendingReason);
+  }
   if (pr.reviewDecision === "changes_requested") {
     reasons.push(attentionFlagLabels.requested_changes);
   }
@@ -2801,7 +2859,7 @@ function prReasons(pr: GanttPullRequestSource): string[] {
   if (pr.testingQueueAgeHours !== null && pr.testingQueueAgeHours >= 24) {
     reasons.push("Issue testing wait over 24h");
   }
-  return uniqueStrings(reasons);
+  return orderedPrAttentionReasons(reasons);
 }
 
 function prStartAgeHours(pr: GanttPullRequestSource, nowIso: string): number {
@@ -3068,14 +3126,17 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
   }
 
   const reasons = item.reasons.map((reason) => reason.toLowerCase());
+  if (reasons.some((reason) => reason.includes("merge conflict"))) {
+    return "Resolve merge conflict";
+  }
   if (reasons.some((reason) => reason.includes("ci failed"))) {
     return "Fix failing CI";
   }
   if (reasons.some((reason) => reason.includes("changes requested"))) {
     return "Address requested changes";
   }
-  if (reasons.some((reason) => reason.includes("merge conflict"))) {
-    return "Resolve merge conflict";
+  if (reasons.some((reason) => reason.includes("pr detail sync pending"))) {
+    return "Refresh PR evidence";
   }
   if (item.testingState === "test_changes_requested") {
     return "Respond to test feedback";

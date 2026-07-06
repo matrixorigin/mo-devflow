@@ -815,7 +815,7 @@ describe("dashboard hash filters", () => {
   });
 
   it("describes PR issue-link scopes without implying incomplete evidence is a confirmed missing issue", () => {
-    expect(prScopeLabel("no_issue")).toBe("no linked issue in cache");
+    expect(prScopeLabel("no_issue")).toBe("no visible issue after sync");
     expect(prScopeHelp("no_issue")).toContain("relationship sync completed");
     expect(prScopeLabel("issue_link_pending")).toBe("issue link sync pending");
     expect(prScopeHelp("issue_link_pending")).toContain("Do not treat them as unlinked yet");
@@ -922,8 +922,32 @@ describe("dashboard hash filters", () => {
     expect(counts).toMatchObject({
       evidenceIncompletePrs: 1,
       evidenceGapPrs: 1,
-      issueLinkPendingPrs: 1
+      issueLinkPendingPrs: 1,
+      noIssuePrs: 0
     });
+  });
+
+  it("counts confirmed no-issue PRs separately from issue-link sync pending PRs", () => {
+    const confirmedNoIssue = {
+      ...personalPr({ number: 91, ageHours: 16, createdAt: "2026-07-05T00:00:00Z", mergedAt: null }),
+      detailSyncedAt: "2026-07-05T03:00:00Z",
+      detailError: null,
+      isComplete: true,
+      linkedIssueNumbers: []
+    };
+    const issueLinkPending = {
+      ...personalPr({ number: 92, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      detailSyncedAt: null,
+      detailError: null,
+      isComplete: true,
+      linkedIssueNumbers: []
+    };
+
+    const counts = prOperationsSummaryCounts([confirmedNoIssue, issueLinkPending], new Map());
+
+    expect(counts.noIssuePrs).toBe(1);
+    expect(counts.issueLinkPendingPrs).toBe(1);
+    expect(counts.evidenceIncompletePrs).toBe(1);
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {
@@ -1482,7 +1506,7 @@ describe("dashboard hash filters", () => {
       actionLabel: "Open active issues"
     });
     expect(teamCriticalFlowCommandSummary({ ...baseFlow, testingCachePendingIssues: 2 })).toMatchObject({
-      title: "2 testing handoffs need cache evidence",
+      title: "2 issue testing signals need cache evidence",
       tone: "attention",
       target: "testing"
     });

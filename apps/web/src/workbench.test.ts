@@ -702,11 +702,71 @@ describe("work item attention reasons", () => {
     } as PersonalPullRequestView;
 
     expect(prAttentionReasons(pr)).toEqual([
-      "Changes requested",
-      "CI failed",
       "Merge conflict",
+      "CI failed",
+      "Changes requested",
       "Issue testing changes requested"
     ]);
+  });
+
+  it("prioritizes requested changes over generic stale review waiting", () => {
+    const pr = pullRequest({
+      attentionFlags: ["no_human_action_24h", "review_requested_no_response", "requested_changes"],
+      reviewDecision: "changes_requested",
+      ageHours: 166,
+      linkedIssueNumbers: [24813]
+    });
+    const person = personalView({
+      pendingPrs: [pr],
+      attentionPrs: [pr]
+    });
+    const prItem = personalActivityItems(person).find((item) => item.objectType === "pull_request");
+
+    expect(prAttentionReasons(pr)).toEqual(["Changes requested", "No human action over 24h"]);
+    expect(prItem?.reasons.slice(0, 2)).toEqual(["Changes requested", "No human action over 24h"]);
+    expect(personalActivityNextAction(prItem!)).toBe("Address requested changes");
+  });
+
+  it("treats conflict and CI failure as blockers before review-state work", () => {
+    const ciBlockedPr = pullRequest({
+      attentionFlags: ["review_requested_no_response", "requested_changes", "ci_failed"],
+      reviewDecision: "changes_requested",
+      ciState: "failure"
+    });
+    const conflictedPr = pullRequest({
+      attentionFlags: ["review_requested_no_response", "requested_changes", "merge_conflict", "ci_failed"],
+      reviewDecision: "changes_requested",
+      ciState: "failure",
+      mergeStateStatus: "dirty"
+    });
+    const ciItem = personalActivityItems(personalView({ pendingPrs: [ciBlockedPr], attentionPrs: [ciBlockedPr] })).find(
+      (item) => item.objectType === "pull_request"
+    );
+    const conflictItem = personalActivityItems(
+      personalView({ pendingPrs: [conflictedPr], attentionPrs: [conflictedPr] })
+    ).find((item) => item.objectType === "pull_request");
+
+    expect(prAttentionReasons(ciBlockedPr)).toEqual(["CI failed", "Changes requested"]);
+    expect(personalActivityNextAction(ciItem!)).toBe("Fix failing CI");
+    expect(prAttentionReasons(conflictedPr)).toEqual(["Merge conflict", "CI failed", "Changes requested"]);
+    expect(personalActivityNextAction(conflictItem!)).toBe("Resolve merge conflict");
+  });
+
+  it("does not present review waiting as fact while PR detail evidence is pending", () => {
+    const pr = pullRequest({
+      attentionFlags: ["review_requested_no_response", "no_human_action_24h"],
+      detailSyncedAt: null,
+      isComplete: true
+    });
+    const person = personalView({
+      pendingPrs: [pr],
+      attentionPrs: [pr]
+    });
+    const prItem = personalActivityItems(person).find((item) => item.objectType === "pull_request");
+
+    expect(prAttentionReasons(pr)).toEqual(["PR detail sync pending", "No human action over 24h"]);
+    expect(prItem?.reasons.slice(0, 2)).toEqual(["PR detail sync pending", "No human action over 24h"]);
+    expect(personalActivityNextAction(prItem!)).toBe("Refresh PR evidence");
   });
 
   it("labels issue-scoped testing states without PR-side handoff concepts", () => {
@@ -2416,7 +2476,7 @@ function pullRequest(input: Partial<PersonalPullRequestView>): PersonalPullReque
     latestReviewState: input.latestReviewState ?? null,
     latestReviewSubmittedAt: input.latestReviewSubmittedAt ?? null,
     latestCommitAt: input.latestCommitAt ?? null,
-    detailSyncedAt: input.detailSyncedAt ?? null,
+    detailSyncedAt: input.detailSyncedAt === undefined ? "2026-07-03T01:00:00Z" : input.detailSyncedAt,
     detailError: input.detailError ?? null,
     testingState: input.testingState ?? "not_ready",
     testingTesters: input.testingTesters ?? [],
