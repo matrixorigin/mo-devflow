@@ -1749,14 +1749,17 @@ function SessionModelPanel({
   teamSignIn,
   serviceReadTokenConfigured,
   githubOAuthConfigured,
+  sessionLoadError,
   compact = false
 }: {
   authenticatedUser: NonNullable<SessionView["user"]> | null;
   teamSignIn: SessionView["teamSignIn"];
   serviceReadTokenConfigured: boolean;
   githubOAuthConfigured: boolean;
+  sessionLoadError?: string | null;
   compact?: boolean;
 }) {
+  const sessionStatusUnknown = Boolean(sessionLoadError);
   return (
     <div className={`session-model-panel${compact ? " session-model-panel-compact" : ""}`}>
       <div className="session-model-heading">
@@ -1775,12 +1778,20 @@ function SessionModelPanel({
         <div>
           <span>GitHub sign-in</span>
           <strong>
-            {authenticatedUser ? authenticatedUser.githubLogin : githubOAuthConfigured ? "ready" : "setup required"}
+            {authenticatedUser
+              ? authenticatedUser.githubLogin
+              : sessionStatusUnknown
+                ? "unknown"
+                : githubOAuthConfigured
+                  ? "ready"
+                  : "setup required"}
           </strong>
           <small>
-            {githubOAuthConfigured
-              ? "OAuth creates the account session; no personal token is needed to log in."
-              : "Set GitHub OAuth env vars before team members can log in."}
+            {sessionStatusUnknown
+              ? "Session status is unavailable; retry before changing login state."
+              : githubOAuthConfigured
+                ? "OAuth creates the account session; no personal token is needed to log in."
+                : "Set GitHub OAuth env vars before team members can log in."}
           </small>
         </div>
         <div>
@@ -1790,8 +1801,8 @@ function SessionModelPanel({
         </div>
       </div>
       <div className="session-model-foot">
-        <Tag color={githubOAuthConfigured ? "green" : "orange"}>
-          OAuth {githubOAuthConfigured ? "ready" : "setup required"}
+        <Tag color={sessionStatusUnknown ? "orange" : githubOAuthConfigured ? "green" : "orange"}>
+          OAuth {sessionStatusUnknown ? "unknown" : githubOAuthConfigured ? "ready" : "setup required"}
         </Tag>
         <Tag color={teamSignIn.activeBrowserSessions > 0 ? "blue" : "default"}>
           {teamSignIn.activeBrowserSessions} active browser sessions
@@ -1866,6 +1877,31 @@ export function accountSessionModeText(
     return "token needs permission";
   }
   return "login + personal token";
+}
+
+export function accountAnonymousActionState(input: {
+  githubOAuthConfigured: boolean;
+  sessionLoadError: string | null;
+}): { label: string; disabled: boolean; tooltip: string } {
+  if (input.sessionLoadError) {
+    return {
+      label: "Session unavailable",
+      disabled: true,
+      tooltip: `Session status is unavailable: ${input.sessionLoadError}`
+    };
+  }
+  if (!input.githubOAuthConfigured) {
+    return {
+      label: "Sign-in setup missing",
+      disabled: true,
+      tooltip: "GitHub OAuth is not configured. Set the API OAuth client ID and secret before sign-in is available."
+    };
+  }
+  return {
+    label: "Sign in with GitHub",
+    disabled: false,
+    tooltip: "Sign in with GitHub. Personal write token connection is a separate step for confirmed write actions."
+  };
 }
 
 function tokenModalTitle(user: NonNullable<SessionView["user"]> | null): string {
@@ -1943,10 +1979,12 @@ function AccountControl({
   teamSignIn,
   serviceReadTokenConfigured,
   githubOAuthConfigured,
+  sessionLoadError,
   capability,
   tokenEncryptionUnavailable,
   onConnectToken,
   onSignIn,
+  onRetrySession,
   onSignOut
 }: {
   authenticatedUser: NonNullable<SessionView["user"]> | null;
@@ -1954,13 +1992,16 @@ function AccountControl({
   teamSignIn: SessionView["teamSignIn"];
   serviceReadTokenConfigured: boolean;
   githubOAuthConfigured: boolean;
+  sessionLoadError: string | null;
   capability: GitHubWriteCapability | null;
   tokenEncryptionUnavailable: boolean;
   onConnectToken: () => void;
   onSignIn: () => void;
+  onRetrySession: () => void;
   onSignOut: () => void;
 }) {
   const tokenStatus = personalTokenStatus(authenticatedUser);
+  const anonymousAction = accountAnonymousActionState({ githubOAuthConfigured, sessionLoadError });
   const statusLabel = authenticatedUser
     ? capability?.enabled
       ? "write ready"
@@ -1971,6 +2012,20 @@ function AccountControl({
   const statusColor = authenticatedUser && capability ? capabilityStatusColor(capability.status) : "default";
   const serviceTokenLabel = serviceReadTokenStatusText(serviceReadTokenConfigured);
   const serviceTokenColor = serviceReadTokenConfigured ? "green" : "orange";
+  const accountHeadingDetail = authenticatedUser
+    ? "Signed in on this browser"
+    : sessionLoadError
+      ? "Session status is unavailable"
+      : githubOAuthConfigured
+        ? "Read-only observer until GitHub sign-in"
+        : "GitHub sign-in is not configured";
+  const accountSessionCopy = authenticatedUser
+    ? `${tokenStatus.detail} Multiple teammates use the same deployment by logging in with their own GitHub account. Another browser or machine logs in again with GitHub for the same user.`
+    : sessionLoadError
+      ? "Cached dashboards remain observable, but login and personal token actions are paused until the session API responds again."
+      : githubOAuthConfigured
+        ? "Anonymous users only observe cached data. Log in with GitHub to get a personal session; connect a personal token later only when write actions are needed."
+        : "Anonymous users only observe cached data. Configure GitHub OAuth on the API server before team members can log in.";
   const content = (
     <Space orientation="vertical" size={12} className="account-session-popover">
       <div className="account-session-heading">
@@ -1983,13 +2038,7 @@ function AccountControl({
         )}
         <div>
           <Text strong>{authenticatedUser ? authenticatedUser.githubLogin : "Not signed in"}</Text>
-          <Text type="secondary">
-            {authenticatedUser
-              ? "Signed in on this browser"
-              : githubOAuthConfigured
-                ? "Read-only observer until GitHub sign-in"
-                : "GitHub sign-in is not configured"}
-          </Text>
+          <Text type="secondary">{accountHeadingDetail}</Text>
         </div>
       </div>
       <div className="account-session-facts">
@@ -2007,20 +2056,30 @@ function AccountControl({
         </div>
       </div>
       <Text type="secondary" className="account-session-copy">
-        {authenticatedUser
-          ? `${tokenStatus.detail} Multiple teammates use the same deployment by logging in with their own GitHub account. Another browser or machine logs in again with GitHub for the same user.`
-          : githubOAuthConfigured
-            ? "Anonymous users only observe cached data. Log in with GitHub to get a personal session; connect a personal token later only when write actions are needed."
-            : "Anonymous users only observe cached data. Configure GitHub OAuth on the API server before team members can log in."}
+        {accountSessionCopy}
       </Text>
       <SessionModelPanel
         authenticatedUser={authenticatedUser}
         teamSignIn={teamSignIn}
         serviceReadTokenConfigured={serviceReadTokenConfigured}
         githubOAuthConfigured={githubOAuthConfigured}
+        sessionLoadError={sessionLoadError}
         compact
       />
-      {!authenticatedUser && !githubOAuthConfigured ? (
+      {!authenticatedUser && sessionLoadError ? (
+        <Alert
+          type="error"
+          showIcon
+          title="Session API unavailable"
+          description={sessionLoadError}
+          action={
+            <Button size="small" onClick={onRetrySession}>
+              Retry session
+            </Button>
+          }
+        />
+      ) : null}
+      {!authenticatedUser && !sessionLoadError && !githubOAuthConfigured ? (
         <Alert
           type="warning"
           showIcon
@@ -2059,8 +2118,8 @@ function AccountControl({
             {personalTokenActionLabel(authenticatedUser)}
           </Button>
         ) : (
-          <Button icon={<Github size={16} />} disabled={!githubOAuthConfigured} onClick={onSignIn}>
-            Sign in with GitHub
+          <Button icon={<Github size={16} />} disabled={anonymousAction.disabled} onClick={onSignIn}>
+            {anonymousAction.label}
           </Button>
         )}
         {authenticatedUser ? (
@@ -2076,20 +2135,16 @@ function AccountControl({
     return (
       <Space className="account-anonymous-actions" size={6} wrap={false}>
         <Tooltip
-          title={
-            githubOAuthConfigured
-              ? "Sign in with GitHub. Personal write token connection is a separate step for confirmed write actions."
-              : "GitHub OAuth is not configured. Set the API OAuth client ID and secret before sign-in is available."
-          }
+          title={anonymousAction.tooltip}
         >
           <Button
             type="primary"
             className="account-signin-button"
             icon={<Github size={16} />}
-            disabled={!githubOAuthConfigured}
+            disabled={anonymousAction.disabled}
             onClick={onSignIn}
           >
-            {githubOAuthConfigured ? "Sign in with GitHub" : "Sign-in setup missing"}
+            {anonymousAction.label}
           </Button>
         </Tooltip>
         <Popover placement="bottomRight" trigger="click" content={content}>
@@ -21117,6 +21172,7 @@ function WriteAuditBoard({
 export default function App() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastDashboardLoadedAt, setLastDashboardLoadedAt] = useState<string | null>(null);
@@ -21423,7 +21479,9 @@ export default function App() {
         throw new Error(await responseError(response));
       }
       setSession((await response.json()) as SessionView);
+      setSessionLoadError(null);
     } catch (err) {
+      const message = displayError(err);
       setSession({
         authenticated: false,
         user: null,
@@ -21437,7 +21495,7 @@ export default function App() {
         tokenEncryptionConfigured: false,
         githubOAuthConfigured: false
       });
-      setTokenError(displayError(err));
+      setSessionLoadError(message);
     }
   }
 
@@ -21480,6 +21538,12 @@ export default function App() {
 
   function openTokenReconnect() {
     if (!session?.authenticated) {
+      if (sessionLoadError) {
+        setTokenError(`Session status is unavailable: ${sessionLoadError}`);
+        setTokenInput("");
+        setTokenModalOpen(true);
+        return;
+      }
       if (!session?.githubOAuthConfigured) {
         setTokenError(
           "GitHub OAuth sign-in is not configured on the API server. Configure OAuth before connecting personal write tokens."
@@ -23462,7 +23526,7 @@ export default function App() {
   const webhookFailures = data ? webhookFailedDeliveryCount(data.webhooks) : 0;
   const authenticatedUser = session?.authenticated && session.user ? session.user : null;
   const headerIssueLabelCapability = authenticatedUser?.writeCapabilities.issueLabels ?? null;
-  const tokenEncryptionUnavailable = session?.tokenEncryptionConfigured === false;
+  const tokenEncryptionUnavailable = !sessionLoadError && session?.tokenEncryptionConfigured === false;
   const tokenRetryActive = tokenRetryRemainingSeconds !== null && tokenRetryRemainingSeconds > 0;
   const serviceReadTokenConfigured = data?.profileConfiguration.githubServiceTokenConfigured ?? false;
   const personalPrPeriodLimit = data?.sync.viewLimits.find((limit) => limit.key === "personal_pr_period_rows") ?? null;
@@ -23522,10 +23586,12 @@ export default function App() {
             }
             serviceReadTokenConfigured={serviceReadTokenConfigured}
             githubOAuthConfigured={session?.githubOAuthConfigured ?? false}
+            sessionLoadError={sessionLoadError}
             capability={headerIssueLabelCapability ?? null}
             tokenEncryptionUnavailable={tokenEncryptionUnavailable}
             onConnectToken={openTokenReconnect}
             onSignIn={signInWithGitHub}
+            onRetrySession={() => void loadSession()}
             onSignOut={() => void disconnectSession()}
           />
           <Tooltip title="Refresh cached dashboard">
@@ -24886,6 +24952,7 @@ export default function App() {
             }
             serviceReadTokenConfigured={serviceReadTokenConfigured}
             githubOAuthConfigured={session?.githubOAuthConfigured ?? false}
+            sessionLoadError={sessionLoadError}
           />
           {session?.connectedUsers?.length ? (
             <ConnectedUsersPanel

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountAnonymousActionState,
   accountSessionModeText,
   aiDriftSignalMatchesSignalFilter,
   analyticsPeriodScopeText,
@@ -756,6 +757,22 @@ describe("dashboard hash filters", () => {
         { enabled: false, status: "write_back_disabled" }
       )
     ).toBe("login + token, writes disabled");
+  });
+
+  it("does not present session API failures as OAuth setup failures", () => {
+    expect(accountAnonymousActionState({ githubOAuthConfigured: true, sessionLoadError: null })).toMatchObject({
+      label: "Sign in with GitHub",
+      disabled: false
+    });
+    expect(accountAnonymousActionState({ githubOAuthConfigured: false, sessionLoadError: null })).toMatchObject({
+      label: "Sign-in setup missing",
+      disabled: true
+    });
+    expect(accountAnonymousActionState({ githubOAuthConfigured: false, sessionLoadError: "HTTP 500" })).toMatchObject({
+      label: "Session unavailable",
+      disabled: true,
+      tooltip: "Session status is unavailable: HTTP 500"
+    });
   });
 
   it("summarizes GitHub rate limits for operational health", () => {
