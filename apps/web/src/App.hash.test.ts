@@ -53,6 +53,7 @@ import {
   personalPrPeriodRiskDetail,
   personalPrPeriodThroughputDetail,
   personalPrWorkbenchFocus,
+  personalSwitcherPeople,
   personalPrListForScope,
   personalPrListTotalForScope,
   personalPrPeriodActivitySummary,
@@ -400,11 +401,7 @@ describe("dashboard hash filters", () => {
     expect(analyticsPeriodFromHash("#analytics?period=week")).toBe("week");
     expect(analyticsPeriodScopeText("week", 30)).toBe("Rolling 30-day trend, grouped by weekly periods");
     expect(
-      analyticsPeriodScopeText("week", 30, [
-        { date: "2026-07-01" },
-        { date: "2026-07-06" },
-        { date: "2026-06-30" }
-      ])
+      analyticsPeriodScopeText("week", 30, [{ date: "2026-07-01" }, { date: "2026-07-06" }, { date: "2026-06-30" }])
     ).toBe("Rolling 30-day trend (2026-06-07 to 2026-07-06), grouped by weekly periods");
     expect(currentMetricPeriodLabel("month")).toBe("This Month");
     expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe(
@@ -1728,6 +1725,36 @@ describe("dashboard hash filters", () => {
     );
     expect(personalPrPeriodBlockerDetail(rows[0].personal, "week")).toBe("blockers 1 attention");
     expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | issue testing 1/1 (100%)");
+  });
+
+  it("keeps the selected person first in the personal workbench switcher", () => {
+    const people = [
+      {
+        login: "alice",
+        activeCriticalIssues: 1,
+        attentionPrs: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        pendingPrs: 1,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0
+      },
+      {
+        login: "bob",
+        activeCriticalIssues: 0,
+        attentionPrs: 0,
+        needsTriageIssues: 0,
+        deferredIssues: 0,
+        pendingPrs: 0,
+        prsCreatedYesterday: 0,
+        prsMergedYesterday: 0
+      }
+    ] as any;
+
+    const sorted = personalSwitcherPeople(people, [], "bob").map((person) => person.login);
+
+    expect(sorted[0]).toBe("bob");
+    expect(sorted.sort()).toEqual(["alice", "bob"]);
   });
 });
 

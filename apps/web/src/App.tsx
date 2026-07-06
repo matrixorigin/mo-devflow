@@ -2135,9 +2135,7 @@ function AccountControl({
   if (!authenticatedUser) {
     return (
       <Space className="account-anonymous-actions" size={6} wrap={false}>
-        <Tooltip
-          title={anonymousAction.tooltip}
-        >
+        <Tooltip title={anonymousAction.tooltip}>
           <Button
             type="primary"
             className="account-signin-button"
@@ -13886,6 +13884,111 @@ function PersonWorkloadBoard({
   );
 }
 
+export function personalSwitcherPeople(
+  people: PersonSummary[],
+  personalViews: PersonalActionView[],
+  selectedLogin: string | null
+): PersonSummary[] {
+  const sortedPeople = sortPeopleForBoard(people, personalViews, "workload");
+  if (!selectedLogin) {
+    return sortedPeople;
+  }
+  const selected = sortedPeople.find((person) => person.login === selectedLogin);
+  if (!selected) {
+    return sortedPeople;
+  }
+  return [selected, ...sortedPeople.filter((person) => person.login !== selectedLogin)];
+}
+
+function PersonalPersonSwitcher({
+  people,
+  personalViews,
+  selectedLogin,
+  onSelect
+}: {
+  people: PersonSummary[];
+  personalViews: PersonalActionView[];
+  selectedLogin: string | null;
+  onSelect: (login: string) => void;
+}) {
+  const personalByLogin = new Map(personalViews.map((person) => [person.login, person]));
+  const sortedPeople = personalSwitcherPeople(people, personalViews, selectedLogin);
+  const visible = useLazyVisibleCount(
+    sortedPeople.length,
+    5,
+    `personal-switcher:${selectedLogin ?? ""}:${sortedPeople.map((person) => person.login).join(",")}`
+  );
+  const visiblePeople = sortedPeople.slice(0, visible.visibleCount);
+
+  if (sortedPeople.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="personal-person-switcher" aria-label="Personal workbench person switcher">
+      <div className="personal-person-switcher-heading">
+        <div>
+          <Text strong>{selectedLogin ? `Viewing ${selectedLogin}` : "Choose a person"}</Text>
+          <Text type="secondary">
+            Switch the individual workbench; the detailed issue, PR, and testing flow stays below.
+          </Text>
+        </div>
+        <Tag>{sortedPeople.length} watched people</Tag>
+      </div>
+      <div className="personal-person-switcher-list" role="list">
+        {visiblePeople.map((person) => {
+          const personal = personalByLogin.get(person.login);
+          const testingWork = personal ? personalTestingWorkCount(personal) : 0;
+          const status = personWorkloadStatus(person);
+          const selected = selectedLogin === person.login;
+          return (
+            <button
+              type="button"
+              className={`personal-person-pill personal-person-pill-${status}${selected ? " is-selected" : ""}`}
+              aria-pressed={selected}
+              aria-label={`Open ${person.login} personal workbench`}
+              onClick={() => onSelect(person.login)}
+              key={person.login}
+            >
+              <span className="person-avatar" aria-hidden="true">
+                {person.login.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="personal-person-pill-main">
+                <strong>{person.login}</strong>
+                <small>{workloadStatusText(status)}</small>
+              </span>
+              <span className="personal-person-pill-facts" aria-hidden="true">
+                <span>
+                  <b>{person.activeCriticalIssues}</b>
+                  <small>s-1/s0</small>
+                </span>
+                <span>
+                  <b>{person.attentionPrs}</b>
+                  <small>PR block</small>
+                </span>
+                <span>
+                  <b>{testingWork}</b>
+                  <small>testing</small>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <LazyListToggle
+        hiddenCount={visible.hiddenCount}
+        revealCount={visible.revealCount}
+        canCollapse={visible.canCollapse}
+        itemLabel="people"
+        className="personal-person-switcher-more"
+        collapsedLabel="Show fewer people"
+        onShowMore={visible.showMore}
+        onCollapse={visible.reset}
+      />
+    </section>
+  );
+}
+
 type PersonQueueMetricTone = "critical" | "attention" | "normal" | "good";
 
 function personActiveQueueDetail(person: PersonSummary, personal: PersonalActionView | undefined): string {
@@ -24553,15 +24656,6 @@ export default function App() {
                         </Button>
                       }
                     />
-                    <PersonWorkloadBoard
-                      compact
-                      mode="observed"
-                      people={observedPeople}
-                      personalViews={[]}
-                      selectedLogin={selectedObservedLogin}
-                      onSelect={selectObservedPersonal}
-                      onMetricSelect={openObservedPersonalMetric}
-                    />
                     {selectedObservedPersonPreview ? (
                       <ObservedPersonInlineWorkbench
                         preview={selectedObservedPersonPreview}
@@ -24575,17 +24669,33 @@ export default function App() {
                     ) : (
                       <Empty description="No observed owner selected" />
                     )}
+                    <details className="secondary-disclosure personal-people-disclosure">
+                      <summary>
+                        <span>Switch observed owner</span>
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{observedPeople.length} observed</Tag>
+                        </Space>
+                      </summary>
+                      <div className="secondary-disclosure-body">
+                        <PersonWorkloadBoard
+                          compact
+                          mode="observed"
+                          people={observedPeople}
+                          personalViews={[]}
+                          selectedLogin={selectedObservedLogin}
+                          onSelect={selectObservedPersonal}
+                          onMetricSelect={openObservedPersonalMetric}
+                        />
+                      </div>
+                    </details>
                   </>
                 ) : (
                   <>
-                    <PersonWorkloadBoard
-                      compact
+                    <PersonalPersonSwitcher
                       people={data.people}
                       personalViews={data.personalViews}
                       selectedLogin={selectedPersonalView?.login ?? null}
                       onSelect={selectPerson}
-                      onMetricSelect={openPersonalDrilldown}
-                      onThroughputSelect={openPersonalThroughput}
                     />
                     {selectedPersonalView ? (
                       <SelectedPersonWorkbench
@@ -24611,6 +24721,26 @@ export default function App() {
                     ) : (
                       <Empty description="No watched users configured for personal action lists" />
                     )}
+                    <details className="secondary-disclosure personal-people-disclosure">
+                      <summary>
+                        <span>Switch person details</span>
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{data.people.length} people</Tag>
+                          <Tag>full cards</Tag>
+                        </Space>
+                      </summary>
+                      <div className="secondary-disclosure-body">
+                        <PersonWorkloadBoard
+                          compact
+                          people={data.people}
+                          personalViews={data.personalViews}
+                          selectedLogin={selectedPersonalView?.login ?? null}
+                          onSelect={selectPerson}
+                          onMetricSelect={openPersonalDrilldown}
+                          onThroughputSelect={openPersonalThroughput}
+                        />
+                      </div>
+                    </details>
                   </>
                 )}
               </section>
