@@ -704,7 +704,6 @@ describe("work item attention reasons", () => {
     expect(prAttentionReasons(pr)).toEqual([
       "Merge conflict",
       "CI failed",
-      "Changes requested",
       "Issue testing changes requested"
     ]);
   });
@@ -746,9 +745,9 @@ describe("work item attention reasons", () => {
       personalView({ pendingPrs: [conflictedPr], attentionPrs: [conflictedPr] })
     ).find((item) => item.objectType === "pull_request");
 
-    expect(prAttentionReasons(ciBlockedPr)).toEqual(["CI failed", "Changes requested"]);
+    expect(prAttentionReasons(ciBlockedPr)).toEqual(["CI failed"]);
     expect(personalActivityNextAction(ciItem!)).toBe("Fix failing CI");
-    expect(prAttentionReasons(conflictedPr)).toEqual(["Merge conflict", "CI failed", "Changes requested"]);
+    expect(prAttentionReasons(conflictedPr)).toEqual(["Merge conflict", "CI failed"]);
     expect(personalActivityNextAction(conflictItem!)).toBe("Resolve merge conflict");
   });
 
@@ -1502,7 +1501,7 @@ describe("personal activity feed", () => {
     expect(items[0]?.linkedPullRequestNumbers).toEqual([100]);
     expect(items[0]).toMatchObject({ ownerLogin: "alice", ownerScope: "watched", ownerReason: "linked_pr_author" });
     expect(items[1]?.linkedIssueNumbers).toEqual([10]);
-    expect(items[1]?.reasons).toContain("Changes requested");
+    expect(items[1]?.reasons).not.toContain("Changes requested");
     expect(items[1]?.reasons).toContain("CI failed");
     expect(items[1]?.reasons).toContain("Also pending PR");
   });

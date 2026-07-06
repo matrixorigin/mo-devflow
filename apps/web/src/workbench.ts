@@ -1071,7 +1071,7 @@ export function testingIssueLinkedBlockerCount(issue: TestingIssueQueueView): nu
   return issue.linkedPullRequests.filter(
     (pr) =>
       pr.attentionFlags.length > 0 ||
-      pr.reviewDecision === "changes_requested" ||
+      prHasReviewStageFeedback(pr) ||
       pr.mergeStateStatus === "dirty" ||
       (pr.ciState !== null &&
         ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState))
@@ -1835,10 +1835,11 @@ const prAttentionReasonPriority = new Map<string, number>([
   [attentionFlagLabels.review_requested_no_response, 40]
 ]);
 
-type PrAttentionReasonSource = Pick<
-  PersonalPullRequestView,
-  "attentionFlags" | "reviewDecision" | "ciState" | "mergeStateStatus" | "testingState"
-> & { latestReviewState?: string | null; isComplete?: boolean; detailSyncedAt?: string | null; detailError?: string | null };
+type PrReviewStageSource = Pick<PersonalPullRequestView, "reviewDecision" | "ciState" | "mergeStateStatus"> & {
+  latestReviewState?: string | null;
+};
+type PrAttentionReasonSource = Pick<PersonalPullRequestView, "attentionFlags" | "testingState"> &
+  PrReviewStageSource & { isComplete?: boolean; detailSyncedAt?: string | null; detailError?: string | null };
 
 function prAttentionReasonScore(reason: string): number {
   return prAttentionReasonPriority.get(reason) ?? 10;
@@ -1850,12 +1851,10 @@ function orderedPrAttentionReasons(reasons: string[]): string[] {
   );
 }
 
-function prHasPreReviewBlocker(pr: PrAttentionReasonSource): boolean {
+function prHasPreReviewBlocker(pr: PrReviewStageSource): boolean {
   return (
     pr.mergeStateStatus === "dirty" ||
-    (pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState)) ||
-    pr.reviewDecision === "changes_requested" ||
-    pr.latestReviewState === "changes_requested"
+    (pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState))
   );
 }
 
@@ -1863,10 +1862,23 @@ function prReviewEvidencePending(pr: PrAttentionReasonSource): boolean {
   return pr.isComplete === false || pr.detailSyncedAt === null || Boolean(pr.detailError);
 }
 
+export function prHasReviewStageFeedback(pr: PrReviewStageSource): boolean {
+  return (
+    !prHasPreReviewBlocker(pr) &&
+    (pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested")
+  );
+}
+
 export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
+  const hasReviewStageFeedback = prHasReviewStageFeedback(pr);
   const reasons = pr.attentionFlags
     .filter(
-      (flag) => !(flag === "review_requested_no_response" && (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr)))
+      (flag) =>
+        !(
+          flag === "review_requested_no_response" &&
+          (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
+        ) &&
+        !(flag === "requested_changes" && !hasReviewStageFeedback)
     )
     .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
@@ -1874,10 +1886,7 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
     reasons.push(prDetailSyncPendingReason);
   }
 
-  if (
-    (pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested") &&
-    !reasons.includes(attentionFlagLabels.requested_changes)
-  ) {
+  if (hasReviewStageFeedback && !reasons.includes(attentionFlagLabels.requested_changes)) {
     reasons.push(attentionFlagLabels.requested_changes);
   }
   if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
@@ -1903,7 +1912,7 @@ interface TeamPrBlockerSnapshot {
 function teamPrBlockerSnapshot(prs: PendingPrView[]): TeamPrBlockerSnapshot {
   return {
     ciFailed: prs.filter((pr) => pr.ciState !== null && failedCiStates.has(pr.ciState)).length,
-    requestedChanges: prs.filter((pr) => pr.reviewDecision === "changes_requested").length,
+    requestedChanges: prs.filter(prHasReviewStageFeedback).length,
     conflicts: prs.filter((pr) => pr.mergeStateStatus === "dirty").length,
     idle: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length
   };
@@ -2783,15 +2792,18 @@ function testingIssueReasons(issue: TestingIssueQueueView): string[] {
 
 function testingIssueLinkedPrReasons(pr: TestingIssueQueueView["linkedPullRequests"][number]): string[] {
   const hasPreReviewBlocker =
-    pr.mergeStateStatus === "dirty" ||
-    (pr.ciState !== null && failedCiStates.has(pr.ciState)) ||
-    pr.reviewDecision === "changes_requested";
+    pr.mergeStateStatus === "dirty" || (pr.ciState !== null && failedCiStates.has(pr.ciState));
+  const hasReviewStageFeedback = prHasReviewStageFeedback(pr);
   return orderedPrAttentionReasons(
     [
       ...pr.attentionFlags
-        .filter((flag) => !(flag === "review_requested_no_response" && hasPreReviewBlocker))
+        .filter(
+          (flag) =>
+            !(flag === "review_requested_no_response" && (hasPreReviewBlocker || hasReviewStageFeedback)) &&
+            !(flag === "requested_changes" && !hasReviewStageFeedback)
+        )
         .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " ")),
-      pr.reviewDecision === "changes_requested" ? attentionFlagLabels.requested_changes : null,
+      hasReviewStageFeedback ? attentionFlagLabels.requested_changes : null,
       pr.ciState && failedCiStates.has(pr.ciState) ? attentionFlagLabels.ci_failed : null,
       pr.mergeStateStatus === "dirty" ? attentionFlagLabels.merge_conflict : null,
       !pr.isComplete ? "PR detail sync pending" : null
@@ -2836,15 +2848,21 @@ function prGanttTone(pr: GanttPullRequestSource, reasons: string[]): PersonalGan
 }
 
 function prReasons(pr: GanttPullRequestSource): string[] {
+  const hasReviewStageFeedback = prHasReviewStageFeedback(pr);
   const reasons = pr.attentionFlags
     .filter(
-      (flag) => !(flag === "review_requested_no_response" && (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr)))
+      (flag) =>
+        !(
+          flag === "review_requested_no_response" &&
+          (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
+        ) &&
+        !(flag === "requested_changes" && !hasReviewStageFeedback)
     )
     .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
   if (prReviewEvidencePending(pr)) {
     reasons.push(prDetailSyncPendingReason);
   }
-  if (pr.reviewDecision === "changes_requested") {
+  if (hasReviewStageFeedback) {
     reasons.push(attentionFlagLabels.requested_changes);
   }
   if (pr.ciState && failedCiStates.has(pr.ciState)) {
@@ -3038,7 +3056,7 @@ export function personalActivityHasBlockingSignal(item: PersonalActivityItem): b
         reason.includes("testing") ||
         reason.includes("test wait")
     ) ||
-    item.reviewDecision === "changes_requested" ||
+    prHasReviewStageFeedback(item) ||
     item.mergeStateStatus === "dirty" ||
     item.testingState === "test_changes_requested" ||
     item.testingQueueAgeHours !== null

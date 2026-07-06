@@ -3167,6 +3167,32 @@ button.team-monitor-tile:focus-visible {
   line-height: 1.35;
 }
 
+.team-work-action-link {
+  align-items: center;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  color: #1d4ed8;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  justify-content: center;
+  line-height: 1.2;
+  margin-top: 2px;
+  max-width: max-content;
+  padding: 5px 8px;
+}
+
+.team-work-action-link:hover {
+  background: #dbeafe;
+}
+
+.team-work-action-link:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .team-linked-row a {
   background: #eff6ff;
   border: 1px solid #bfdbfe;

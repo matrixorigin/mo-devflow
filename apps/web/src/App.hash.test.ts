@@ -81,6 +81,7 @@ import {
   syncRateLimitSummary,
   syncHealthCursorText,
   teamCriticalFlowCommandSummary,
+  teamPrNextActionScope,
   teamOwnerGapDefaultScope,
   teamPeopleFocusDefaultScope,
   teamPrimaryFocus,
@@ -948,6 +949,57 @@ describe("dashboard hash filters", () => {
     expect(counts.noIssuePrs).toBe(1);
     expect(counts.issueLinkPendingPrs).toBe(1);
     expect(counts.evidenceIncompletePrs).toBe(1);
+  });
+
+  it("routes PR row next actions to the matching board filters", () => {
+    const evidencePending = {
+      ...personalPr({ number: 93, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      detailSyncedAt: null,
+      isComplete: true
+    };
+    const ciBeforeReview = {
+      ...personalPr({ number: 94, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      ciState: "failure",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "ci_failed", "review_requested_no_response"]
+    };
+    const reviewReadyChanges = {
+      ...personalPr({ number: 97, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      ciState: "success",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "review_requested_no_response"]
+    };
+    const issueLinkPending = {
+      ...personalPr({ number: 95, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      detailSyncedAt: null,
+      isComplete: true,
+      linkedIssueNumbers: []
+    };
+    const activeIssuePr = {
+      ...personalPr({ number: 96, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      linkedIssueNumbers: [96]
+    };
+    const activeIssueContext = {
+      number: 96,
+      title: "active issue",
+      htmlUrl: "https://github.com/matrixorigin/matrixone/issues/96",
+      severity: "severity/s0",
+      ownerLogin: "alice",
+      ownerScope: "watched",
+      ownerReason: "assignee",
+      lifecycleState: "open",
+      criticalAgeHours: 12,
+      aiEffortLabel: null,
+      blockerCount: 0,
+      isComplete: true
+    };
+
+    expect(teamPrNextActionScope(evidencePending as any)).toBe("evidence_pending");
+    expect(teamPrNextActionScope(ciBeforeReview as any)).toBe("ci_failed");
+    expect(teamPrNextActionScope(reviewReadyChanges as any)).toBe("request_changes");
+    expect(teamPrNextActionScope(activeIssuePr as any, [activeIssueContext as any])).toBe("active_issue");
+    expect(teamPrNextActionScope(issueLinkPending as any)).toBe("evidence_pending");
+    expect(prScopeLabel("evidence_pending")).toBe("PR detail pending");
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {

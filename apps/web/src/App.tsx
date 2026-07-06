@@ -155,6 +155,7 @@ import {
   criticalOwnerFlowSummaries,
   personalIssueReasons,
   prAttentionReasons,
+  prHasReviewStageFeedback,
   prHasNoVisibleIssue,
   prHasVisibleIssueContext,
   prIssueLinkEvidencePending,
@@ -3870,7 +3871,7 @@ export function prScopeLabel(filter: PrScopeFilter): string {
     return "issue link sync pending";
   }
   if (filter === "evidence_pending") {
-    return "PR cache pending";
+    return "PR detail pending";
   }
   if (filter === "no_action_24h") {
     return "no action 24h";
@@ -4170,7 +4171,7 @@ function prHasFailedCi(pr: PendingPrView): boolean {
 }
 
 function prHasRequestChanges(pr: PendingPrView): boolean {
-  return pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested";
+  return prHasReviewStageFeedback(pr);
 }
 
 function prHasConflict(pr: PendingPrView): boolean {
@@ -4688,7 +4689,7 @@ function PrFilterBar({
             { label: "Conflict", value: "conflict" },
             { label: "No visible issue after sync", value: "no_issue" },
             { label: "Issue link sync pending", value: "issue_link_pending" },
-            { label: "PR cache pending", value: "evidence_pending" },
+            { label: "PR detail pending", value: "evidence_pending" },
             { label: "No action 24h", value: "no_action_24h" }
           ]}
         />
@@ -5143,6 +5144,7 @@ function TeamRotationOverview({
                 activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
                 pr={pr}
                 key={pr.number}
+                onOpenScope={onOpenPrsFilter}
                 onPreview={setWorkPreview}
               />
             ))}
@@ -7005,10 +7007,12 @@ function TeamCriticalIssueRow({
 function TeamPrRiskRow({
   activeIssues = [],
   pr,
+  onOpenScope,
   onPreview
 }: {
   activeIssues?: PrCriticalIssueContext[];
   pr: PendingPrView;
+  onOpenScope?: (scope: PrScopeFilter) => void;
   onPreview?: (preview: TeamWorkPreview) => void;
 }) {
   const reasons = prAttentionReasons(pr);
@@ -7030,6 +7034,7 @@ function TeamPrRiskRow({
   );
   const visibleIssueLinks = issueLinkCandidates.slice(0, issueLinkLazy.visibleCount);
   const issueLinkStatus = prIssueLinkStatusDisplay(pr, activeIssues);
+  const nextActionScope = teamPrNextActionScope(pr, activeIssues);
 
   return (
     <article className="team-work-row">
@@ -7073,8 +7078,8 @@ function TeamPrRiskRow({
           {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
           {prHasRequestChanges(pr) ? (
             <Tag color="red">changes requested</Tag>
-          ) : pr.reviewDecision ? (
-            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+            <Tag color="blue">{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           {visibleReasons.map((reason) => (
             <Tag color={activityReasonColor(reason)} key={reason}>
@@ -7150,6 +7155,11 @@ function TeamPrRiskRow({
         <Text type="secondary">Next</Text>
         <Text strong>{teamPrNextAction(pr)}</Text>
         <small>{activeIssues.length > 0 ? prActiveIssueActionContext(activeIssues, pr) : prActionContext(pr)}</small>
+        {nextActionScope && onOpenScope ? (
+          <button type="button" className="team-work-action-link" onClick={() => onOpenScope(nextActionScope)}>
+            Open {prScopeLabel(nextActionScope)}
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -7499,8 +7509,8 @@ function TeamPullRequestPreviewModal({
           {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
           {prHasRequestChanges(pr) ? (
             <Tag color="red">changes requested</Tag>
-          ) : pr.reviewDecision ? (
-            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+            <Tag color="blue">{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           <Tooltip title={issueLinkStatus.detail}>
             <Tag color={issueLinkStatus.color}>{issueLinkStatus.label}</Tag>
@@ -9116,6 +9126,43 @@ function teamPrNextAction(pr: PendingPrView): string {
     isComplete: pr.isComplete
   };
   return personalActivityNextAction(syntheticItem);
+}
+
+export function teamPrNextActionScope(
+  pr: PendingPrView,
+  activeIssues: PrCriticalIssueContext[] = []
+): PrScopeFilter | null {
+  if (prHasConflict(pr)) {
+    return "conflict";
+  }
+  if (prHasFailedCi(pr)) {
+    return "ci_failed";
+  }
+  if (prHasRequestChanges(pr)) {
+    return "request_changes";
+  }
+  if (prEvidencePending(pr)) {
+    return "evidence_pending";
+  }
+  if (prIssueLinkUnknown(pr, activeIssues)) {
+    return "issue_link_pending";
+  }
+  if (isTestingStalePr(pr)) {
+    return "stale_testing";
+  }
+  if (pr.attentionFlags.includes("no_human_action_24h")) {
+    return "no_action_24h";
+  }
+  if (pr.attentionFlags.includes("review_requested_no_response")) {
+    return "attention";
+  }
+  if (isTestingQueuePr(pr)) {
+    return "testing";
+  }
+  if (activeIssues.length > 0) {
+    return "active_issue";
+  }
+  return null;
 }
 
 function teamTestingIssueNextAction(issue: TestingIssueQueueView, blockerCount: number): string {
@@ -11334,7 +11381,7 @@ function PrBoardSummary({
         onClick={() => onScopeFilterChange("issue_link_pending")}
       />
       <CriticalBoardStat
-        label="PR cache pending"
+        label="PR detail pending"
         value={evidencePendingPrs}
         tone={evidencePendingPrs > 0 ? "attention" : "good"}
         active={scopeFilter === "evidence_pending"}
@@ -11663,12 +11710,14 @@ function PrActionQueue({
   criticalIssuesByPr,
   scopeFilter,
   sort,
+  onOpenScope,
   onPreview
 }: {
   prs: PendingPrView[];
   criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>;
   scopeFilter: PrScopeFilter;
   sort: PrSort;
+  onOpenScope: (scope: PrScopeFilter) => void;
   onPreview: (preview: TeamWorkPreview) => void;
 }) {
   const pagedPrs = usePagedList(prs, 6, `${scopeFilter}:${sort}:${prs.map((pr) => pr.number).join(",")}`);
@@ -11677,7 +11726,7 @@ function PrActionQueue({
     <section className="pr-action-queue" aria-label="PR action queue">
       <div className="pr-action-queue-heading">
         <div>
-          <Text strong>PRs to review</Text>
+          <Text strong>Pending PRs</Text>
           <Text type="secondary">
             {prScopeLabel(scopeFilter)} | sort {prSortLabel(sort)} | oldest {optionalHours(maxPendingPrAge(prs))}
           </Text>
@@ -11701,6 +11750,7 @@ function PrActionQueue({
               activeIssues={criticalIssuesByPr.get(pr.number) ?? []}
               key={pr.number}
               pr={pr}
+              onOpenScope={onOpenScope}
               onPreview={onPreview}
             />
           ))}
@@ -12611,14 +12661,14 @@ function testingQueueAgeText(pr: PendingPrView): string {
 }
 
 function testingQueueNextAction(pr: PendingPrView): string {
-  if (pr.testingState === "test_changes_requested" || pr.reviewDecision === "changes_requested") {
-    return "Handle requested changes";
+  if (pr.mergeStateStatus === "dirty") {
+    return "Resolve merge conflict";
   }
   if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
     return "Fix CI before test can finish";
   }
-  if (pr.mergeStateStatus === "dirty") {
-    return "Resolve merge conflict";
+  if (pr.testingState === "test_changes_requested" || prHasReviewStageFeedback(pr)) {
+    return "Handle requested changes";
   }
   if (isTestingStalePr(pr)) {
     return "Check issue testing status";
@@ -12637,7 +12687,7 @@ function testingQueueRiskTags(pr: PendingPrView): string[] {
   if (!pr.isComplete) {
     tags.push("PR detail sync pending");
   }
-  if (pr.reviewDecision === "changes_requested") {
+  if (prHasReviewStageFeedback(pr)) {
     tags.push("changes requested");
   }
   if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
@@ -13398,11 +13448,11 @@ function TestingIssuePreviewModal({ issue, onClose }: { issue: TestingIssueQueue
                     owner {pr.ownerLogin} | age {hours(pr.ageHours)}
                   </small>
                   <Space size={[4, 4]} wrap>
-                    {pr.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
-                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
                     {pr.mergeStateStatus ? (
                       <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
                     ) : null}
+                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+                    {prHasReviewStageFeedback(pr) ? <Tag color="red">changes requested</Tag> : null}
                     {!pr.isComplete ? <Tag color="gold">PR detail sync pending</Tag> : null}
                   </Space>
                 </a>
@@ -14962,7 +15012,7 @@ function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullR
     return pr.ciState !== null && ["failure", "failed", "error", "timed_out", "action_required"].includes(pr.ciState);
   }
   if (filter === "review") {
-    return pr.reviewDecision === "changes_requested";
+    return prHasReviewStageFeedback(pr);
   }
   if (filter === "merge") {
     return pr.mergeStateStatus === "dirty";
@@ -14979,8 +15029,7 @@ function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullR
 function pullRequestBlockerScore(pr: PersonalPullRequestView): number {
   return (
     prAttentionReasons(pr).length * 80 +
-    (pr.reviewDecision === "changes_requested" ? 220 : 0) +
-    (pr.latestReviewState === "changes_requested" ? 180 : 0) +
+    (prHasReviewStageFeedback(pr) ? 220 : 0) +
     (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
       ? 200
       : 0) +
@@ -15167,12 +15216,8 @@ function PullRequestWorkCard({
         {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
         {prHasRequestChanges(pr) ? (
           <Tag color="red">changes requested</Tag>
-        ) : pr.reviewDecision ? (
-          <Tag
-            color={
-              pr.reviewDecision === "changes_requested" ? "red" : pr.reviewDecision === "approved" ? "green" : "blue"
-            }
-          >
+        ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+          <Tag color={pr.reviewDecision === "approved" ? "green" : "blue"}>
             {labelText(pr.reviewDecision)}
           </Tag>
         ) : null}
@@ -16137,7 +16182,7 @@ function PersonalActionQueueItem({
               onCollapse={reasonLazy.reset}
             />
             {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
-            {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+            {prHasReviewStageFeedback(item) ? <Tag color="red">changes requested</Tag> : null}
             {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
           </div>
           <ActionQueueLinks issueLinks={linkedIssueUrls} prLinks={linkedPrUrls} />
@@ -16233,7 +16278,7 @@ function PersonalActivityPreviewModal({ item, onClose }: { item: PersonalActivit
                 </Tag>
               ))}
               {item.ciState ? <Tag color={ciColor(item.ciState)}>ci {labelText(item.ciState)}</Tag> : null}
-              {item.reviewDecision === "changes_requested" ? <Tag color="red">changes requested</Tag> : null}
+              {prHasReviewStageFeedback(item) ? <Tag color="red">changes requested</Tag> : null}
               {item.mergeStateStatus === "dirty" ? <Tag color="red">merge conflict</Tag> : null}
             </Space>
           </section>
@@ -16972,14 +17017,14 @@ function FlowThreadPreviewModal({ row, onClose }: { row: PersonalGanttRow | null
                   </small>
                   <Space size={[4, 4]} wrap>
                     {pr.isShared ? <Tag color="purple">shared</Tag> : null}
-                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-                    {pr.reviewDecision ? (
-                      <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
-                        {labelText(pr.reviewDecision)}
-                      </Tag>
-                    ) : null}
                     {pr.mergeStateStatus ? (
                       <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+                    ) : null}
+                    {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
+                    {prHasReviewStageFeedback(pr) ? (
+                      <Tag color="red">changes requested</Tag>
+                    ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+                      <Tag color="blue">{labelText(pr.reviewDecision)}</Tag>
                     ) : null}
                     {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
                   </Space>
@@ -17064,9 +17109,15 @@ function flowThreadPrPreviewBadges(pr: PersonalGanttPrBar): ReactNode[] {
       </Tag>
     );
   }
-  if (pr.reviewDecision) {
+  if (prHasReviewStageFeedback(pr)) {
     badges.push(
-      <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"} key="review">
+      <Tag color="red" key="review">
+        changes requested
+      </Tag>
+    );
+  } else if (pr.reviewDecision && pr.reviewDecision !== "changes_requested") {
+    badges.push(
+      <Tag color="blue" key="review">
         {labelText(pr.reviewDecision)}
       </Tag>
     );
@@ -17212,9 +17263,14 @@ function FlowPrRow({ pr }: { pr: PersonalGanttPrBar }) {
           <span>{pr.ownerLogin}</span>
           <span>{hours(pr.startAgeHours)}</span>
           {pr.isShared ? <Tag color="purple">shared</Tag> : null}
+          {pr.mergeStateStatus ? (
+            <Tag color={mergeColor(pr.mergeStateStatus)}>merge {labelText(pr.mergeStateStatus)}</Tag>
+          ) : null}
           {pr.ciState ? <Tag color={ciColor(pr.ciState)}>ci {labelText(pr.ciState)}</Tag> : null}
-          {pr.reviewDecision ? (
-            <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>{labelText(pr.reviewDecision)}</Tag>
+          {prHasReviewStageFeedback(pr) ? (
+            <Tag color="red">changes requested</Tag>
+          ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+            <Tag color="blue">{labelText(pr.reviewDecision)}</Tag>
           ) : null}
           {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
         </div>
@@ -18194,7 +18250,7 @@ function PersonalExecutionRow({
           >
             #{pr.number}
             {pr.ciState ? <small>ci {labelText(pr.ciState)}</small> : null}
-            {pr.reviewDecision === "changes_requested" ? <small>changes</small> : null}
+            {prHasReviewStageFeedback(pr) ? <small>changes</small> : null}
             {pr.mergeStateStatus === "dirty" ? <small>conflict</small> : null}
           </a>
         ))}
@@ -22938,12 +22994,13 @@ export default function App() {
         title: "PR blockers",
         width: 260,
         render: (_, pr) => {
+          const reviewWaiting =
+            pr.attentionFlags.includes("review_requested_no_response") &&
+            !prHasFailedCi(pr) &&
+            !prHasConflict(pr) &&
+            !prEvidencePending(pr);
           const hasBlocker =
-            pr.draft ||
-            prHasRequestChanges(pr) ||
-            prHasFailedCi(pr) ||
-            prHasConflict(pr) ||
-            pr.attentionFlags.includes("review_requested_no_response");
+            pr.draft || prHasRequestChanges(pr) || prHasFailedCi(pr) || prHasConflict(pr) || reviewWaiting;
           return hasBlocker ? (
             <Space size={[4, 4]} wrap>
               {pr.draft ? <Tag color="gold">draft</Tag> : null}
@@ -22953,13 +23010,9 @@ export default function App() {
               {pr.ciState ? <Tag color={ciColor(pr.ciState)}>CI {labelText(pr.ciState)}</Tag> : null}
               {prHasRequestChanges(pr) ? (
                 <Tag color="red">changes requested</Tag>
-              ) : pr.reviewDecision ? (
-                <Tag color={pr.reviewDecision === "changes_requested" ? "red" : "blue"}>
-                  review {labelText(pr.reviewDecision)}
-                </Tag>
-              ) : pr.attentionFlags.includes("review_requested_no_response") &&
-                !prHasFailedCi(pr) &&
-                !prHasConflict(pr) ? (
+              ) : pr.reviewDecision && pr.reviewDecision !== "changes_requested" ? (
+                <Tag color="blue">review {labelText(pr.reviewDecision)}</Tag>
+              ) : reviewWaiting ? (
                 <Tag color="orange">review waiting</Tag>
               ) : null}
             </Space>
@@ -24641,6 +24694,7 @@ export default function App() {
                       criticalIssuesByPr={criticalIssuesByPr}
                       scopeFilter={prScopeFilter}
                       sort={prSort}
+                      onOpenScope={changePrScopeFilter}
                       onPreview={setWorkObjectPreview}
                     />
                     <details className="secondary-disclosure pr-filter-disclosure">
