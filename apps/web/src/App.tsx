@@ -3109,6 +3109,33 @@ export function currentMetricPeriodScopeText(timezone: string): string {
   return `Today, this week, and this month use current calendar periods in ${timezone}; rolling windows are trend-only.`;
 }
 
+function previousDateKey(dateKey: string): string | null {
+  const parsed = Date.parse(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+  const date = new Date(parsed);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+export function currentMetricPeriodRangeText(
+  periodList: Pick<PersonalPrPeriodListView, "label" | "periodStart" | "periodEnd"> | null,
+  fallback = "current calendar period"
+): string {
+  if (!periodList) {
+    return fallback;
+  }
+  const inclusiveEnd = previousDateKey(periodList.periodEnd);
+  if (!inclusiveEnd) {
+    return periodList.label;
+  }
+  if (periodList.periodStart === inclusiveEnd) {
+    return periodList.periodStart;
+  }
+  return `${periodList.periodStart} to ${inclusiveEnd}`;
+}
+
 function teamMetricPoints(analytics: AnalyticsSummary, period: MetricPeriod): TrendMetricPoint[] {
   if (period === "week") {
     return analytics.teamWeekly ?? [];
@@ -18475,6 +18502,7 @@ function WatchedPersonOperationsSummary({
         <div className="person-ops-pr-periods">
           {throughputRows.map((row) => {
             const periodList = personalPrPeriodListForPeriod(person, row.period);
+            const periodRange = currentMetricPeriodRangeText(periodList, row.label);
             return (
               <button
                 type="button"
@@ -18487,6 +18515,7 @@ function WatchedPersonOperationsSummary({
                 <strong>
                   {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
                 </strong>
+                <small>{periodRange}</small>
                 <small>
                   {periodPrVisibleUniqueTotal(periodList)} PRs in list | avg{" "}
                   {personalPrPeriodAverageDurationText(periodList)}
@@ -19306,6 +19335,7 @@ function PersonalPrThroughputPanel({
       <div className="personal-throughput-grid">
         {rows.map((row) => {
           const periodList = personalPrPeriodListForPeriod(person, row.period);
+          const periodRange = currentMetricPeriodRangeText(periodList, row.label);
           return (
             <button
               type="button"
@@ -19320,7 +19350,7 @@ function PersonalPrThroughputPanel({
               <strong>
                 {row.prsCreated ?? "-"}/{row.prsMerged ?? "-"}
               </strong>
-              <small>{row.label} created / merged</small>
+              <small>{periodRange} | created / merged</small>
               <em>{personalPrPeriodThroughputDetail(person, row.period)}</em>
               <em>{personalPrPeriodBlockerDetail(person, row.period)}</em>
               <em>{personalPrPeriodRiskDetail(person, row.period)}</em>
@@ -19370,7 +19400,13 @@ function PersonalPrThroughputPanel({
                 })}
               />
               <span className="personal-throughput-list-meta">
-                <Tag>{selectedPeriodList?.label ?? currentMetricPeriodLabel(listPeriod)}</Tag>
+                <Tag>{currentMetricPeriodLabel(listPeriod)}</Tag>
+                <Tag>
+                  {currentMetricPeriodRangeText(
+                    selectedPeriodList,
+                    selectedPeriodList?.label ?? "current calendar period"
+                  )}
+                </Tag>
                 <Text type="secondary">
                   showing {sortedVisiblePrs.length}/{visibleTotal} {visibleTotalLabel} | sorted by{" "}
                   {personalPrSortLabel(sort)}

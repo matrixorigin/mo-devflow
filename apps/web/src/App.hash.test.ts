@@ -10,6 +10,7 @@ import {
   criticalIssueTableSummary,
   analyticsPeriodFromHash,
   currentMetricPeriodLabel,
+  currentMetricPeriodRangeText,
   currentMetricPeriodScopeText,
   dashboardHashForView,
   dashboardRefreshModeText,
@@ -398,6 +399,27 @@ describe("dashboard hash filters", () => {
     expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe(
       "Today, this week, and this month use current calendar periods in Asia/Shanghai; rolling windows are trend-only."
     );
+    expect(
+      currentMetricPeriodRangeText({
+        label: "07-06",
+        periodStart: "2026-07-06",
+        periodEnd: "2026-07-07"
+      })
+    ).toBe("2026-07-06");
+    expect(
+      currentMetricPeriodRangeText({
+        label: "07-06-07-12",
+        periodStart: "2026-07-06",
+        periodEnd: "2026-07-13"
+      })
+    ).toBe("2026-07-06 to 2026-07-12");
+    expect(
+      currentMetricPeriodRangeText({
+        label: "2026-07",
+        periodStart: "2026-07-01",
+        periodEnd: "2026-08-01"
+      })
+    ).toBe("2026-07-01 to 2026-07-31");
   });
 
   it("round-trips workflow signal filters without hiding source deep links", () => {
