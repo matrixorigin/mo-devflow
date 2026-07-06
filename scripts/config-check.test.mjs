@@ -76,6 +76,42 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
     expect(summary).toEqual({ failures: [], warnings: [] });
   });
 
+  test("rejects explicit http OAuth URLs and allowed origins in production", () => {
+    const summary = summarizeChecks(
+      buildConfigCheck(
+        {
+          ...baseEnv,
+          NODE_ENV: "production",
+          MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
+          MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
+          MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+          MO_DEVFLOW_PUBLIC_URL: "http://devflow.example.com",
+          MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI: "http://devflow.example.com/api/auth/github/callback",
+          MO_DEVFLOW_ALLOWED_ORIGINS: "http://devflow.example.com"
+        },
+        { production: true }
+      )
+    );
+
+    expect(summary.failures.map((failure) => failure.name)).toEqual([
+      "OAuth callback URL",
+      "Allowed browser origins"
+    ]);
+  });
+
+  test("keeps local http development URLs valid", () => {
+    const summary = summarizeChecks(
+      buildConfigCheck({
+        ...baseEnv,
+        MO_DEVFLOW_PUBLIC_URL: "http://localhost:18081",
+        MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI: "http://localhost:18081/api/auth/github/callback",
+        MO_DEVFLOW_ALLOWED_ORIGINS: "http://localhost:5173"
+      })
+    );
+
+    expect(summary.failures).toEqual([]);
+  });
+
   test("fails unsafe values before startup", () => {
     const summary = summarizeChecks(
       buildConfigCheck({

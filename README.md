@@ -73,7 +73,9 @@ secret values. For deployment, run `make config-check-production`; it treats
 GitHub OAuth login, the deployment service read token, webhook secret, token
 encryption, and Secure session cookies as production gates. Deployed HTTPS
 environments should run with `NODE_ENV=production` or set
-`MO_DEVFLOW_COOKIE_SECURE=true`.
+`MO_DEVFLOW_COOKIE_SECURE=true`, and any configured `MO_DEVFLOW_PUBLIC_URL`,
+`MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI`, or `MO_DEVFLOW_ALLOWED_ORIGINS` values
+should use `https://`.
 
 `npm run check` also runs `npm run guard:sql`, a static SQL guard that fails on
 wildcard `SELECT *` projections and row-returning queries without a `LIMIT` in

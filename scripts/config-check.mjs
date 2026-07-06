@@ -82,12 +82,12 @@ export function buildConfigCheck(env, options = {}) {
   );
 
   add(
-    validOptionalUrl(env.MO_DEVFLOW_PUBLIC_URL) && validOptionalUrl(env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI)
-      ? "ok"
-      : "fail",
+    oauthUrlStatus(env, production),
     "OAuth callback URL",
     "MO_DEVFLOW_PUBLIC_URL / MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI",
-    "Use absolute http(s) URLs; configure redirect URI when the API is behind a proxy."
+    production
+      ? "Use absolute https URLs for deployed OAuth callback URLs; configure redirect URI when the API is behind a proxy."
+      : "Use absolute http(s) URLs; configure redirect URI when the API is behind a proxy."
   );
 
   add(
@@ -108,10 +108,12 @@ export function buildConfigCheck(env, options = {}) {
   );
 
   add(
-    validAllowedOrigins(env.MO_DEVFLOW_ALLOWED_ORIGINS),
+    validAllowedOrigins(env.MO_DEVFLOW_ALLOWED_ORIGINS, production),
     "Allowed browser origins",
     "MO_DEVFLOW_ALLOWED_ORIGINS",
-    "Use comma-separated origins only, for example https://devflow.example.com."
+    production
+      ? "Use comma-separated https origins only, for example https://devflow.example.com."
+      : "Use comma-separated origins only, for example https://devflow.example.com."
   );
 
   return checks;
@@ -187,7 +189,28 @@ function validOptionalUrl(value) {
   }
 }
 
-function validAllowedOrigins(value) {
+function oauthUrlStatus(env, production) {
+  const values = [env.MO_DEVFLOW_PUBLIC_URL, env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI].filter((value) =>
+    value?.trim()
+  );
+  if (!values.every(validOptionalUrl)) {
+    return "fail";
+  }
+  if (!production) {
+    return "ok";
+  }
+  return values.every((value) => configuredUrlUsesHttps(value)) ? "ok" : "fail";
+}
+
+function configuredUrlUsesHttps(value) {
+  try {
+    return new URL(value.trim()).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validAllowedOrigins(value, production = false) {
   if (!value?.trim()) {
     return "ok";
   }
@@ -195,6 +218,9 @@ function validAllowedOrigins(value) {
     try {
       const parsed = new URL(origin.trim());
       if (!["http:", "https:"].includes(parsed.protocol)) {
+        return "fail";
+      }
+      if (production && parsed.protocol !== "https:") {
         return "fail";
       }
       if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
