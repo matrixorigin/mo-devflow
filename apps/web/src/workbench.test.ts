@@ -19,6 +19,7 @@ import {
   flowEfficiencyDiagnostics,
   flowEfficiencySummary,
   flowThreadDurationWarnings,
+  flowThreadNextAction,
   flowThreadStatusCounts,
   observedPeopleFromDashboard,
   observedOwnerThreads,
@@ -43,6 +44,7 @@ import {
   personPrimaryReasons,
   personWorkloadStatus,
   prAttentionReasons,
+  prAttentionPriorityScore,
   prQualityRiskSummary,
   prHasNoVisibleIssue,
   prIssueLinkEvidencePending,
@@ -750,6 +752,41 @@ describe("work item attention reasons", () => {
     expect(personalActivityNextAction(ciItem!)).toBe("Fix failing CI");
     expect(prAttentionReasons(conflictedPr)).toEqual(["Merge conflict", "CI failed"]);
     expect(personalActivityNextAction(conflictItem!)).toBe("Resolve merge conflict");
+  });
+
+  it("uses one blocker priority for PR reasons, sorting, and flow-thread next action", () => {
+    const reviewReadyPr = pullRequest({
+      attentionFlags: ["requested_changes"],
+      reviewDecision: "changes_requested",
+      ciState: "success"
+    });
+    const ciBlockedPr = pullRequest({
+      attentionFlags: ["review_requested_no_response", "requested_changes", "ci_failed"],
+      reviewDecision: "changes_requested",
+      ciState: "failure"
+    });
+    const conflictedPr = linkedPullRequest({
+      number: 300,
+      attentionFlags: ["review_requested_no_response", "requested_changes", "merge_conflict", "ci_failed"],
+      reviewDecision: "changes_requested",
+      ciState: "failure",
+      mergeStateStatus: "dirty",
+      linkedIssueNumbers: [42]
+    });
+    const chart = personalGanttChart(
+      personalView({
+        activeCriticalIssues: [
+          criticalIssue({
+            number: 42,
+            linkedPullRequests: [conflictedPr]
+          })
+        ]
+      })
+    );
+
+    expect(prAttentionPriorityScore(ciBlockedPr)).toBeGreaterThan(prAttentionPriorityScore(reviewReadyPr));
+    expect(prAttentionPriorityScore(conflictedPr)).toBeGreaterThan(prAttentionPriorityScore(ciBlockedPr));
+    expect(flowThreadNextAction(chart.rows[0]!)).toBe("Resolve merge conflict");
   });
 
   it("does not present review waiting as fact while PR detail evidence is pending", () => {

@@ -156,6 +156,7 @@ import {
   criticalOwnerFlowSummaries,
   personalIssueReasons,
   prAttentionReasons,
+  prAttentionPriorityScore,
   prHasReviewStageFeedback,
   prHasNoVisibleIssue,
   prHasVisibleIssueContext,
@@ -15029,12 +15030,8 @@ function pullRequestMatchesListFilter(pr: PersonalPullRequestView, filter: PullR
 
 function pullRequestBlockerScore(pr: PersonalPullRequestView): number {
   return (
-    prAttentionReasons(pr).length * 80 +
-    (prHasReviewStageFeedback(pr) ? 220 : 0) +
-    (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
-      ? 200
-      : 0) +
-    (pr.mergeStateStatus === "dirty" ? 200 : 0) +
+    prAttentionPriorityScore(pr) * 100 +
+    prAttentionReasons(pr).length * 10 +
     (isTestingStalePr(pr) ? 140 : 0) +
     (!prHasVisibleIssueContext(pr) ? 60 : 0)
   );

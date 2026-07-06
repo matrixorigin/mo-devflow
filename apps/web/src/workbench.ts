@@ -1851,6 +1851,10 @@ function orderedPrAttentionReasons(reasons: string[]): string[] {
   );
 }
 
+export function prAttentionPriorityScore(pr: PrAttentionReasonSource): number {
+  return prAttentionReasons(pr).reduce((score, reason) => Math.max(score, prAttentionReasonScore(reason)), 0);
+}
+
 function prHasPreReviewBlocker(pr: PrReviewStageSource): boolean {
   return (
     pr.mergeStateStatus === "dirty" ||
@@ -3250,14 +3254,14 @@ export function flowThreadNextAction(row: PersonalGanttRow): string {
   if (row.kind === "issue" && row.prs.length === 0) {
     return "Link an execution PR";
   }
+  if (prReasons.some((reason) => reason.includes("merge conflict"))) {
+    return "Resolve merge conflict";
+  }
   if (prReasons.some((reason) => reason.includes("ci failed"))) {
     return "Fix failing CI";
   }
   if (prReasons.some((reason) => reason.includes("changes requested"))) {
     return "Address requested changes";
-  }
-  if (prReasons.some((reason) => reason.includes("merge conflict"))) {
-    return "Resolve merge conflict";
   }
   if (row.prs.some((pr) => pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready")) {
     return "Check linked issue testing status";
