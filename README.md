@@ -55,9 +55,10 @@ Logged-in browser write requests also require the API-issued
 manual refresh, notification acknowledgement, workflow-fix preview/confirm, and
 logout endpoints while keeping the session cookie HttpOnly.
 
-Enterprise WeChat notifications link back to the mo-devflow dashboard. Set
-`MO_DEVFLOW_DASHBOARD_URL` to the public web URL in deployed environments; local
-development uses `http://localhost:${MO_DEVFLOW_WEB_PORT}`.
+Enterprise WeChat notifications and GitHub OAuth post-login redirects link back
+to the mo-devflow dashboard. Set `MO_DEVFLOW_DASHBOARD_URL` to the public web
+URL in deployed environments; local development uses
+`http://localhost:${MO_DEVFLOW_WEB_PORT}`.
 Notification candidates include immediate attention alerts, escalation alerts,
 and daily, weekly, and monthly maintainer digests derived from cached repository
 metrics.
@@ -102,7 +103,9 @@ User registration and login use GitHub OAuth, not personal access tokens. Set
 a proxy or exposed on a public host, set `MO_DEVFLOW_PUBLIC_URL` or the exact
 `MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI`. After OAuth login, each user may connect
 their own personal token for write-capable actions; the connected token must
-belong to the same GitHub identity as the logged-in user.
+belong to the same GitHub identity as the logged-in user. OAuth callback success
+redirects to `MO_DEVFLOW_DASHBOARD_URL`, or to the local web port when it is not
+set.
 Token binding attempts are guarded per client IP by
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_MAX` attempts per
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS`; the default is 5 attempts per

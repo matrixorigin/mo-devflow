@@ -56,7 +56,9 @@ const originalTokenEncryptionKey = process.env.MO_DEVFLOW_TOKEN_ENCRYPTION_KEY;
 const originalOAuthEnv = {
   clientId: process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID,
   clientSecret: process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET,
-  redirectUri: process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI
+  redirectUri: process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI,
+  dashboardUrl: process.env.MO_DEVFLOW_DASHBOARD_URL,
+  webPort: process.env.MO_DEVFLOW_WEB_PORT
 };
 
 function restoreRateLimitEnv(): void {
@@ -95,6 +97,16 @@ function restoreOAuthEnv(): void {
     delete process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI;
   } else {
     process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI = originalOAuthEnv.redirectUri;
+  }
+  if (originalOAuthEnv.dashboardUrl === undefined) {
+    delete process.env.MO_DEVFLOW_DASHBOARD_URL;
+  } else {
+    process.env.MO_DEVFLOW_DASHBOARD_URL = originalOAuthEnv.dashboardUrl;
+  }
+  if (originalOAuthEnv.webPort === undefined) {
+    delete process.env.MO_DEVFLOW_WEB_PORT;
+  } else {
+    process.env.MO_DEVFLOW_WEB_PORT = originalOAuthEnv.webPort;
   }
 }
 
@@ -347,6 +359,7 @@ describe("auth routes", () => {
     process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
     process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
     process.env.MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI = "http://localhost:18081/api/auth/github/callback";
+    process.env.MO_DEVFLOW_DASHBOARD_URL = "http://localhost:5173/";
     vi.stubGlobal(
       "fetch",
       vi
@@ -371,7 +384,7 @@ describe("auth routes", () => {
       });
 
       expect(response.statusCode).toBe(302);
-      expect(response.headers.location).toBe("/");
+      expect(response.headers.location).toBe("http://localhost:5173");
       expect(mocks.upsertGitHubIdentity).toHaveBeenCalledWith({
         githubId: "1001",
         githubLogin: "alice",
@@ -391,6 +404,40 @@ describe("auth routes", () => {
       expect(cookies.some((cookie) => cookie.startsWith("mo_devflow_oauth_state=") && cookie.includes("Max-Age=0"))).toBe(
         true
       );
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("redirects successful GitHub OAuth callback to the local web port by default", async () => {
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    process.env.MO_DEVFLOW_WEB_PORT = "5277";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ access_token: "oauth-access-token" })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ id: 1001, login: "alice", avatar_url: null })
+        })
+    );
+    const app = Fastify();
+    await registerAuthRoutes(app);
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/auth/github/callback?code=code-1&state=state-1",
+        headers: { cookie: "mo_devflow_oauth_state=state-1" }
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(response.headers.location).toBe("http://localhost:5277");
     } finally {
       await app.close();
     }

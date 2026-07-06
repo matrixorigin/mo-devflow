@@ -77,6 +77,12 @@ function publicBaseUrl(request: FastifyRequest): string {
   return `${proto}://${String(host).split(",")[0]?.trim()}`;
 }
 
+function dashboardRedirectUrlFromEnv(): string {
+  const url =
+    process.env.MO_DEVFLOW_DASHBOARD_URL?.trim() || `http://localhost:${process.env.MO_DEVFLOW_WEB_PORT ?? "5173"}`;
+  return url.replace(/\/$/, "");
+}
+
 function githubOAuthRedirectUri(request: FastifyRequest, configuredRedirectUri: string | null): string {
   return configuredRedirectUri ?? `${publicBaseUrl(request)}/api/auth/github/callback`;
 }
@@ -338,7 +344,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         buildCsrfCookie(createCsrfToken(), expiresAt, secureCookie),
         buildClearOAuthStateCookie(secureCookie)
       ]);
-      return reply.redirect("/");
+      return reply.redirect(dashboardRedirectUrlFromEnv());
     } catch {
       reply.header("set-cookie", buildClearOAuthStateCookie(secureCookie));
       return reply.status(502).send({
