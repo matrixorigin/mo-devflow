@@ -408,7 +408,7 @@ describe("dashboard hash filters", () => {
     ).toBe("Rolling 30-day trend (2026-06-07 to 2026-07-06), grouped by weekly periods");
     expect(currentMetricPeriodLabel("month")).toBe("This Month");
     expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe(
-      "Today, this week, and this month use current calendar periods in Asia/Shanghai; rolling windows are trend-only."
+      "Today, this week, and this month are current calendar periods in Asia/Shanghai; trend charts use rolling windows."
     );
     expect(
       currentMetricPeriodRangeText({
@@ -768,8 +768,10 @@ describe("dashboard hash filters", () => {
       disabled: false
     });
     expect(accountAnonymousActionState({ githubOAuthConfigured: false, sessionLoadError: null })).toMatchObject({
-      label: "Sign-in setup missing",
-      disabled: true
+      label: "GitHub OAuth not configured",
+      disabled: true,
+      tooltip:
+        "GitHub OAuth is not configured on the API server. Personal tokens cannot create login sessions; they are connected only after sign-in."
     });
     expect(accountAnonymousActionState({ githubOAuthConfigured: false, sessionLoadError: "HTTP 500" })).toMatchObject({
       label: "Session unavailable",

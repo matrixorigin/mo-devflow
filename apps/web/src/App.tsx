@@ -1892,9 +1892,10 @@ export function accountAnonymousActionState(input: {
   }
   if (!input.githubOAuthConfigured) {
     return {
-      label: "Sign-in setup missing",
+      label: "GitHub OAuth not configured",
       disabled: true,
-      tooltip: "GitHub OAuth is not configured. Set the API OAuth client ID and secret before sign-in is available."
+      tooltip:
+        "GitHub OAuth is not configured on the API server. Personal tokens cannot create login sessions; they are connected only after sign-in."
     };
   }
   return {
@@ -2083,8 +2084,8 @@ function AccountControl({
         <Alert
           type="warning"
           showIcon
-          title="GitHub OAuth setup required"
-          description="Set MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID and MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET on the API server. Until then, everyone stays in read-only observer mode."
+          title="GitHub OAuth not configured"
+          description="Set MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID and MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET on the API server. Until then, everyone stays in read-only observer mode; personal write tokens cannot be used as login."
         />
       ) : null}
       <div className="account-team-panel account-team-summary">
@@ -3168,7 +3169,7 @@ export function currentMetricPeriodLabel(period: MetricPeriod): string {
 }
 
 export function currentMetricPeriodScopeText(timezone: string): string {
-  return `Today, this week, and this month use current calendar periods in ${timezone}; rolling windows are trend-only.`;
+  return `Today, this week, and this month are current calendar periods in ${timezone}; trend charts use rolling windows.`;
 }
 
 function shiftDateKey(dateKey: string, days: number): string | null {
@@ -12204,6 +12205,7 @@ export function peoplePrFlowMatrixRows(
 function PeoplePrFlowMatrix({
   people,
   personalViews,
+  repoTimezone,
   sort,
   onSelect,
   onMetricSelect,
@@ -12211,6 +12213,7 @@ function PeoplePrFlowMatrix({
 }: {
   people: PersonSummary[];
   personalViews: PersonalActionView[];
+  repoTimezone: string;
   sort: PeopleBoardSort;
   onSelect: (login: string) => void;
   onMetricSelect: (login: string, metric: PersonalDrilldownFilter) => void;
@@ -12321,7 +12324,8 @@ function PeoplePrFlowMatrix({
         <div>
           <Title level={5}>By Person: PRs and Flow</Title>
           <Text type="secondary">
-            Today, this week, and this month open PR lists; flow shows s-1/s0 to linked PR and issue testing.
+            {currentMetricPeriodScopeText(repoTimezone)} Click a PR cell for that person's list, duration, age, and
+            blockers; flow shows active s-1/s0 to linked PR and issue testing.
           </Text>
         </div>
         <Tag>
@@ -24925,6 +24929,7 @@ export default function App() {
                   <PeoplePrFlowMatrix
                     people={filteredPeople}
                     personalViews={data.personalViews}
+                    repoTimezone={data.repo.timezone}
                     sort={peopleSort}
                     onSelect={openPeopleBoardPerson}
                     onMetricSelect={openPeopleBoardMetric}
