@@ -24,8 +24,9 @@
     "build": "npm run typecheck && npm --workspace @mo-devflow/web run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "guard:sql": "tsx scripts/sql-guard.ts",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test",
+    "check": "npm run typecheck && npm run guard:sql && npm run test",
     "ci": "npm run format:check && npm run check && npm run build"
   },
   "dependencies": {

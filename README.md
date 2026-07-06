@@ -73,6 +73,11 @@ secret values. For deployment, run `make config-check-production`; it treats
 GitHub OAuth login, the deployment service read token, webhook secret, and token
 encryption as production gates.
 
+`npm run check` also runs `npm run guard:sql`, a static SQL guard that fails on
+wildcard `SELECT *` projections and row-returning queries without a `LIMIT` in
+database-facing source files. This keeps dashboard and worker reads bounded by
+default instead of relying on manual review.
+
 `make setup` generates a local-only `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` in the
 ignored `.env` file so personal GitHub token binding can work in development.
 For deployed environments, set `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` yourself to a
