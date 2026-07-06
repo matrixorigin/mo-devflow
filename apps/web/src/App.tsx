@@ -136,6 +136,7 @@ import {
   peopleBoardScopeCounts,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
+  personalActivityItemFromPullRequest,
   personalGanttChart,
   personalActivityHasBlockingSignal,
   personalActivityItems,
@@ -20226,9 +20227,7 @@ function SelectedPersonWorkbench({
   };
   const previewPullRequest = (pr: PersonalPullRequestView): void => {
     const item = activityItemById.get(`pull_request:${pr.number}`);
-    if (item) {
-      setObjectPreviewItem(item);
-    }
+    setObjectPreviewItem(item ?? personalActivityItemFromPullRequest(pr));
   };
   const selectThroughput = (selection: PersonalPrThroughputSelection): void => {
     setThroughputSelection(selection);

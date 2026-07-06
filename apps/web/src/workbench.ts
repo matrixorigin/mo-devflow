@@ -3017,6 +3017,18 @@ export function personalActivityItems(person: PersonalActionView): PersonalActiv
   });
 }
 
+export function personalActivityItemFromPullRequest(
+  pr: PersonalPullRequestView,
+  phase = pr.mergedAt ? "Merged PR activity" : pr.state === "closed" ? "Closed PR activity" : "PR activity"
+): PersonalActivityItem {
+  const reasons = prAttentionReasons(pr);
+  const hasTestingContext = pr.testingQueueAgeHours !== null || pr.testingState !== "not_ready";
+  const tone: PersonalActivityTone =
+    reasons.length > 0 || hasTestingContext ? "attention" : pr.state === "closed" ? "muted" : "normal";
+  const priority = tone === "attention" ? 620 : tone === "normal" ? 420 : 260;
+  return activityFromPullRequest(pr, phase, tone, priority, reasons);
+}
+
 function mergePersonalActivityItem(
   existing: PersonalActivityItem,
   duplicate: PersonalActivityItem
@@ -3168,10 +3180,13 @@ export function personalActivityNextAction(item: PersonalActivityItem): string {
   if (reasons.some((reason) => reason.includes("no human action"))) {
     return "Refresh owner action";
   }
-  if (item.phase === "Merged yesterday") {
+  if (item.phase === "Merged yesterday" || item.phase === "Merged PR activity") {
     return "Verify linked issue closure";
   }
-  if (item.phase === "Created yesterday") {
+  if (item.phase === "Closed PR activity") {
+    return "Review PR closure";
+  }
+  if (item.phase === "Created yesterday" || item.phase === "PR activity") {
     return "Confirm review path";
   }
   return "Keep PR moving";

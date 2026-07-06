@@ -29,6 +29,7 @@ import {
   notificationDeliveryMatchesScope,
   personalActionQueueCounts,
   personalActionQueueItemsForFilter,
+  personalActivityItemFromPullRequest,
   personalDailyPlan,
   personalFlowThreadCounts,
   personalFlowThreadMatchesFilter,
@@ -1535,6 +1536,43 @@ describe("personal activity feed", () => {
     ]);
     expect(items[0]?.testingQueueAgeHours).toBe(30);
     expect(personalActivityNextAction(items[0]!)).toBe("Fix failing CI");
+  });
+
+  it("builds a preview item for PRs that are only visible in period lists", () => {
+    const pr = pullRequest({
+      number: 24,
+      state: "closed",
+      mergedAt: "2026-07-05T08:00:00Z",
+      ageHours: 20,
+      linkedIssueNumbers: [10],
+      attentionFlags: []
+    });
+
+    const item = personalActivityItemFromPullRequest(pr);
+
+    expect(item).toMatchObject({
+      id: "pull_request:24",
+      objectType: "pull_request",
+      phase: "Merged PR activity",
+      tone: "muted",
+      linkedIssueNumbers: [10],
+      isComplete: true
+    });
+    expect(personalActivityNextAction(item)).toBe("Verify linked issue closure");
+  });
+
+  it("does not treat a closed unmerged period PR as an active review path", () => {
+    const pr = pullRequest({
+      number: 25,
+      state: "closed",
+      mergedAt: null,
+      attentionFlags: []
+    });
+
+    const item = personalActivityItemFromPullRequest(pr);
+
+    expect(item.phase).toBe("Closed PR activity");
+    expect(personalActivityNextAction(item)).toBe("Review PR closure");
   });
 
   it("uses s-1/s0 activation duration for active critical issues", () => {
