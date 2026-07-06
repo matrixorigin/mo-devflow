@@ -773,7 +773,7 @@ describe("work item attention reasons", () => {
     expect(testingStateBusinessLabel("testing")).toBe("issue testing");
     expect(testingStateBusinessLabel("test_changes_requested")).toBe("tester feedback");
     expect(testingStateBusinessLabel("not_ready")).toBe("not in issue testing");
-    expect(testingStateHelpText("testing")).toContain("PR reviewer or assignee is not used");
+    expect(testingStateHelpText("testing")).toContain("PR reviewer or assignee does not start issue testing");
   });
 
   it("includes active s-1/s0 issue blockers before generic evidence", () => {
@@ -1990,7 +1990,7 @@ describe("personal gantt chart", () => {
     const row = personalGanttChart(person, "2026-07-04T00:00:00.000Z").rows[0]!;
 
     expect(row.issue.durationEvidence).toBe("GitHub issue label event");
-    expect(row.issue.reasons).toContain("Issue label handoff");
+    expect(row.issue.reasons).toContain("Issue label testing signal");
   });
 });
 

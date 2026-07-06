@@ -1990,7 +1990,7 @@ export function testingTurnoverHealthSummary(input: {
         : `${testing.staleQueueIssues} issue testing items are waiting too long`;
     return {
       title: waitingLabel,
-      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | testing-to-close ${close}`,
       evidence: `${sampleEvidence} | ${dataGapText}`,
       tone: "critical"
     };
@@ -2012,7 +2012,7 @@ export function testingTurnoverHealthSummary(input: {
       detail:
         testing.queueIssues > 0
           ? `${testing.queueIssues} in issue testing | avg wait ${wait}; wait for issue close samples before judging turnover`
-          : "No visible queue or handoff-to-close samples in cache.",
+          : "No visible queue or testing-to-close samples in cache.",
       evidence: dataGapText,
       tone: testing.queueIssues > 0 || partialIssueTransitions > 0 ? "attention" : "normal"
     };
@@ -2020,7 +2020,7 @@ export function testingTurnoverHealthSummary(input: {
   if (partialIssueTransitions > 0) {
     return {
       title: "Testing turnover has partial timeline evidence",
-      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | testing-to-close ${close}`,
       evidence: dataGapText,
       tone: "attention"
     };
@@ -2028,14 +2028,14 @@ export function testingTurnoverHealthSummary(input: {
   if (testing.queueIssues > 0) {
     return {
       title: "Testing queue is moving from cached evidence",
-      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | testing-to-close ${close}`,
       evidence: sampleEvidence,
       tone: "normal"
     };
   }
   return {
     title: "Testing queue is clear",
-    detail: `handoff-to-close ${close} from ${testing.handoffToCloseSamples} closed issue samples`,
+    detail: `testing-to-close ${close} from ${testing.handoffToCloseSamples} closed issue samples`,
     evidence: dataGapText,
     tone: "normal"
   };
@@ -2165,7 +2165,7 @@ export function testingStateBusinessLabel(state: TestingFlowState): string {
 
 export function testingStateHelpText(state: TestingFlowState): string {
   if (state === "testing") {
-    return "A linked issue is assigned to the configured test team or has the configured issue testing label. PR reviewer or assignee is not used as the testing handoff.";
+    return "A linked issue is assigned to the configured test team or has the configured issue testing label. PR reviewer or assignee does not start issue testing.";
   }
   if (state === "test_changes_requested") {
     return "Testing feedback is visible on the linked issue; the owner should respond before the issue leaves testing.";
@@ -2176,7 +2176,7 @@ export function testingStateHelpText(state: TestingFlowState): string {
   if (state === "closed_or_merged") {
     return "The linked issue or PR is closed or merged in cached evidence.";
   }
-  return "No issue-scoped testing handoff is visible. PR reviewer or assignee alone does not mean testing.";
+  return "No issue-scoped testing signal is visible. PR reviewer or assignee alone does not mean testing.";
 }
 
 export function criticalIssueReasons(issue: CriticalIssueView): string[] {
@@ -2773,7 +2773,7 @@ function testingIssueReasons(issue: TestingIssueQueueView): string[] {
       issue.queueAgeHours !== null && issue.queueAgeHours >= 24 ? "Issue testing wait over 24h" : null,
       issue.queueAgeEvidence === "issue_cache_timestamp" ? "Issue testing start from issue cache timestamp" : null,
       issue.testers.length > 0 ? `${issue.testers.length} tester${issue.testers.length === 1 ? "" : "s"}` : null,
-      issue.testingSignals.some((signal) => signal.startsWith("issue_label:")) ? "Issue label handoff" : null,
+      issue.testingSignals.some((signal) => signal.startsWith("issue_label:")) ? "Issue label testing signal" : null,
       issue.linkedPullRequests.length === 0 ? "No linked PR visible" : null,
       issue.syncError ? "Issue sync error" : null,
       !issue.isComplete ? "Incomplete cache evidence" : null
