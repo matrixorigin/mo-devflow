@@ -47,6 +47,7 @@ import {
   personalCriticalFlowManagementDetail,
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
+  personalActivityPhaseLabel,
   personalPrPeriodAverageDurationText,
   personalPrPeriodBlockerDetail,
   personalPrPeriodRiskDetail,
@@ -63,6 +64,7 @@ import {
   personalPrThroughputRows,
   personalPrVisibleUniqueTotalForPeriod,
   personalDrilldownFilterFromHash,
+  personalWorkPriorityLabel,
   prLifecycleDurationText,
   prBoardTabFromHash,
   prOperationsSummaryCounts,
@@ -946,7 +948,7 @@ describe("dashboard hash filters", () => {
     expect(peopleSortLabel("pr_age")).toBe("PR age");
     expect(peopleSortLabel("pr_throughput")).toBe("PR volume");
     expect(peopleSortLabel("flow_gap")).toBe("flow gap");
-    expect(peopleSortLabel("testing_wait")).toBe("testing wait");
+    expect(peopleSortLabel("testing_wait")).toBe("issue testing wait");
     expect(peopleScopeForPersonalMetric("active_no_pr")).toBe("critical");
     expect(peopleScopeForPersonalMetric("pr_attention")).toBe("attention");
     expect(peopleScopeForPersonalMetric("testing")).toBe("testing");
@@ -1039,7 +1041,35 @@ describe("dashboard hash filters", () => {
         testing: 1,
         needs_link: 3
       })
-    ).toBe("8 objects | 2 s-1/s0 | 1 PR blocker | 1 testing issue | 3 link gaps");
+    ).toBe("8 objects | 2 s-1/s0 | 1 PR blocker | 1 issue testing object | 3 link gaps");
+  });
+
+  it("labels personal work status without exposing internal tone or phase names", () => {
+    expect(personalWorkPriorityLabel("critical")).toBe("Do now");
+    expect(personalWorkPriorityLabel("attention")).toBe("Needs action");
+    expect(personalWorkPriorityLabel("normal")).toBe("Moving");
+    expect(personalWorkPriorityLabel("muted")).toBe("Record");
+    expect(
+      personalActivityPhaseLabel({
+        objectType: "pull_request",
+        durationKind: "pr_age",
+        phase: "PR attention"
+      } as any)
+    ).toBe("PR blocker");
+    expect(
+      personalActivityPhaseLabel({
+        objectType: "pull_request",
+        durationKind: "pr_age",
+        phase: "Linked issue in testing"
+      } as any)
+    ).toBe("Linked issue testing");
+    expect(
+      personalActivityPhaseLabel({
+        objectType: "issue",
+        durationKind: "testing_queue",
+        phase: "Issue in test"
+      } as any)
+    ).toBe("Issue testing");
   });
 
   it("summarizes personal PR throughput for day, week, and month", () => {
@@ -1158,7 +1188,9 @@ describe("dashboard hash filters", () => {
     expect(personalPrVisibleUniqueTotalForPeriod(person, "week")).toBe(3);
     expect(personalPrPeriodAverageDurationText(person.prPeriodLists[0])).toBe("6.7d");
     expect(personalPrPeriodThroughputDetail(person, "week")).toBe("3 PRs in list | avg 6.7d");
-    expect(personalPrPeriodRiskDetail(person, "week")).toBe("pending - | attention - | open age - | test wait -");
+    expect(personalPrPeriodRiskDetail(person, "week")).toBe(
+      "pending - | attention - | open age - | issue testing wait -"
+    );
     expect(personalPrPeriodBlockerDetail(person, "week")).toBe("blockers -");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[0])).toBe("merged in 3.0d");
     expect(prLifecycleDurationText(person.prPeriodLists[0].createdPrs[1])).toBe("open 2.0d");
@@ -1538,7 +1570,7 @@ describe("dashboard hash filters", () => {
       slowEasyIssues: 0
     });
     expect(personalCriticalFlowEfficiencySummary(flow)).toBe("1/2 linked (50%) | 1/2 in testing (50%)");
-    expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | test 1/2 (50%)");
+    expect(personalCriticalFlowEfficiencyCompactSummary(flow)).toBe("PR 1/2 (50%) | issue testing 1/2 (50%)");
     expect(personalCriticalFlowGapSummary(flow)).toBe("1 no PR | 1 not in issue testing");
     expect(personalCriticalFlowDefaultTarget(flow)).toBe("active_no_pr");
     expect(personalCriticalFlowDefaultTarget({ ...flow, issuesWithoutPr: 0, issuesNotInTesting: 1 })).toBe(
@@ -1690,10 +1722,10 @@ describe("dashboard hash filters", () => {
     expect(personalPrThroughputPair(rows[0].periods.week)).toBe("1/1");
     expect(personalPrPeriodThroughputDetail(rows[0].personal, "week")).toBe("1 PR in list | avg 1.0d");
     expect(personalPrPeriodRiskDetail(rows[0].personal, "week")).toBe(
-      "pending 2 | attention 1 | open age 1.3d | test wait 10h"
+      "pending 2 | attention 1 | open age 1.3d | issue testing wait 10h"
     );
     expect(personalPrPeriodBlockerDetail(rows[0].personal, "week")).toBe("blockers 1 attention");
-    expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | test 1/1 (100%)");
+    expect(personalCriticalFlowEfficiencyCompactSummary(rows[0].flow)).toBe("PR 1/1 (100%) | issue testing 1/1 (100%)");
   });
 });
 

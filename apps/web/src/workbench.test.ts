@@ -710,7 +710,7 @@ describe("work item attention reasons", () => {
   });
 
   it("labels issue-scoped testing states without PR-side handoff concepts", () => {
-    expect(testingStateBusinessLabel("testing")).toBe("issue in test");
+    expect(testingStateBusinessLabel("testing")).toBe("issue testing");
     expect(testingStateBusinessLabel("test_changes_requested")).toBe("tester feedback");
     expect(testingStateBusinessLabel("not_ready")).toBe("not in issue testing");
     expect(testingStateHelpText("testing")).toContain("PR reviewer or assignee is not used");
@@ -1220,7 +1220,7 @@ describe("testing issue action order", () => {
         partialIssueTransitions: 0
       })
     ).toMatchObject({
-      title: "1 testing issue is waiting too long",
+      title: "1 issue testing item is waiting too long",
       tone: "critical"
     });
 
@@ -1575,6 +1575,7 @@ describe("personal activity feed", () => {
 
     expect(items[0]?.id).toBe("testing_issue:77");
     expect(items[0]?.durationEvidence).toBe("GitHub issue label event");
+    expect(personalDurationText(items[0]!)).toBe("issue testing 12h");
     expect(personalActivityNextAction(items[0]!)).toBe("Link the tested PR");
   });
 

@@ -973,10 +973,10 @@ export function flowEfficiencyDiagnostics(summary: FlowEfficiencySummary): FlowE
       title:
         summary.averageTestingQueueAgeHours !== null && summary.averageTestingQueueAgeHours >= 24
           ? issueQueueVisible
-            ? `${summary.testingQueueIssues} issues are waiting in test`
+            ? `${summary.testingQueueIssues} issues are waiting in issue testing`
             : `${summary.testingQueuePrs} linked PRs are waiting on issue testing`
           : issueQueueVisible
-            ? `${summary.testingQueueIssues} issues are in testing`
+            ? `${summary.testingQueueIssues} issues are in issue testing`
             : `${summary.testingQueuePrs} linked PRs have issue testing context`,
       detail: `avg wait ${diagnosticDuration(summary.averageTestingQueueAgeHours)}; ${summary.testingQueuePrs} linked PRs; check issue assignment and linked PR evidence`,
       target: "testing_queue",
@@ -1041,7 +1041,7 @@ export function flowEfficiencyDiagnostics(summary: FlowEfficiencySummary): FlowE
       {
         key: "flow-clear",
         title: "No flow bottleneck in cached data",
-        detail: "throughput, issue drain, PR attention, and testing waits are within current thresholds",
+        detail: "throughput, issue drain, PR attention, and issue testing waits are within current thresholds",
         target: "pr_flow",
         tone: "good",
         priority: 0
@@ -1941,11 +1941,11 @@ export function testingTurnoverHealthSummary(input: {
   if (testing.staleQueueIssues > 0) {
     const waitingLabel =
       testing.staleQueueIssues === 1
-        ? "1 testing issue is waiting too long"
-        : `${testing.staleQueueIssues} testing issues are waiting too long`;
+        ? "1 issue testing item is waiting too long"
+        : `${testing.staleQueueIssues} issue testing items are waiting too long`;
     return {
       title: waitingLabel,
-      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
       evidence: `${sampleEvidence} | ${dataGapText}`,
       tone: "critical"
     };
@@ -1966,7 +1966,7 @@ export function testingTurnoverHealthSummary(input: {
           : "No testing close history yet",
       detail:
         testing.queueIssues > 0
-          ? `${testing.queueIssues} in test | avg wait ${wait}; wait for issue close samples before judging turnover`
+          ? `${testing.queueIssues} in issue testing | avg wait ${wait}; wait for issue close samples before judging turnover`
           : "No visible queue or handoff-to-close samples in cache.",
       evidence: dataGapText,
       tone: testing.queueIssues > 0 || partialIssueTransitions > 0 ? "attention" : "normal"
@@ -1975,7 +1975,7 @@ export function testingTurnoverHealthSummary(input: {
   if (partialIssueTransitions > 0) {
     return {
       title: "Testing turnover has partial timeline evidence",
-      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
       evidence: dataGapText,
       tone: "attention"
     };
@@ -1983,7 +1983,7 @@ export function testingTurnoverHealthSummary(input: {
   if (testing.queueIssues > 0) {
     return {
       title: "Testing queue is moving from cached evidence",
-      detail: `${testing.queueIssues} in test | avg wait ${wait} | handoff-to-close ${close}`,
+      detail: `${testing.queueIssues} in issue testing | avg wait ${wait} | handoff-to-close ${close}`,
       evidence: sampleEvidence,
       tone: "normal"
     };
@@ -2104,7 +2104,7 @@ export function teamOperatingSignals(input: {
 
 export function testingStateBusinessLabel(state: TestingFlowState): string {
   if (state === "testing") {
-    return "issue in test";
+    return "issue testing";
   }
   if (state === "test_changes_requested") {
     return "tester feedback";
@@ -3131,7 +3131,7 @@ export function personalDurationText(input: {
     return `PR ${durationHoursText(input.durationHours)}`;
   }
   if (input.durationKind === "testing_queue") {
-    return `test ${durationHoursText(input.durationHours)}`;
+    return `issue testing ${durationHoursText(input.durationHours)}`;
   }
   return `issue ${durationHoursText(input.durationHours)}`;
 }
