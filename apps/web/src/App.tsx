@@ -11354,14 +11354,30 @@ interface PrOperationsSummaryCounts {
   ciFailedPrs: number;
   requestedChangePrs: number;
   conflictPrs: number;
+  evidenceIncompletePrs: number;
   evidenceGapPrs: number;
   issueLinkPendingPrs: number;
 }
 
-function prOperationsSummaryCounts(
+export function prOperationsSummaryCounts(
   prs: PendingPrView[],
   criticalIssuesByPr: Map<number, PrCriticalIssueContext[]>
 ): PrOperationsSummaryCounts {
+  const evidenceIncompleteNumbers = new Set<number>();
+  let evidenceGapPrs = 0;
+  let issueLinkPendingPrs = 0;
+
+  for (const pr of prs) {
+    if (prEvidencePending(pr)) {
+      evidenceGapPrs += 1;
+      evidenceIncompleteNumbers.add(pr.number);
+    }
+    if (prIssueLinkUnknown(pr, criticalIssuesByPr.get(pr.number) ?? [])) {
+      issueLinkPendingPrs += 1;
+      evidenceIncompleteNumbers.add(pr.number);
+    }
+  }
+
   return {
     activeIssuePrs: prs.filter((pr) => prHasActiveIssue(pr, criticalIssuesByPr)).length,
     attentionPrs: prs.filter((pr) => pr.attentionFlags.length > 0).length,
@@ -11369,8 +11385,9 @@ function prOperationsSummaryCounts(
     ciFailedPrs: prs.filter(prHasFailedCi).length,
     requestedChangePrs: prs.filter(prHasRequestChanges).length,
     conflictPrs: prs.filter(prHasConflict).length,
-    evidenceGapPrs: prs.filter(prEvidencePending).length,
-    issueLinkPendingPrs: prs.filter((pr) => prIssueLinkUnknown(pr, criticalIssuesByPr.get(pr.number) ?? [])).length
+    evidenceIncompletePrs: evidenceIncompleteNumbers.size,
+    evidenceGapPrs,
+    issueLinkPendingPrs
   };
 }
 
@@ -11453,11 +11470,11 @@ function prOperationsFirstAction(counts: PrOperationsSummaryCounts): {
       detail: `${counts.noActionPrs} PRs have no cached human action in 24h.`
     };
   }
-  if (counts.evidenceGapPrs > 0 || counts.issueLinkPendingPrs > 0) {
+  if (counts.evidenceIncompletePrs > 0) {
     return {
       scope: counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending",
       title: "Repair PR cache evidence",
-      detail: `${counts.evidenceGapPrs + counts.issueLinkPendingPrs} PRs have incomplete PR or issue link evidence.`
+      detail: `${counts.evidenceIncompletePrs} unique PRs have incomplete PR or issue link evidence.`
     };
   }
   return {
@@ -11558,9 +11575,9 @@ function PrOperationsSummary({
           />
           <PrOpsTile
             label="Evidence incomplete"
-            value={counts.evidenceGapPrs + counts.issueLinkPendingPrs}
-            detail={`${counts.issueLinkPendingPrs} issue links pending`}
-            tone={counts.evidenceGapPrs + counts.issueLinkPendingPrs > 0 ? "attention" : "good"}
+            value={counts.evidenceIncompletePrs}
+            detail={`${counts.evidenceGapPrs} PR evidence | ${counts.issueLinkPendingPrs} issue links`}
+            tone={counts.evidenceIncompletePrs > 0 ? "attention" : "good"}
             active={scopeFilter === "evidence_pending" || scopeFilter === "issue_link_pending"}
             onClick={() => onScopeFilterChange(counts.evidenceGapPrs > 0 ? "evidence_pending" : "issue_link_pending")}
           />

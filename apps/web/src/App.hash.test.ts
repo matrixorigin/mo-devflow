@@ -65,6 +65,7 @@ import {
   personalDrilldownFilterFromHash,
   prLifecycleDurationText,
   prBoardTabFromHash,
+  prOperationsSummaryCounts,
   prRotationTableSummary,
   prScopeHelp,
   prScopeFilterFromHash,
@@ -904,6 +905,23 @@ describe("dashboard hash filters", () => {
     expect(prRotationTableSummary(12, "attention", "last_action")).toBe(
       "paginated 12 PRs | PR attention | sort last action"
     );
+  });
+
+  it("counts evidence-incomplete PRs once when detail and issue-link evidence are both pending", () => {
+    const pendingBoth = {
+      ...personalPr({ number: 90, ageHours: 12, createdAt: "2026-07-05T00:00:00Z", mergedAt: null }),
+      detailSyncedAt: null,
+      isComplete: false,
+      linkedIssueNumbers: []
+    };
+
+    const counts = prOperationsSummaryCounts([pendingBoth], new Map());
+
+    expect(counts).toMatchObject({
+      evidenceIncompletePrs: 1,
+      evidenceGapPrs: 1,
+      issueLinkPendingPrs: 1
+    });
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {
