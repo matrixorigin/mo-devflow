@@ -116,6 +116,15 @@ export function buildConfigCheck(env, options = {}) {
       : "Use comma-separated origins only, for example https://devflow.example.com."
   );
 
+  add(
+    dashboardUrlStatus(env.MO_DEVFLOW_DASHBOARD_URL, production),
+    "Notification dashboard URL",
+    "MO_DEVFLOW_DASHBOARD_URL",
+    production
+      ? "Set an absolute https public web URL so notifications link back to the deployed dashboard."
+      : "Use an absolute http(s) URL when overriding notification dashboard links; omit it to use localhost."
+  );
+
   return checks;
 }
 
@@ -231,6 +240,27 @@ function validAllowedOrigins(value, production = false) {
     }
   }
   return "ok";
+}
+
+function dashboardUrlStatus(value, production) {
+  if (!value?.trim()) {
+    return production ? "fail" : "ok";
+  }
+  try {
+    const parsed = new URL(value.trim());
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return "fail";
+    }
+    if (production && parsed.protocol !== "https:") {
+      return "fail";
+    }
+    if (parsed.search || parsed.hash) {
+      return "fail";
+    }
+    return "ok";
+  } catch {
+    return "fail";
+  }
 }
 
 function sessionCookieSecureStatus(env, production) {

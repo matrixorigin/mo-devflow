@@ -37,7 +37,8 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
     expect(summary.failures.map((failure) => failure.name)).toEqual([
       "GitHub OAuth login",
       "Session cookie secure flag",
-      "Service read token"
+      "Service read token",
+      "Notification dashboard URL"
     ]);
   });
 
@@ -49,7 +50,8 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
       MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
       MO_DEVFLOW_GITHUB_TOKEN: "service-token",
       MO_DEVFLOW_PUBLIC_URL: "https://devflow.example.com",
-      MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com"
+      MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com",
+      MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com/app"
     };
     const checks = buildConfigCheck(env, { production: true });
     const serialized = JSON.stringify(checks);
@@ -67,7 +69,8 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
           MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
           MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
           MO_DEVFLOW_GITHUB_TOKEN: "service-token",
-          MO_DEVFLOW_COOKIE_SECURE: "true"
+          MO_DEVFLOW_COOKIE_SECURE: "true",
+          MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com"
         },
         { production: true }
       )
@@ -87,7 +90,8 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
           MO_DEVFLOW_GITHUB_TOKEN: "service-token",
           MO_DEVFLOW_PUBLIC_URL: "http://devflow.example.com",
           MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI: "http://devflow.example.com/api/auth/github/callback",
-          MO_DEVFLOW_ALLOWED_ORIGINS: "http://devflow.example.com"
+          MO_DEVFLOW_ALLOWED_ORIGINS: "http://devflow.example.com",
+          MO_DEVFLOW_DASHBOARD_URL: "http://devflow.example.com"
         },
         { production: true }
       )
@@ -95,7 +99,8 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
 
     expect(summary.failures.map((failure) => failure.name)).toEqual([
       "OAuth callback URL",
-      "Allowed browser origins"
+      "Allowed browser origins",
+      "Notification dashboard URL"
     ]);
   });
 
@@ -105,11 +110,42 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
         ...baseEnv,
         MO_DEVFLOW_PUBLIC_URL: "http://localhost:18081",
         MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI: "http://localhost:18081/api/auth/github/callback",
-        MO_DEVFLOW_ALLOWED_ORIGINS: "http://localhost:5173"
+        MO_DEVFLOW_ALLOWED_ORIGINS: "http://localhost:5173",
+        MO_DEVFLOW_DASHBOARD_URL: "http://localhost:5173/app"
       })
     );
 
     expect(summary.failures).toEqual([]);
+  });
+
+  test("rejects ambiguous notification dashboard URLs before deployment", () => {
+    const baseProductionEnv = {
+      ...baseEnv,
+      NODE_ENV: "production",
+      MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
+      MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
+      MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+      MO_DEVFLOW_PUBLIC_URL: "https://devflow.example.com",
+      MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com"
+    };
+
+    for (const dashboardUrl of [
+      "not-a-url",
+      "https://devflow.example.com/app?team=mo",
+      "https://devflow.example.com/app#prs"
+    ]) {
+      const summary = summarizeChecks(
+        buildConfigCheck(
+          {
+            ...baseProductionEnv,
+            MO_DEVFLOW_DASHBOARD_URL: dashboardUrl
+          },
+          { production: true }
+        )
+      );
+
+      expect(summary.failures.map((failure) => failure.name)).toEqual(["Notification dashboard URL"]);
+    }
   });
 
   test("fails unsafe values before startup", () => {
