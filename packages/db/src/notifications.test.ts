@@ -605,6 +605,28 @@ describe("notification acknowledgement health", () => {
     });
   });
 
+  test("requires a valid https webhook URL when WeCom delivery is enabled", () => {
+    for (const webhookUrl of ["not-a-url", "http://wecom.example.test/webhook"]) {
+      expect(
+        notificationReadiness({
+          profile: {
+            ...profile,
+            notifications: {
+              ...profile.notifications,
+              wecom: { enabled: true, webhookUrlEnv: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+            }
+          },
+          env: { MO_DEVFLOW_WECOM_WEBHOOK_URL: webhookUrl },
+          missingEmployeeMappings: 0
+        })
+      ).toMatchObject({
+        status: "action_required",
+        blockers: ["MO_DEVFLOW_WECOM_WEBHOOK_URL must be an absolute https URL."],
+        warnings: []
+      });
+    }
+  });
+
   test("marks notifications degraded when owner mappings fall back to maintainer routing", () => {
     expect(
       notificationReadiness({

@@ -396,7 +396,8 @@ export function notificationReadiness(input: {
 }): NotificationReadiness {
   const env = input.env ?? process.env;
   const webhookEnvVar = input.profile.notifications.wecom.webhookUrlEnv ?? null;
-  const webhookConfigured = Boolean(webhookEnvVar && env[webhookEnvVar]?.trim());
+  const webhookUrl = webhookEnvVar ? env[webhookEnvVar]?.trim() : "";
+  const webhookConfigured = Boolean(webhookUrl);
   const mappedEmployees = Object.values(input.profile.notifications.employees).filter(
     (employee) => employee.wecomUserId.trim().length > 0
   ).length;
@@ -410,6 +411,8 @@ export function notificationReadiness(input: {
       blockers.push("notifications.wecom.webhook_url_env is not configured in the repository profile.");
     } else if (!webhookConfigured) {
       blockers.push(`${webhookEnvVar} is not set in the API or worker environment.`);
+    } else if (!validHttpsUrl(webhookUrl)) {
+      blockers.push(`${webhookEnvVar} must be an absolute https URL.`);
     }
     if (!input.profile.notifications.routing.fallbackRecipient.trim()) {
       blockers.push("notifications routing fallback_recipient is empty.");
@@ -439,6 +442,17 @@ export function notificationReadiness(input: {
     missingEmployeeMappings: input.missingEmployeeMappings,
     fallbackRecipient: input.profile.notifications.routing.fallbackRecipient
   };
+}
+
+function validHttpsUrl(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function metricSourceCompleteness(value: unknown): MetricSourceCompleteness {
