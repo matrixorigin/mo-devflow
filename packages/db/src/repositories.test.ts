@@ -989,7 +989,7 @@ describe("critical issue cache blockers", () => {
         syncError: null,
         linkedPullRequests: [linkedPr]
       }).map((blocker) => blocker.key)
-    ).toEqual(["issue:unowned", "issue:partial_cache", "pr:101:requested_changes", "pr:101:ci_failed"]);
+    ).toEqual(["issue:unowned", "issue:partial_cache", "pr:101:ci_failed"]);
   });
 
   test("surfaces stalled testing handoff as a linked PR blocker", () => {
@@ -1015,6 +1015,24 @@ describe("critical issue cache blockers", () => {
       message: "PR #101 is linked to an issue stalled in testing handoff.",
       relatedPrNumber: 101
     });
+  });
+
+  test("does not surface review blockers before CI and merge blockers are clear", () => {
+    const blockers = criticalIssueBlockersFromCache({
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      isComplete: true,
+      syncError: null,
+      linkedPullRequests: [
+        {
+          ...linkedPr,
+          mergeStateStatus: "dirty",
+          attentionFlags: ["requested_changes", "review_requested_no_response", "ci_failed", "merge_conflict"]
+        }
+      ]
+    });
+
+    expect(blockers.map((blocker) => blocker.key)).toEqual(["pr:101:merge_conflict", "pr:101:ci_failed"]);
   });
 
   test("keeps linked PR testing state scoped to the current issue", () => {
@@ -1059,6 +1077,9 @@ describe("critical issue cache blockers", () => {
       linkedPullRequests: [
         {
           ...linkedPr,
+          reviewDecision: null,
+          ciState: "success",
+          mergeStateStatus: "clean",
           attentionFlags: ["review_requested_no_response"]
         }
       ]
@@ -1770,6 +1791,75 @@ describe("metric aggregation", () => {
     expect(metrics.get(`${date}:person:bob`)).toMatchObject({
       testingQueueIssues: 0,
       averageTestingQueueAgeHours: null
+    });
+  });
+
+  test("counts PR review-stage metrics only after CI and merge blockers are clear", () => {
+    const profile: RepoProfile = {
+      ...baseProfile,
+      people: { watchedUsers: [], testers: [] }
+    };
+    const date = "2026-07-03";
+    const metrics = new Map<string, DailyMetricPoint>([[`${date}:team:all`, metricPoint(date, "team", "all")]]);
+    const prRow = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      owner_login: "alice",
+      author_login: "alice",
+      assignees_json: "[]",
+      created_at: "2026-07-01 00:00:00",
+      closed_at: null,
+      merged_at: null,
+      requested_reviewers_json: "[]",
+      review_decision: null,
+      merge_state_status: "clean",
+      ci_state: "success",
+      latest_review_state: null,
+      latest_review_submitted_at: null,
+      attention_flags_json: "[]",
+      testing_state: "not_ready",
+      testing_queue_age_hours: null,
+      detail_synced_at: "2026-07-01 01:00:00",
+      detail_error: null,
+      is_complete: 1,
+      sync_error: null,
+      ...overrides
+    });
+
+    applyBacklogSnapshotMetrics({
+      metrics,
+      dateKeys: [date],
+      profile,
+      issueRows: [],
+      prRows: [
+        prRow({
+          merge_state_status: "dirty",
+          ci_state: "failure",
+          review_decision: "changes_requested",
+          attention_flags_json: JSON.stringify(["merge_conflict", "ci_failed", "requested_changes"])
+        }),
+        prRow({
+          ci_state: "failure",
+          requested_reviewers_json: JSON.stringify(["reviewer-a"]),
+          attention_flags_json: JSON.stringify(["ci_failed", "review_requested_no_response"])
+        }),
+        prRow({
+          review_decision: "changes_requested",
+          attention_flags_json: JSON.stringify(["requested_changes"])
+        }),
+        prRow({
+          requested_reviewers_json: JSON.stringify(["reviewer-b"]),
+          attention_flags_json: JSON.stringify(["review_requested_no_response"])
+        })
+      ],
+      criticalStartedAtByIssueNumber: new Map(),
+      testingIssueContexts: new Map()
+    });
+
+    expect(metrics.get(`${date}:team:all`)).toMatchObject({
+      pendingPrs: 4,
+      ciFailedPrs: 2,
+      requestedChangePrs: 1,
+      reviewWaitingPrs: 1,
+      mergeConflictPrs: 1
     });
   });
 

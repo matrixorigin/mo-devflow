@@ -2889,6 +2889,58 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
   };
 }
 
+const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+
+function linkedPrHasFailedCi(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return pr.attentionFlags.includes("ci_failed") || failedCiStates.has((pr.ciState ?? "").toLowerCase());
+}
+
+function linkedPrHasMergeConflict(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return pr.attentionFlags.includes("merge_conflict") || pr.mergeStateStatus === "dirty";
+}
+
+function linkedPrHasPreReviewBlocker(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return linkedPrHasMergeConflict(pr) || linkedPrHasFailedCi(pr);
+}
+
+function linkedPrHasReviewStageFeedback(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return (
+    !linkedPrHasPreReviewBlocker(pr) &&
+    (pr.attentionFlags.includes("requested_changes") || pr.reviewDecision === "changes_requested")
+  );
+}
+
+function linkedPrHasReviewWaiting(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return (
+    !linkedPrHasPreReviewBlocker(pr) &&
+    !linkedPrHasReviewStageFeedback(pr) &&
+    pr.attentionFlags.includes("review_requested_no_response")
+  );
+}
+
+function currentLinkedPrBlockerFlags(pr: CriticalIssueLinkedPullRequestView): string[] {
+  const flags: string[] = [];
+  if (linkedPrHasMergeConflict(pr)) {
+    flags.push("merge_conflict");
+  }
+  if (linkedPrHasFailedCi(pr)) {
+    flags.push("ci_failed");
+  }
+  if (linkedPrHasReviewStageFeedback(pr)) {
+    flags.push("requested_changes");
+  }
+  if (linkedPrHasReviewWaiting(pr)) {
+    flags.push("review_requested_no_response");
+  }
+  if (pr.attentionFlags.includes("no_human_action_24h")) {
+    flags.push("no_human_action_24h");
+  }
+  if (pr.attentionFlags.includes("testing_stalled")) {
+    flags.push("testing_stalled");
+  }
+  return uniqueValues(flags);
+}
+
 export function criticalIssueBlockersFromCache(input: {
   ownerLogin: string | null;
   aiEffortLabel: string | null;
@@ -2930,7 +2982,7 @@ export function criticalIssueBlockersFromCache(input: {
     });
   }
   for (const pr of input.linkedPullRequests) {
-    for (const flag of pr.attentionFlags) {
+    for (const flag of currentLinkedPrBlockerFlags(pr)) {
       blockers.push(blockerForPrFlag(pr, flag));
     }
   }
@@ -3329,13 +3381,35 @@ function isTestingQueueState(value: string): boolean {
   return ["testing", "test_changes_requested"].includes(value);
 }
 
-const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
-
 function normalizedRowState(row: CacheRow, key: string): string {
   return asString(row[key]).toLowerCase();
 }
 
+function rowHasFailedCi(row: CacheRow, attentionFlags: string[]): boolean {
+  return attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedRowState(row, "ci_state"));
+}
+
+function rowHasMergeConflict(row: CacheRow, attentionFlags: string[]): boolean {
+  return attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty";
+}
+
+function rowHasPreReviewBlocker(row: CacheRow, attentionFlags: string[]): boolean {
+  return rowHasMergeConflict(row, attentionFlags) || rowHasFailedCi(row, attentionFlags);
+}
+
+function rowHasReviewStageFeedback(row: CacheRow, attentionFlags: string[]): boolean {
+  return (
+    !rowHasPreReviewBlocker(row, attentionFlags) &&
+    (attentionFlags.includes("requested_changes") ||
+      normalizedRowState(row, "review_decision") === "changes_requested" ||
+      normalizedRowState(row, "latest_review_state") === "changes_requested")
+  );
+}
+
 function prHasReviewWaitingSignal(row: CacheRow, attentionFlags: string[]): boolean {
+  if (rowHasPreReviewBlocker(row, attentionFlags) || rowHasReviewStageFeedback(row, attentionFlags)) {
+    return false;
+  }
   if (attentionFlags.includes("review_requested_no_response")) {
     return true;
   }
@@ -3474,26 +3548,16 @@ export function applyBacklogSnapshotMetrics(input: {
         if (!workflowSkipped && attentionFlags.length > 0) {
           point.attentionPrs += 1;
         }
-        if (
-          !workflowSkipped &&
-          (attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedRowState(row, "ci_state")))
-        ) {
+        if (!workflowSkipped && rowHasFailedCi(row, attentionFlags)) {
           point.ciFailedPrs += 1;
         }
-        const hasRequestedChanges =
-          attentionFlags.includes("requested_changes") ||
-          normalizedRowState(row, "review_decision") === "changes_requested" ||
-          normalizedRowState(row, "latest_review_state") === "changes_requested";
-        if (!workflowSkipped && hasRequestedChanges) {
+        if (!workflowSkipped && rowHasReviewStageFeedback(row, attentionFlags)) {
           point.requestedChangePrs += 1;
         }
         if (!workflowSkipped && prHasReviewWaitingSignal(row, attentionFlags)) {
           point.reviewWaitingPrs += 1;
         }
-        if (
-          !workflowSkipped &&
-          (attentionFlags.includes("merge_conflict") || normalizedRowState(row, "merge_state_status") === "dirty")
-        ) {
+        if (!workflowSkipped && rowHasMergeConflict(row, attentionFlags)) {
           point.mergeConflictPrs += 1;
         }
       }
