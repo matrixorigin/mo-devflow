@@ -14098,6 +14098,7 @@ function PersonQueueRhythmStrip({
 }) {
   const rows = personalPrThroughputRows(person);
   const flow = personalCriticalFlowEfficiency(person);
+  const flowTarget = personalCriticalFlowDefaultTarget(flow);
   const openThroughput = (period: MetricPeriod): void => {
     if (onThroughputSelect) {
       onThroughputSelect(personalPrThroughputSelectionForPeriod(person, period));
@@ -14132,7 +14133,7 @@ function PersonQueueRhythmStrip({
             ? "person-queue-flow-card-alert"
             : ""
         }`}
-        onClick={() => onOpenMetric("active_issues")}
+        onClick={() => onOpenMetric(flowTarget)}
       >
         <span>s-1/s0 Start → PR → Issue Testing</span>
         <strong>{personalCriticalFlowEfficiencyCompactSummary(flow)}</strong>

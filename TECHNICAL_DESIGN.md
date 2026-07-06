@@ -490,6 +490,8 @@ Testing state derivation should be event-sourced from normalized issue assignmen
 
 PR reviewer, PR label, PR assignee, and PR comment events must not create testing handoff state. Human PR comments may update `last_human_action_at`, while bot comments should not clear stale human workflow alerts.
 
+Operational day, week, and month metrics should use current calendar periods in the repository timezone, with week boundaries from the repository profile. Rolling 7, 30, or 90 day windows should be used for trend charts and diagnostic comparisons, and UI labels must distinguish current-period boards from rolling-window analytics.
+
 ## 13. Development Environment
 
 Use `/Users/xupeng/github/astra` as a reference for local development ergonomics, especially:

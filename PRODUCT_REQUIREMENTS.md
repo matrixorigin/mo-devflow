@@ -452,9 +452,10 @@ All date-based metrics should use the repository profile timezone. For MatrixOne
 Definitions:
 
 - "Yesterday" means the previous calendar day in the repo timezone.
-- "Day" means a calendar day in the repo timezone.
-- "Week" starts on the configured `week_start`.
-- "Month" means a calendar month in the repo timezone.
+- "Day" means the current calendar day in the repo timezone for default operational boards.
+- "Week" means the current configured week for default operational boards, starting on `week_start`.
+- "Month" means the current calendar month in the repo timezone for default operational boards.
+- Rolling ranges such as last 7, 30, or 90 days are trend-analysis ranges, not the default operational period labels.
 - If workday or holiday logic is added later, it should be explicit in the repo profile.
 
 Team metrics:
