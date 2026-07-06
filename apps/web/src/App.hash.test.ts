@@ -67,6 +67,7 @@ import {
   personalPrVisibleUniqueTotalForPeriod,
   personalDrilldownFilterFromHash,
   personalWorkPriorityLabel,
+  pendingPrRiskScore,
   prLifecycleDurationText,
   prBoardTabFromHash,
   prOperationsSummaryCounts,
@@ -1000,6 +1001,31 @@ describe("dashboard hash filters", () => {
     expect(teamPrNextActionScope(activeIssuePr as any, [activeIssueContext as any])).toBe("active_issue");
     expect(teamPrNextActionScope(issueLinkPending as any)).toBe("evidence_pending");
     expect(prScopeLabel("evidence_pending")).toBe("PR detail pending");
+  });
+
+  it("keeps hard PR blockers ahead of review-state work in team risk sorting", () => {
+    const reviewIdlePr = {
+      ...personalPr({ number: 97, ageHours: 72, createdAt: "2026-07-03T01:00:00Z", mergedAt: null }),
+      ciState: "success",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "no_human_action_24h"]
+    };
+    const ciBlockedPr = {
+      ...personalPr({ number: 98, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      ciState: "failure",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "ci_failed"]
+    };
+    const conflictedPr = {
+      ...personalPr({ number: 99, ageHours: 8, createdAt: "2026-07-05T03:00:00Z", mergedAt: null }),
+      ciState: "failure",
+      mergeStateStatus: "dirty",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "ci_failed", "merge_conflict"]
+    };
+
+    expect(pendingPrRiskScore(ciBlockedPr as any)).toBeGreaterThan(pendingPrRiskScore(reviewIdlePr as any));
+    expect(pendingPrRiskScore(conflictedPr as any)).toBeGreaterThan(pendingPrRiskScore(ciBlockedPr as any));
   });
 
   it("summarizes the collapsed issue table with scope, owner, AI, and sort", () => {

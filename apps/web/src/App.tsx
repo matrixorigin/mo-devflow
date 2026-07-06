@@ -9049,15 +9049,11 @@ function sortPendingPrsForDisplay(
   return [...prs].sort((left, right) => right.ageHours - left.ageHours || right.number - left.number);
 }
 
-function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): number {
+export function pendingPrRiskScore(pr: PendingPrView, activeIssues: PrCriticalIssueContext[] = []): number {
   return (
     prActiveIssueRiskScore(activeIssues) +
-    prAttentionReasons(pr).length * 80 +
-    (pr.mergeStateStatus === "dirty" ? 240 : 0) +
-    (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)
-      ? 220
-      : 0) +
-    (prHasRequestChanges(pr) ? 180 : 0) +
+    prAttentionPriorityScore(pr) * 100 +
+    prAttentionReasons(pr).length * 10 +
     (isTestingStalePr(pr) ? 150 : 0) +
     (pr.testingQueueAgeHours !== null ? 80 : 0) +
     (pr.ageHours >= 24 ? 60 : 0) +
