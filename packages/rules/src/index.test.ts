@@ -318,6 +318,46 @@ describe("rules", () => {
     expect(pr.attentionFlags).not.toContain("merge_conflict");
   });
 
+  test.each([
+    { ciState: "pending", label: "pending CI" },
+    { ciState: null, label: "missing CI evidence" }
+  ])("PR attention does not include requested changes with $label", ({ ciState }) => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 402,
+        number: 402,
+        title: "review feedback before ci pass",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/402",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: now,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 402,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState,
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        linkedIssueNumbers: [],
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).not.toContain("requested_changes");
+    expect(pr.attentionFlags).not.toContain("review_requested_no_response");
+    expect(pr.attentionFlags).not.toContain("ci_failed");
+    expect(pr.attentionFlags).not.toContain("merge_conflict");
+  });
+
   test("PR attention includes stale review requests without response", () => {
     const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const pr = normalizePullRequest(
@@ -351,6 +391,46 @@ describe("rules", () => {
     );
 
     expect(pr.attentionFlags).toContain("review_requested_no_response");
+  });
+
+  test.each([
+    { ciState: "pending", label: "pending CI" },
+    { ciState: null, label: "missing CI evidence" }
+  ])("PR attention does not include review waiting with $label", ({ ciState }) => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 403,
+        number: 403,
+        title: "waiting before ci pass",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/403",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "reviewer-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 403,
+        reviewDecision: null,
+        mergeStateStatus: "clean",
+        ciState,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: staleUpdate,
+        linkedIssueNumbers: [],
+        detailSyncedAt: new Date().toISOString(),
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).not.toContain("review_requested_no_response");
+    expect(pr.attentionFlags).not.toContain("requested_changes");
+    expect(pr.attentionFlags).not.toContain("ci_failed");
   });
 
   test("PR attention does not include review waiting before CI is clear", () => {

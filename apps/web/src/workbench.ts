@@ -1862,6 +1862,10 @@ function prHasPreReviewBlocker(pr: PrReviewStageSource): boolean {
   );
 }
 
+function prCiPassed(pr: PrReviewStageSource): boolean {
+  return pr.ciState === "success";
+}
+
 function prReviewEvidencePending(pr: PrAttentionReasonSource): boolean {
   return pr.isComplete === false || pr.detailSyncedAt === null || Boolean(pr.detailError);
 }
@@ -1869,6 +1873,7 @@ function prReviewEvidencePending(pr: PrAttentionReasonSource): boolean {
 export function prHasReviewStageFeedback(pr: PrReviewStageSource): boolean {
   return (
     !prHasPreReviewBlocker(pr) &&
+    prCiPassed(pr) &&
     (pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested")
   );
 }
@@ -1880,9 +1885,8 @@ export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
       (flag) =>
         !(
           flag === "review_requested_no_response" &&
-          (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
-        ) &&
-        !(flag === "requested_changes" && !hasReviewStageFeedback)
+          (!prCiPassed(pr) || prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
+        ) && !(flag === "requested_changes" && !hasReviewStageFeedback)
     )
     .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
@@ -2803,8 +2807,10 @@ function testingIssueLinkedPrReasons(pr: TestingIssueQueueView["linkedPullReques
       ...pr.attentionFlags
         .filter(
           (flag) =>
-            !(flag === "review_requested_no_response" && (hasPreReviewBlocker || hasReviewStageFeedback)) &&
-            !(flag === "requested_changes" && !hasReviewStageFeedback)
+            !(
+              flag === "review_requested_no_response" &&
+              (!prCiPassed(pr) || hasPreReviewBlocker || hasReviewStageFeedback)
+            ) && !(flag === "requested_changes" && !hasReviewStageFeedback)
         )
         .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " ")),
       hasReviewStageFeedback ? attentionFlagLabels.requested_changes : null,
@@ -2858,9 +2864,8 @@ function prReasons(pr: GanttPullRequestSource): string[] {
       (flag) =>
         !(
           flag === "review_requested_no_response" &&
-          (prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
-        ) &&
-        !(flag === "requested_changes" && !hasReviewStageFeedback)
+          (!prCiPassed(pr) || prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
+        ) && !(flag === "requested_changes" && !hasReviewStageFeedback)
     )
     .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
   if (prReviewEvidencePending(pr)) {

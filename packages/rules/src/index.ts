@@ -342,6 +342,7 @@ export function normalizePullRequest(
       : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
   const hasFailedCi = failedCiStates.has(ciState ?? "");
   const hasMergeConflict = mergeStateStatus === "dirty";
+  const hasPassedCi = ciState === "success";
   const hasPreReviewBlocker = hasMergeConflict || hasFailedCi;
   const attentionFlags: string[] = [];
   if (
@@ -355,6 +356,7 @@ export function normalizePullRequest(
     !workflowSkipped &&
     pr.state !== "closed" &&
     !hasPreReviewBlocker &&
+    hasPassedCi &&
     requestedReviewers.length > 0 &&
     !reviewDecision &&
     !latestReviewState &&
@@ -367,6 +369,7 @@ export function normalizePullRequest(
     !workflowSkipped &&
     pr.state !== "closed" &&
     !hasPreReviewBlocker &&
+    hasPassedCi &&
     (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")
   ) {
     attentionFlags.push("requested_changes");

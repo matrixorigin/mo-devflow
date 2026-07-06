@@ -315,10 +315,15 @@ function pullRequestHasMergeConflict(input: PullRequestAttentionStageInput): boo
   );
 }
 
+function pullRequestCiPassed(input: PullRequestAttentionStageInput): boolean {
+  return normalizedAttentionState(input.ciState) === "success";
+}
+
 function pullRequestHasReviewStageFeedback(input: PullRequestAttentionStageInput): boolean {
   return (
     !pullRequestHasMergeConflict(input) &&
     !pullRequestHasFailedCi(input) &&
+    pullRequestCiPassed(input) &&
     (input.attentionFlags.includes("requested_changes") ||
       normalizedAttentionState(input.reviewDecision) === "changes_requested" ||
       normalizedAttentionState(input.latestReviewState) === "changes_requested")
@@ -329,6 +334,7 @@ function pullRequestHasReviewWaiting(input: PullRequestAttentionStageInput): boo
   return (
     !pullRequestHasMergeConflict(input) &&
     !pullRequestHasFailedCi(input) &&
+    pullRequestCiPassed(input) &&
     !pullRequestHasReviewStageFeedback(input) &&
     input.attentionFlags.includes("review_requested_no_response")
   );
@@ -360,6 +366,19 @@ function attentionFlagsForCurrentPrStage(input: PullRequestAttentionStageInput):
     }
   }
   return uniqueValues(flags);
+}
+
+function attentionFlagsForPullRequestRow(row: Record<string, unknown>, workflowSkipped: boolean): string[] {
+  if (workflowSkipped) {
+    return [];
+  }
+  return attentionFlagsForCurrentPrStage({
+    attentionFlags: parseJsonArray(asString(row.attention_flags_json)),
+    reviewDecision: row.review_decision ? asString(row.review_decision) : null,
+    latestReviewState: row.latest_review_state ? asString(row.latest_review_state) : null,
+    ciState: row.ci_state ? asString(row.ci_state) : null,
+    mergeStateStatus: row.merge_state_status ? asString(row.merge_state_status) : null
+  });
 }
 
 export function pullRequestWithPreservedInsight(input: {
@@ -1553,7 +1572,7 @@ export async function listCachedPullRequestsForRules(repoId: number): Promise<No
     testingSignals: [],
     testingQueueAgeHours: null,
     workflowSkipped: false,
-    attentionFlags: pullRequestAttentionFlagsForRules(parseJsonArray(asString(row.attention_flags_json))),
+    attentionFlags: pullRequestAttentionFlagsForRules(attentionFlagsForPullRequestRow(row, false)),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     sourceAuthType: asString(row.source_auth_type) as NormalizedPullRequest["sourceAuthType"],
     sourceUserId: row.source_user_id === null || row.source_user_id === undefined ? null : asNumber(row.source_user_id),
@@ -2878,7 +2897,7 @@ function toCriticalIssueLinkedPullRequestView(
         ? null
         : asNumber(row.testing_queue_age_hours),
     workflowSkipped,
-    attentionFlags: workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json)),
+    attentionFlags: attentionFlagsForPullRequestRow(row, workflowSkipped),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
@@ -2981,9 +3000,14 @@ function linkedPrHasPreReviewBlocker(pr: CriticalIssueLinkedPullRequestView): bo
   return linkedPrHasMergeConflict(pr) || linkedPrHasFailedCi(pr);
 }
 
+function linkedPrCiPassed(pr: CriticalIssueLinkedPullRequestView): boolean {
+  return (pr.ciState ?? "").toLowerCase() === "success";
+}
+
 function linkedPrHasReviewStageFeedback(pr: CriticalIssueLinkedPullRequestView): boolean {
   return (
     !linkedPrHasPreReviewBlocker(pr) &&
+    linkedPrCiPassed(pr) &&
     (pr.attentionFlags.includes("requested_changes") || pr.reviewDecision === "changes_requested")
   );
 }
@@ -2991,6 +3015,7 @@ function linkedPrHasReviewStageFeedback(pr: CriticalIssueLinkedPullRequestView):
 function linkedPrHasReviewWaiting(pr: CriticalIssueLinkedPullRequestView): boolean {
   return (
     !linkedPrHasPreReviewBlocker(pr) &&
+    linkedPrCiPassed(pr) &&
     !linkedPrHasReviewStageFeedback(pr) &&
     pr.attentionFlags.includes("review_requested_no_response")
   );
@@ -3199,7 +3224,7 @@ function toPendingPrView(row: RowData, skippedLogins: Set<string>): PendingPrVie
         ? null
         : asNumber(row.testing_queue_age_hours),
     workflowSkipped,
-    attentionFlags: workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json)),
+    attentionFlags: attentionFlagsForPullRequestRow(row, workflowSkipped),
     linkedIssueNumbers: linkedIssueNumbersForPullRequestRow(row),
     isComplete: asNumber(row.is_complete) === 1
   };
@@ -3475,9 +3500,14 @@ function rowHasPreReviewBlocker(row: CacheRow, attentionFlags: string[]): boolea
   return rowHasMergeConflict(row, attentionFlags) || rowHasFailedCi(row, attentionFlags);
 }
 
+function rowCiPassed(row: CacheRow): boolean {
+  return normalizedRowState(row, "ci_state") === "success";
+}
+
 function rowHasReviewStageFeedback(row: CacheRow, attentionFlags: string[]): boolean {
   return (
     !rowHasPreReviewBlocker(row, attentionFlags) &&
+    rowCiPassed(row) &&
     (attentionFlags.includes("requested_changes") ||
       normalizedRowState(row, "review_decision") === "changes_requested" ||
       normalizedRowState(row, "latest_review_state") === "changes_requested")
@@ -3485,7 +3515,11 @@ function rowHasReviewStageFeedback(row: CacheRow, attentionFlags: string[]): boo
 }
 
 function prHasReviewWaitingSignal(row: CacheRow, attentionFlags: string[]): boolean {
-  if (rowHasPreReviewBlocker(row, attentionFlags) || rowHasReviewStageFeedback(row, attentionFlags)) {
+  if (
+    !rowCiPassed(row) ||
+    rowHasPreReviewBlocker(row, attentionFlags) ||
+    rowHasReviewStageFeedback(row, attentionFlags)
+  ) {
     return false;
   }
   if (attentionFlags.includes("review_requested_no_response")) {
@@ -3622,8 +3656,8 @@ export function applyBacklogSnapshotMetrics(input: {
         point.pendingPrs += 1;
         pendingPrAges.push(ageHours);
         const workflowSkipped = pullRequestRowWorkflowSkipped(row, skippedLogins);
-        const attentionFlags = workflowSkipped ? [] : parseJsonArray(asString(row.attention_flags_json));
-        if (!workflowSkipped && attentionFlags.length > 0) {
+        const attentionFlags = attentionFlagsForPullRequestRow(row, workflowSkipped);
+        if (attentionFlags.length > 0) {
           point.attentionPrs += 1;
         }
         if (!workflowSkipped && rowHasFailedCi(row, attentionFlags)) {

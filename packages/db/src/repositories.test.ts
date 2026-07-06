@@ -1035,6 +1035,25 @@ describe("critical issue cache blockers", () => {
     expect(blockers.map((blocker) => blocker.key)).toEqual(["pr:101:merge_conflict", "pr:101:ci_failed"]);
   });
 
+  test("does not surface review blockers until CI has passed", () => {
+    const blockers = criticalIssueBlockersFromCache({
+      ownerLogin: "alice",
+      aiEffortLabel: "ai-easy",
+      isComplete: true,
+      syncError: null,
+      linkedPullRequests: [
+        {
+          ...linkedPr,
+          mergeStateStatus: "clean",
+          ciState: "pending",
+          attentionFlags: ["requested_changes", "review_requested_no_response"]
+        }
+      ]
+    });
+
+    expect(blockers.map((blocker) => blocker.key)).toEqual([]);
+  });
+
   test("keeps linked PR testing state scoped to the current issue", () => {
     const pr = {
       ...linkedPr,
@@ -1887,6 +1906,17 @@ describe("metric aggregation", () => {
         prRow({
           requested_reviewers_json: JSON.stringify(["reviewer-b"]),
           attention_flags_json: JSON.stringify(["review_requested_no_response"])
+        }),
+        prRow({
+          ci_state: "pending",
+          review_decision: "changes_requested",
+          latest_review_state: "CHANGES_REQUESTED",
+          attention_flags_json: JSON.stringify(["requested_changes"])
+        }),
+        prRow({
+          ci_state: null,
+          requested_reviewers_json: JSON.stringify(["reviewer-c"]),
+          attention_flags_json: JSON.stringify(["review_requested_no_response"])
         })
       ],
       criticalStartedAtByIssueNumber: new Map(),
@@ -1894,7 +1924,8 @@ describe("metric aggregation", () => {
     });
 
     expect(metrics.get(`${date}:team:all`)).toMatchObject({
-      pendingPrs: 4,
+      pendingPrs: 6,
+      attentionPrs: 4,
       ciFailedPrs: 2,
       requestedChangePrs: 1,
       reviewWaitingPrs: 1,

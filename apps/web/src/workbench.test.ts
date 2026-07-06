@@ -45,6 +45,7 @@ import {
   personWorkloadStatus,
   prAttentionReasons,
   prAttentionPriorityScore,
+  prHasReviewStageFeedback,
   prQualityRiskSummary,
   prHasNoVisibleIssue,
   prIssueLinkEvidencePending,
@@ -704,17 +705,14 @@ describe("work item attention reasons", () => {
       testingState: "test_changes_requested"
     } as PersonalPullRequestView;
 
-    expect(prAttentionReasons(pr)).toEqual([
-      "Merge conflict",
-      "CI failed",
-      "Issue testing changes requested"
-    ]);
+    expect(prAttentionReasons(pr)).toEqual(["Merge conflict", "CI failed", "Issue testing changes requested"]);
   });
 
   it("prioritizes requested changes over generic stale review waiting", () => {
     const pr = pullRequest({
       attentionFlags: ["no_human_action_24h", "review_requested_no_response", "requested_changes"],
       reviewDecision: "changes_requested",
+      ciState: "success",
       ageHours: 166,
       linkedIssueNumbers: [24813]
     });
@@ -752,6 +750,23 @@ describe("work item attention reasons", () => {
     expect(personalActivityNextAction(ciItem!)).toBe("Fix failing CI");
     expect(prAttentionReasons(conflictedPr)).toEqual(["Merge conflict", "CI failed"]);
     expect(personalActivityNextAction(conflictItem!)).toBe("Resolve merge conflict");
+  });
+
+  it("does not present review-state work until CI has passed", () => {
+    const pendingChangesPr = pullRequest({
+      attentionFlags: ["requested_changes"],
+      reviewDecision: "changes_requested",
+      latestReviewState: "changes_requested",
+      ciState: "pending"
+    });
+    const unknownCiReviewPr = pullRequest({
+      attentionFlags: ["review_requested_no_response"],
+      ciState: null
+    });
+
+    expect(prHasReviewStageFeedback(pendingChangesPr)).toBe(false);
+    expect(prAttentionReasons(pendingChangesPr)).toEqual([]);
+    expect(prAttentionReasons(unknownCiReviewPr)).toEqual([]);
   });
 
   it("uses one blocker priority for PR reasons, sorting, and flow-thread next action", () => {
