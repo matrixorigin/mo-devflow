@@ -180,6 +180,8 @@ function normalizeState(value: string | null | undefined): string | null {
   return value.toLowerCase().replaceAll("-", "_");
 }
 
+const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+
 function normalizedLogin(login: string): string {
   return login.trim().toLowerCase();
 }
@@ -316,8 +318,7 @@ export function normalizePullRequest(
   const assignees = userLogins(pr.assignees);
   const requestedReviewers = userLogins(pr.requested_reviewers);
   const authorLogin = pr.user?.login ?? "unknown";
-  const owner =
-    profile.ownership.prOwner === "assignee" ? (assignees[0] ?? pr.user?.login) : pr.user?.login;
+  const owner = profile.ownership.prOwner === "assignee" ? (assignees[0] ?? pr.user?.login) : pr.user?.login;
   const ownerLogin = owner ?? "unknown";
   const workflowSkipped = loginsMatchSkipList(profile, [authorLogin, ownerLogin, ...assignees]);
   const createdAt = pr.created_at ?? new Date().toISOString();
@@ -334,9 +335,14 @@ export function normalizePullRequest(
   ]);
   const testingFlow = deriveTestingFlow(pr);
   const latestHumanCommentAt = latestHumanCommentTimestamp(commentEvidence);
-  const lastHumanActionAt = insight && !insight.detailError
-    ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ?? createdAt)
-    : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
+  const lastHumanActionAt =
+    insight && !insight.detailError
+      ? (maxIso([createdAt, insight.latestCommitAt, insight.latestReviewSubmittedAt, latestHumanCommentAt]) ??
+        createdAt)
+      : (maxIso([updatedAt, latestHumanCommentAt]) ?? updatedAt);
+  const hasFailedCi = failedCiStates.has(ciState ?? "");
+  const hasMergeConflict = mergeStateStatus === "dirty";
+  const hasPreReviewBlocker = hasMergeConflict || hasFailedCi;
   const attentionFlags: string[] = [];
   if (
     !workflowSkipped &&
@@ -348,6 +354,7 @@ export function normalizePullRequest(
   if (
     !workflowSkipped &&
     pr.state !== "closed" &&
+    !hasPreReviewBlocker &&
     requestedReviewers.length > 0 &&
     !reviewDecision &&
     !latestReviewState &&
@@ -359,18 +366,15 @@ export function normalizePullRequest(
   if (
     !workflowSkipped &&
     pr.state !== "closed" &&
+    !hasPreReviewBlocker &&
     (reviewDecision === "changes_requested" || latestReviewState === "changes_requested")
   ) {
     attentionFlags.push("requested_changes");
   }
-  if (
-    !workflowSkipped &&
-    pr.state !== "closed" &&
-    ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(ciState ?? "")
-  ) {
+  if (!workflowSkipped && pr.state !== "closed" && hasFailedCi) {
     attentionFlags.push("ci_failed");
   }
-  if (!workflowSkipped && pr.state !== "closed" && mergeStateStatus === "dirty") {
+  if (!workflowSkipped && pr.state !== "closed" && hasMergeConflict) {
     attentionFlags.push("merge_conflict");
   }
   return {

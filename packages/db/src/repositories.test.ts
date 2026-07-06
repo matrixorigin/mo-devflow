@@ -1213,6 +1213,45 @@ describe("pull request testing transition events", () => {
     expect(next.linkedIssueNumbers).toEqual([42]);
   });
 
+  test("reclassifies preserved PR attention flags to the current blocker stage", () => {
+    const next = pullRequestWithPreservedInsight({
+      current: {
+        ...pullRequest,
+        detailSyncedAt: null,
+        detailError: null,
+        reviewDecision: null,
+        mergeStateStatus: null,
+        ciState: null,
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: null,
+        attentionFlags: ["no_human_action_24h"],
+        isComplete: false
+      },
+      previous: {
+        last_human_action_at: "2026-07-02 08:00:00",
+        review_decision: "changes_requested",
+        merge_state_status: "dirty",
+        ci_state: "failure",
+        latest_review_state: "CHANGES_REQUESTED",
+        latest_review_submitted_at: "2026-07-02 09:00:00",
+        latest_commit_at: "2026-07-02 07:00:00",
+        detail_synced_at: "2026-07-03 00:00:00",
+        detail_error: null,
+        attention_flags_json: JSON.stringify([
+          "requested_changes",
+          "review_requested_no_response",
+          "ci_failed",
+          "merge_conflict"
+        ]),
+        linked_issue_numbers_json: JSON.stringify([42]),
+        is_complete: 1
+      }
+    });
+
+    expect(next.attentionFlags).toEqual(["no_human_action_24h", "merge_conflict", "ci_failed"]);
+  });
+
   test("does not preserve stale attention flags for workflow skipped PRs", () => {
     const next = pullRequestWithPreservedInsight({
       current: {

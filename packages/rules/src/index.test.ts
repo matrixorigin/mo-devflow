@@ -246,7 +246,7 @@ describe("rules", () => {
     expect(pr.attentionFlags).not.toContain("ci_failed");
   });
 
-  test("PR attention includes requested changes, failed CI, and merge conflict", () => {
+  test("PR attention gates review feedback behind CI and merge blockers", () => {
     const now = new Date().toISOString();
     const pr = normalizePullRequest(
       profile,
@@ -277,9 +277,45 @@ describe("rules", () => {
       }
     );
 
-    expect(pr.attentionFlags).toContain("requested_changes");
+    expect(pr.attentionFlags).not.toContain("requested_changes");
     expect(pr.attentionFlags).toContain("ci_failed");
     expect(pr.attentionFlags).toContain("merge_conflict");
+  });
+
+  test("PR attention includes requested changes only after CI and merge blockers are clear", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 400,
+        number: 400,
+        title: "review feedback",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/400",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: now,
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 400,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        linkedIssueNumbers: [],
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).toContain("requested_changes");
+    expect(pr.attentionFlags).not.toContain("ci_failed");
+    expect(pr.attentionFlags).not.toContain("merge_conflict");
   });
 
   test("PR attention includes stale review requests without response", () => {
@@ -315,6 +351,42 @@ describe("rules", () => {
     );
 
     expect(pr.attentionFlags).toContain("review_requested_no_response");
+  });
+
+  test("PR attention does not include review waiting before CI is clear", () => {
+    const staleUpdate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 405,
+        number: 405,
+        title: "waiting with failed CI",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/405",
+        created_at: staleUpdate,
+        updated_at: staleUpdate,
+        requested_reviewers: [{ login: "reviewer-a" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 405,
+        reviewDecision: null,
+        mergeStateStatus: "clean",
+        ciState: "failure",
+        latestReviewState: null,
+        latestReviewSubmittedAt: null,
+        latestCommitAt: staleUpdate,
+        linkedIssueNumbers: [],
+        detailSyncedAt: new Date().toISOString(),
+        detailError: null
+      }
+    );
+
+    expect(pr.attentionFlags).toContain("ci_failed");
+    expect(pr.attentionFlags).not.toContain("review_requested_no_response");
   });
 
   test("PR attention does not include review-request no-response after a review arrives", () => {
@@ -763,7 +835,7 @@ describe("rules", () => {
     expect(pr.lastHumanActionAt).toBe("2026-07-02T00:30:00Z");
   });
 
-  test("AI drift detects ai-easy PRs with review or CI blockers", () => {
+  test("AI drift detects ai-easy PRs with current CI blockers", () => {
     const now = new Date().toISOString();
     const pr = normalizePullRequest(
       profile,
@@ -795,7 +867,11 @@ describe("rules", () => {
       }
     );
 
-    expect(aiDriftSignalsForPullRequest(profile, pr).map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
+    const signals = aiDriftSignalsForPullRequest(profile, pr);
+    expect(signals.map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
+    expect(signals[0]?.severity).toBe("warning");
+    expect(signals[0]?.evidenceSummary).toContain("ci_failed");
+    expect(signals[0]?.evidenceSummary).not.toContain("requested_changes");
   });
 
   test("AI drift treats missing effort labels as ai-easy on PRs with blockers", () => {
@@ -834,6 +910,46 @@ describe("rules", () => {
     expect(signals.map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
     expect(signals[0]?.aiEffortLabel).toBe("ai-easy");
     expect(signals[0]?.evidenceSummary).toContain("has no ai-* label and is treated as ai-easy");
+    expect(signals[0]?.evidenceSummary).toContain("ci_failed");
+    expect(signals[0]?.evidenceSummary).not.toContain("requested_changes");
+  });
+
+  test("AI drift includes requested changes after CI and merge blockers are clear", () => {
+    const now = new Date().toISOString();
+    const pr = normalizePullRequest(
+      profile,
+      {
+        id: 504,
+        number: 504,
+        title: "easy fix with review feedback",
+        state: "open",
+        user: { login: "alice" },
+        html_url: "https://example.test/504",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: now,
+        labels: [{ name: "ai-easy" }],
+        head: { ref: "fix" },
+        base: { ref: "main" }
+      },
+      anonymousSource,
+      {
+        number: 504,
+        reviewDecision: "changes_requested",
+        mergeStateStatus: "clean",
+        ciState: "success",
+        latestReviewState: "CHANGES_REQUESTED",
+        latestReviewSubmittedAt: now,
+        latestCommitAt: now,
+        linkedIssueNumbers: [],
+        detailSyncedAt: now,
+        detailError: null
+      }
+    );
+
+    const signals = aiDriftSignalsForPullRequest(profile, pr);
+    expect(signals.map((item) => item.ruleKey)).toEqual(["ai_easy_pr_has_blockers"]);
+    expect(signals[0]?.evidenceSummary).toContain("requested_changes");
+    expect(signals[0]?.evidenceSummary).not.toContain("ci_failed");
   });
 
   test("AI drift ignores ai-easy PRs without blocker evidence", () => {

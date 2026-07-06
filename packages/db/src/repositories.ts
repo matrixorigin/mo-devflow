@@ -287,6 +287,81 @@ function parseJsonNumberArray(value: unknown): number[] {
   }
 }
 
+const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
+
+const reviewStageAttentionFlags = new Set([
+  "requested_changes",
+  "review_requested_no_response",
+  "ci_failed",
+  "merge_conflict"
+]);
+
+type PullRequestAttentionStageInput = Pick<
+  NormalizedPullRequest,
+  "attentionFlags" | "reviewDecision" | "latestReviewState" | "ciState" | "mergeStateStatus"
+>;
+
+function normalizedAttentionState(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase();
+}
+
+function pullRequestHasFailedCi(input: PullRequestAttentionStageInput): boolean {
+  return input.attentionFlags.includes("ci_failed") || failedCiStates.has(normalizedAttentionState(input.ciState));
+}
+
+function pullRequestHasMergeConflict(input: PullRequestAttentionStageInput): boolean {
+  return (
+    input.attentionFlags.includes("merge_conflict") || normalizedAttentionState(input.mergeStateStatus) === "dirty"
+  );
+}
+
+function pullRequestHasReviewStageFeedback(input: PullRequestAttentionStageInput): boolean {
+  return (
+    !pullRequestHasMergeConflict(input) &&
+    !pullRequestHasFailedCi(input) &&
+    (input.attentionFlags.includes("requested_changes") ||
+      normalizedAttentionState(input.reviewDecision) === "changes_requested" ||
+      normalizedAttentionState(input.latestReviewState) === "changes_requested")
+  );
+}
+
+function pullRequestHasReviewWaiting(input: PullRequestAttentionStageInput): boolean {
+  return (
+    !pullRequestHasMergeConflict(input) &&
+    !pullRequestHasFailedCi(input) &&
+    !pullRequestHasReviewStageFeedback(input) &&
+    input.attentionFlags.includes("review_requested_no_response")
+  );
+}
+
+function attentionFlagsForCurrentPrStage(input: PullRequestAttentionStageInput): string[] {
+  const flags: string[] = [];
+  if (input.attentionFlags.includes("no_human_action_24h")) {
+    flags.push("no_human_action_24h");
+  }
+  if (pullRequestHasMergeConflict(input)) {
+    flags.push("merge_conflict");
+  }
+  if (pullRequestHasFailedCi(input)) {
+    flags.push("ci_failed");
+  }
+  if (pullRequestHasReviewStageFeedback(input)) {
+    flags.push("requested_changes");
+  }
+  if (pullRequestHasReviewWaiting(input)) {
+    flags.push("review_requested_no_response");
+  }
+  if (input.attentionFlags.includes("testing_stalled")) {
+    flags.push("testing_stalled");
+  }
+  for (const flag of input.attentionFlags) {
+    if (!reviewStageAttentionFlags.has(flag) && !flags.includes(flag)) {
+      flags.push(flag);
+    }
+  }
+  return uniqueValues(flags);
+}
+
 export function pullRequestWithPreservedInsight(input: {
   current: NormalizedPullRequest;
   previous: Record<string, unknown> | null | undefined;
@@ -299,7 +374,10 @@ export function pullRequestWithPreservedInsight(input: {
     return input.current;
   }
   const previousDetailError = input.previous?.detail_error ? asString(input.previous.detail_error) : null;
-  return {
+  const mergedAttentionFlags = input.current.workflowSkipped
+    ? []
+    : mergeUnique(input.current.attentionFlags, parseJsonArray(asString(input.previous?.attention_flags_json)));
+  const preserved: NormalizedPullRequest = {
     ...input.current,
     lastHumanActionAt: fromSqlDate(input.previous?.last_human_action_at) ?? input.current.lastHumanActionAt,
     reviewDecision: input.previous?.review_decision ? asString(input.previous.review_decision) : null,
@@ -310,14 +388,16 @@ export function pullRequestWithPreservedInsight(input: {
     latestCommitAt: fromSqlDate(input.previous?.latest_commit_at),
     detailSyncedAt: previousDetailSyncedAt,
     detailError: previousDetailError,
-    attentionFlags: input.current.workflowSkipped
-      ? []
-      : mergeUnique(input.current.attentionFlags, parseJsonArray(asString(input.previous?.attention_flags_json))),
+    attentionFlags: mergedAttentionFlags,
     linkedIssueNumbers: linkedIssueNumbersForPrNumber(input.current.number, [
       ...input.current.linkedIssueNumbers,
       ...parseJsonNumberArray(input.previous?.linked_issue_numbers_json)
     ]),
     isComplete: !previousDetailError
+  };
+  return {
+    ...preserved,
+    attentionFlags: input.current.workflowSkipped ? [] : attentionFlagsForCurrentPrStage(preserved)
   };
 }
 
@@ -2888,8 +2968,6 @@ function blockerForPrFlag(pr: CriticalIssueLinkedPullRequestView, flag: string):
     relatedPrNumber: pr.number
   };
 }
-
-const failedCiStates = new Set(["failure", "failed", "error", "timed_out", "action_required", "cancelled"]);
 
 function linkedPrHasFailedCi(pr: CriticalIssueLinkedPullRequestView): boolean {
   return pr.attentionFlags.includes("ci_failed") || failedCiStates.has((pr.ciState ?? "").toLowerCase());
