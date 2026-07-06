@@ -20365,7 +20365,8 @@ function WebhookIngestionBoard({
   authenticated,
   retrySaving,
   onRetryFailed,
-  onRefreshWebhooks
+  onRefreshWebhooks,
+  onOpenHealth
 }: {
   data: DashboardSummary;
   scopeFilter: WebhookDeliveryScopeFilter;
@@ -20374,6 +20375,7 @@ function WebhookIngestionBoard({
   retrySaving: boolean;
   onRetryFailed: () => void;
   onRefreshWebhooks: () => void;
+  onOpenHealth: () => void;
 }) {
   const secretConfigured = !data.profileWarnings.some((warning) => warning.key === "webhook:secret_unconfigured");
   const readiness = summarizeWebhookReadiness(data);
@@ -20488,6 +20490,7 @@ function WebhookIngestionBoard({
         onScopeFilterChange={onScopeFilterChange}
         onRetryFailed={onRetryFailed}
         onRefreshWebhooks={onRefreshWebhooks}
+        onOpenHealth={onOpenHealth}
       />
       <WebhookSetupPanel
         data={data}
@@ -20633,7 +20636,8 @@ function WebhookUpdatePathPanel({
   retrySaving,
   onScopeFilterChange,
   onRetryFailed,
-  onRefreshWebhooks
+  onRefreshWebhooks,
+  onOpenHealth
 }: {
   data: DashboardSummary;
   readiness: WebhookReadinessSummary;
@@ -20643,6 +20647,7 @@ function WebhookUpdatePathPanel({
   onScopeFilterChange: (value: WebhookDeliveryScopeFilter) => void;
   onRetryFailed: () => void;
   onRefreshWebhooks: () => void;
+  onOpenHealth: () => void;
 }) {
   const failedDeliveries = webhookFailedDeliveryCount(data.webhooks);
   const staleProcessingDeliveries = data.webhooks.staleProcessingDeliveries;
@@ -20800,9 +20805,19 @@ function WebhookUpdatePathPanel({
           detail={workerDetail}
           tone={workerRepairTone}
         >
-          <WebhookPathMetric label="running" value={data.sync.jobQueue.runningJobs} />
-          <WebhookPathMetric label="failed jobs" value={data.sync.jobQueue.failedJobs} />
-          <WebhookPathMetric label="blocked" value={data.sync.jobQueue.blockedJobs} />
+          <WebhookPathMetric label="running" value={data.sync.jobQueue.runningJobs} onClick={onOpenHealth} />
+          <WebhookPathMetric
+            label="failed jobs"
+            value={data.sync.jobQueue.failedJobs}
+            tone={data.sync.jobQueue.failedJobs > 0 ? "critical" : "normal"}
+            onClick={onOpenHealth}
+          />
+          <WebhookPathMetric
+            label="blocked"
+            value={data.sync.jobQueue.blockedJobs}
+            tone={data.sync.jobQueue.blockedJobs > 0 ? "critical" : "normal"}
+            onClick={onOpenHealth}
+          />
         </WebhookPathStep>
 
         <WebhookPathStep
@@ -20812,8 +20827,18 @@ function WebhookUpdatePathPanel({
           detail={cacheDetail}
           tone={cacheTone}
         >
-          <WebhookPathMetric label="stale" value={data.sync.staleObjects} />
-          <WebhookPathMetric label="incomplete" value={data.sync.partialObjects} />
+          <WebhookPathMetric
+            label="stale"
+            value={data.sync.staleObjects}
+            tone={data.sync.staleObjects > 0 ? "critical" : "normal"}
+            onClick={onOpenHealth}
+          />
+          <WebhookPathMetric
+            label="incomplete"
+            value={data.sync.partialObjects}
+            tone={data.sync.partialObjects > 0 ? "critical" : "normal"}
+            onClick={onOpenHealth}
+          />
         </WebhookPathStep>
       </div>
     </section>
@@ -24223,6 +24248,7 @@ export default function App() {
                 retrySaving={webhookRetrySaving}
                 onRetryFailed={() => void retryFailedWebhooks()}
                 onRefreshWebhooks={() => openManualRefreshModal(["webhooks"])}
+                onOpenHealth={() => selectView("Health")}
               />
             ) : null}
 
