@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { loadRepoProfile } from "@mo-devflow/config";
 import { sendWeComMarkdown } from "@mo-devflow/notifications";
@@ -14,12 +14,36 @@ import {
 import { getSessionRecordFromRequest } from "./authRoutes";
 import { hasValidCsrfToken, sendCsrfRequired } from "./csrf";
 import { jobKeyForLayer } from "./refreshJobs";
+import { FixedWindowRateLimiter, notificationActionRateLimitConfigFromEnv } from "./rateLimit";
 
 const acknowledgeParamsSchema = z.object({
   deliveryId: z.coerce.number().int().positive()
 });
 
-export async function registerNotificationRoutes(app: FastifyInstance): Promise<void> {
+interface NotificationRouteOptions {
+  notificationActionRateLimiter?: FixedWindowRateLimiter;
+}
+
+function notificationRateLimitKey(request: FastifyRequest, userId: number, action: "test" | "retry"): string {
+  return `notification-${action}:${userId}:${request.ip || "unknown"}`;
+}
+
+function sendNotificationRateLimited(reply: FastifyReply, retryAfterSeconds: number) {
+  reply.header("retry-after", String(retryAfterSeconds));
+  return reply.status(429).send({
+    error: "notification_action_rate_limited",
+    message: "Too many notification actions. Retry later.",
+    retryAfterSeconds
+  });
+}
+
+export async function registerNotificationRoutes(
+  app: FastifyInstance,
+  options: NotificationRouteOptions = {}
+): Promise<void> {
+  const notificationActionRateLimiter =
+    options.notificationActionRateLimiter ?? new FixedWindowRateLimiter(notificationActionRateLimitConfigFromEnv());
+
   app.post("/api/notifications/test", async (request, reply) => {
     const session = await getSessionRecordFromRequest(request, reply);
     if (!session) {
@@ -30,6 +54,10 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     }
     if (!hasValidCsrfToken(request)) {
       return sendCsrfRequired(reply);
+    }
+    const rateLimit = notificationActionRateLimiter.consume(notificationRateLimitKey(request, session.userId, "test"));
+    if (!rateLimit.allowed) {
+      return sendNotificationRateLimited(reply, rateLimit.retryAfterSeconds);
     }
 
     const profile = loadRepoProfile();
@@ -118,6 +146,10 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
         error: "invalid_notification_retry_input",
         message: "Notification delivery id is invalid."
       });
+    }
+    const rateLimit = notificationActionRateLimiter.consume(notificationRateLimitKey(request, session.userId, "retry"));
+    if (!rateLimit.allowed) {
+      return sendNotificationRateLimited(reply, rateLimit.retryAfterSeconds);
     }
 
     const profile = loadRepoProfile();
@@ -248,7 +280,8 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
     if (acknowledgement.outcome === "source_resolved") {
       return reply.status(409).send({
         error: "notification_source_resolved",
-        message: "The underlying notification source is no longer active; refresh the dashboard instead of acknowledging.",
+        message:
+          "The underlying notification source is no longer active; refresh the dashboard instead of acknowledging.",
         deliveryStatus: acknowledgement.deliveryStatus
       });
     }

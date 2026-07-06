@@ -107,6 +107,10 @@ Token binding attempts are guarded per client IP by
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_MAX` attempts per
 `MO_DEVFLOW_TOKEN_BIND_RATE_LIMIT_WINDOW_SECONDS`; the default is 5 attempts per
 300 seconds. Exceeded requests return `429` with `Retry-After`.
+Notification test sends and immediate notification retry requests are guarded
+per user/IP by `MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_MAX` attempts per
+`MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_WINDOW_SECONDS`; the default is 3
+actions per 60 seconds. Exceeded requests return `429` with `Retry-After`.
 
 Logged-in users can preview selected workflow fixes from cached violations,
 then confirm execution through their own GitHub token. Previews and execution

@@ -84,6 +84,15 @@ export function manualRefreshRateLimitConfigFromEnv(
   };
 }
 
+export function notificationActionRateLimitConfigFromEnv(
+  env: Record<string, string | undefined> = process.env
+): RateLimitConfig {
+  return {
+    maxAttempts: positiveIntFromEnv(env.MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_MAX, 3),
+    windowMs: positiveIntFromEnv(env.MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_WINDOW_SECONDS, 60) * 1000
+  };
+}
+
 export function clientRateLimitKey(request: FastifyRequest, scope: string): string {
   return `${scope}:${request.ip || "unknown"}`;
 }

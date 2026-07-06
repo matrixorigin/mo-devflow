@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registerNotificationRoutes } from "./notificationRoutes";
 import { csrfCookieName, csrfHeaderName } from "./csrf";
+import { FixedWindowRateLimiter } from "./rateLimit";
 
 const mocks = vi.hoisted(() => ({
   acknowledgeNotificationDelivery: vi.fn(),
@@ -184,6 +185,41 @@ describe("notification routes", () => {
     }
   });
 
+  test("rate limits notification test sends before calling WeCom", async () => {
+    process.env.MO_DEVFLOW_TEST_WECOM_WEBHOOK_URL = "https://wecom.example.test/hook";
+    mocks.loadRepoProfile.mockReturnValue(notificationProfile);
+    mocks.sendWeComMarkdown.mockResolvedValue({ status: 200, body: { errcode: 0 } });
+    const limiter = new FixedWindowRateLimiter({ maxAttempts: 1, windowMs: 60_000, now: () => 1_000 });
+    const app = Fastify();
+    await registerNotificationRoutes(app, { notificationActionRateLimiter: limiter });
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/notifications/test",
+        headers: csrfHeaders
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/notifications/test",
+        headers: csrfHeaders
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json()).toEqual({
+        error: "notification_action_rate_limited",
+        message: "Too many notification actions. Retry later.",
+        retryAfterSeconds: 60
+      });
+      expect(mocks.sendWeComMarkdown).toHaveBeenCalledTimes(1);
+      expect(mocks.recordProductWriteActionExecution).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   test("records a retry request and queues the notification worker", async () => {
     const app = Fastify();
     await registerNotificationRoutes(app);
@@ -252,6 +288,54 @@ describe("notification routes", () => {
           })
         ]
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rate limits notification retry before queueing worker jobs", async () => {
+    const limiter = new FixedWindowRateLimiter({ maxAttempts: 1, windowMs: 60_000, now: () => 1_000 });
+    const app = Fastify();
+    await registerNotificationRoutes(app, { notificationActionRateLimiter: limiter });
+    mocks.requestNotificationDeliveryRetry.mockResolvedValue({
+      outcome: "requested",
+      deliveryId: 10,
+      retryDeliveryId: 11,
+      deliveryStatus: "failed_permanent",
+      dedupeKey: "notification:attention_item:10"
+    });
+    mocks.enqueueJobsNow.mockResolvedValue([
+      {
+        jobKey: "notifications:matrixorigin/matrixone",
+        jobType: "notifications",
+        status: "pending",
+        nextRunAt: "2026-07-04T00:00:00.000Z"
+      }
+    ]);
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/notifications/deliveries/10/retry",
+        headers: csrfHeaders
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/notifications/deliveries/10/retry",
+        headers: csrfHeaders
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json()).toEqual({
+        error: "notification_action_rate_limited",
+        message: "Too many notification actions. Retry later.",
+        retryAfterSeconds: 60
+      });
+      expect(mocks.requestNotificationDeliveryRetry).toHaveBeenCalledTimes(1);
+      expect(mocks.enqueueJobsNow).toHaveBeenCalledTimes(1);
+      expect(mocks.recordProductWriteActionExecution).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
@@ -380,7 +464,8 @@ describe("notification routes", () => {
       expect(response.statusCode).toBe(409);
       expect(response.json()).toEqual({
         error: "notification_source_resolved",
-        message: "The underlying notification source is no longer active; refresh the dashboard instead of acknowledging.",
+        message:
+          "The underlying notification source is no longer active; refresh the dashboard instead of acknowledging.",
         deliveryStatus: "sent"
       });
       expect(mocks.recordProductWriteActionExecution).not.toHaveBeenCalled();

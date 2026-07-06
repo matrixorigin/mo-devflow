@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   FixedWindowRateLimiter,
   manualRefreshRateLimitConfigFromEnv,
+  notificationActionRateLimitConfigFromEnv,
   tokenBindRateLimitConfigFromEnv
 } from "./rateLimit";
 
@@ -81,5 +82,21 @@ describe("rate limiting", () => {
         MO_DEVFLOW_MANUAL_REFRESH_RATE_LIMIT_WINDOW_SECONDS: "bad"
       })
     ).toEqual({ maxAttempts: 6, windowMs: 60_000 });
+  });
+
+  test("loads notification action limits from environment with safe defaults", () => {
+    expect(
+      notificationActionRateLimitConfigFromEnv({
+        MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_MAX: "2",
+        MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_WINDOW_SECONDS: "90"
+      })
+    ).toEqual({ maxAttempts: 2, windowMs: 90_000 });
+
+    expect(
+      notificationActionRateLimitConfigFromEnv({
+        MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_MAX: "nope",
+        MO_DEVFLOW_NOTIFICATION_ACTION_RATE_LIMIT_WINDOW_SECONDS: "0"
+      })
+    ).toEqual({ maxAttempts: 3, windowMs: 60_000 });
   });
 });
