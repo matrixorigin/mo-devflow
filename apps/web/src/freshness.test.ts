@@ -525,6 +525,28 @@ describe("freshness next action summary", () => {
     });
   });
 
+  test("surfaces stale dashboard read model snapshots before source cache repair", () => {
+    const staleSync = sync({ staleObjects: 2, partialObjects: 1 });
+
+    expect(
+      freshnessNextActionSummary({
+        freshness: summarizeFreshness(staleSync),
+        sync: staleSync,
+        webhookReadiness: receivingWebhook(),
+        readModel: { status: "stale-if-error", version: "2026-07-04T01:00:00.000Z" },
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Dashboard read model is serving a stale snapshot",
+      detail: "The API could not rebuild the dashboard read model, so the board may lag behind database state.",
+      tone: "critical",
+      target: "health",
+      actionLabel: "Open health"
+    });
+  });
+
   test("tells the user to wait when refresh work is already queued or watched", () => {
     const movingSync = sync({ jobQueue: { ...sync({}).jobQueue, queueDepth: 3, runningJobs: 1 } });
 
@@ -582,6 +604,25 @@ describe("freshness next action summary", () => {
       title: "Webhook ingest is not enabled",
       tone: "attention",
       target: "webhooks"
+    });
+  });
+
+  test("keeps dashboard read model cache misses visible when pipeline health is otherwise clear", () => {
+    expect(
+      freshnessNextActionSummary({
+        freshness: healthyFreshness(),
+        sync: sync({}),
+        webhookReadiness: receivingWebhook(),
+        readModel: { status: "miss" },
+        refreshing: false,
+        refreshWatchActive: false,
+        autoRefreshError: null
+      })
+    ).toMatchObject({
+      title: "Dashboard read model is warming",
+      detail: "This response came from the database after a dashboard cache miss; the next load should hit the read model.",
+      tone: "attention",
+      target: "health"
     });
   });
 

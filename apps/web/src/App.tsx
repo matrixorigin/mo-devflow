@@ -108,6 +108,7 @@ import {
   updatePipelinePrimaryStatus,
   webhookDeliveryBacklogNeedsRefreshWatch,
   type CacheEvidenceSummary,
+  type DashboardReadModelCacheStatus,
   type FreshnessSummary,
   type ProductionReadinessGate,
   type ProductionReadinessSummary,
@@ -226,8 +227,6 @@ export function dashboardRefreshModeText(refreshing: boolean, refreshWatchActive
 export function serviceReadTokenStatusText(configured: boolean): string {
   return configured ? "service read ready" : "service read missing";
 }
-
-type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
 
 interface DashboardReadModelMeta {
   etag: string | null;
@@ -1180,17 +1179,17 @@ function dashboardReadModelMetaFromResponse(response: Response, receivedAt: stri
   };
 }
 
-function dashboardReadModelStatusColor(status: DashboardReadModelCacheStatus): string {
+function dashboardReadModelChipTone(status: DashboardReadModelCacheStatus): UpdatePipelineTone {
   if (status === "stale-if-error") {
-    return "orange";
+    return "critical";
   }
-  if (status === "miss") {
-    return "blue";
+  if (status === "miss" || status === "unknown") {
+    return "attention";
   }
   if (status === "hit" || status === "not-modified") {
-    return "green";
+    return "good";
   }
-  return "default";
+  return "attention";
 }
 
 function dashboardReadModelStatusLabel(status: DashboardReadModelCacheStatus): string {
@@ -1201,6 +1200,17 @@ function dashboardReadModelStatusLabel(status: DashboardReadModelCacheStatus): s
     return "not modified";
   }
   return status;
+}
+
+function dashboardReadModelStatusTitle(readModel: DashboardReadModelMeta): string {
+  const versionText = readModel.version ? `Read-model version ${readModel.version}. ` : "";
+  if (readModel.status === "stale-if-error") {
+    return `${versionText}Open health; dashboard is using a snapshot fallback after a read-model rebuild failure.`;
+  }
+  if (readModel.status === "miss") {
+    return `${versionText}Open health; this response was rebuilt from the database after a read-model cache miss.`;
+  }
+  return readModel.version ? `Read-model version ${readModel.version}.` : "Read-model cache status.";
 }
 
 export function syncHealthCursorText(cursorValue: string | null): string | null {
@@ -9789,6 +9799,7 @@ function FreshnessStatusBar({
     freshness,
     sync,
     webhookReadiness,
+    readModel,
     refreshing,
     refreshWatchActive,
     autoRefreshError
@@ -9808,10 +9819,14 @@ function FreshnessStatusBar({
           <Text strong>Data status</Text>
           <Tag color={freshness.tagColor}>{freshness.label}</Tag>
           {readModel ? (
-            <Tooltip title={readModel.version ? `Read-model version ${readModel.version}` : "Read-model cache status"}>
-              <Tag color={dashboardReadModelStatusColor(readModel.status)}>
+            <Tooltip title={dashboardReadModelStatusTitle(readModel)}>
+              <button
+                type="button"
+                className={`freshness-chip freshness-chip-${dashboardReadModelChipTone(readModel.status)}`}
+                onClick={onOpenHealth}
+              >
                 read model {dashboardReadModelStatusLabel(readModel.status)}
-              </Tag>
+              </button>
             </Tooltip>
           ) : null}
           <Tag>generated {formatDate(sync.generatedAt)}</Tag>

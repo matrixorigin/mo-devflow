@@ -53,6 +53,13 @@ export interface UpdatePipelineSummary {
 }
 
 export type FreshnessNextActionTarget = "health" | "webhooks";
+export type DashboardReadModelCacheStatus = "miss" | "hit" | "stale-if-error" | "not-modified" | "unknown";
+
+export interface DashboardReadModelFreshness {
+  status: DashboardReadModelCacheStatus;
+  receivedAt?: string | null;
+  version?: string | null;
+}
 
 export interface FreshnessNextActionSummary {
   title: string;
@@ -613,6 +620,7 @@ export function freshnessNextActionSummary(input: {
   freshness: FreshnessSummary;
   sync: DashboardSummary["sync"];
   webhookReadiness: WebhookReadinessSummary;
+  readModel?: DashboardReadModelFreshness | null;
   refreshing: boolean;
   refreshWatchActive: boolean;
   autoRefreshError: string | null;
@@ -655,6 +663,16 @@ export function freshnessNextActionSummary(input: {
     return {
       title: "Worker queue needs attention",
       detail: `${queue.failedJobs} failed | ${queue.blockedJobs} blocked | ${queue.staleLeases} stale leases`,
+      tone: "critical",
+      target: "health",
+      actionLabel: "Open health"
+    };
+  }
+
+  if (input.readModel?.status === "stale-if-error") {
+    return {
+      title: "Dashboard read model is serving a stale snapshot",
+      detail: "The API could not rebuild the dashboard read model, so the board may lag behind database state.",
       tone: "critical",
       target: "health",
       actionLabel: "Open health"
@@ -717,6 +735,16 @@ export function freshnessNextActionSummary(input: {
       tone: input.webhookReadiness.tone,
       target: "webhooks",
       actionLabel: "Open webhooks"
+    };
+  }
+
+  if (input.readModel?.status === "miss") {
+    return {
+      title: "Dashboard read model is warming",
+      detail: "This response came from the database after a dashboard cache miss; the next load should hit the read model.",
+      tone: "attention",
+      target: "health",
+      actionLabel: "Open health"
     };
   }
 
