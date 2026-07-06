@@ -22565,11 +22565,11 @@ export default function App() {
         })
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setWorkflowPreview((await response.json()) as WorkflowFixPreview);
     } catch (err) {
-      setPreviewError(displayError(err));
+      setPreviewError(actionErrorMessage(err));
       void loadSession();
     } finally {
       setPreviewLoadingKey(null);
@@ -22597,11 +22597,11 @@ export default function App() {
         })
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setWorkflowPreview((await response.json()) as WorkflowFixPreview);
     } catch (err) {
-      setPreviewError(displayError(err));
+      setPreviewError(actionErrorMessage(err));
       void loadSession();
     } finally {
       setPreviewLoadingKey(null);
@@ -22622,7 +22622,7 @@ export default function App() {
         body: JSON.stringify({ previewId: workflowPreview.previewId })
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       const result = (await response.json()) as WorkflowFixExecutionResult;
       setWorkflowExecution(result);
@@ -22635,7 +22635,7 @@ export default function App() {
         void load();
       }
     } catch (err) {
-      setPreviewError(displayError(err));
+      setPreviewError(actionErrorMessage(err));
       void loadSession();
     } finally {
       setExecutionSaving(false);

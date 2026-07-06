@@ -154,6 +154,28 @@ describe("dashboard hash filters", () => {
         })
       )
     ).toBe("Too many notification actions. Retry later. Try again in 1m.");
+    expect(
+      actionErrorMessage(
+        new ApiResponseError({
+          message: "GitHub fresh state check is rate limited. Retry later.",
+          status: 429,
+          code: "github_rate_limited",
+          requestId: "req-2",
+          retryAfterSeconds: 125
+        })
+      )
+    ).toBe("GitHub fresh state check is rate limited. Retry later. Try again in 2m 5s.");
+    expect(
+      actionErrorMessage(
+        new ApiResponseError({
+          message: "Workflow fix preview input is invalid.",
+          status: 422,
+          code: "invalid_workflow_fix_preview_input",
+          requestId: "req-3",
+          retryAfterSeconds: null
+        })
+      )
+    ).toBe("Workflow fix preview input is invalid.");
     expect(actionErrorMessage(new Error("plain failure"))).toBe("plain failure");
   });
 
