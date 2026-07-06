@@ -77,6 +77,11 @@ encryption as production gates.
 wildcard `SELECT *` projections and row-returning queries without a `LIMIT` in
 database-facing source files. This keeps dashboard and worker reads bounded by
 default instead of relying on manual review.
+The same check runs `npm run guard:sensitive`, which scans tracked files for
+runtime `.env` files, local repo profiles, common GitHub token shapes,
+enterprise WeChat webhook URLs, inline MySQL passwords, and non-placeholder
+secret env assignments. Keep real watched users, testers, employee mappings,
+local checkout paths, and secrets in ignored local files.
 
 `make setup` generates a local-only `MO_DEVFLOW_TOKEN_ENCRYPTION_KEY` in the
 ignored `.env` file so personal GitHub token binding can work in development.
