@@ -1055,6 +1055,29 @@ describe("dashboard hash filters", () => {
     expect(prScopeLabel("evidence_pending")).toBe("PR detail pending");
   });
 
+  it("does not count review-state flags before CI has passed", () => {
+    const pendingReviewNoise = {
+      ...personalPr({ number: 101, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      ciState: "pending",
+      reviewDecision: "changes_requested",
+      latestReviewState: "changes_requested",
+      attentionFlags: ["requested_changes", "review_requested_no_response"]
+    };
+    const reviewReadyChanges = {
+      ...personalPr({ number: 102, ageHours: 10, createdAt: "2026-07-05T01:00:00Z", mergedAt: null }),
+      ciState: "success",
+      reviewDecision: "changes_requested",
+      attentionFlags: ["requested_changes", "review_requested_no_response"]
+    };
+
+    const counts = prOperationsSummaryCounts([pendingReviewNoise, reviewReadyChanges], new Map());
+
+    expect(counts.attentionPrs).toBe(1);
+    expect(counts.requestedChangePrs).toBe(1);
+    expect(teamPrNextActionScope(pendingReviewNoise as any)).toBeNull();
+    expect(teamPrNextActionScope(reviewReadyChanges as any)).toBe("request_changes");
+  });
+
   it("keeps hard PR blockers ahead of review-state work in team risk sorting", () => {
     const reviewIdlePr = {
       ...personalPr({ number: 97, ageHours: 72, createdAt: "2026-07-03T01:00:00Z", mergedAt: null }),

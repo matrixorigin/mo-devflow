@@ -204,6 +204,7 @@ export function trendEvidenceSummary(
     }
     return new Date(point.generatedAt).getTime() > new Date(latest).getTime() ? point.generatedAt : latest;
   }, null);
+
   return {
     totalPoints: points.length,
     partialPoints,
@@ -864,6 +865,7 @@ export function flowEfficiencySummary(input: {
     .filter((age): age is number => age !== null);
   const prTestingWaits = testingPrs.map((pr) => pr.testingQueueAgeHours).filter((age): age is number => age !== null);
   const testingWaits = issueTestingWaits.length > 0 ? issueTestingWaits : prTestingWaits;
+  const attentionPrs = input.pendingPrs.filter(prHasCurrentAttention).length;
 
   return {
     prsCreated,
@@ -877,11 +879,8 @@ export function flowEfficiencySummary(input: {
     workflowViolations: sumBy(input.points, (point) => point.workflowViolationsDetected),
     pendingPrs: input.pendingPrs.length,
     averagePendingPrAgeHours: average(input.pendingPrs.map((pr) => pr.ageHours)),
-    attentionPrs: input.pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
-    prAttentionRatePercent: percentage(
-      input.pendingPrs.filter((pr) => pr.attentionFlags.length > 0).length,
-      input.pendingPrs.length
-    ),
+    attentionPrs,
+    prAttentionRatePercent: percentage(attentionPrs, input.pendingPrs.length),
     activeCriticalIssues: input.activeIssues.length,
     averageActiveIssueAgeHours: average(input.activeIssues.map((issue) => issue.criticalAgeHours)),
     needsTriageIssues: input.needsTriageIssues ?? 0,
@@ -1070,7 +1069,7 @@ export function testingIssueNeedsAttention(issue: TestingIssueQueueView): boolea
 export function testingIssueLinkedBlockerCount(issue: TestingIssueQueueView): number {
   return issue.linkedPullRequests.filter(
     (pr) =>
-      pr.attentionFlags.length > 0 ||
+      prHasCurrentAttention(pr) ||
       prHasReviewStageFeedback(pr) ||
       pr.mergeStateStatus === "dirty" ||
       (pr.ciState !== null &&
@@ -1773,7 +1772,7 @@ export function observedPeopleFromDashboard(input: {
   for (const pr of input.pendingPrs) {
     const person = personForLogin(pr.ownerLogin);
     person.pendingPrs += 1;
-    if (pr.attentionFlags.length > 0) {
+    if (prHasCurrentAttention(pr)) {
       person.attentionPrs += 1;
     }
   }
@@ -1835,11 +1834,19 @@ const prAttentionReasonPriority = new Map<string, number>([
   [attentionFlagLabels.review_requested_no_response, 40]
 ]);
 
-type PrReviewStageSource = Pick<PersonalPullRequestView, "reviewDecision" | "ciState" | "mergeStateStatus"> & {
+type PrReviewStageSource = {
+  reviewDecision?: string | null;
+  ciState?: string | null;
+  mergeStateStatus?: string | null;
   latestReviewState?: string | null;
 };
-type PrAttentionReasonSource = Pick<PersonalPullRequestView, "attentionFlags" | "testingState"> &
-  PrReviewStageSource & { isComplete?: boolean; detailSyncedAt?: string | null; detailError?: string | null };
+type PrAttentionReasonSource = PrReviewStageSource & {
+  attentionFlags: string[];
+  testingState?: string | null;
+  isComplete?: boolean;
+  detailSyncedAt?: string | null;
+  detailError?: string | null;
+};
 
 function prAttentionReasonScore(reason: string): number {
   return prAttentionReasonPriority.get(reason) ?? 10;
@@ -1858,12 +1865,12 @@ export function prAttentionPriorityScore(pr: PrAttentionReasonSource): number {
 function prHasPreReviewBlocker(pr: PrReviewStageSource): boolean {
   return (
     pr.mergeStateStatus === "dirty" ||
-    (pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState))
+    (pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState.toLowerCase()))
   );
 }
 
 function prCiPassed(pr: PrReviewStageSource): boolean {
-  return pr.ciState === "success";
+  return pr.ciState?.toLowerCase() === "success";
 }
 
 function prReviewEvidencePending(pr: PrAttentionReasonSource): boolean {
@@ -1874,34 +1881,45 @@ export function prHasReviewStageFeedback(pr: PrReviewStageSource): boolean {
   return (
     !prHasPreReviewBlocker(pr) &&
     prCiPassed(pr) &&
-    (pr.reviewDecision === "changes_requested" || pr.latestReviewState === "changes_requested")
+    (pr.reviewDecision?.toLowerCase() === "changes_requested" ||
+      pr.latestReviewState?.toLowerCase() === "changes_requested")
   );
 }
 
+function prHasReviewWaiting(pr: PrAttentionReasonSource): boolean {
+  return (
+    !prHasPreReviewBlocker(pr) &&
+    prCiPassed(pr) &&
+    !prReviewEvidencePending(pr) &&
+    !prHasReviewStageFeedback(pr) &&
+    pr.attentionFlags.includes("review_requested_no_response")
+  );
+}
+
+export function prCurrentAttentionFlags(pr: PrAttentionReasonSource): string[] {
+  return uniqueStrings([
+    pr.attentionFlags.includes("no_human_action_24h") ? "no_human_action_24h" : "",
+    pr.mergeStateStatus === "dirty" || pr.attentionFlags.includes("merge_conflict") ? "merge_conflict" : "",
+    pr.ciState !== null && pr.ciState !== undefined && failedCiStates.has(pr.ciState.toLowerCase())
+      ? "ci_failed"
+      : pr.attentionFlags.includes("ci_failed")
+        ? "ci_failed"
+        : "",
+    prHasReviewStageFeedback(pr) ? "requested_changes" : "",
+    prHasReviewWaiting(pr) ? "review_requested_no_response" : "",
+    pr.attentionFlags.includes("testing_stalled") ? "testing_stalled" : ""
+  ]);
+}
+
+export function prHasCurrentAttention(pr: PrAttentionReasonSource): boolean {
+  return prCurrentAttentionFlags(pr).length > 0;
+}
+
 export function prAttentionReasons(pr: PrAttentionReasonSource): string[] {
-  const hasReviewStageFeedback = prHasReviewStageFeedback(pr);
-  const reasons = pr.attentionFlags
-    .filter(
-      (flag) =>
-        !(
-          flag === "review_requested_no_response" &&
-          (!prCiPassed(pr) || prHasPreReviewBlocker(pr) || prReviewEvidencePending(pr) || hasReviewStageFeedback)
-        ) && !(flag === "requested_changes" && !hasReviewStageFeedback)
-    )
-    .map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
+  const reasons = prCurrentAttentionFlags(pr).map((flag) => attentionFlagLabels[flag] ?? flag.replaceAll("_", " "));
 
   if (prReviewEvidencePending(pr)) {
     reasons.push(prDetailSyncPendingReason);
-  }
-
-  if (hasReviewStageFeedback && !reasons.includes(attentionFlagLabels.requested_changes)) {
-    reasons.push(attentionFlagLabels.requested_changes);
-  }
-  if (pr.ciState && ["failure", "failed", "error", "timed_out", "action_required", "cancelled"].includes(pr.ciState)) {
-    reasons.push(attentionFlagLabels.ci_failed);
-  }
-  if (pr.mergeStateStatus === "dirty") {
-    reasons.push(attentionFlagLabels.merge_conflict);
   }
   if (pr.testingState === "test_changes_requested") {
     reasons.push("Issue testing changes requested");
@@ -2402,7 +2420,7 @@ export function observedOwnerThreads(issues: CriticalIssueView[], prs: PendingPr
       for (const pr of threadPrs) {
         shownPrNumbers.add(pr.number);
       }
-      const blockers = threadPrs.some((pr) => pr.attentionFlags.length > 0);
+      const blockers = threadPrs.some(prHasCurrentAttention);
 
       return {
         id: `issue:${issue.number}`,
@@ -2424,7 +2442,7 @@ export function observedOwnerThreads(issues: CriticalIssueView[], prs: PendingPr
       issue: null,
       prs: otherPrs,
       linkedIssueNumbers: uniqueNumbers(otherPrs.flatMap((pr) => pr.linkedIssueNumbers)),
-      tone: otherPrs.some((pr) => pr.attentionFlags.length > 0) ? "attention" : "normal",
+      tone: otherPrs.some(prHasCurrentAttention) ? "attention" : "normal",
       durationHours: Math.max(...otherPrs.map((pr) => pr.ageHours)),
       needsLink: otherPrs.some((pr) => pr.linkedIssueNumbers.length === 0)
     });
@@ -2602,7 +2620,7 @@ function observedOwnerThreadPullRequests(
   }
   return [...byNumber.values()].sort(
     (left, right) =>
-      right.attentionFlags.length - left.attentionFlags.length ||
+      prCurrentAttentionFlags(right).length - prCurrentAttentionFlags(left).length ||
       right.ageHours - left.ageHours ||
       left.number - right.number
   );
@@ -2611,7 +2629,7 @@ function observedOwnerThreadPullRequests(
 function sortObservedOwnerPrs(prs: PendingPrView[]): PendingPrView[] {
   return [...prs].sort(
     (left, right) =>
-      right.attentionFlags.length - left.attentionFlags.length ||
+      prCurrentAttentionFlags(right).length - prCurrentAttentionFlags(left).length ||
       right.ageHours - left.ageHours ||
       left.number - right.number
   );

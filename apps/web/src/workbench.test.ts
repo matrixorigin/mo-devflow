@@ -260,7 +260,12 @@ describe("person workload summaries", () => {
       pendingPrs: [
         pullRequest({ number: 10, ownerLogin: "shared-owner", attentionFlags: ["ci_failed"] }),
         pullRequest({ number: 11, ownerLogin: "pr-owner" }),
-        pullRequest({ number: 12, ownerLogin: "pr-owner", attentionFlags: ["review_requested_no_response"] })
+        pullRequest({
+          number: 12,
+          ownerLogin: "pr-owner",
+          ciState: "success",
+          attentionFlags: ["review_requested_no_response"]
+        })
       ]
     });
 

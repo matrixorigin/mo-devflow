@@ -157,6 +157,8 @@ import {
   personalIssueReasons,
   prAttentionReasons,
   prAttentionPriorityScore,
+  prCurrentAttentionFlags,
+  prHasCurrentAttention,
   prHasReviewStageFeedback,
   prHasNoVisibleIssue,
   prHasVisibleIssueContext,
@@ -2311,16 +2313,6 @@ function attentionSeverityColor(severity: "info" | "warning" | "critical"): stri
   return "blue";
 }
 
-function flagColor(flag: string): string {
-  if (flag === "requested_changes" || flag === "ci_failed" || flag === "merge_conflict") {
-    return "red";
-  }
-  if (flag === "no_human_action_24h" || flag === "testing_stalled" || flag === "review_requested_no_response") {
-    return "orange";
-  }
-  return "blue";
-}
-
 export function workflowFixActionForViolation(violation: WorkflowViolationView): WorkflowFixActionKey | null {
   if (!violation.fixable || violation.objectType !== "issue") {
     return null;
@@ -3229,7 +3221,8 @@ function personalMetricPoints(person: PersonalActionView, period: MetricPeriod):
 }
 
 function linkedPrTooltip(pr: CriticalIssueLinkedPullRequestView): string {
-  const flags = pr.attentionFlags.length > 0 ? ` | ${pr.attentionFlags.map(labelText).join(", ")}` : "";
+  const reasons = prAttentionReasons(pr);
+  const flags = reasons.length > 0 ? ` | ${reasons.join(", ")}` : "";
   const testers = pr.testingTesters.length > 0 ? ` | testers: ${pr.testingTesters.join(", ")}` : "";
   return `${pr.title} | owner: ${pr.ownerLogin} | age: ${hours(pr.ageHours)} | last human action: ${formatDate(pr.lastHumanActionAt)}${testers}${flags}`;
 }
@@ -4180,6 +4173,10 @@ function prHasConflict(pr: PendingPrView): boolean {
   return pr.mergeStateStatus === "dirty";
 }
 
+function prHasReviewWaiting(pr: PendingPrView): boolean {
+  return prCurrentAttentionFlags(pr).includes("review_requested_no_response");
+}
+
 function prHasNoLinkedIssue(
   pr: Pick<PendingPrView, "linkedIssueNumbers" | "isComplete" | "detailSyncedAt" | "detailError">,
   activeIssues: PrCriticalIssueContext[] = []
@@ -4291,7 +4288,7 @@ function prMatchesScope(
     return prHasActiveIssue(pr, criticalIssuesByPr);
   }
   if (scopeFilter === "attention") {
-    return pr.attentionFlags.length > 0;
+    return prHasCurrentAttention(pr);
   }
   if (scopeFilter === "testing") {
     return isTestingQueuePr(pr);
@@ -7298,8 +7295,9 @@ function TeamIssuePreviewModal({
 }
 
 function TeamIssuePreviewLinkedPr({ pr }: { pr: CriticalIssueLinkedPullRequestView }) {
-  const flagLazy = useLazyVisibleCount(pr.attentionFlags.length, 4, `${pr.number}:${pr.attentionFlags.join("|")}`);
-  const visibleFlags = pr.attentionFlags.slice(0, flagLazy.visibleCount);
+  const attentionReasons = prAttentionReasons(pr);
+  const flagLazy = useLazyVisibleCount(attentionReasons.length, 4, `${pr.number}:${attentionReasons.join("|")}`);
+  const visibleFlags = attentionReasons.slice(0, flagLazy.visibleCount);
 
   return (
     <div className="team-object-preview-linked">
@@ -7313,12 +7311,12 @@ function TeamIssuePreviewLinkedPr({ pr }: { pr: CriticalIssueLinkedPullRequestVi
           owner {pr.ownerLogin} | age {hours(pr.ageHours)} | last {formatDate(pr.lastHumanActionAt)}
         </small>
       </a>
-      {pr.testingState !== "not_ready" || pr.attentionFlags.length > 0 ? (
+      {pr.testingState !== "not_ready" || attentionReasons.length > 0 ? (
         <Space className="team-object-preview-flags" size={[4, 4]} wrap>
           {pr.testingState !== "not_ready" ? <TestingStateTag state={pr.testingState} /> : null}
           {visibleFlags.map((flag) => (
-            <Tag color={flagColor(flag)} key={flag}>
-              {labelText(flag)}
+            <Tag color={activityReasonColor(flag)} key={flag}>
+              {flag}
             </Tag>
           ))}
           <LazyListToggle
@@ -7700,7 +7698,7 @@ function CriticalIssueLinkedPrCell({ issue }: { issue: CriticalIssueView }) {
     <Space size={[4, 4]} wrap>
       {visibleLinkedPrs.map((pr) => (
         <Tooltip title={linkedPrTooltip(pr)} key={pr.number}>
-          <Tag color={pr.attentionFlags.length > 0 ? "orange" : pr.state === "open" ? "blue" : "default"}>
+          <Tag color={prHasCurrentAttention(pr) ? "orange" : pr.state === "open" ? "blue" : "default"}>
             <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
               #{pr.number}
             </a>{" "}
@@ -9151,7 +9149,7 @@ export function teamPrNextActionScope(
   if (pr.attentionFlags.includes("no_human_action_24h")) {
     return "no_action_24h";
   }
-  if (pr.attentionFlags.includes("review_requested_no_response")) {
+  if (prHasReviewWaiting(pr)) {
     return "attention";
   }
   if (isTestingQueuePr(pr)) {
@@ -11285,7 +11283,7 @@ function PrBoardSummary({
   onScopeFilterChange: (value: PrScopeFilter) => void;
 }) {
   const activeIssuePrs = prs.filter((pr) => prHasActiveIssue(pr, criticalIssuesByPr)).length;
-  const attentionPrs = prs.filter((pr) => pr.attentionFlags.length > 0).length;
+  const attentionPrs = prs.filter(prHasCurrentAttention).length;
   const testingPrs = prs.filter(isTestingQueuePr).length;
   const staleTestingPrs = prs.filter(isTestingStalePr).length;
   const testingEvidenceGapPrs = prs.filter(isTestingEvidenceGapPr).length;
@@ -11430,7 +11428,7 @@ export function prOperationsSummaryCounts(
 
   return {
     activeIssuePrs: prs.filter((pr) => prHasActiveIssue(pr, criticalIssuesByPr)).length,
-    attentionPrs: prs.filter((pr) => pr.attentionFlags.length > 0).length,
+    attentionPrs: prs.filter(prHasCurrentAttention).length,
     noActionPrs: prs.filter((pr) => pr.attentionFlags.includes("no_human_action_24h")).length,
     ciFailedPrs: prs.filter(prHasFailedCi).length,
     requestedChangePrs: prs.filter(prHasRequestChanges).length,
@@ -13317,9 +13315,7 @@ function TestingIssueQueueRow({
           visibleLinkedPrs.map((pr) => (
             <Tooltip title={pr.title} key={pr.number}>
               <a
-                className={
-                  pr.attentionFlags.length > 0 ? "testing-issue-pr testing-issue-pr-attention" : "testing-issue-pr"
-                }
+                className={prHasCurrentAttention(pr) ? "testing-issue-pr testing-issue-pr-attention" : "testing-issue-pr"}
                 href={pr.htmlUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -14526,7 +14522,7 @@ function observedThreadPullRequests(thread: ObservedOwnerThread): ObservedThread
   }
   return [...byNumber.values()].sort(
     (left, right) =>
-      right.attentionFlags.length - left.attentionFlags.length ||
+      prCurrentAttentionFlags(right).length - prCurrentAttentionFlags(left).length ||
       right.ageHours - left.ageHours ||
       left.number - right.number
   );
@@ -22933,7 +22929,7 @@ export default function App() {
               <a href={pr.htmlUrl} target="_blank" rel="noreferrer">
                 #{pr.number}
               </a>
-              {pr.attentionFlags.length > 0 ? <Badge status="warning" /> : null}
+              {prHasCurrentAttention(pr) ? <Badge status="warning" /> : null}
               {pr.draft ? <Tag color="gold">draft</Tag> : null}
             </Space>
             <Text ellipsis={{ tooltip: pr.title }}>{pr.title}</Text>
@@ -22986,11 +22982,7 @@ export default function App() {
         title: "PR blockers",
         width: 260,
         render: (_, pr) => {
-          const reviewWaiting =
-            pr.attentionFlags.includes("review_requested_no_response") &&
-            !prHasFailedCi(pr) &&
-            !prHasConflict(pr) &&
-            !prEvidencePending(pr);
+          const reviewWaiting = prHasReviewWaiting(pr);
           const hasBlocker =
             pr.draft || prHasRequestChanges(pr) || prHasFailedCi(pr) || prHasConflict(pr) || reviewWaiting;
           return hasBlocker ? (
