@@ -90,6 +90,15 @@ export function buildConfigCheck(env, options = {}) {
     "Use absolute http(s) URLs; configure redirect URI when the API is behind a proxy."
   );
 
+  add(
+    sessionCookieSecureStatus(env, production),
+    "Session cookie secure flag",
+    "MO_DEVFLOW_COOKIE_SECURE / NODE_ENV",
+    production
+      ? "Set NODE_ENV=production or MO_DEVFLOW_COOKIE_SECURE=true so OAuth sessions use Secure cookies."
+      : "Use true, false, 1, or 0 when overriding MO_DEVFLOW_COOKIE_SECURE."
+  );
+
   const serviceToken = required(env.MO_DEVFLOW_GITHUB_TOKEN) || required(env.GITHUB_TOKEN) || required(env.GH_TOKEN);
   add(
     serviceToken ? "ok" : production ? "fail" : "warn",
@@ -194,6 +203,18 @@ function validAllowedOrigins(value) {
     } catch {
       return "fail";
     }
+  }
+  return "ok";
+}
+
+function sessionCookieSecureStatus(env, production) {
+  const configured = env.MO_DEVFLOW_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured && !["true", "1", "false", "0"].includes(configured)) {
+    return "fail";
+  }
+  const secure = configured === "true" || configured === "1" || (!configured && env.NODE_ENV === "production");
+  if (production && !secure) {
+    return "fail";
   }
   return "ok";
 }

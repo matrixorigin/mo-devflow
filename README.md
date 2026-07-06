@@ -70,8 +70,10 @@ and employee mapping coverage, before maintainers rely on owner-routed alerts.
 
 Run `make config-check` before local startup to validate `.env` without printing
 secret values. For deployment, run `make config-check-production`; it treats
-GitHub OAuth login, the deployment service read token, webhook secret, and token
-encryption as production gates.
+GitHub OAuth login, the deployment service read token, webhook secret, token
+encryption, and Secure session cookies as production gates. Deployed HTTPS
+environments should run with `NODE_ENV=production` or set
+`MO_DEVFLOW_COOKIE_SECURE=true`.
 
 `npm run check` also runs `npm run guard:sql`, a static SQL guard that fails on
 wildcard `SELECT *` projections and row-returning queries without a `LIMIT` in

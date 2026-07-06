@@ -34,12 +34,17 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
   test("requires OAuth and service read token in production mode", () => {
     const summary = summarizeChecks(buildConfigCheck(baseEnv, { production: true }));
 
-    expect(summary.failures.map((failure) => failure.name)).toEqual(["GitHub OAuth login", "Service read token"]);
+    expect(summary.failures.map((failure) => failure.name)).toEqual([
+      "GitHub OAuth login",
+      "Session cookie secure flag",
+      "Service read token"
+    ]);
   });
 
   test("accepts complete production setup without returning secret values", () => {
     const env = {
       ...baseEnv,
+      NODE_ENV: "production",
       MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
       MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
       MO_DEVFLOW_GITHUB_TOKEN: "service-token",
@@ -54,12 +59,30 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
     expect(serialized).not.toContain("service-token");
   });
 
+  test("accepts explicit secure cookies in production checks", () => {
+    const summary = summarizeChecks(
+      buildConfigCheck(
+        {
+          ...baseEnv,
+          MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
+          MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
+          MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+          MO_DEVFLOW_COOKIE_SECURE: "true"
+        },
+        { production: true }
+      )
+    );
+
+    expect(summary).toEqual({ failures: [], warnings: [] });
+  });
+
   test("fails unsafe values before startup", () => {
     const summary = summarizeChecks(
       buildConfigCheck({
         ...baseEnv,
         MO_DEVFLOW_DB_PORT: "99999",
         MO_DEVFLOW_TOKEN_ENCRYPTION_KEY: "too-short",
+        MO_DEVFLOW_COOKIE_SECURE: "sometimes",
         MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com/app"
       })
     );
@@ -67,6 +90,7 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
     expect(summary.failures.map((failure) => failure.name)).toEqual([
       "MatrixOne port",
       "Personal token encryption",
+      "Session cookie secure flag",
       "Allowed browser origins"
     ]);
   });
