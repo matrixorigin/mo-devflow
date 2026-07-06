@@ -395,6 +395,13 @@ describe("dashboard hash filters", () => {
     expect(analyticsPeriodFromHash("#overview?period=month")).toBe("month");
     expect(analyticsPeriodFromHash("#analytics?period=week")).toBe("week");
     expect(analyticsPeriodScopeText("week", 30)).toBe("Rolling 30-day trend, grouped by weekly periods");
+    expect(
+      analyticsPeriodScopeText("week", 30, [
+        { date: "2026-07-01" },
+        { date: "2026-07-06" },
+        { date: "2026-06-30" }
+      ])
+    ).toBe("Rolling 30-day trend (2026-06-07 to 2026-07-06), grouped by weekly periods");
     expect(currentMetricPeriodLabel("month")).toBe("This Month");
     expect(currentMetricPeriodScopeText("Asia/Shanghai")).toBe(
       "Today, this week, and this month use current calendar periods in Asia/Shanghai; rolling windows are trend-only."

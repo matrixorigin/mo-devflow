@@ -3081,8 +3081,15 @@ export function metricPeriodText(period: MetricPeriod): string {
   return "daily";
 }
 
-export function analyticsPeriodScopeText(period: MetricPeriod, periodDays: number): string {
-  return `Rolling ${periodDays}-day trend, grouped by ${metricPeriodText(period)} periods`;
+export function analyticsPeriodScopeText(
+  period: MetricPeriod,
+  periodDays: number,
+  dailyPoints: ReadonlyArray<Pick<DailyMetricPoint, "date">> = []
+): string {
+  const latestDate = latestMetricDateKey(dailyPoints);
+  const rangeStart = latestDate ? shiftDateKey(latestDate, -(periodDays - 1)) : null;
+  const rangeText = latestDate && rangeStart ? ` (${rangeStart} to ${latestDate})` : "";
+  return `Rolling ${periodDays}-day trend${rangeText}, grouped by ${metricPeriodText(period)} periods`;
 }
 
 function metricPeriodMovementLabel(period: MetricPeriod): string {
@@ -3109,14 +3116,22 @@ export function currentMetricPeriodScopeText(timezone: string): string {
   return `Today, this week, and this month use current calendar periods in ${timezone}; rolling windows are trend-only.`;
 }
 
-function previousDateKey(dateKey: string): string | null {
+function shiftDateKey(dateKey: string, days: number): string | null {
   const parsed = Date.parse(`${dateKey}T00:00:00.000Z`);
   if (Number.isNaN(parsed)) {
     return null;
   }
   const date = new Date(parsed);
-  date.setUTCDate(date.getUTCDate() - 1);
+  date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function previousDateKey(dateKey: string): string | null {
+  return shiftDateKey(dateKey, -1);
+}
+
+function latestMetricDateKey(points: ReadonlyArray<Pick<DailyMetricPoint, "date">>): string | null {
+  return points.reduce<string | null>((latest, point) => (!latest || point.date > latest ? point.date : latest), null);
 }
 
 export function currentMetricPeriodRangeText(
@@ -5119,7 +5134,9 @@ function TeamRotationOverview({
         <div className="section-heading">
           <div>
             <Title level={4}>Flow Efficiency</Title>
-            <Text type="secondary">{analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays)}</Text>
+            <Text type="secondary">
+              {analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays, data.analytics.teamDaily)}
+            </Text>
           </div>
           <Space size={[6, 6]} wrap>
             <Segmented
@@ -24451,7 +24468,8 @@ export default function App() {
                   <div>
                     <Title level={4}>Analytics</Title>
                     <Text type="secondary">
-                      Issue and PR flow, {analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays)} |{" "}
+                      Issue and PR flow,{" "}
+                      {analyticsPeriodScopeText(analyticsPeriod, data.analytics.periodDays, data.analytics.teamDaily)} |{" "}
                       {data.repo.timezone}
                     </Text>
                   </div>
