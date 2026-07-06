@@ -18728,7 +18728,6 @@ function WatchedPersonOperationsSummary({
           onClick={() => onSelect(blockerTarget)}
         />
       </div>
-      <PersonDailyPlanPanel items={dailyPlan} onSelect={onSelect} />
       <div className="person-ops-pr-rhythm" aria-label={`${person.login} PR throughput quick view`}>
         <div className="person-ops-pr-rhythm-heading">
           <span>PRs today / this week / this month</span>
@@ -18779,6 +18778,7 @@ function WatchedPersonOperationsSummary({
           </button>
         </div>
       </div>
+      <PersonDailyPlanDisclosure items={dailyPlan} onSelect={onSelect} />
     </section>
   );
 }
@@ -19332,6 +19332,36 @@ export function personalCurrentBlockerDetail(person: PersonalActionView): string
       ? `${staleTestingIssues} issue testing >24h`
       : `${personalTestingWorkCount(person)} issue testing`;
   return `${prDetail} | ${testingDetail}`;
+}
+
+export function personalDailyPlanSummaryText(items: PersonalDailyPlanItem[]): string {
+  if (items.length === 0) {
+    return "No current blocker";
+  }
+  const first = items[0];
+  if (!first) {
+    return "No current blocker";
+  }
+  const suffix = items.length > 1 ? ` +${items.length - 1}` : "";
+  return `${first.stage}: ${first.label} ${first.value}${suffix}`;
+}
+
+function PersonDailyPlanDisclosure({
+  items,
+  onSelect
+}: {
+  items: PersonalDailyPlanItem[];
+  onSelect: (filter: PersonalDrilldownFilter) => void;
+}) {
+  return (
+    <details className="person-daily-plan-disclosure">
+      <summary>
+        <span>Today's order</span>
+        <strong>{personalDailyPlanSummaryText(items)}</strong>
+      </summary>
+      <PersonDailyPlanPanel items={items} onSelect={onSelect} />
+    </details>
+  );
 }
 
 function personalCriticalFlowEfficiencyRow(issue: CriticalIssueView): PersonalCriticalFlowEfficiencyRow {

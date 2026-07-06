@@ -48,6 +48,7 @@ import {
   personalCriticalFlowEfficiencySummary,
   personalFlowThreadsSummary,
   personalActivityPhaseLabel,
+  personalDailyPlanSummaryText,
   personalPrPeriodAverageDurationText,
   personalPrPeriodBlockerDetail,
   personalPrPeriodRiskDetail,
@@ -1438,6 +1439,17 @@ describe("dashboard hash filters", () => {
       tone: "normal",
       target: { kind: "throughput", selection: { period: "week", scope: "period_all" } }
     });
+  });
+
+  it("summarizes collapsed personal daily order by the first management action", () => {
+    expect(personalDailyPlanSummaryText([])).toBe("No current blocker");
+    expect(
+      personalDailyPlanSummaryText([
+        { stage: "Do now", label: "Active issues", value: 11 },
+        { stage: "Next", label: "PR blockers", value: 2 },
+        { stage: "Watch", label: "Pending PRs", value: 3 }
+      ] as any)
+    ).toBe("Do now: Active issues 11 +2");
   });
 
   it("summarizes the team critical flow management action by highest bottleneck", () => {

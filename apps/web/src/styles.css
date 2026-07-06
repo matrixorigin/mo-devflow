@@ -7703,6 +7703,53 @@ button.testing-board-stat:focus-visible {
   text-transform: uppercase;
 }
 
+.person-daily-plan-disclosure {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.person-daily-plan-disclosure summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.person-daily-plan-disclosure summary > span {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.person-daily-plan-disclosure summary > strong {
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.person-daily-plan-disclosure[open] {
+  display: grid;
+  gap: 8px;
+}
+
+.person-daily-plan-disclosure .person-daily-plan {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
 .person-ops-pr-rhythm {
   align-items: center;
   background: #f8fafc;
