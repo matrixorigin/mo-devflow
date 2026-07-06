@@ -76,7 +76,10 @@ production gates. Deployed HTTPS environments should run with
 `NODE_ENV=production` or set `MO_DEVFLOW_COOKIE_SECURE=true`, and configured
 `MO_DEVFLOW_PUBLIC_URL`, `MO_DEVFLOW_GITHUB_OAUTH_REDIRECT_URI`,
 `MO_DEVFLOW_ALLOWED_ORIGINS`, and `MO_DEVFLOW_DASHBOARD_URL` values should use
-`https://`.
+`https://`. The production check also reads the repository profile and, when
+`notifications.wecom.enabled` is true, validates that the configured
+`notifications.wecom.webhook_url_env` exists and points to an absolute HTTPS
+URL without printing the webhook value.
 
 `npm run check` also runs `npm run guard:sql`, a static SQL guard that fails on
 wildcard `SELECT *` projections and row-returning queries without a `LIMIT` in

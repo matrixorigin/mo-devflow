@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
+import YAML from "yaml";
 
 const defaultEnvPath = ".env";
 
@@ -24,6 +26,8 @@ export function parseEnvFile(content) {
 
 export function buildConfigCheck(env, options = {}) {
   const production = Boolean(options.production);
+  const profile = options.profile ?? null;
+  const profileLoadError = options.profileLoadError ?? null;
   const checks = [];
   const add = (status, name, detail, action) => checks.push({ status, name, detail, action });
 
@@ -125,6 +129,22 @@ export function buildConfigCheck(env, options = {}) {
       : "Use an absolute http(s) URL when overriding notification dashboard links; omit it to use localhost."
   );
 
+  if (profileLoadError) {
+    add(
+      "fail",
+      "Repository profile",
+      env.MO_DEVFLOW_PROFILE ?? "config/repos/matrixone.yaml",
+      "Fix MO_DEVFLOW_PROFILE or the repository profile YAML before starting the service."
+    );
+  } else if (profile) {
+    add(
+      wecomNotificationWebhookStatus(profile, env),
+      "WeCom notification webhook",
+      "notifications.wecom.webhook_url_env",
+      "When profile notifications.wecom.enabled is true, set the configured webhook env variable to an absolute https URL."
+    );
+  }
+
   return checks;
 }
 
@@ -142,7 +162,8 @@ function run() {
   const envPath = envPathArg ?? defaultEnvPath;
   const fileEnv = existsSync(envPath) ? parseEnvFile(readFileSync(envPath, "utf8")) : {};
   const env = { ...fileEnv, ...process.env };
-  const checks = buildConfigCheck(env, { production });
+  const { profile, error: profileLoadError } = loadProfileForConfigCheck(env.MO_DEVFLOW_PROFILE);
+  const checks = buildConfigCheck(env, { production, profile, profileLoadError });
   const { failures, warnings } = summarizeChecks(checks);
 
   console.log(`mo-devflow config check (${production ? "production" : "local"})`);
@@ -263,6 +284,22 @@ function dashboardUrlStatus(value, production) {
   }
 }
 
+function wecomNotificationWebhookStatus(profile, env) {
+  const wecom = profile?.notifications?.wecom;
+  if (!wecom || wecom.enabled !== true) {
+    return "ok";
+  }
+  const webhookEnvVar = typeof wecom.webhook_url_env === "string" ? wecom.webhook_url_env.trim() : "";
+  if (!webhookEnvVar) {
+    return "fail";
+  }
+  const webhookUrl = env[webhookEnvVar]?.trim();
+  if (!webhookUrl) {
+    return "fail";
+  }
+  return configuredUrlUsesHttps(webhookUrl) ? "ok" : "fail";
+}
+
 function sessionCookieSecureStatus(env, production) {
   const configured = env.MO_DEVFLOW_COOKIE_SECURE?.trim().toLowerCase();
   if (configured && !["true", "1", "false", "0"].includes(configured)) {
@@ -273,6 +310,49 @@ function sessionCookieSecureStatus(env, production) {
     return "fail";
   }
   return "ok";
+}
+
+function loadProfileForConfigCheck(profilePath = "config/repos/matrixone.yaml") {
+  const absolutePath = path.resolve(profilePath);
+  if (!existsSync(absolutePath)) {
+    return { profile: null, error: new Error("Repository profile file does not exist.") };
+  }
+  try {
+    const base = parseYamlFile(absolutePath);
+    const localPath = localProfilePath(absolutePath);
+    const profile = existsSync(localPath) ? mergeProfileValues(base, parseYamlFile(localPath)) : base;
+    return { profile, error: null };
+  } catch (error) {
+    return { profile: null, error };
+  }
+}
+
+function parseYamlFile(filePath) {
+  return YAML.parse(readFileSync(filePath, "utf8"));
+}
+
+function localProfilePath(absolutePath) {
+  const extension = path.extname(absolutePath);
+  if (!extension) {
+    return `${absolutePath}.local`;
+  }
+  const baseName = absolutePath.slice(0, -extension.length);
+  return `${baseName}.local${extension}`;
+}
+
+function mergeProfileValues(base, override) {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override ?? base;
+  }
+  const merged = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    merged[key] = mergeProfileValues(merged[key], overrideValue);
+  }
+  return merged;
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function unquoteEnvValue(value) {

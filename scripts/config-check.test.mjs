@@ -10,6 +10,15 @@ const baseEnv = {
   MO_DEVFLOW_GITHUB_WEBHOOK_SECRET: "01234567890123456789"
 };
 
+const notificationEnabledProfile = {
+  notifications: {
+    wecom: {
+      enabled: true,
+      webhook_url_env: "MO_DEVFLOW_WECOM_WEBHOOK_URL"
+    }
+  }
+};
+
 describe("config check", () => {
   test("parses env files without exposing comments or quotes", () => {
     expect(
@@ -51,14 +60,16 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
       MO_DEVFLOW_GITHUB_TOKEN: "service-token",
       MO_DEVFLOW_PUBLIC_URL: "https://devflow.example.com",
       MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com",
-      MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com/app"
+      MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com/app",
+      MO_DEVFLOW_WECOM_WEBHOOK_URL: "https://wecom.example.test/webhook"
     };
-    const checks = buildConfigCheck(env, { production: true });
+    const checks = buildConfigCheck(env, { production: true, profile: notificationEnabledProfile });
     const serialized = JSON.stringify(checks);
 
     expect(summarizeChecks(checks)).toEqual({ failures: [], warnings: [] });
     expect(serialized).not.toContain("client-secret");
     expect(serialized).not.toContain("service-token");
+    expect(serialized).not.toContain("wecom.example.test");
   });
 
   test("accepts explicit secure cookies in production checks", () => {
@@ -146,6 +157,55 @@ MO_DEVFLOW_DB_NAME="mo_devflow"
 
       expect(summary.failures.map((failure) => failure.name)).toEqual(["Notification dashboard URL"]);
     }
+  });
+
+  test("checks profile-enabled WeCom webhook env without printing the webhook URL", () => {
+    const completeProductionEnv = {
+      ...baseEnv,
+      NODE_ENV: "production",
+      MO_DEVFLOW_GITHUB_OAUTH_CLIENT_ID: "client-id",
+      MO_DEVFLOW_GITHUB_OAUTH_CLIENT_SECRET: "client-secret",
+      MO_DEVFLOW_GITHUB_TOKEN: "service-token",
+      MO_DEVFLOW_PUBLIC_URL: "https://devflow.example.com",
+      MO_DEVFLOW_ALLOWED_ORIGINS: "https://devflow.example.com",
+      MO_DEVFLOW_DASHBOARD_URL: "https://devflow.example.com"
+    };
+
+    const missing = buildConfigCheck(completeProductionEnv, {
+      production: true,
+      profile: notificationEnabledProfile
+    });
+    expect(summarizeChecks(missing).failures.map((failure) => failure.name)).toEqual(["WeCom notification webhook"]);
+
+    const invalid = buildConfigCheck(
+      {
+        ...completeProductionEnv,
+        MO_DEVFLOW_WECOM_WEBHOOK_URL: "http://wecom.example.test/webhook"
+      },
+      { production: true, profile: notificationEnabledProfile }
+    );
+    expect(summarizeChecks(invalid).failures.map((failure) => failure.name)).toEqual(["WeCom notification webhook"]);
+    expect(JSON.stringify(invalid)).not.toContain("wecom.example.test");
+  });
+
+  test("does not require WeCom webhook env when profile notifications are disabled", () => {
+    const summary = summarizeChecks(
+      buildConfigCheck(baseEnv, {
+        profile: {
+          notifications: {
+            wecom: { enabled: false, webhook_url_env: "MO_DEVFLOW_WECOM_WEBHOOK_URL" }
+          }
+        }
+      })
+    );
+
+    expect(summary.failures).toEqual([]);
+  });
+
+  test("fails when the repository profile cannot be loaded", () => {
+    const summary = summarizeChecks(buildConfigCheck(baseEnv, { profileLoadError: new Error("bad profile") }));
+
+    expect(summary.failures.map((failure) => failure.name)).toEqual(["Repository profile"]);
   });
 
   test("fails unsafe values before startup", () => {
