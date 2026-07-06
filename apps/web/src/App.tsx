@@ -1329,13 +1329,6 @@ async function responseApiError(response: Response): Promise<ApiResponseError> {
   }
 }
 
-async function responseError(response: Response): Promise<string> {
-  const error = await responseApiError(response);
-  const retryText = error.retryAfterSeconds === null ? "" : ` Retry after about ${error.retryAfterSeconds}s.`;
-  const requestText = error.requestId ? ` Request id ${error.requestId}.` : "";
-  return `${error.message}${retryText}${requestText}`;
-}
-
 interface DashboardLoadError {
   message: string;
   status: number | null;
@@ -1344,7 +1337,7 @@ interface DashboardLoadError {
   retryAfterSeconds: number | null;
 }
 
-function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
+export function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
   if (value instanceof ApiResponseError) {
     return {
       message: value.message,
@@ -1363,7 +1356,7 @@ function dashboardLoadErrorFromUnknown(value: unknown): DashboardLoadError {
   };
 }
 
-function dashboardLoadErrorMessage(error: DashboardLoadError): string {
+export function dashboardLoadErrorMessage(error: DashboardLoadError): string {
   const retryText = error.retryAfterSeconds === null ? "" : ` Retry after about ${error.retryAfterSeconds}s.`;
   return `${error.message}${retryText}`;
 }
@@ -21781,12 +21774,12 @@ export default function App() {
     try {
       const response = await fetch("/api/session", { credentials: "same-origin" });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setSession((await response.json()) as SessionView);
       setSessionLoadError(null);
     } catch (err) {
-      const message = displayError(err);
+      const message = dashboardLoadErrorMessage(dashboardLoadErrorFromUnknown(err));
       setSession({
         authenticated: false,
         user: null,
@@ -21834,7 +21827,7 @@ export default function App() {
         setTokenRetryUntil(Date.now() + err.retryAfterSeconds * 1000);
         setTokenError(retryLaterErrorMessage(err.message, err.retryAfterSeconds));
       } else {
-        setTokenError(displayError(err));
+        setTokenError(actionErrorMessage(err));
       }
     } finally {
       setTokenSaving(false);
@@ -21875,13 +21868,13 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setSession((await response.json()) as SessionView);
       setTokenInput("");
       setTokenModalOpen(false);
     } catch (err) {
-      setTokenError(displayError(err));
+      setTokenError(actionErrorMessage(err));
     } finally {
       setTokenRevoking(false);
     }
@@ -21907,11 +21900,11 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setSession((await response.json()) as SessionView);
     } catch (err) {
-      setTokenError(displayError(err));
+      setTokenError(actionErrorMessage(err));
     }
   }
 

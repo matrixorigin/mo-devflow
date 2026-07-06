@@ -15,6 +15,8 @@ import {
   currentMetricPeriodLabel,
   currentMetricPeriodRangeText,
   currentMetricPeriodScopeText,
+  dashboardLoadErrorFromUnknown,
+  dashboardLoadErrorMessage,
   dashboardHashForView,
   dashboardRefreshModeText,
   dashboardVisibilityChipLabel,
@@ -176,6 +178,19 @@ describe("dashboard hash filters", () => {
         })
       )
     ).toBe("Workflow fix preview input is invalid.");
+    expect(
+      dashboardLoadErrorMessage(
+        dashboardLoadErrorFromUnknown(
+          new ApiResponseError({
+            message: "Session API is temporarily unavailable.",
+            status: 503,
+            code: "session_unavailable",
+            requestId: "req-4",
+            retryAfterSeconds: 30
+          })
+        )
+      )
+    ).toBe("Session API is temporarily unavailable. Retry after about 30s.");
     expect(actionErrorMessage(new Error("plain failure"))).toBe("plain failure");
   });
 
