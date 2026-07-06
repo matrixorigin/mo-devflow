@@ -1037,6 +1037,31 @@ describe("production readiness summary", () => {
     });
   });
 
+  test("does not treat session API outages as token storage or OAuth setup failures", () => {
+    const summary = summarizeProductionReadiness({
+      data: dashboard(),
+      session: anonymousSession({ tokenEncryptionConfigured: false }),
+      sessionLoadError: "HTTP 500"
+    });
+
+    expect(summary.gates.find((gate) => gate.key === "token")).toMatchObject({
+      label: "GitHub session",
+      status: "needs_action",
+      tone: "critical",
+      value: "unavailable",
+      action: "Open health",
+      target: "health"
+    });
+    expect(summary.gates.find((gate) => gate.key === "token")?.detail).toContain("Session API is unavailable");
+    expect(summary.gates.find((gate) => gate.key === "write_back")).toMatchObject({
+      status: "needs_action",
+      tone: "critical",
+      value: "session unavailable",
+      action: "Open health",
+      target: "health"
+    });
+  });
+
   test("blocks production readiness when GitHub evidence backfill is not configured", () => {
     const base = dashboard();
     const summary = summarizeProductionReadiness({

@@ -4773,6 +4773,7 @@ function PeopleFilterBar({
 function TeamRotationOverview({
   data,
   session,
+  sessionLoadError,
   flowSummary,
   trendPoints,
   analyticsPeriod,
@@ -4799,6 +4800,7 @@ function TeamRotationOverview({
 }: {
   data: DashboardSummary;
   session: SessionView | null;
+  sessionLoadError: string | null;
   flowSummary: FlowEfficiencySummary | null;
   trendPoints: TrendMetricPoint[];
   analyticsPeriod: MetricPeriod;
@@ -4874,7 +4876,7 @@ function TeamRotationOverview({
   const triageSnapshot = teamTriageSnapshot(data);
   const teamFocus = teamPrimaryFocus(data, sMinusOneIssues);
   const updatePipeline = summarizeUpdatePipeline(data);
-  const productionReadiness = summarizeProductionReadiness({ data, session });
+  const productionReadiness = summarizeProductionReadiness({ data, session, sessionLoadError });
   const operatingSignals = teamOperatingSignals({ data, flowSummary, triageSnapshot });
   const commandActions = teamCommandActions({
     data,
@@ -8650,6 +8652,7 @@ function ApiHealthFindingsPanel({
 function HealthBoard({
   data,
   session,
+  sessionLoadError,
   apiHealth,
   apiHealthLoading,
   apiHealthError,
@@ -8668,6 +8671,7 @@ function HealthBoard({
 }: {
   data: DashboardSummary;
   session: SessionView | null;
+  sessionLoadError: string | null;
   apiHealth: ApiHealthView | null;
   apiHealthLoading: boolean;
   apiHealthError: string | null;
@@ -8693,7 +8697,7 @@ function HealthBoard({
   const unhealthyLayers = data.sync.health.filter((item) => item.status !== "success").length;
   const webhookReadiness = summarizeWebhookReadiness(data);
   const webhookFailures = webhookFailedDeliveryCount(data.webhooks);
-  const productionReadiness = summarizeProductionReadiness({ data, session });
+  const productionReadiness = summarizeProductionReadiness({ data, session, sessionLoadError });
   const rateLimit = syncRateLimitSummary(data.sync.health);
   const rateLimitDetail = rateLimit.resetAt
     ? `${rateLimit.detail}; reset ${formatDate(rateLimit.resetAt)}`
@@ -23786,6 +23790,7 @@ export default function App() {
               <TeamRotationOverview
                 data={data}
                 session={session}
+                sessionLoadError={sessionLoadError}
                 flowSummary={teamFlowSummary}
                 trendPoints={teamTrendPoints}
                 analyticsPeriod={analyticsPeriod}
@@ -23930,6 +23935,7 @@ export default function App() {
               <HealthBoard
                 data={data}
                 session={session}
+                sessionLoadError={sessionLoadError}
                 apiHealth={apiHealth}
                 apiHealthLoading={apiHealthLoading}
                 apiHealthError={apiHealthError}

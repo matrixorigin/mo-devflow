@@ -770,23 +770,64 @@ function workerStatusDetail(worker: DashboardSummary["sync"]["worker"]): string 
 export function summarizeProductionReadiness(input: {
   data: DashboardSummary;
   session: SessionView | null;
+  sessionLoadError?: string | null;
 }): ProductionReadinessSummary {
   const data = input.data;
   const session = input.session;
+  const sessionLoadError = input.sessionLoadError ?? null;
+  const sessionUnavailable = Boolean(sessionLoadError);
   const webhookReadiness = summarizeWebhookReadiness(data);
-  const tokenEncryptionMissing = session?.tokenEncryptionConfigured === false;
+  const tokenEncryptionMissing = !sessionUnavailable && session?.tokenEncryptionConfigured === false;
   const authenticated = Boolean(session?.authenticated && session.user);
   const authenticatedLogin = session?.user?.githubLogin ?? null;
   const personalTokenConnected = Boolean(session?.user?.tokenLastValidatedAt);
   const writeCapability = session?.user?.writeCapabilities.issueLabels ?? null;
+  const writeBackEnabled = data.profileConfiguration.writeBackEnabled;
   const writeActionFailures = data.writeActions.filter((action) =>
     ["failed", "stale_preview", "token_unavailable", "blocked"].includes(action.status)
   ).length;
-  const writeBackAction = writeCapability?.enabled ? "Open audit" : authenticated ? "Connect write token" : "Sign in";
-  const writeBackTarget = writeCapability?.enabled ? "audit" : "connect_token";
-  const writeBackFallbackDetail = authenticated
-    ? "Connect a personal write token with issue label/comment permissions before confirmed writes."
-    : "Sign in with GitHub first. Personal write tokens are connected only after login.";
+  const writeBackAction = sessionUnavailable
+    ? "Open health"
+    : writeCapability?.enabled
+      ? "Open audit"
+      : authenticated
+        ? "Connect write token"
+        : "Sign in";
+  const writeBackTarget = sessionUnavailable ? "health" : writeCapability?.enabled ? "audit" : "connect_token";
+  const sessionUnavailableDetail = `Session API is unavailable: ${sessionLoadError ?? "unknown error"}`;
+  const writeBackFallbackDetail = sessionUnavailable
+    ? `${sessionUnavailableDetail}. Login and personal write-token capability are unknown.`
+    : authenticated
+      ? "Connect a personal write token with issue label/comment permissions before confirmed writes."
+      : "Sign in with GitHub first. Personal write tokens are connected only after login.";
+  const writeBackStatus: ProductionReadinessStatus = !writeBackEnabled
+    ? "disabled"
+    : sessionUnavailable
+      ? "needs_action"
+      : writeCapability?.enabled
+        ? "ready"
+        : authenticated
+          ? "needs_action"
+          : "waiting";
+  const writeBackTone: UpdatePipelineTone = !writeBackEnabled
+    ? "normal"
+    : sessionUnavailable
+      ? "critical"
+      : writeCapability?.enabled
+        ? "good"
+        : "attention";
+  const writeBackValue = !writeBackEnabled
+    ? "read-only"
+    : sessionUnavailable
+      ? "session unavailable"
+      : writeCapability?.enabled
+        ? "ready"
+        : authenticated
+          ? (writeCapability?.status.replaceAll("_", " ") ?? "write token needed")
+          : "login needed";
+  const writeBackDetail = !writeBackEnabled
+    ? "Repository profile keeps GitHub write-back disabled."
+    : (writeCapability?.message ?? writeBackFallbackDetail);
 
   const gates: ProductionReadinessGate[] = [
     {
@@ -845,52 +886,48 @@ export function summarizeProductionReadiness(input: {
     {
       key: "token",
       label: tokenEncryptionMissing ? "Token storage" : authenticated ? "Personal write token" : "GitHub session",
-      status: tokenEncryptionMissing ? "needs_action" : personalTokenConnected ? "ready" : "waiting",
-      tone: tokenEncryptionMissing ? "critical" : personalTokenConnected ? "good" : "attention",
-      value: tokenEncryptionMissing
-        ? "server setup"
+      status: sessionUnavailable
+        ? "needs_action"
+        : tokenEncryptionMissing
+          ? "needs_action"
+          : personalTokenConnected
+            ? "ready"
+            : "waiting",
+      tone: sessionUnavailable ? "critical" : tokenEncryptionMissing ? "critical" : personalTokenConnected ? "good" : "attention",
+      value: sessionUnavailable
+        ? "unavailable"
+        : tokenEncryptionMissing
+          ? "server setup"
+          : personalTokenConnected
+            ? (authenticatedLogin ?? "connected")
+            : authenticated
+              ? "not connected"
+              : "observer",
+      detail: sessionUnavailable
+        ? `${sessionUnavailableDetail}. Cached dashboards remain visible, but login and personal token state are unknown.`
+        : tokenEncryptionMissing
+          ? "Token encryption is missing, so users cannot connect GitHub tokens."
+          : personalTokenConnected
+            ? "GitHub writes and privileged actions use this user's connected personal token."
+            : authenticated
+              ? `Signed in as ${authenticatedLogin ?? "this GitHub user"}; connect a personal write token only when write actions are needed.`
+              : "Anonymous viewers can inspect cached data only. Sign in with GitHub OAuth before connecting a personal write token.",
+      action: sessionUnavailable
+        ? "Open health"
         : personalTokenConnected
-          ? (authenticatedLogin ?? "connected")
+          ? "Update write token"
           : authenticated
-            ? "not connected"
-            : "observer",
-      detail: tokenEncryptionMissing
-        ? "Token encryption is missing, so users cannot connect GitHub tokens."
-        : personalTokenConnected
-          ? "GitHub writes and privileged actions use this user's connected personal token."
-          : authenticated
-            ? `Signed in as ${authenticatedLogin ?? "this GitHub user"}; connect a personal write token only when write actions are needed.`
-            : "Anonymous viewers can inspect cached data only. Sign in with GitHub OAuth before connecting a personal write token.",
-      action: personalTokenConnected ? "Update write token" : authenticated ? "Connect write token" : "Sign in",
-      target: "connect_token"
+            ? "Connect write token"
+            : "Sign in",
+      target: sessionUnavailable ? "health" : "connect_token"
     },
     {
       key: "write_back",
       label: "Workflow fixes",
-      status: !data.profileConfiguration.writeBackEnabled
-        ? "disabled"
-        : writeCapability?.enabled
-          ? "ready"
-          : authenticated
-            ? "needs_action"
-            : "waiting",
-      tone: !data.profileConfiguration.writeBackEnabled
-        ? "normal"
-        : writeCapability?.enabled
-          ? "good"
-          : authenticated
-            ? "attention"
-            : "attention",
-      value: !data.profileConfiguration.writeBackEnabled
-        ? "read-only"
-        : writeCapability?.enabled
-          ? "ready"
-          : authenticated
-            ? (writeCapability?.status.replaceAll("_", " ") ?? "write token needed")
-            : "login needed",
-      detail: !data.profileConfiguration.writeBackEnabled
-        ? "Repository profile keeps GitHub write-back disabled."
-        : (writeCapability?.message ?? writeBackFallbackDetail),
+      status: writeBackStatus,
+      tone: writeBackTone,
+      value: writeBackValue,
+      detail: writeBackDetail,
       action: writeBackAction,
       target: writeBackTarget
     },
