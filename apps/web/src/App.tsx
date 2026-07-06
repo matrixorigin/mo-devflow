@@ -1278,7 +1278,7 @@ function displayError(value: unknown): string {
   return String(value);
 }
 
-class ApiResponseError extends Error {
+export class ApiResponseError extends Error {
   readonly status: number;
   readonly code: string | null;
   readonly requestId: string | null;
@@ -1667,6 +1667,13 @@ function retryDelayText(seconds: number): string {
 
 export function retryLaterErrorMessage(message: string, seconds: number): string {
   return `${message} Try again in ${retryDelayText(seconds)}.`;
+}
+
+export function actionErrorMessage(value: unknown): string {
+  if (value instanceof ApiResponseError && value.retryAfterSeconds) {
+    return retryLaterErrorMessage(value.message, value.retryAfterSeconds);
+  }
+  return displayError(value);
 }
 
 function workloadStatusColor(status: WorkloadStatus): string {
@@ -22457,12 +22464,12 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setNotificationAckResult((await response.json()) as NotificationAcknowledgementView);
       await load();
     } catch (err) {
-      setNotificationAckError(displayError(err));
+      setNotificationAckError(actionErrorMessage(err));
     } finally {
       setNotificationAckSavingId(null);
     }
@@ -22494,12 +22501,12 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setNotificationRetryResult((await response.json()) as NotificationRetryRequestView);
       await load();
     } catch (err) {
-      setNotificationAckError(displayError(err));
+      setNotificationAckError(actionErrorMessage(err));
     } finally {
       setNotificationRetrySavingId(null);
     }
@@ -22522,12 +22529,12 @@ export default function App() {
         credentials: "same-origin"
       });
       if (!response.ok) {
-        throw new Error(await responseError(response));
+        throw await responseApiError(response);
       }
       setNotificationTestResult((await response.json()) as NotificationTestResult);
       await load();
     } catch (err) {
-      setNotificationAckError(displayError(err));
+      setNotificationAckError(actionErrorMessage(err));
     } finally {
       setNotificationTestSaving(false);
     }

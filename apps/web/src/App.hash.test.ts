@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   accountAnonymousActionState,
   accountSessionModeText,
+  actionErrorMessage,
   aiDriftSignalMatchesSignalFilter,
   analyticsPeriodScopeText,
+  ApiResponseError,
   criticalIssueAiFilterFromHash,
   criticalIssueOwnerFilterFromHash,
   criticalIssueScopeFilterFromHash,
@@ -141,6 +143,18 @@ describe("dashboard hash filters", () => {
     expect(retryLaterErrorMessage("Retry failed webhooks later.", 6.2)).toBe(
       "Retry failed webhooks later. Try again in 7s."
     );
+    expect(
+      actionErrorMessage(
+        new ApiResponseError({
+          message: "Too many notification actions. Retry later.",
+          status: 429,
+          code: "notification_action_rate_limited",
+          requestId: "req-1",
+          retryAfterSeconds: 60
+        })
+      )
+    ).toBe("Too many notification actions. Retry later. Try again in 1m.");
+    expect(actionErrorMessage(new Error("plain failure"))).toBe("plain failure");
   });
 
   it("summarizes post-write refresh queueing outcomes", () => {
